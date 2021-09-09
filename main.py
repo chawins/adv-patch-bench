@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 # The template of this code is generously provided by Norman Mu (@normster)
+# The original version is from https://github.com/pytorch/examples/blob/master/imagenet/main.py
 import argparse
 import json
 import math
@@ -12,7 +13,6 @@ import timm
 import torch
 import torch.backends.cudnn as cudnn
 import torch.cuda.amp as amp
-import torch.distributed as dist
 import torch.nn as nn
 import torch.nn.parallel
 import torch.optim
@@ -22,12 +22,12 @@ import torchvision.datasets as datasets
 import torchvision.transforms as transforms
 import wandb
 
-import utils
+from utils import *
 
 
 def get_args_parser():
     parser = argparse.ArgumentParser(description='Simple ImageNet classification', add_help=False)
-    parser.add_argument('--data', default='/home/owner/data/auto3d/041221', type=str)
+    parser.add_argument('--data', default='~/data/shared/', type=str)
     parser.add_argument('--arch', default='resnet50', type=str)
     parser.add_argument('--output-dir', default='./', type=str, help='output dir')
     parser.add_argument('-j', '--workers', default=10, type=int, metavar='N',
@@ -73,23 +73,24 @@ def get_loader_sampler(root, transform, args):
         sampler = None
     loader = torch.utils.data.DataLoader(
         dataset, batch_size=args.batch_size, shuffle=(sampler is None),
-        num_workers=args.workers, pin_memory=True, sampler=sampler, drop_last=True)
+        num_workers=args.workers, pin_memory=True, sampler=sampler, drop_last=False)
 
     return loader, sampler
 
 
 def main(args):
-    utils.init_distributed_mode(args)
+    init_distributed_mode(args)
 
     global best_acc1
 
     # fix the seed for reproducibility
-    seed = args.seed + utils.get_rank()
+    seed = args.seed + get_rank()
     torch.manual_seed(seed)
     np.random.seed(seed)
 
     # create model
-    print("=> creating model")
+    print('=> creating model')
+    # TODO: add normalization layer to model
     model = timm.create_model(args.arch, num_classes=24)
     model.cuda(args.gpu)
 
@@ -106,8 +107,8 @@ def main(args):
         else:
             p_wd.append(p)
 
-    optim_params = [{"params": p_wd, "weight_decay": args.wd},
-                    {"params": p_non_wd, "weight_decay": 0}]
+    optim_params = [{'params': p_wd, 'weight_decay': args.wd},
+                    {'params': p_non_wd, 'weight_decay': 0}]
 
     if args.optim == 'sgd':
         optimizer = torch.optim.SGD(optim_params, lr=args.lr,
@@ -121,7 +122,7 @@ def main(args):
     # optionally resume from a checkpoint
     if args.resume:
         if os.path.isfile(args.resume):
-            print("=> loading resume checkpoint '{}'".format(args.resume))
+            print(f'=> loading resume checkpoint {args.resume}')
             if args.gpu is None:
                 checkpoint = torch.load(args.resume)
             else:
@@ -133,15 +134,14 @@ def main(args):
             optimizer.load_state_dict(checkpoint['optimizer'])
             scaler.load_state_dict(checkpoint['scaler'])
             best_acc1 = checkpoint['best_acc1']
-            print("=> loaded resume checkpoint '{}' (epoch {})"
-                  .format(args.resume, checkpoint['epoch']))
+            print(f'=> loaded resume checkpoint (epoch {checkpoint["epoch"]})')
         else:
-            print("=> no checkpoint found at '{}'".format(args.resume))
+            print(f'=> no checkpoint found at {args.resume}')
 
     # resume from latest checkpoint in output directory
     latest = os.path.join(args.output_dir, 'checkpoint.pt')
     if os.path.exists(latest):
-        print("=> loading latest checkpoint '{}'".format(latest))
+        print(f'=> loading latest checkpoint {latest}')
         if args.gpu is None:
             checkpoint = torch.load(latest)
         else:
@@ -153,50 +153,46 @@ def main(args):
         optimizer.load_state_dict(checkpoint['optimizer'])
         scaler.load_state_dict(checkpoint['scaler'])
         best_acc1 = checkpoint['best_acc1']
-        print("=> loaded latest checkpoint '{}' (epoch {})"
-              .format(latest, checkpoint['epoch']))
+        print(f'=> loaded latest checkpoint {checkpoint["epoch"]}')
 
     cudnn.benchmark = True
 
     # Data loading code
-    print("=> creating dataset")
-    normalize = transforms.Normalize(mean=[0.5, 0.5, 0.5],
-                                     std=[0.5, 0.5, 0.5])
+    print('=> creating dataset')
+    # TODO: get new transform for traffic sign
     train_transform = transforms.Compose([
         transforms.RandomResizedCrop(128, scale=(0.5, 1.0)),
         transforms.RandomHorizontalFlip(),
         transforms.ToTensor(),
-        normalize
     ])
     val_transform = transforms.Compose([
         transforms.Resize(int(128 * 256 / 224)),
         transforms.CenterCrop(128),
         transforms.ToTensor(),
-        normalize
     ])
 
-    train_loader, train_sampler = get_loader_sampler(os.path.join(args.data, 'train'),
-                                                     train_transform, args)
-    val_loader, _ = get_loader_sampler(os.path.join(args.data, 'val'),
-                                       val_transform, args)
+    train_loader, train_sampler = get_loader_sampler(
+        os.path.join(args.data, 'train'), train_transform, args)
+    val_loader, _ = get_loader_sampler(
+        os.path.join(args.data, 'val'), val_transform, args)
 
     if args.evaluate:
         validate(val_loader, model, criterion, args)
         return
 
-    if utils.is_main_process() and args.wandb:
+    if is_main_process() and args.wandb:
         wandb_id = os.path.split(args.output_dir)[-1]
-        wandb.init(entity='auto3d', project='auto3d', id=wandb_id, config=args, resume='allow')
+        wandb.init(entity='adv-patch-bench', project='adv-patch-bench', id=wandb_id, config=args, resume='allow')
         print('wandb step:', wandb.run.step)
 
     print(args)
 
-    print("=> beginning training")
+    print('=> beginning training')
     for epoch in range(args.start_epoch, args.epochs):
         if args.distributed:
             train_sampler.set_epoch(epoch)
         lr = adjust_learning_rate(optimizer, epoch, args)
-        print(f"=> lr @ epoch {epoch}: {lr:.2e}")
+        print(f'=> lr @ epoch {epoch}: {lr:.2e}')
 
         # train for one epoch
         train_stats = train(train_loader, model, criterion, optimizer, scaler, epoch, args)
@@ -206,8 +202,8 @@ def main(args):
         is_best = acc1 > best_acc1
         best_acc1 = max(acc1, best_acc1)
 
-        print("=> saving checkpoint")
-        utils.save_on_master({
+        print('=> saving checkpoint')
+        save_on_master({
             'epoch': epoch + 1,
             'state_dict': model.state_dict(),
             'optimizer': optimizer.state_dict(),
@@ -220,7 +216,7 @@ def main(args):
                      **{f'test_{k}': v for k, v in val_stats.items()},
                      'epoch': epoch}
 
-        if utils.is_main_process():
+        if is_main_process():
             if args.wandb:
                 wandb.log(log_stats)
             with open(os.path.join(args.output_dir, 'log.txt'), 'a') as f:
@@ -237,7 +233,7 @@ def train(train_loader, model, criterion, optimizer, scaler, epoch, args):
     progress = ProgressMeter(
         len(train_loader),
         [batch_time, data_time, losses, top1, top5, mem],
-        prefix="Epoch: [{}]".format(epoch))
+        prefix='Epoch: [{}]'.format(epoch))
 
     # switch to train mode
     model.train()
@@ -256,7 +252,7 @@ def train(train_loader, model, criterion, optimizer, scaler, epoch, args):
             loss = criterion(outputs, targets)
 
         if not math.isfinite(loss.item()):
-            print("Loss is {}, stopping training".format(loss.item()))
+            print('Loss is {}, stopping training'.format(loss.item()))
             sys.exit(1)
 
         # measure accuracy and record loss
@@ -278,7 +274,7 @@ def train(train_loader, model, criterion, optimizer, scaler, epoch, args):
         mem.update(torch.cuda.max_memory_allocated() // 1e9)
 
         if i % args.print_freq == 0:
-            if utils.is_main_process() and args.wandb:
+            if is_main_process() and args.wandb:
                 wandb.log({'acc': acc1.item(), 'loss': loss.item(), 'scaler': scaler.get_scale()})
             progress.display(i)
 
@@ -297,7 +293,7 @@ def validate(val_loader, model, criterion, args):
     progress = ProgressMeter(
         len(val_loader),
         [batch_time, data_time, losses, top1, top5, mem],
-        prefix="Test: ")
+        prefix='Test: ')
 
     # switch to evaluate mode
     model.eval()
@@ -338,91 +334,8 @@ def validate(val_loader, model, criterion, args):
     return {'acc1': top1.avg, 'acc5': top5.avg, 'loss': losses.avg}
 
 
-class AverageMeter(object):
-    """Computes and stores the average and current value"""
-
-    def __init__(self, name, fmt=':f'):
-        self.name = name
-        self.fmt = fmt
-        self.reset()
-
-    def reset(self):
-        self.val = 0
-        self.avg = 0
-        self.sum = 0
-        self.count = 0
-
-    def update(self, val, n=1):
-        self.val = val
-        self.sum += val * n
-        self.count += n
-        self.avg = self.sum / self.count
-
-    def synchronize(self):
-        t = torch.tensor([self.sum, self.count], dtype=torch.float64, device='cuda')
-        dist.barrier()
-        dist.all_reduce(t)
-        t = t.tolist()
-        self.sum = int(t[0])
-        self.count = t[1]
-        self.avg = self.sum / self.count
-
-    def __str__(self):
-        fmtstr = '{name} {val' + self.fmt + '} ({avg' + self.fmt + '})'
-        return fmtstr.format(**self.__dict__)
-
-
-class ProgressMeter(object):
-    def __init__(self, num_batches, meters, prefix=""):
-        self.batch_fmtstr = self._get_batch_fmtstr(num_batches)
-        self.meters = meters
-        self.prefix = prefix
-
-    def display(self, batch):
-        entries = [self.prefix + self.batch_fmtstr.format(batch)]
-        entries += [str(meter) for meter in self.meters]
-        print('\t'.join(entries))
-
-    def synchronize(self):
-        for meter in self.meters:
-            meter.synchronize()
-
-    def _get_batch_fmtstr(self, num_batches):
-        num_digits = len(str(num_batches // 1))
-        fmt = '{:' + str(num_digits) + 'd}'
-        return '[' + fmt + '/' + fmt.format(num_batches) + ']'
-
-
-def adjust_learning_rate(optimizer, epoch, args):
-    """Decay the learning rate based on schedule"""
-    lr = args.lr
-    if epoch < args.warmup_epochs:
-        lr *= (epoch + 1) / args.warmup_epochs
-    lr *= 0.5 * (1. + math.cos(math.pi * epoch / args.epochs))
-    for param_group in optimizer.param_groups:
-        param_group['lr'] = lr
-    return lr
-
-
-def accuracy(output, target, topk=(1,)):
-    """Computes the accuracy over the k top predictions for the specified values of k"""
-    with torch.no_grad():
-        maxk = max(topk)
-        batch_size = target.size(0)
-
-        _, pred = output.topk(maxk, 1, True, True)
-        pred = pred.t()
-        correct = pred.eq(target.reshape(1, -1).expand_as(pred))
-
-        res = []
-        for k in topk:
-            correct_k = correct[:k].reshape(-1).float().sum(0, keepdim=True)
-            res.append(correct_k.mul_(100.0 / batch_size))
-        return res
-
-
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser('Simple ImageNet classification', parents=[get_args_parser()])
+    parser = argparse.ArgumentParser('Traffic sign classification', parents=[get_args_parser()])
     args = parser.parse_args()
     os.makedirs(args.output_dir, exist_ok=True)
     main(args)
