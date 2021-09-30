@@ -29,6 +29,7 @@ from skimage.exposure import match_histograms
 from adv_patch_bench.datasets.utils import (get_image_files, load_annotation,
                                             pad_image)
 from adv_patch_bench.models.common import Normalize
+from adv_patch_bench.transforms import get_corners, get_shape_from_vertices, sort_vertices
 
 plt.rcParams["savefig.bbox"] = 'tight'
 
@@ -207,11 +208,6 @@ def show_img_patch(model, label, panoptic_per_image_id, data_dir,
 
                 contours, _ = cv.findContours(bool_mask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE)
                 mask = draw_from_contours(mask, contours, color=[0, 0, 255, 255])
-                # contour = np.zeros_like(bool_mask)
-                # contour[contours] = 1
-                # print(contours.max())
-                # contour = np.pad(contour, pad_size_tuple, mode='constant')
-                # contour = contour[ymin:ymax, xmin:xmax]
 
                 # Find convex hull to (1) combine multiple contours and/or
                 # (2) fix some occlusion
@@ -284,6 +280,13 @@ def show_img_patch(model, label, panoptic_per_image_id, data_dir,
                 final_img = torch.from_numpy(np.stack(final_img, axis=0)).permute(0, 3, 1, 2)
                 final_img = TF.resize(final_img, (128, 128))
                 save_image(final_img, 'test.png')
+
+                # TODO:
+                vertices = get_corners(bool_mask)
+                shape = get_shape_from_vertices(vertices)
+                print(shape)
+                sort_vertices(vertices, shape)
+
                 import pdb
                 pdb.set_trace()
 
