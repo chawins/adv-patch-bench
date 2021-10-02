@@ -32,11 +32,11 @@ def get_corners(mask):
 def get_shape_from_vertices(vertices):
     num_vertices = len(vertices)
     if num_vertices == 3:
-        return 'triangle'
+        return ('triangle', 'inv_triangle')
     if num_vertices == 4:
-        return 'rect'
+        return ('rect', 'diamond')
     if num_vertices == 5:
-        return 'pentagon'
+        return ('pentagon', )
     if num_vertices == 8:
-        return 'octagon'
-    return 'other'
+        return ('octagon', )
+    return ('other', )
