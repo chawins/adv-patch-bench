@@ -245,7 +245,7 @@ def show_img_patch(model, label, panoptic_per_image_id, data_dir,
                 ellipse_error = np.abs(ellipse_mask - bool_mask.astype(np.float32)).sum() / bool_mask.sum()
 
                 # DEBUG: Transform
-                if len(vertices) == 100:
+                if len(vertices) == 4:
                     sign_height, sign_width = 100, 100
                     canonical = np.zeros((sign_height, sign_width, 3))
                     canonical_mask = np.zeros((sign_height, sign_width, 1))
