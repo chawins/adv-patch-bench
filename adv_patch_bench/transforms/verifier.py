@@ -3,6 +3,27 @@ import numpy as np
 
 POLYGON_ERROR = 0.04
 
+SHAPE_TO_VERTICES = {
+    'circle': ((0, 1, 2, 3), ),
+    'triangle_inverted': ((0, 1, 2), ),
+    'triangle': ((0, 1, 2), ),
+    'rect': ((0, 1, 2, 3), ),
+    'diamond': ((0, 1, 2, 3), ),
+    'pentagon': ((0, 2, 3, 4), ),
+    'octagon': ((0, 2, 4, 6), ),
+}
+
+# TODO
+MATCH_SHAPES = {
+    'circle': ('circle', 'rect'),
+    'triangle_inverted': ((0, 1, 2), ),
+    'triangle': ((0, 1, 2), ),
+    'rect': ((0, 1, 2, 3), ),
+    'diamond': ((0, 1, 2, 3), ),
+    'pentagon': ((0, 2, 3, 4), ),
+    'octagon': ((0, 2, 4, 6), ),
+}
+
 
 def detect_polygon(contour):
     eps = cv.arcLength(contour, True) * POLYGON_ERROR
@@ -34,6 +55,21 @@ def find_first_vertex(vertices):
     left_two = np.argsort(vertices[:, 0])[:2]
     first_vertex = left_two[np.argsort(vertices[left_two, 1])[0]]
     return first_vertex
+
+
+def get_box_from_ellipse(rect):
+    DEV_RATIO_THRES = 0.1
+    assert len(rect) == 3
+    # If width and height are close or angle is very large, the rotation may be
+    # incorrectly estimated
+    mean_size = (rect[1][0] + rect[1][1]) / 2
+    dev_ratio = abs(rect[1][0] - mean_size) / mean_size
+    if dev_ratio < DEV_RATIO_THRES:
+        # Set angle to 0 when width and height are similar
+        box = cv.boxPoints((rect[0], rect[1], 0.))
+    else:
+        box = cv.boxPoints(rect)
+    return box
 
 
 def sort_polygon_vertices(vertices):
@@ -84,7 +120,7 @@ def get_box_vertices(vertices, predicted_shape):
         vertices = get_box_from_ellipse(vertices)
     vertices = sort_polygon_vertices(vertices)
     box = vertices[SHAPE_TO_VERTICES[predicted_shape]]
-    assert box.shape == (4, 2)
+    assert box.shape == (4, 2) or box.shape == (3, 2)
     return box
 
 

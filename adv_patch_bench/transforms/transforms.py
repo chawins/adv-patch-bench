@@ -48,7 +48,7 @@ def gen_triangle_mask(size, ratio=None):
 def gen_triangle_inverted_mask(size, ratio=None):
     mid = round(size / 2)
     Y, X = np.ogrid[:size, :size]
-    mask = (Y - 2 * X >= 0) * (Y + 2 * X <= 2 * size)
+    mask = (Y - 2 * X <= 0) * (Y + 2 * X <= 2 * size)
     return mask, [[0, 0], [size - 1, 0], [mid, size - 1]]
 
 
@@ -69,31 +69,6 @@ def gen_octagon_mask(size, ratio=None):
 def gen_sign_mask(shape, size, ratio=None):
     return SHAPE_TO_MASK[shape](size, ratio=ratio)
 
-
-def get_box_from_ellipse(rect):
-    DEV_RATIO_THRES = 0.1
-    assert len(rect) == 3
-    # If width and height are close or angle is very large, the rotation may be
-    # incorrectly estimated
-    mean_size = (rect[1][0] + rect[1][1]) / 2
-    dev_ratio = abs(rect[1][0] - mean_size) / mean_size
-    if dev_ratio < DEV_RATIO_THRES:
-        # angle = 0
-        box = cv.boxPoints((rect[0], rect[1], 0.))
-    else:
-        box = cv.boxPoints(rect)
-    return box
-
-
-SHAPE_TO_VERTICES = {
-    'circle': ((0, 1, 2, 3), ),
-    'triangle_inverted': ((0, 1, 2, 3), ),
-    'triangle': ((0, 1, 2, 3), ),
-    'rect': ((0, 1, 2, 3), ),
-    'diamond': ((0, 1, 2, 3), ),
-    'pentagon': ((0, 2, 3, 4), ),
-    'octagon': ((0, 2, 4, 6), ),
-}
 
 SHAPE_TO_MASK = {
     'circle': gen_circle_mask,

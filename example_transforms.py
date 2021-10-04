@@ -8,18 +8,17 @@ import numpy as np
 import torch
 import torch.backends.cudnn as cudnn
 import torch.nn as nn
+import torchvision
 import torchvision.models as models
-import torchvision.transforms.functional as TF
-from kornia.geometry.transform import (get_perspective_transform,
-                                       homography_warp, resize)
+from kornia.geometry.transform import (get_perspective_transform, resize,
+                                       warp_affine, warp_perspective)
 from PIL import Image
-from skimage.exposure import match_histograms
-# from skimage.transform import resize
 from torchvision.utils import save_image
 from tqdm.auto import tqdm
 
-from adv_patch_bench.datasets.utils import (get_image_files, load_annotation,
-                                            pad_image, img_numpy_to_torch)
+from adv_patch_bench.datasets.utils import (get_image_files,
+                                            img_numpy_to_torch,
+                                            load_annotation, pad_image)
 from adv_patch_bench.models.common import Normalize
 from adv_patch_bench.transforms import (gen_sign_mask, get_box_vertices,
                                         get_corners, get_shape_from_vertices)
@@ -35,7 +34,8 @@ CLASS_LIST = ['octagon-915.0-915.0',
               'triangle-900.0',
               'circle-750.0',
               'triangle_inverted-1220.0-1220.0',
-              'rect-458.0-610.0']
+              'rect-458.0-610.0',
+              'other-0.0-0.0']
 
 
 def compute_example_transform(filename, model, panoptic_per_image_id,
@@ -48,7 +48,7 @@ def compute_example_transform(filename, model, panoptic_per_image_id,
     segment = panoptic_per_image_id[img_id]['segments_info']
     panoptic = np.array(Image.open(join(label_path, f'{img_id}.png')))
     img_pil = Image.open(join(img_path, filename))
-    img = np.array(img_pil)
+    img = np.array(img_pil)[:, :, :3]
     img_height, img_width, _ = img.shape
 
     # Pad image to avoid cutting varying shapes due to boundary
@@ -79,6 +79,7 @@ def compute_example_transform(filename, model, panoptic_per_image_id,
         y_hat = model(img_numpy_to_torch(traffic_sign).unsqueeze(0).cuda())[0].argmax().item()
         predicted_class = CLASS_LIST[y_hat]
         predicted_shape = predicted_class.split('-')[0]
+        print(f'==> predicted_class: {predicted_class}')
 
         # Collect mask
         bool_mask = (panoptic[:, :, 0] == obj['id']).astype(np.uint8)
@@ -91,28 +92,35 @@ def compute_example_transform(filename, model, panoptic_per_image_id,
         ellipse_mask = cv.ellipse(np.zeros_like(bool_mask, dtype=np.float32), ellipse, (1,), thickness=-1)
         ellipse_error = np.abs(ellipse_mask - bool_mask.astype(np.float32)).sum() / bool_mask.sum()
 
-        if ellipse_error < 0.1:
-            # Both agree on circle
+        # Determine polygon shape from vertices
+        shape = get_shape_from_vertices(vertices)
+        if predicted_shape == 'other':
+            group = 3
+        elif ellipse_error < 0.1:
+            # Check circle based on ellipse fit error
             shape = 'circle'
             vertices = ellipse
             group = 1 if predicted_shape == 'circle' else 2
         else:
-            # Determine polygon shape from vertices
-            shape = get_shape_from_vertices(vertices)
-            if shape != 'other' and predicted_shape == shape:
-                # Both agree on some polygons
+            if ((shape != 'other' and predicted_shape == shape) or
+                    (shape == 'rect' and predicted_shape != 'other')):
+                # Both classifier and verifier agree on some polygons or
+                # the sign symbol is on a square sign (assume that dimension is
+                # equal to the actual symbol)
                 group = 1
-            elif predicted_shape == 'other':
-                group = 3
             else:
                 # Disagree but not other
                 group = 2
+        print(f'==> shape: {shape}, group: {group}')
+        print(vertices)
+
+        # TODO: handle circle/triangle/stop signs in rectangle
 
         if shape != 'other':
-            src = get_box_vertices(vertices, shape)
+            tgt = get_box_vertices(vertices, shape).astype(np.int64)
 
             # If shape is not other, draw vertices
-            vert = draw_from_contours(np.zeros_like(img), src, color=[0, 255, 0])
+            vert = draw_from_contours(np.zeros_like(img), tgt, color=[0, 255, 0])
             vert = cv.dilate(vert, None)
             vert_mask = (vert.sum(-1) > 0).astype(np.float32)[:, :, None]
             img = (1 - vert_mask) * img + vert_mask * vert
@@ -121,54 +129,65 @@ def compute_example_transform(filename, model, panoptic_per_image_id,
             # Group 1: draw both vertices and patch
             if group == 1:
                 # DEBUG: ratio is height / width (which one is height/width?)
-                sign_width_in_mm = float(predicted_class.split('-')[1])
-                sign_height_in_mm = float(predicted_class.split('-')[2])
-                hw_ratio = sign_height_in_mm / sign_width_in_mm
+                if len(predicted_class.split('-')) == 3:
+                    sign_width_in_mm = float(predicted_class.split('-')[1])
+                    sign_height_in_mm = float(predicted_class.split('-')[2])
+                    hw_ratio = sign_height_in_mm / sign_width_in_mm
+                    sign_size_in_mm = max(sign_width_in_mm, sign_height_in_mm)
+                else:
+                    sign_size_in_mm = float(predicted_class.split('-')[1])
+                    hw_ratio = None
                 pixel_mm_ratio = patch_size_in_pixel / patch_size_in_mm
-                sign_size_in_pixel = round(sign_height_in_mm * pixel_mm_ratio)
+                sign_size_in_pixel = round(sign_size_in_mm * pixel_mm_ratio)
 
                 sign_canonical = torch.zeros((3, sign_size_in_pixel, sign_size_in_pixel))
-                tgt, sign_mask = gen_sign_mask(predicted_shape, sign_size_in_pixel, ratio=hw_ratio)
-                sign_mask = torch.from_numpy(sign_mask)[None, :, :]
+                sign_mask, src = gen_sign_mask(shape, sign_size_in_pixel, ratio=hw_ratio)
+                sign_mask = torch.from_numpy(sign_mask).float()[None, :, :]
 
                 # TODO: run attack, optimize patch location, etc.
                 begin = (sign_size_in_pixel - patch_size_in_pixel) // 2
                 end = begin + patch_size_in_pixel
-                sign_canonical[begin:end, begin:end] = demo_patch
+                sign_canonical[:, begin:end, begin:end] = demo_patch
                 # Crop patch that is not on the sign
                 sign_canonical *= sign_mask
+                patch_mask = torch.zeros((1, sign_size_in_pixel, sign_size_in_pixel))
+                patch_mask[:, begin:end, begin:end] = 1
 
                 # Compute perspective transform
-                # OpenCV version
-                # M = cv.getPerspectiveTransform(src.astype(np.float32), tgt.astype(np.float32))
-                # out = cv.warpPerspective(canonical, M, (img_width, img_height))
-                # out_mask = cv.warpPerspective(canonical_mask, M, (img_width, img_height))
-                # TODO: may need to swap x, y here
-                src = torch.from_tensor(src).unsqueeze(0)
-                tgt = torch.from_tensor(tgt).unsqueeze(0)
-                M = get_perspective_transform(src, tgt)
-                warped_patch = homography_warp(sign_canonical.unsqueeze(0),
-                                               M, (img_height, img_width),
-                                               mode='bilinear',
-                                               padding_mode='zeros',
-                                               normalized_coordinates=False)[0]
-                warped_mask = homography_warp(sign_mask.unsqueeze(0),
+                src = np.array(src).astype(np.float32)
+                tgt = tgt.astype(np.float32)
+                if len(src) == 3:
+                    M = torch.from_numpy(cv.getAffineTransform(src, tgt)).unsqueeze(0).float()
+                    transform_func = warp_affine
+                else:
+                    src = torch.from_numpy(src).unsqueeze(0)
+                    tgt = torch.from_numpy(tgt).unsqueeze(0)
+                    M = get_perspective_transform(src, tgt)
+                    transform_func = warp_perspective
+                warped_patch = transform_func(sign_canonical.unsqueeze(0),
                                               M, (img_height, img_width),
-                                              mode='nearest',
-                                              padding_mode='zeros',
-                                              normalized_coordinates=False)[0]
+                                              mode='bilinear',
+                                              padding_mode='zeros')[0]
+                warped_mask = transform_func(patch_mask.unsqueeze(0),
+                                             M, (img_height, img_width),
+                                             mode='nearest',
+                                             padding_mode='zeros')[0]
                 img_tensor = (1 - warped_mask) * img_tensor + warped_mask * warped_patch
 
         # If shape is other, not draw anything
         else:
             img_tensor = img_numpy_to_torch(img)
 
-        save_image(img_tensor, 'test.png')
+        img_tensor = pad_image(img_tensor, pad_mode='constant')
+        cropped_sign = img_tensor[:, ymin:ymax, xmin:xmax]
 
-    # emask = pad_image(ellipse_mask, pad_mode='constant')
-    # save_image(torch.from_numpy(emask[ymin:ymax, xmin:xmax]), 'test.png')
-    # save_image(torch.from_numpy(mask_patch[:, :, :3] / 255.).permute(2, 0, 1), 'test_mask.png')
-    # save_image(torch.from_numpy(patch / 255.).permute(2, 0, 1), 'test_img.png')
+        # DEBUG
+        # if 'triangle' in shape:
+        #     save_image(cropped_sign, 'test.png')
+        #     import pdb
+        #     pdb.set_trace()
+
+        return cropped_sign
 
 
 def main():
@@ -178,7 +197,7 @@ def main():
     max_num_imgs = 200
     data_dir = '/data/shared/mapillary_vistas/training/'
     # data_dir = '/data/shared/mtsd_v2_fully_annotated/'
-    model_path = '/home/nab_126/adv-patch-bench/model_weights/resnet18_cropped_signs_good_resolution_and_not_edge_10_labels.pth.pth'
+    model_path = '/home/nab_126/adv-patch-bench/model_weights/resnet18_cropped_signs_good_resolution_and_not_edge_10_labels.pth'
 
     device = 'cuda'
     # seed = 2021
@@ -187,11 +206,11 @@ def main():
     cudnn.benchmark = True
 
     # Create model
-    mean = [0.3891, 0.3978, 0.3728]
-    std = [0.1688, 0.1622, 0.1601]
+    mean = [0.3867, 0.3993, 0.3786]
+    std = [0.1795, 0.1718, 0.1714]
     normalize = Normalize(mean, std)
     base = models.resnet18(pretrained=False)
-    base.fc = nn.Linear(512, 6)
+    base.fc = nn.Linear(512, 10)
 
     if os.path.exists(model_path):
         print('Loading model weights...')
@@ -222,7 +241,9 @@ def main():
     filenames = [f for f in listdir(img_path) if isfile(join(img_path, f))]
     np.random.shuffle(filenames)
 
-    demo_patch = img_numpy_to_torch(np.array(Image.open('demo.png')))
+    # demo_patch = img_numpy_to_torch(np.array(Image.open()))
+    demo_patch = torchvision.io.read_image('demo.png').float()[:3, :, :] / 255
+    demo_patch = resize(demo_patch, (32, 32))
 
     for filename in tqdm(filenames):
         compute_example_transform(filename, model, panoptic_per_image_id,
