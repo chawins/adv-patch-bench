@@ -5,6 +5,8 @@ from os.path import isfile, join
 
 import cv2 as cv
 import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
 import torch
 import torch.backends.cudnn as cudnn
 import torch.nn as nn
@@ -24,7 +26,13 @@ from adv_patch_bench.transforms import (gen_sign_mask, get_box_vertices,
                                         get_corners, get_shape_from_vertices)
 from classify_traffic_signs import draw_from_contours
 
-TRAFFIC_SIGN_LABEL = 95
+DATASET = 'mapillaryvistas'
+# DATASET = 'bdd100k'
+
+if DATASET == 'mapillaryvistas':
+    TRAFFIC_SIGN_LABEL = 95
+elif DATASET == 'bdd100k':
+    TRAFFIC_SIGN_LABEL = 'traffic sign'
 
 CLASS_LIST = ['octagon-915.0-915.0',
               'diamond-915.0-915.0',
@@ -55,11 +63,13 @@ def compute_example_transform(filename, model, panoptic_per_image_id,
     img_padded, pad_size = pad_image(img, pad_mode='constant', return_pad_size=True)
     id_padded = pad_image(panoptic[:, :, 0], pad_mode='constant')
 
+    results = []
     # Crop the specified object
     for obj in segment:
 
         # Check if bounding box is cut off at the image boundary
         xmin, ymin, width, height = obj['bbox']
+
         is_oob = (xmin == 0) or (ymin == 0) or \
             ((xmin + width) >= img_width) or ((ymin + height) >= img_height)
 
@@ -80,13 +90,25 @@ def compute_example_transform(filename, model, panoptic_per_image_id,
         y_hat = model(traffic_sign.unsqueeze(0).cuda())[0].argmax().item()
         predicted_class = CLASS_LIST[y_hat]
         predicted_shape = predicted_class.split('-')[0]
-        print(f'==> predicted_class: {predicted_class}')
+        # print(f'==> predicted_class: {predicted_class}')
 
         # Collect mask
         bool_mask = (id_padded[ymin:ymax, xmin:xmax] == obj['id']).astype(np.uint8)
+
+        # FIXME
+        if DATASET == 'bdd100k':
+            xmin_, ymin_, width_, height_ = obj['bbox']
+            bool_mask[:max(0, ymin_-10), :] = 0
+            bool_mask[min(ymin_+height_+10, img_height):, :] = 0
+            bool_mask[:, :max(0, xmin_-10)] = 0
+            bool_mask[:, min(xmin_+width_+10, img_width):] = 0
+
         # Get vertices of mask
-        vertices, hull = get_corners(bool_mask)
-        # Fit ellipse
+        try:
+            vertices, hull = get_corners(bool_mask)
+        except:
+            continue
+
         hull_mask = cv.drawContours(np.zeros_like(bool_mask), [hull], -1, (1, ), 1)
         hull_draw_points = np.stack(np.where(hull_mask), axis=1)[:, ::-1]
         ellipse = cv.fitEllipse(hull_draw_points)
@@ -112,8 +134,8 @@ def compute_example_transform(filename, model, panoptic_per_image_id,
             else:
                 # Disagree but not other
                 group = 2
-        print(f'==> shape: {shape}, group: {group}')
-        print(vertices)
+        # print(f'==> shape: {shape}, group: {group}')
+        # print(vertices)
 
         if shape != 'other':
             tgt = get_box_vertices(vertices, shape).astype(np.int64)
@@ -198,7 +220,8 @@ def compute_example_transform(filename, model, panoptic_per_image_id,
         #     import pdb
         #     pdb.set_trace()
 
-        return traffic_sign
+        results.append([traffic_sign, shape, predicted_shape, predicted_class, group])
+    return results
 
 
 def main():
@@ -206,7 +229,12 @@ def main():
     # Arguments
     min_area = 1600
     max_num_imgs = 200
-    data_dir = '/data/shared/mapillary_vistas/training/'
+
+    if DATASET == 'mapillaryvistas':
+        data_dir = '/data/shared/mapillary_vistas/training/'
+    elif DATASET == 'bdd100k':
+        data_dir = '/data/shared/bdd100k/images/10k/train/'
+
     # data_dir = '/data/shared/mtsd_v2_fully_annotated/'
     model_path = '/home/nab_126/adv-patch-bench/model_weights/resnet18_cropped_signs_good_resolution_and_not_edge_10_labels.pth'
 
@@ -232,35 +260,132 @@ def main():
     model = nn.Sequential(normalize, base).to(device).eval()
 
     # Read in panoptic file
-    panoptic_json_path = f'{data_dir}/v2.0/panoptic/panoptic_2020.json'
+    if DATASET == 'mapillaryvistas':
+        panoptic_json_path = f'{data_dir}/v2.0/panoptic/panoptic_2020.json'
+    elif DATASET == 'bdd100k':
+        panoptic_json_path = '/data/shared/bdd100k/labels/pan_seg/polygons/pan_seg_train.json'
+
     with open(panoptic_json_path) as panoptic_file:
         panoptic = json.load(panoptic_file)
 
-    # Convert annotation infos to image_id indexed dictionary
-    panoptic_per_image_id = {}
-    for annotation in panoptic['annotations']:
-        panoptic_per_image_id[annotation['image_id']] = annotation
+    if DATASET == 'mapillaryvistas':
+        panoptic_per_image_id = {}
+        for annotation in panoptic['annotations']:
+            panoptic_per_image_id[annotation['image_id']] = annotation
 
-    # Convert category infos to category_id indexed dictionary
-    panoptic_category_per_id = {}
-    for category in panoptic['categories']:
-        panoptic_category_per_id[category['id']] = category
+        # Convert category infos to category_id indexed dictionary
+        panoptic_category_per_id = {}
+        for category in panoptic['categories']:
+            panoptic_category_per_id[category['id']] = category
 
-    img_path = join(data_dir, 'images')
-    label_path = join(data_dir, 'v2.0/panoptic/')
+    elif DATASET == 'bdd100k':
+        # creating same mapping for bdd100k
+        panoptic_per_image_id = {}
+        for image_annotation in tqdm(panoptic):
+            filename = image_annotation['name']
+            image_id = filename.split('.jpg')[0]
+            annotation = {}
+            annotation['filename'] = filename
+            annotation['image_id'] = image_id
+            segments_info = []
+            for label in image_annotation['labels']:
+                label_dict = {}
 
-    filenames = [f for f in listdir(img_path) if isfile(join(img_path, f))]
+                # TODO: check if occluded and exclude if True
+                if label['category'] == 'traffic sign':
+                    # if label['category'] == 'traffic sign' or label['category'] == 'traffic sign frame':
+                    # label_dict['id'] = label['id']
+                    label_dict['id'] = 26
+                    label_dict['category_id'] = label['category']
+                    for sign in label['poly2d']:
+                        vertices = sign['vertices']
+                        vertices = np.array(vertices)
+
+                        x_cords, y_cords = vertices[:, 0], vertices[:, 1]
+                        xmin = min(x_cords)
+                        xmax = max(x_cords)
+                        ymin = min(y_cords)
+                        ymax = max(y_cords)
+                        width = xmax-xmin
+                        height = ymax-ymin
+
+                        label_dict['area'] = int(width) * int(height)
+                        label_dict['bbox'] = [int(xmin), int(ymin), int(width), int(height)]
+                        segments_info.append(label_dict)
+            annotation['segments_info'] = segments_info
+            panoptic_per_image_id[image_id] = annotation
+
+    # mapillary
+    if DATASET == 'mapillaryvistas':
+        img_path = join(data_dir, 'images')
+        label_path = join(data_dir, 'v2.0/panoptic/')
+        filenames = [f for f in listdir(img_path) if isfile(join(img_path, f))]
+    elif DATASET == 'bdd100k':
+        # data_dir = '/data/shared/bdd100k/images/10k/train/'
+        label_path = '/data/shared/bdd100k/labels/pan_seg/bitmasks/train/'
+        filenames = [f for f in listdir(data_dir) if isfile(join(data_dir, f))]
+        img_path = data_dir
+
     np.random.shuffle(filenames)
 
     # demo_patch = img_numpy_to_torch(np.array(Image.open()))
     demo_patch = torchvision.io.read_image('demo.png').float()[:3, :, :] / 255
     demo_patch = resize(demo_patch, (32, 32))
 
+    column_names = ['filename', 'shape', 'predicted_shape', 'predicted_class', 'group', 'row']
+    df_data = []
+
+    num_images_processed = 0
+    num_type_errors = 0
+    num_runtime_errors = 0
+
+    num_plots = 300
+    fig, ax = plt.subplots(int(num_plots/5), 5)
+    fig.set_figheight(int(num_plots/5)*10)
+    fig.set_figwidth(5 * 5)
+    i = 0
+
+    print('[INFO] running detection algorithm')
     for filename in tqdm(filenames):
-        compute_example_transform(filename, model, panoptic_per_image_id,
-                                  img_path, label_path, demo_patch,
-                                  min_area=min_area, pad=0.05, patch_size_in_mm=150,
-                                  patch_size_in_pixel=32)
+        num_images_processed += 1
+        try:
+            transformed_images = compute_example_transform(filename, model, panoptic_per_image_id,
+                                                           img_path, label_path, demo_patch,
+                                                           min_area=min_area, pad=0.05, patch_size_in_mm=150,
+                                                           patch_size_in_pixel=32)
+
+            for img in transformed_images:
+                col = i % 5
+                row = i // 5
+
+                cropped_image, shape, predicted_shape, predicted_class, group = img
+                cropped_image = cropped_image.permute(1, 2, 0)
+                title = '{} contour:{} resnet:{}'.format(filename, shape, predicted_shape)
+                if col == 0:
+                    title = 'row #{}  '.format(row) + title
+                ax[row][col].set_title(title)
+                ax[row][col].imshow(cropped_image.numpy())
+
+                df_data.append([filename, shape, predicted_shape, predicted_class, group, row])
+
+                if i == num_plots-1:
+                    plt.savefig('{}.png'.format(DATASET), bbox_inches='tight', pad_inches=0)
+                    break
+
+                i += 1
+        except TypeError:
+            num_type_errors += 1
+        except RuntimeError:
+            num_runtime_errors += 1
+            continue
+
+    print('[INFO] saving csv')
+    df = pd.DataFrame(df_data, columns=column_names)
+    df['dataset'] = DATASET
+    df.to_csv('{}.csv'.format(DATASET), index=False)
+
+    print('percentage type errors:', num_type_errors/num_images_processed)
+    print('percentage runtime errors:', num_runtime_errors/num_images_processed)
 
 
 if __name__ == '__main__':
