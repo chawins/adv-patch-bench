@@ -22,7 +22,7 @@ import torchvision.datasets as datasets
 import torchvision.transforms as transforms
 import wandb
 
-from utils import *
+from adv_patch_bench.utils import *
 
 
 def get_args_parser():

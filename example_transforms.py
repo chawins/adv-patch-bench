@@ -53,6 +53,7 @@ def compute_example_transform(filename, model, panoptic_per_image_id,
 
     # Pad image to avoid cutting varying shapes due to boundary
     img_padded, pad_size = pad_image(img, pad_mode='constant', return_pad_size=True)
+    id_padded = pad_image(panoptic[:, :, 0], pad_mode='constant')
 
     # Crop the specified object
     for obj in segment:
@@ -74,15 +75,15 @@ def compute_example_transform(filename, model, panoptic_per_image_id,
         xmin += pad_size - xpad - extra_obj_pad
         ymin += pad_size - ypad - extra_obj_pad
         xmax, ymax = xmin + size, ymin + size
-        traffic_sign = img_padded[ymin:ymax, xmin:xmax]
+        traffic_sign = img_numpy_to_torch(img_padded[ymin:ymax, xmin:xmax])
         # TODO: Consider running classifier outside once in batch
-        y_hat = model(img_numpy_to_torch(traffic_sign).unsqueeze(0).cuda())[0].argmax().item()
+        y_hat = model(traffic_sign.unsqueeze(0).cuda())[0].argmax().item()
         predicted_class = CLASS_LIST[y_hat]
         predicted_shape = predicted_class.split('-')[0]
         print(f'==> predicted_class: {predicted_class}')
 
         # Collect mask
-        bool_mask = (panoptic[:, :, 0] == obj['id']).astype(np.uint8)
+        bool_mask = (id_padded[ymin:ymax, xmin:xmax] == obj['id']).astype(np.uint8)
         # Get vertices of mask
         vertices, hull = get_corners(bool_mask)
         # Fit ellipse
@@ -114,21 +115,19 @@ def compute_example_transform(filename, model, panoptic_per_image_id,
         print(f'==> shape: {shape}, group: {group}')
         print(vertices)
 
-        # TODO: handle circle/triangle/stop signs in rectangle
-
         if shape != 'other':
             tgt = get_box_vertices(vertices, shape).astype(np.int64)
+            # Filter some vertices that might be out of bound
+            tgt = np.array([t for t in tgt if 0 <= t[0] < size and 0 <= t[1] < size])
 
             # If shape is not other, draw vertices
-            vert = draw_from_contours(np.zeros_like(img), tgt, color=[0, 255, 0])
-            vert = cv.dilate(vert, None)
-            vert_mask = (vert.sum(-1) > 0).astype(np.float32)[:, :, None]
-            img = (1 - vert_mask) * img + vert_mask * vert
-            img_tensor = img_numpy_to_torch(img)
+            vert = draw_from_contours(np.zeros((size, size, 3)), tgt, color=[0, 255, 0])
+            vert = img_numpy_to_torch(cv.dilate(vert, None))
+            vert_mask = (vert.sum(0, keepdim=True) > 0).float()
+            traffic_sign = (1 - vert_mask) * traffic_sign + vert_mask * vert
 
             # Group 1: draw both vertices and patch
             if group == 1:
-                # DEBUG: ratio is height / width (which one is height/width?)
                 if len(predicted_class.split('-')) == 3:
                     sign_width_in_mm = float(predicted_class.split('-')[1])
                     sign_height_in_mm = float(predicted_class.split('-')[2])
@@ -136,7 +135,7 @@ def compute_example_transform(filename, model, panoptic_per_image_id,
                     sign_size_in_mm = max(sign_width_in_mm, sign_height_in_mm)
                 else:
                     sign_size_in_mm = float(predicted_class.split('-')[1])
-                    hw_ratio = None
+                    hw_ratio = 1
                 pixel_mm_ratio = patch_size_in_pixel / patch_size_in_mm
                 sign_size_in_pixel = round(sign_size_in_mm * pixel_mm_ratio)
 
@@ -165,21 +164,33 @@ def compute_example_transform(filename, model, panoptic_per_image_id,
                     M = get_perspective_transform(src, tgt)
                     transform_func = warp_perspective
                 warped_patch = transform_func(sign_canonical.unsqueeze(0),
-                                              M, (img_height, img_width),
+                                              M, (size, size),
                                               mode='bilinear',
                                               padding_mode='zeros')[0]
                 warped_mask = transform_func(patch_mask.unsqueeze(0),
-                                             M, (img_height, img_width),
+                                             M, (size, size),
                                              mode='nearest',
                                              padding_mode='zeros')[0]
-                img_tensor = (1 - warped_mask) * img_tensor + warped_mask * warped_patch
 
-        # If shape is other, not draw anything
-        else:
-            img_tensor = img_numpy_to_torch(img)
+                # Assume that 80% of pixels have one 255 (e.g., red, blue) and
+                # 20% of pixels are white (255, 255, 255).
+                old_patch = torch.masked_select(traffic_sign, torch.from_numpy(bool_mask).bool())
+                mu_1, sigma_1 = old_patch.mean(), old_patch.std()
+                # mu_0, sigma_0 = 0.4666667, 0.4988876
+                old_patch -= old_patch.min()
+                old_patch /= old_patch.max()
+                old_patch_q = (old_patch > 0.5).float()
+                mu_0, sigma_0 = old_patch_q.mean(), old_patch_q.std()
+                alpha = sigma_1 / sigma_0
+                beta = mu_1 - mu_0 * alpha
+                warped_patch.mul_(alpha).add_(beta).clamp_(0, 1)
 
-        img_tensor = pad_image(img_tensor, pad_mode='constant')
-        cropped_sign = img_tensor[:, ymin:ymax, xmin:xmax]
+                traffic_sign = (1 - warped_mask) * traffic_sign + warped_mask * warped_patch
+
+                # DEBUG
+                # save_image(traffic_sign, 'test.png')
+                # import pdb
+                # pdb.set_trace()
 
         # DEBUG
         # if 'triangle' in shape:
@@ -187,7 +198,7 @@ def compute_example_transform(filename, model, panoptic_per_image_id,
         #     import pdb
         #     pdb.set_trace()
 
-        return cropped_sign
+        return traffic_sign
 
 
 def main():
