@@ -68,3 +68,19 @@ def crop(img_padded, mask, pad, offset):
 def img_numpy_to_torch(img):
     assert img.ndim == 3 and isinstance(img, np.ndarray)
     return torch.from_numpy(img).permute(2, 0, 1) / 255.
+
+
+def get_box(mask, pad):
+    coord = np.where(mask)
+    ymin, ymax = coord[0].min(), coord[0].max()
+    xmin, xmax = coord[1].min(), coord[1].max()
+    # Make sure that bounding box is square
+    width, height = xmax - xmin, ymax - ymin
+    size = max(width, height)
+    xpad, ypad = int((size - width) / 2), int((size - height) / 2)
+    extra_obj_pad = int(pad * size)
+    size += 2 * extra_obj_pad
+    xmin -= xpad + extra_obj_pad
+    ymin -= ypad + extra_obj_pad
+    xmax, ymax = xmin + size, ymin + size
+    return ymin, ymax, xmin, xmax

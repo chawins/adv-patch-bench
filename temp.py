@@ -4,9 +4,9 @@ from os import listdir
 from os.path import isfile, join
 
 import cv2 as cv
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 import torch
 import torch.backends.cudnn as cudnn
 import torch.nn as nn
@@ -18,7 +18,7 @@ from PIL import Image
 from torchvision.utils import save_image
 from tqdm.auto import tqdm
 
-from adv_patch_bench.datasets.utils import (get_box, get_image_files,
+from adv_patch_bench.datasets.utils import (get_image_files,
                                             img_numpy_to_torch,
                                             load_annotation, pad_image)
 from adv_patch_bench.models.common import Normalize
@@ -64,53 +64,27 @@ def compute_example_transform(filename, model, panoptic_per_image_id,
     id_padded = pad_image(panoptic[:, :, 0], pad_mode='constant')
 
     results = []
-    show_list = []
     # Crop the specified object
     for obj in segment:
 
         # Check if bounding box is cut off at the image boundary
         xmin, ymin, width, height = obj['bbox']
+
         is_oob = (xmin == 0) or (ymin == 0) or \
-            ((xmin + width) >= img_width - 1) or ((ymin + height) >= img_height - 1)
-        if obj['category_id'] != TRAFFIC_SIGN_LABEL or is_oob:
-            continue
+            ((xmin + width) >= img_width) or ((ymin + height) >= img_height)
 
-        # Collect mask
-        extra_pad = int(max(width, height) * 0.2)
-        ymin, xmin = max(0, ymin + pad_size - extra_pad), max(0, xmin + pad_size - extra_pad)
-        temp_mask = (id_padded[ymin:ymin + height + 2 * extra_pad,
-                               xmin:xmin + width + 2 * extra_pad] == obj['id']).astype(np.uint8)
-
-        if temp_mask.sum() < min_area:
+        if obj['category_id'] != TRAFFIC_SIGN_LABEL or obj['area'] < min_area or is_oob:
             continue
-
-        # Get refined crop patch
-        ymin_, ymax_, xmin_, xmax_ = get_box(temp_mask, pad)
-        ymin, ymax, xmin, xmax = ymin + ymin_, ymin + ymax_, xmin + xmin_, xmin + xmax_
-        bool_mask = (id_padded[ymin:ymax, xmin:xmax] == obj['id']).astype(np.uint8)
-        height, width = bool_mask.shape
-        if height != width:
-            # NOTE: This is very weird and rare corner case where the traffic
-            # sign somehow takes majority of the whole image
-            # print(height, width)
-            # print(img.shape)
-            # print(ymin, ymax, xmin, xmax)
-            # import pdb
-            # pdb.set_trace()
-            # size = int((height + width) / 2)
-            # ymax, xmax = ymin + size, xmin + size
-            continue
-        size = height
 
         # Make sure that bounding box is square and add some padding to avoid
         # cutting into the sign
-        # size = max(width, height)
-        # xpad, ypad = int((size - width) / 2), int((size - height) / 2)
-        # extra_obj_pad = int(pad * size)
-        # size += 2 * extra_obj_pad
-        # xmin += pad_size - xpad - extra_obj_pad
-        # ymin += pad_size - ypad - extra_obj_pad
-        # xmax, ymax = xmin + size, ymin + size
+        size = max(width, height)
+        xpad, ypad = int((size - width) / 2), int((size - height) / 2)
+        extra_obj_pad = int(pad * size)
+        size += 2 * extra_obj_pad
+        xmin += pad_size - xpad - extra_obj_pad
+        ymin += pad_size - ypad - extra_obj_pad
+        xmax, ymax = xmin + size, ymin + size
         traffic_sign = img_numpy_to_torch(img_padded[ymin:ymax, xmin:xmax])
         # TODO: Consider running classifier outside once in batch
         y_hat = model(traffic_sign.unsqueeze(0).cuda())[0].argmax().item()
@@ -118,10 +92,8 @@ def compute_example_transform(filename, model, panoptic_per_image_id,
         predicted_shape = predicted_class.split('-')[0]
         # print(f'==> predicted_class: {predicted_class}')
 
-        # DEBUG
-        # save_image(traffic_sign, 'test.png')
-        # import pdb
-        # pdb.set_trace()
+        # Collect mask
+        bool_mask = (id_padded[ymin:ymax, xmin:xmax] == obj['id']).astype(np.uint8)
 
         # FIXME
         if DATASET == 'bdd100k':
@@ -165,12 +137,7 @@ def compute_example_transform(filename, model, panoptic_per_image_id,
             tgt = get_box_vertices(vertices, shape).astype(np.int64)
             # Filter some vertices that might be out of bound
             if (tgt < 0).any() or (tgt >= size).any():
-                # group = 2
-                # tgt = np.array([t for t in tgt if 0 <= t[0] < size and 0 <= t[1] < size])
-                # This generally happens when the fitted ellipse is incorrect
-                # and the vertices lie outside of the patch
-                results.append([traffic_sign, shape, predicted_shape, predicted_class, 4])
-                continue
+                group = 2
 
             # If shape is not other, draw vertices
             vert = draw_from_contours(np.zeros((size, size, 3)), tgt, color=[0, 255, 0])
@@ -243,14 +210,6 @@ def compute_example_transform(filename, model, panoptic_per_image_id,
                 # save_image(traffic_sign, 'test.png')
                 # import pdb
                 # pdb.set_trace()
-
-            # DEBUG
-            # if group in (1, 2):
-            #     show_list.append(traffic_sign)
-            # if len(show_list) > 100:
-            #     save_image(show_list, 'test.png')
-            #     import pdb
-            #     pdb.set_trace()
 
         # DEBUG
         # if 'triangle' in shape:
@@ -386,61 +345,10 @@ def main():
     print('[INFO] running detection algorithm')
     for filename in tqdm(filenames):
         num_images_processed += 1
-        # try:
-        #     transformed_images = compute_example_transform(filename, model, panoptic_per_image_id,
-        #                                                    img_path, label_path, demo_patch,
-        #                                                    min_area=min_area, pad=0.1, patch_size_in_mm=150,
-        #                                                    patch_size_in_pixel=32)
-
-        #     for img in transformed_images:
-        #         col = i % 5
-        #         row = i // 5
-
-        #         cropped_image, shape, predicted_shape, predicted_class, group = img
-        #         cropped_image = cropped_image.permute(1, 2, 0)
-        #         title = '{} contour:{} resnet:{}'.format(filename, shape, predicted_shape)
-        #         if col == 0:
-        #             title = 'row #{}  '.format(row) + title
-        #         ax[row][col].set_title(title)
-        #         ax[row][col].imshow(cropped_image.numpy())
-
-        #         df_data.append([filename, shape, predicted_shape, predicted_class, group, row])
-
-        #         if i == num_plots-1:
-        #             plt.savefig('{}.png'.format(DATASET), bbox_inches='tight', pad_inches=0)
-        #             break
-
-        #         i += 1
-        # except TypeError:
-        #     num_type_errors += 1
-        # except RuntimeError:
-        #     num_runtime_errors += 1
-        #     continue
-
         transformed_images = compute_example_transform(filename, model, panoptic_per_image_id,
                                                        img_path, label_path, demo_patch,
                                                        min_area=min_area, pad=0.1, patch_size_in_mm=150,
                                                        patch_size_in_pixel=32)
-
-        # for img in transformed_images:
-        #     col = i % 5
-        #     row = i // 5
-
-        #     cropped_image, shape, predicted_shape, predicted_class, group = img
-        #     cropped_image = cropped_image.permute(1, 2, 0)
-        #     title = '{} contour:{} resnet:{}'.format(filename, shape, predicted_shape)
-        #     if col == 0:
-        #         title = 'row #{}  '.format(row) + title
-        #     ax[row][col].set_title(title)
-        #     ax[row][col].imshow(cropped_image.numpy())
-
-        #     df_data.append([filename, shape, predicted_shape, predicted_class, group, row])
-
-        #     if i == num_plots-1:
-        #         plt.savefig('{}.png'.format(DATASET), bbox_inches='tight', pad_inches=0)
-        #         break
-
-        #     i += 1
 
     print('[INFO] saving csv')
     df = pd.DataFrame(df_data, columns=column_names)

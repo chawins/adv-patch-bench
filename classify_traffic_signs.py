@@ -69,8 +69,10 @@ def draw_from_contours(img, contours, color=[0, 0, 255, 255]):
     for contour in contours:
         if contour.ndim == 3:
             contour_coord = (contour[:, 0, 1], contour[:, 0, 0])
-        else:
+        elif contour.ndim == 2:
             contour_coord = (contour[:, 1], contour[:, 0])
+        else:
+            raise ValueError('Invalid contour shape.')
         img[contour_coord] = color
     return img
 
