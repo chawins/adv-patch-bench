@@ -67,7 +67,7 @@ def crop(img_padded, mask, pad, offset):
 
 def img_numpy_to_torch(img):
     assert img.ndim == 3 and isinstance(img, np.ndarray)
-    return torch.from_numpy(img).permute(2, 0, 1) / 255.
+    return torch.from_numpy(img).float().permute(2, 0, 1) / 255.
 
 
 def get_box(mask, pad):
@@ -84,3 +84,15 @@ def get_box(mask, pad):
     ymin -= ypad + extra_obj_pad
     xmax, ymax = xmin + size, ymin + size
     return ymin, ymax, xmin, xmax
+
+
+def draw_from_contours(img, contours, color=[0, 0, 255, 255]):
+    if not isinstance(contours, list):
+        contours = [contours]
+    for contour in contours:
+        if contour.ndim == 3:
+            contour_coord = (contour[:, 0, 1], contour[:, 0, 0])
+        else:
+            contour_coord = (contour[:, 1], contour[:, 0])
+        img[contour_coord] = color
+    return img
