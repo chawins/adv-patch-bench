@@ -23,7 +23,7 @@ from adv_patch_bench.datasets.utils import (get_box, get_image_files,
                                             load_annotation, pad_image)
 from adv_patch_bench.models.common import Normalize
 from adv_patch_bench.transforms import (gen_sign_mask, get_box_vertices,
-                                        get_corners, get_shape_from_vertices)
+                                        get_corners, get_shape_from_vertices, relight_range)
 from classify_traffic_signs import draw_from_contours
 
 DATASET = 'mapillaryvistas'
@@ -217,32 +217,35 @@ def compute_example_transform(filename, model, panoptic_per_image_id,
                     transform_func = warp_perspective
                 warped_patch = transform_func(sign_canonical.unsqueeze(0),
                                               M, (size, size),
-                                              mode='bilinear',
+                                              mode='bicubic',
                                               padding_mode='zeros')[0]
                 warped_mask = transform_func(patch_mask.unsqueeze(0),
                                              M, (size, size),
                                              mode='nearest',
                                              padding_mode='zeros')[0]
-
-                # Assume that 80% of pixels have one 255 (e.g., red, blue) and
-                # 20% of pixels are white (255, 255, 255).
+                # print(np.histogram(warped_patch.numpy()))
+                # print(warped_patch.min(), warped_patch.max())
+                # # Assume that 80% of pixels have one 255 (e.g., red, blue) and
+                # # 20% of pixels are white (255, 255, 255).
+                # old_patch = torch.masked_select(traffic_sign, torch.from_numpy(bool_mask).bool())
+                # mu_1, sigma_1 = old_patch.mean(), old_patch.std()
+                # # mu_0, sigma_0 = 0.4666667, 0.4988876
+                # old_patch -= old_patch.min()
+                # old_patch /= old_patch.max()
+                # old_patch_q = (old_patch > 0.5).float()
+                # mu_0, sigma_0 = old_patch_q.mean(), old_patch_q.std()
+                # alpha = sigma_1 / sigma_0
+                # beta = mu_1 - mu_0 * alpha
                 old_patch = torch.masked_select(traffic_sign, torch.from_numpy(bool_mask).bool())
-                mu_1, sigma_1 = old_patch.mean(), old_patch.std()
-                # mu_0, sigma_0 = 0.4666667, 0.4988876
-                old_patch -= old_patch.min()
-                old_patch /= old_patch.max()
-                old_patch_q = (old_patch > 0.5).float()
-                mu_0, sigma_0 = old_patch_q.mean(), old_patch_q.std()
-                alpha = sigma_1 / sigma_0
-                beta = mu_1 - mu_0 * alpha
-                warped_patch.mul_(alpha).add_(beta).clamp_(0, 1)
+                alpha, beta = relight_range(old_patch.numpy().reshape(-1, 1))
+                warped_patch.clamp_(0, 1).mul_(alpha).add_(beta).clamp_(0, 1)
 
                 traffic_sign = (1 - warped_mask) * traffic_sign + warped_mask * warped_patch
 
                 # DEBUG
-                # save_image(traffic_sign, 'test.png')
-                # import pdb
-                # pdb.set_trace()
+                save_image(traffic_sign, 'test.png')
+                import pdb
+                pdb.set_trace()
 
             # DEBUG
             # if group in (1, 2):

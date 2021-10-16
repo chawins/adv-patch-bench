@@ -44,12 +44,9 @@ def is_main_process():
 
 
 def save_on_master(state, is_best, output_dir):
-    if is_main_process():
-        ckpt_path = f'{output_dir}/checkpoint.pt'
+    if is_main_process() and is_best:
         best_path = f'{output_dir}/checkpoint_best.pt'
-        torch.save(state, ckpt_path)
-        if is_best:
-            shutil.copyfile(ckpt_path, best_path)
+        torch.save(state, best_path)
 
 
 def init_distributed_mode(args):
