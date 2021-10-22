@@ -6,7 +6,7 @@
 
 ### Cityscapes
 
-See instructions at https://github.com/mcordts/cityscapesScripts.
+See instructions at [https://github.com/mcordts/cityscapesScripts](https://github.com/mcordts/cityscapesScripts).
 
 ```bash
 python -m pip install cityscapesscripts

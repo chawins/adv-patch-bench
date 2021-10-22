@@ -32,13 +32,13 @@ def load_mtsd(args):
     input_size = MTSD['input_dim'][-1]
     train_transform_list = [
         transforms.ColorJitter(brightness=0.5, contrast=0.5, saturation=0.5, hue=0),
-        transforms.RandomEqualize(p=1.0),
+        # transforms.RandomEqualize(p=1.0),
         transforms.RandomResizedCrop(input_size, scale=(0.64, 1.0)),
         transforms.RandomPerspective(distortion_scale=0.2, p=0.5),
         transforms.ToTensor()
     ]
     val_transform_list = [
-        transforms.RandomEqualize(p=1.0),
+        # transforms.RandomEqualize(p=1.0),
         transforms.Resize((input_size, input_size)),
         # transforms.CenterCrop(input_size),
         transforms.ToTensor()
@@ -49,7 +49,7 @@ def load_mtsd(args):
     train_loader, train_sampler = get_loader_sampler(args.data, train_transform, args, 'train')
     val_loader, _ = get_loader_sampler(args.data, val_transform, args, 'val')
 
-    return train_loader, train_sampler, val_loader, None
+    return train_loader, train_sampler, val_loader
 
 
 MTSD = {

@@ -1,9 +1,9 @@
 import argparse
 import json
 import os
+from collections import OrderedDict
 from os import listdir
 from os.path import isfile, join
-from collections import OrderedDict
 
 import cv2 as cv
 import matplotlib.pyplot as plt
@@ -11,28 +11,21 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.backends.cudnn as cudnn
-import torch.nn as nn
 import torchvision
-import torchvision.models as models
 import torchvision.transforms as transforms
-
-from adv_patch_bench.models import build_classifier
-
 from kornia.geometry.transform import (get_perspective_transform, resize,
                                        warp_affine, warp_perspective)
 from PIL import Image
 from torchvision.utils import save_image
 from tqdm.auto import tqdm
 
-from adv_patch_bench.utils import (get_box, get_image_files,
-                                            img_numpy_to_torch,
-                                            load_annotation, pad_image)
-from adv_patch_bench.models.common import Normalize
+from adv_patch_bench.models import build_classifier
 from adv_patch_bench.transforms import (gen_sign_mask, get_box_vertices,
-                                        get_corners, get_shape_from_vertices, relight_range)
-from classify_traffic_signs import draw_from_contours
+                                        get_corners, get_shape_from_vertices,
+                                        relight_range)
+from adv_patch_bench.utils import (draw_from_contours, get_box,
+                                   img_numpy_to_torch, pad_image)
 
-    
 DATASET = 'mapillaryvistas'
 # DATASET = 'bdd100k'
 
@@ -42,31 +35,31 @@ elif DATASET == 'bdd100k':
     TRAFFIC_SIGN_LABEL = 'traffic sign'
 
 CLASS_LIST = [
-        'circle-750.0',
-        'triangle-900.0',
-        'triangle_inverted-1220.0',
-        'diamond-600.0',
-        'diamond-915.0',
-        'square-600.0',
-        'rect-458.0-610.0',
-        'rect-762.0-915.0',
-        'rect-915.0-1220.0',
-        'pentagon-915.0',
-        'octagon-915.0',
-        'other-0.0-0.0'
-    ]
-   
+    'circle-750.0',
+    'triangle-900.0',
+    'triangle_inverted-1220.0',
+    'diamond-600.0',
+    'diamond-915.0',
+    'square-600.0',
+    'rect-458.0-610.0',
+    'rect-762.0-915.0',
+    'rect-915.0-1220.0',
+    'pentagon-915.0',
+    'octagon-915.0',
+    'other-0.0-0.0'
+]
+
 SHAPE_LIST = [
-        'circle',
-        'triangle',
-        'triangle_inverted',
-        'diamond',
-        'square',
-        'rect',
-        'pentagon',
-        'octagon',
-        'other'
-    ]
+    'circle',
+    'triangle',
+    'triangle_inverted',
+    'diamond',
+    'square',
+    'rect',
+    'pentagon',
+    'octagon',
+    'other'
+]
 
 # CLASS_LIST = ['octagon-915.0-915.0',
 #               'diamond-915.0-915.0',
@@ -79,6 +72,7 @@ SHAPE_LIST = [
 #               'rect-458.0-610.0',
 #               'other-0.0-0.0']
 
+
 def get_args_parser():
     parser = argparse.ArgumentParser(description='Part classification', add_help=False)
     parser.add_argument('--data', default='~/data/shared/', type=str)
@@ -87,21 +81,9 @@ def get_args_parser():
     parser.add_argument('--output-dir', default='./', type=str, help='output dir')
     parser.add_argument('-j', '--workers', default=10, type=int, metavar='N',
                         help='number of data loading workers per process')
-    parser.add_argument('--epochs', default=200, type=int)
-    parser.add_argument('--start-epoch', default=0, type=int)
     parser.add_argument('--batch-size', default=256, type=int,
                         help='mini-batch size per device.')
     parser.add_argument('--full-precision', action='store_true')
-    parser.add_argument('--warmup-epochs', default=0, type=int)
-    parser.add_argument('--lr', default=0.1, type=float)
-    parser.add_argument('--momentum', default=0.9, type=float)
-    parser.add_argument('--wd', default=1e-4, type=float)
-    parser.add_argument('--optim', default='sgd', type=str)
-    parser.add_argument('--betas', default=(0.9, 0.999), nargs=2, type=float)
-    parser.add_argument('--eps', default=1e-8, type=float)
-    parser.add_argument('--print-freq', default=10, type=int, help='print frequency')
-    parser.add_argument('--resume', default='', type=str, help='path to latest checkpoint')
-    parser.add_argument('--evaluate', action='store_true', help='Evaluate only')
     parser.add_argument('--world-size', default=1, type=int,
                         help='number of nodes for distributed training')
     parser.add_argument('--distributed', default=False, type=bool)
@@ -119,14 +101,14 @@ def get_args_parser():
                         help='Number of classes')
     parser.add_argument('--experiment', required=False, type=str,
                         help='Type of experiment to run')
-    parser.add_argument('--adv-train', default='none', type=str,
-                        help='Use adversarial training (default: none = normal training)')
-    parser.add_argument('--epsilon', default=8/255, type=float,
-                        help='Perturbation norm for attacks (default: 8/255)')
-    parser.add_argument('--atk-norm', default='Linf', type=str,
-                        help='Lp-norm of adversarial perturbation (default: Linf)')
-    parser.add_argument('--trades-beta', default=6., type=float,
-                        help='Beta parameter for TRADES (default: 6)')
+    # Unused
+    parser.add_argument('--lr', default=0.1, type=float)
+    parser.add_argument('--momentum', default=0.9, type=float)
+    parser.add_argument('--wd', default=1e-4, type=float)
+    parser.add_argument('--optim', default='sgd', type=str)
+    parser.add_argument('--betas', default=(0.9, 0.999), nargs=2, type=float)
+    parser.add_argument('--eps', default=1e-8, type=float)
+    parser.add_argument('--resume', default='', type=str, help='path to latest checkpoint')
     return parser
 
 
@@ -196,7 +178,6 @@ def compute_example_transform(filename, model, panoptic_per_image_id,
         # xmin += pad_size - xpad - extra_obj_pad
         # ymin += pad_size - ypad - extra_obj_pad
         # xmax, ymax = xmin + size, ymin + size
-        
 
         PIL_traffic_sign = Image.fromarray(img_padded[ymin:ymax, xmin:xmax].astype('uint8'), 'RGB')
 
@@ -213,13 +194,13 @@ def compute_example_transform(filename, model, panoptic_per_image_id,
         traffic_sign = img_numpy_to_torch(img_padded[ymin:ymax, xmin:xmax])
         # TODO: Consider running classifier outside once in batch
         y_hat = model(traffic_sign_equalized.unsqueeze(0).cuda())[0].argmax().item()
-        
+
         predicted_class = CLASS_LIST[y_hat]
         predicted_shape = predicted_class.split('-')[0]
         # print(f'==> predicted_class: {predicted_class}')
 
         # DEBUG
-        # save_image(traffic_sign, 'test.png')
+        # save_image(traffic_sign_equalized, 'test.png')
         # import pdb
         # pdb.set_trace()
 
@@ -343,10 +324,10 @@ def compute_example_transform(filename, model, panoptic_per_image_id,
                 traffic_sign = (1 - warped_mask) * traffic_sign + warped_mask * warped_patch
 
                 # DEBUG
-                # save_image(traffic_sign, 'test.png')
-                # import pdb
-                # pdb.set_trace()
-
+                print(shape, predicted_class, group)
+                save_image(traffic_sign, 'test.png')
+                import pdb
+                pdb.set_trace()
 
             # DEBUG
             # if group in (1, 2):
@@ -402,26 +383,7 @@ def main(args):
     # model = nn.Sequential(normalize, base).to(device).eval()
 
     # Compute stats of best model
-    best_path = f'{args.output_dir}/checkpoint_best.pt'
-    model, _, _ = build_classifier(args)
-
-    print(f'=> loading best checkpoint {best_path}')
-    if args.gpu is None:
-        checkpoint = torch.load(best_path)
-    else:
-        # Map model to be loaded to specified single gpu.
-        loc = 'cuda:{}'.format(args.gpu)
-        checkpoint = torch.load(best_path, map_location=loc)
-
-    # original saved file with DataParallel
-    state_dict = checkpoint['state_dict']
-    # create new OrderedDict that does not contain `module.`
-    new_state_dict = OrderedDict()
-    for k, v in state_dict.items():
-        name = k[7:] # remove `module.`
-        new_state_dict[name] = v
-
-    model.load_state_dict(new_state_dict)
+    model = build_classifier(args)[0]
     model.eval()
 
     # Read in panoptic file
@@ -498,9 +460,9 @@ def main(args):
     demo_patch = torchvision.io.read_image('demo.png').float()[:3, :, :] / 255
     demo_patch = resize(demo_patch, (32, 32))
 
-    column_names = ['filename', 'object_id', 'shape', 'predicted_shape', 'predicted_class', 'group', 'batch_number', 'row', 'column']
+    column_names = ['filename', 'object_id', 'shape', 'predicted_shape',
+                    'predicted_class', 'group', 'batch_number', 'row', 'column']
     df_data = []
-
 
     num_plots = 100
     num_images_processed = 0
@@ -515,13 +477,13 @@ def main(args):
 
     COLUMN_NAMES = 'abcdefghijklmnopqrstuvwxyz'
     ROW_NAMES = list(range(num_plots))
-    
+
     print('[INFO] running detection algorithm')
     for filename in tqdm(filenames):
         transformed_images = compute_example_transform(filename, model, panoptic_per_image_id,
-                                                        img_path, label_path, demo_patch,
-                                                        min_area=min_area, pad=0.1, patch_size_in_mm=150,
-                                                        patch_size_in_pixel=32)
+                                                       img_path, label_path, demo_patch,
+                                                       min_area=min_area, pad=0., patch_size_in_mm=150,
+                                                       patch_size_in_pixel=32)
 
         for img in transformed_images:
             try:
@@ -530,34 +492,38 @@ def main(args):
                 continue
             num_images_processed += 1
             cropped_image = cropped_image.permute(1, 2, 0)
-            
+
             shape_index = SHAPE_LIST.index(shape)
             col = class_counts[shape_index] % 5
             row = class_counts[shape_index] // 5
             col_name = COLUMN_NAMES[col]
             row_name = ROW_NAMES[col]
-            title = 'id:({}, {}) | pred({}, {}) | gridcord({}{})'.format(filename[:6], obj_id, shape, predicted_class, row_name, col_name)
+            title = 'id:({}, {}) | pred({}, {}) | gridcord({}{})'.format(
+                filename[:6], obj_id, shape, predicted_class, row_name, col_name)
             fig_objects[shape_index][1][row][col].set_title(title)
             fig_objects[shape_index][1][row][col].imshow(cropped_image.numpy())
 
-            df_data.append([filename, obj_id, shape, predicted_shape, predicted_class, group, class_batch_numbers[shape_index], row_name, col_name])
-            
+            df_data.append([filename, obj_id, shape, predicted_shape, predicted_class,
+                           group, class_batch_numbers[shape_index], row_name, col_name])
+
             if not os.path.exists('mapillaryvistas_plots/{}/'.format(shape)):
                 os.makedirs('mapillaryvistas_plots/{}/'.format(shape), exist_ok=False)
             if class_counts[shape_index] == num_plots-1:
-                fig_objects[shape_index][0].savefig('mapillaryvistas_plots/{}/batch_{}.png'.format(shape, class_batch_numbers[shape_index]), bbox_inches='tight', pad_inches=0)
+                fig_objects[shape_index][0].savefig(
+                    'mapillaryvistas_plots/{}/batch_{}.png'.format(shape, class_batch_numbers[shape_index]),
+                    bbox_inches='tight', pad_inches=0)
                 class_counts[shape_index] = -1
                 class_batch_numbers[shape_index] += 1
- 
+
             class_counts[shape_index] += 1
-            
+
             print(class_counts)
             if num_images_processed % 100 == 0:
                 df = pd.DataFrame(df_data, columns=column_names)
                 df.to_csv('{}.csv'.format(DATASET), index=False)
 
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('Example Transform', parents=[get_args_parser()])
     args = parser.parse_args()
     main(args)
-
