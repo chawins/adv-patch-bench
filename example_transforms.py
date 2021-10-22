@@ -183,7 +183,7 @@ def compute_example_transform(filename, model, panoptic_per_image_id,
 
         # PIL_traffic_sign.save('test.png')
         transform_list = [
-            transforms.RandomEqualize(p=1.0),
+            # transforms.RandomEqualize(p=1.0),
             transforms.Resize((128, 128)),
             transforms.ToTensor()
         ]
@@ -324,10 +324,10 @@ def compute_example_transform(filename, model, panoptic_per_image_id,
                 traffic_sign = (1 - warped_mask) * traffic_sign + warped_mask * warped_patch
 
                 # DEBUG
-                # print(shape, predicted_class, group)
-                # save_image(traffic_sign, 'test.png')
-                # import pdb
-                # pdb.set_trace()
+                print(shape, predicted_class, group)
+                save_image(traffic_sign, 'test.png')
+                import pdb
+                pdb.set_trace()
 
             # DEBUG
             # if group in (1, 2):
