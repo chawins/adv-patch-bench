@@ -124,20 +124,42 @@ def get_box_vertices(vertices, predicted_shape):
     return box
 
 
+def get_side_angle(vertices):
+    side = vertices[0] - vertices[1]
+    return abs(np.arctan(side[1] / side[0]))
+    # side /= np.sqrt((side ** 2).sum())
+    # angle = abs(np.arccos(side[1]))
+    # return angle
+
+
 def get_shape_from_vertices(vertices):
     num_vertices = len(vertices)
     vertices = sort_polygon_vertices(vertices)
     height = vertices[:, 1].max() - vertices[:, 1].min()
     if num_vertices == 3:
-        if abs(vertices[0, 1] - vertices[1, 1]) / height < 0.5:
+        angle = get_side_angle(vertices.astype(np.float32))
+        # if abs(vertices[0, 1] - vertices[1, 1]) / height < 0.5:
+        #     shape = 'triangle_inverted'
+        # else:
+        #     shape = 'triangle'
+        if angle < np.pi / 6:
             shape = 'triangle_inverted'
         else:
             shape = 'triangle'
     elif num_vertices == 4:
-        if abs(vertices[0, 1] - vertices[2, 1]) / height < 0.5:
-            shape = 'diamond'
-        else:
+        angle = get_side_angle(vertices.astype(np.float32))
+        side1 = vertices[0] - vertices[1]
+        side2 = vertices[1] - vertices[2]
+        len1 = np.sqrt((side1 ** 2).sum())
+        len2 = np.sqrt((side2 ** 2).sum())
+        # if abs(vertices[0, 1] - vertices[2, 1]) / height < 0.5:
+        #     shape = 'diamond'
+        # else:
+        #     shape = 'rect'
+        if max(len1, len2) / min(len1, len2) > 1.5 or angle < np.pi / 8:
             shape = 'rect'
+        else:
+            shape = 'diamond'
     elif num_vertices == 5:
         shape = 'pentagon'
     elif num_vertices == 8:

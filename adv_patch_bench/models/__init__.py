@@ -30,6 +30,8 @@ def build_classifier(args):
     if args.distributed:
         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu])
+    else:
+        model = torch.nn.parallel.DataParallel(model, device_ids=[args.gpu])
 
     p_wd, p_non_wd = [], []
     for n, p in model.named_parameters():

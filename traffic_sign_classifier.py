@@ -268,6 +268,7 @@ def validate(val_loader, model, criterion, attack, args):
         images, targets = samples
 
         # DEBUG
+        print(targets)
         # save_image(images[:16].view(48, 3, 128, 128), 'test.png')
         # # save_image(images, 'test.png')
         # import pdb

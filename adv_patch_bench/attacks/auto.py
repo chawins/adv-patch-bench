@@ -1,4 +1,4 @@
-# from autoattack_modified import AutoAttack
+from autoattack_modified import AutoAttack
 # from autoattack import AutoAttack
 from .base import AttackModule
 
