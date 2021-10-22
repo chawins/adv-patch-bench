@@ -126,7 +126,7 @@ def get_box_vertices(vertices, predicted_shape):
 
 def get_side_angle(vertices):
     side = vertices[0] - vertices[1]
-    return abs(np.arctan2(side[1], side[0]))
+    return abs(np.arctan(side[1] / side[0]))
     # side /= np.sqrt((side ** 2).sum())
     # angle = abs(np.arccos(side[1]))
     # return angle

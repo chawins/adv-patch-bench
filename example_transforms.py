@@ -37,6 +37,8 @@ elif DATASET == 'bdd100k':
 CLASS_LIST = [
     'circle-750.0',
     'triangle-900.0',
+    'octagon-915.0',
+    'other-0.0-0.0'
     'triangle_inverted-1220.0',
     'diamond-600.0',
     'diamond-915.0',
@@ -45,8 +47,6 @@ CLASS_LIST = [
     'rect-762.0-915.0',
     'rect-915.0-1220.0',
     'pentagon-915.0',
-    'octagon-915.0',
-    'other-0.0-0.0'
 ]
 
 SHAPE_LIST = [
@@ -324,10 +324,10 @@ def compute_example_transform(filename, model, panoptic_per_image_id,
                 traffic_sign = (1 - warped_mask) * traffic_sign + warped_mask * warped_patch
 
                 # DEBUG
-                print(shape, predicted_class, group)
-                save_image(traffic_sign, 'test.png')
-                import pdb
-                pdb.set_trace()
+                # print(shape, predicted_class, group)
+                # save_image(traffic_sign, 'test.png')
+                # import pdb
+                # pdb.set_trace()
 
             # DEBUG
             # if group in (1, 2):
