@@ -38,7 +38,7 @@ CLASS_LIST = [
     'circle-750.0',
     'triangle-900.0',
     'octagon-915.0',
-    'other-0.0-0.0'
+    'other-0.0-0.0',
     'triangle_inverted-1220.0',
     'diamond-600.0',
     'diamond-915.0',
@@ -46,7 +46,7 @@ CLASS_LIST = [
     'rect-458.0-610.0',
     'rect-762.0-915.0',
     'rect-915.0-1220.0',
-    'pentagon-915.0',
+    'pentagon-915.0'
 ]
 
 SHAPE_LIST = [
@@ -183,7 +183,7 @@ def compute_example_transform(filename, model, panoptic_per_image_id,
         bool_mask_3d = np.expand_dims(bool_mask, axis=2)
 
         # element-wise multiplation
-        model_input = model_input * bool_mask_3d
+        # model_input = model_input * bool_mask_3d
         PIL_traffic_sign = Image.fromarray(model_input, 'RGB')
 
         transform_list = [
@@ -192,15 +192,14 @@ def compute_example_transform(filename, model, panoptic_per_image_id,
             transforms.ToTensor()
         ]
         transform = transforms.Compose(transform_list)
-        traffic_sign_equalized = transform(PIL_traffic_sign)
+        model_traffic_sign = transform(PIL_traffic_sign)
 
         traffic_sign = img_numpy_to_torch(img_padded[ymin:ymax, xmin:xmax])
         # TODO: Consider running classifier outside once in batch
 
-        # print(torch.min(traffic_sign_equalized))
-        # print(torch.max(traffic_sign_equalized))
-        # qqq
-        y_hat = model(traffic_sign_equalized.unsqueeze(0).cuda())[0].argmax().item()
+        # print(torch.min(model_traffic_sign))
+        # print(torch.max(model_traffic_sign))
+        y_hat = model(model_traffic_sign.unsqueeze(0).cuda())[0].argmax().item()
 
         predicted_class = CLASS_LIST[y_hat]
         predicted_shape = predicted_class.split('-')[0]
@@ -238,8 +237,8 @@ def compute_example_transform(filename, model, panoptic_per_image_id,
             group = 1 if predicted_shape == 'circle' else 2
         else:
             if ((shape != 'other' and predicted_shape == shape) or
-                    # (shape == 'rect' and predicted_shape != 'other')):
-                    (shape == 'rect' and not (predicted_shape == 'other' or predicted_shape == 'diamond'))):
+                    (shape == 'rect' and predicted_shape != 'other')):
+                    # (shape == 'rect' and not (predicted_shape == 'other' or predicted_shape == 'diamond'))):
                     # (shape == 'rect' and (predicted_shape == 'circle' or predicted_shape == 'triangle'))):
                 # Both classifier and verifier agree on some polygons or
                 # the sign symbol is on a square sign (assume that dimension is
@@ -333,10 +332,10 @@ def compute_example_transform(filename, model, panoptic_per_image_id,
                 traffic_sign = (1 - warped_mask) * traffic_sign + warped_mask * warped_patch
 
                 # DEBUG
-                print(shape, predicted_class, group)
-                save_image(traffic_sign, 'test.png')
-                import pdb
-                pdb.set_trace()
+                # print(shape, predicted_class, group)
+                # save_image(traffic_sign, 'test.png')
+                # import pdb
+                # pdb.set_trace()
 
             # DEBUG
             # if group in (1, 2):
@@ -495,7 +494,7 @@ def main(args):
     COLUMN_NAMES = 'abcdefghijklmnopqrstuvwxyz'
     ROW_NAMES = list(range(num_plots))
 
-    plot_folder = 'mapillaryvistas_plots_model_2_no_backgroud_strict_diamond'
+    plot_folder = 'mapillaryvistas_plots_model_3'
     
     print('[INFO] running detection algorithm')
     for filename in tqdm(filenames):
@@ -540,7 +539,7 @@ def main(args):
             
             if num_images_processed % 100 == 0:
                 df = pd.DataFrame(df_data, columns=column_names)
-                df.to_csv('{}_model_2_no_background_strict_diamond.csv'.format(DATASET), index=False)
+                df.to_csv('{}_model_3.csv'.format(DATASET), index=False)
 
             if num_images_processed % 1000 == 0:
                 for i in range(len(SHAPE_LIST)):
