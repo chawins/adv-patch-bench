@@ -38,7 +38,7 @@ CLASS_LIST = [
     'circle-750.0',
     'triangle-900.0',
     'octagon-915.0',
-    'other-0.0-0.0'
+    'other-0.0-0.0',
     'triangle_inverted-1220.0',
     'diamond-600.0',
     'diamond-915.0',
@@ -46,7 +46,7 @@ CLASS_LIST = [
     'rect-458.0-610.0',
     'rect-762.0-915.0',
     'rect-915.0-1220.0',
-    'pentagon-915.0',
+    'pentagon-915.0'
 ]
 
 SHAPE_LIST = [
@@ -178,22 +178,28 @@ def compute_example_transform(filename, model, panoptic_per_image_id,
         # xmin += pad_size - xpad - extra_obj_pad
         # ymin += pad_size - ypad - extra_obj_pad
         # xmax, ymax = xmin + size, ymin + size
+        
+        model_input = img_padded[ymin:ymax, xmin:xmax].astype('uint8')
+        bool_mask_3d = np.expand_dims(bool_mask, axis=2)
 
-        PIL_traffic_sign = Image.fromarray(img_padded[ymin:ymax, xmin:xmax].astype('uint8'), 'RGB')
+        # element-wise multiplation
+        # model_input = model_input * bool_mask_3d
+        PIL_traffic_sign = Image.fromarray(model_input, 'RGB')
 
-        # PIL_traffic_sign.save('test.png')
         transform_list = [
             # transforms.RandomEqualize(p=1.0),
             transforms.Resize((128, 128)),
             transforms.ToTensor()
         ]
         transform = transforms.Compose(transform_list)
-        traffic_sign_equalized = transform(PIL_traffic_sign)
-        # PIL_traffic_sign.save('test_.png')
+        model_traffic_sign = transform(PIL_traffic_sign)
 
         traffic_sign = img_numpy_to_torch(img_padded[ymin:ymax, xmin:xmax])
         # TODO: Consider running classifier outside once in batch
-        y_hat = model(traffic_sign_equalized.unsqueeze(0).cuda())[0].argmax().item()
+
+        # print(torch.min(model_traffic_sign))
+        # print(torch.max(model_traffic_sign))
+        y_hat = model(model_traffic_sign.unsqueeze(0).cuda())[0].argmax().item()
 
         predicted_class = CLASS_LIST[y_hat]
         predicted_shape = predicted_class.split('-')[0]
@@ -232,6 +238,8 @@ def compute_example_transform(filename, model, panoptic_per_image_id,
         else:
             if ((shape != 'other' and predicted_shape == shape) or
                     (shape == 'rect' and predicted_shape != 'other')):
+                    # (shape == 'rect' and not (predicted_shape == 'other' or predicted_shape == 'diamond'))):
+                    # (shape == 'rect' and (predicted_shape == 'circle' or predicted_shape == 'triangle'))):
                 # Both classifier and verifier agree on some polygons or
                 # the sign symbol is on a square sign (assume that dimension is
                 # equal to the actual symbol)
@@ -331,10 +339,10 @@ def compute_example_transform(filename, model, panoptic_per_image_id,
                 traffic_sign = (1 - alpha_mask) * traffic_sign + alpha_mask * warped_patch[:-1]
 
                 # DEBUG
-                print(shape, predicted_class, group)
-                save_image(traffic_sign, 'test.png')
-                import pdb
-                pdb.set_trace()
+                # print(shape, predicted_class, group)
+                # save_image(traffic_sign, 'test.png')
+                # import pdb
+                # pdb.set_trace()
 
             # DEBUG
             # if group in (1, 2):
@@ -473,18 +481,28 @@ def main(args):
 
     num_plots = 100
     num_images_processed = 0
+
     fig_objects = []
-    class_counts = [0] * len(SHAPE_LIST)
-    class_batch_numbers = [0] * len(SHAPE_LIST)
-    for class_ in SHAPE_LIST:
-        fig, ax = plt.subplots(int(num_plots/5), 5)
-        fig.set_figheight(int(num_plots/5)*5)
-        fig.set_figwidth(5 * 5)
-        fig_objects.append((fig, ax))
+    class_counts = np.zeros((len(SHAPE_LIST), 3), dtype=np.int8)
+    class_batch_numbers = np.zeros((len(SHAPE_LIST), 3), dtype=np.int8)
+
+    for i in range(len(SHAPE_LIST)):
+        fig_objects.append([])
+        for group in range(3):
+            fig, ax = plt.subplots(int(num_plots/5), 5)
+            fig.set_figheight(int(num_plots/5)*5)
+            fig.set_figwidth(5 * 5)
+            fig_objects[i].append((fig, ax))
+
+    # print(len(fig_objects))
+    # print(len(fig_objects[0]))
+    # print(len(fig_objects[1]))
 
     COLUMN_NAMES = 'abcdefghijklmnopqrstuvwxyz'
     ROW_NAMES = list(range(num_plots))
 
+    plot_folder = 'mapillaryvistas_plots_model_3'
+    
     print('[INFO] running detection algorithm')
     for filename in tqdm(filenames):
         transformed_images = compute_example_transform(filename, model, panoptic_per_image_id,
@@ -497,37 +515,47 @@ def main(args):
                 cropped_image, obj_id, shape, predicted_shape, predicted_class, group = img
             except ValueError:
                 continue
+
             num_images_processed += 1
             cropped_image = cropped_image.permute(1, 2, 0)
 
             shape_index = SHAPE_LIST.index(shape)
-            col = class_counts[shape_index] % 5
-            row = class_counts[shape_index] // 5
+            col = class_counts[shape_index, group-1] % 5
+            row = class_counts[shape_index, group-1] // 5
+
             col_name = COLUMN_NAMES[col]
-            row_name = ROW_NAMES[col]
-            title = 'id:({}, {}) | pred({}, {}) | gridcord({}{})'.format(
-                filename[:6], obj_id, shape, predicted_class, row_name, col_name)
-            fig_objects[shape_index][1][row][col].set_title(title)
-            fig_objects[shape_index][1][row][col].imshow(cropped_image.numpy())
+            row_name = ROW_NAMES[row]
+            if shape != 'triangle_inverted':
+                title = 'id:({}, {}) | pred({}, {}) | gridcord({}{})'.format(filename[:6], obj_id, shape, predicted_class, row_name, col_name)
+            else:
+                title = 'id:({}, {}) | pred({}, {}) | gridcord({}{})'.format(filename[:6], obj_id, 't_inv', predicted_class, row_name, col_name)
 
-            df_data.append([filename, obj_id, shape, predicted_shape, predicted_class,
-                           group, class_batch_numbers[shape_index], row_name, col_name])
+            fig_objects[shape_index][group-1][1][row][col].set_title(title)
+            fig_objects[shape_index][group-1][1][row][col].imshow(cropped_image.numpy())
 
-            if not os.path.exists('mapillaryvistas_plots/{}/'.format(shape)):
-                os.makedirs('mapillaryvistas_plots/{}/'.format(shape), exist_ok=False)
-            if class_counts[shape_index] == num_plots-1:
-                fig_objects[shape_index][0].savefig(
-                    'mapillaryvistas_plots/{}/batch_{}.png'.format(shape, class_batch_numbers[shape_index]),
-                    bbox_inches='tight', pad_inches=0)
-                class_counts[shape_index] = -1
-                class_batch_numbers[shape_index] += 1
-
-            class_counts[shape_index] += 1
-
-            print(class_counts)
+            df_data.append([filename, obj_id, shape, predicted_shape, predicted_class, group, class_batch_numbers[shape_index][group-1], row_name, col_name])
+            
+            if not os.path.exists('{}/{}/{}'.format(plot_folder, shape, group)):
+                os.makedirs('{}/{}/{}'.format(plot_folder, shape, group), exist_ok=False)
+            if class_counts[shape_index][group-1] == num_plots-1:
+                fig_objects[shape_index][group-1][0].savefig('{}/{}/{}/batch_{}.png'.format(plot_folder, shape, group, class_batch_numbers[shape_index][group-1]), bbox_inches='tight', pad_inches=0)
+                class_counts[shape_index][group-1] = -1
+                class_batch_numbers[shape_index][group-1] += 1
+ 
+            class_counts[shape_index][group-1] += 1
+            
             if num_images_processed % 100 == 0:
                 df = pd.DataFrame(df_data, columns=column_names)
-                df.to_csv('{}.csv'.format(DATASET), index=False)
+                df.to_csv('{}_model_3.csv'.format(DATASET), index=False)
+
+            if num_images_processed % 1000 == 0:
+                for i in range(len(SHAPE_LIST)):
+                    for group in range(1, 4):
+                        if class_counts[i][group-1] < 100:
+                            if not os.path.exists('{}/{}/{}'.format(plot_folder, SHAPE_LIST[i], group)):
+                                os.makedirs('{}/{}/{}'.format(plot_folder, SHAPE_LIST[i], group), exist_ok=False)
+                            fig_objects[i][group-1][0].savefig('{}/{}/{}/batch_{}.png'.format(plot_folder, SHAPE_LIST[i], group, class_batch_numbers[i][group-1]), bbox_inches='tight', pad_inches=0)
+
 
 
 if __name__ == '__main__':
