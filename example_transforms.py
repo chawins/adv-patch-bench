@@ -272,14 +272,20 @@ def compute_example_transform(filename, model, panoptic_per_image_id,
                 pixel_mm_ratio = patch_size_in_pixel / patch_size_in_mm
                 sign_size_in_pixel = round(sign_size_in_mm * pixel_mm_ratio)
 
-                sign_canonical = torch.zeros((3, sign_size_in_pixel, sign_size_in_pixel))
+                sign_canonical = torch.zeros((4, sign_size_in_pixel, sign_size_in_pixel))
                 sign_mask, src = gen_sign_mask(shape, sign_size_in_pixel, ratio=hw_ratio)
                 sign_mask = torch.from_numpy(sign_mask).float()[None, :, :]
+
+                old_patch = torch.masked_select(traffic_sign, torch.from_numpy(bool_mask).bool())
+                alpha, beta = relight_range(old_patch.numpy().reshape(-1, 1))
+                new_demo_patch = demo_patch.clone()
+                new_demo_patch.clamp_(0, 1).mul_(alpha).add_(beta).clamp_(0, 1)
 
                 # TODO: run attack, optimize patch location, etc.
                 begin = (sign_size_in_pixel - patch_size_in_pixel) // 2
                 end = begin + patch_size_in_pixel
-                sign_canonical[:, begin:end, begin:end] = demo_patch
+                sign_canonical[:-1, begin:end, begin:end] = new_demo_patch
+                sign_canonical[-1, begin:end, begin:end] = 1
                 # Crop patch that is not on the sign
                 sign_canonical *= sign_mask
                 patch_mask = torch.zeros((1, sign_size_in_pixel, sign_size_in_pixel))
@@ -296,14 +302,17 @@ def compute_example_transform(filename, model, panoptic_per_image_id,
                     tgt = torch.from_numpy(tgt).unsqueeze(0)
                     M = get_perspective_transform(src, tgt)
                     transform_func = warp_perspective
+                # sign_canonical = torch.cat([sign_canonical, torch.ones_like(sign_canonical[:1])], dim=0)
+                # alpha_pad = 5
+                # sign_canonical = torch.nn.functional.pad(sign_canonical, (alpha_pad, ) * 4)
                 warped_patch = transform_func(sign_canonical.unsqueeze(0),
                                               M, (size, size),
                                               mode='bicubic',
-                                              padding_mode='zeros')[0]
-                warped_mask = transform_func(patch_mask.unsqueeze(0),
-                                             M, (size, size),
-                                             mode='nearest',
-                                             padding_mode='zeros')[0]
+                                              padding_mode='zeros')[0].clamp(0, 1)
+                # warped_mask = transform_func(patch_mask.unsqueeze(0),
+                #                              M, (size, size),
+                #                              mode='nearest',
+                #                              padding_mode='zeros')[0]
                 # print(np.histogram(warped_patch.numpy()))
                 # print(warped_patch.min(), warped_patch.max())
                 # # Assume that 80% of pixels have one 255 (e.g., red, blue) and
@@ -317,11 +326,9 @@ def compute_example_transform(filename, model, panoptic_per_image_id,
                 # mu_0, sigma_0 = old_patch_q.mean(), old_patch_q.std()
                 # alpha = sigma_1 / sigma_0
                 # beta = mu_1 - mu_0 * alpha
-                old_patch = torch.masked_select(traffic_sign, torch.from_numpy(bool_mask).bool())
-                alpha, beta = relight_range(old_patch.numpy().reshape(-1, 1))
-                warped_patch.clamp_(0, 1).mul_(alpha).add_(beta).clamp_(0, 1)
-
-                traffic_sign = (1 - warped_mask) * traffic_sign + warped_mask * warped_patch
+                # traffic_sign = (1 - warped_mask) * traffic_sign + warped_mask * traffic_sign
+                alpha_mask = warped_patch[-1].unsqueeze(0)
+                traffic_sign = (1 - alpha_mask) * traffic_sign + alpha_mask * warped_patch[:-1]
 
                 # DEBUG
                 print(shape, predicted_class, group)
