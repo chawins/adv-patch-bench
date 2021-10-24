@@ -1,3 +1,4 @@
+from .image_only_dataset import ImageOnlyFolder
 from .mtsd import MTSD
 
 DATASET_DICT = {

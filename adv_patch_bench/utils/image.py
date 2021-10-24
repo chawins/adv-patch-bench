@@ -21,15 +21,15 @@ def get_image_files(path):
     return image_keys
 
 
-def pad_image(img, ratio=0.1, pad_mode='constant', return_pad_size=False):
+def pad_image(img, pad_size=0.1, pad_mode='constant', return_pad_size=False):
     if isinstance(img, np.ndarray):
         height, width = img.shape[0], img.shape[1]
-        pad_size = int(max(height, width) * ratio)
+        pad_size = int(max(height, width) * pad_size) if isinstance(pad_size, float) else pad_size
         pad_size_tuple = ((pad_size, pad_size), (pad_size, pad_size)) + ((0, 0), ) * (img.ndim - 2)
         img_padded = np.pad(img, pad_size_tuple, mode=pad_mode)
     else:
         height, width = img.shape[img.ndim - 2], img.shape[img.ndim - 1]
-        pad_size = int(max(height, width) * ratio)
+        pad_size = int(max(height, width) * pad_size) if isinstance(pad_size, float) else pad_size
         img_padded = TF.pad(img, pad_size, padding_mode=pad_mode)
     if return_pad_size:
         return img_padded, pad_size
