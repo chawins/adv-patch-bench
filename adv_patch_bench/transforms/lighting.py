@@ -73,9 +73,6 @@ def find_min_max(img: np.ndarray, method: str = 'percentile', q: float = 5.):
         max_ = centers.max()
         min_ = centers.min()
 
-    print(min_, max_)
-    print(np.histogram(img))
-
     return min_, max_
 
 

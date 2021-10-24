@@ -387,6 +387,9 @@ def main(args):
         for i, images in enumerate(dataloader):
             y_hat[i * bs:(i + 1) * bs] = model(images.cuda()).argmax(-1).cpu()
 
+    print('==> Predicted label distribution')
+    print(torch.bincount(y_hat) / len(y_hat))
+
     print('[INFO] running detection algorithm')
     for img_file, mask_file, y in tqdm(zip(img_files, mask_files, y_hat)):
         filename = img_file.split('/')[-1]
