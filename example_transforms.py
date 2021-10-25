@@ -61,17 +61,10 @@ SHAPE_LIST = [
     'other'
 ]
 
-# CLASS_LIST = ['octagon-915.0-915.0',
-#               'diamond-915.0-915.0',
-#               'pentagon-915.0-915.0',
-#               'rect-915.0-1220.0',
-#               'rect-762.0-915.0',
-#               'triangle-900.0',
-#               'circle-750.0',
-#               'triangle_inverted-1220.0-1220.0',
-#               'rect-458.0-610.0',
-#               'other-0.0-0.0']
-
+PLOT_FOLDER = 'mapillaryvistas_plots_model_3_updated_optimized'
+NUM_IMGS_PER_PLOT = 100
+COLUMN_NAMES = 'abcdefghijklmnopqrstuvwxyz'
+ROW_NAMES = list(range(NUM_IMGS_PER_PLOT))
 
 def get_args_parser():
     parser = argparse.ArgumentParser(description='Part classification', add_help=False)
@@ -258,6 +251,62 @@ def compute_example_transform(traffic_sign, mask, predicted_class, demo_patch,
     return traffic_sign, shape, group
 
 
+
+
+
+def plot_subgroup(adversarial_images, metadata, group, shape, plot_folder=PLOT_FOLDER, num_imgs_per_plot=NUM_IMGS_PER_PLOT):
+    if len(adversarial_images) == 0:
+        return
+    if not os.path.exists('{}/{}/{}'.format(plot_folder, shape, group)):
+        os.makedirs('{}/{}/{}'.format(plot_folder, shape, group), exist_ok=False)
+    
+    fig = None
+    num_images_plotted = 0
+    batch_number = 0
+    df_data = []
+
+    for i, adv_img in enumerate(adversarial_images):
+        filename, obj_id, predicted_class = metadata[i]
+        predicted_shape = predicted_class.split('-')[0]
+
+        if fig is None:
+            fig, ax = plt.subplots(int(num_imgs_per_plot/5), 5)
+            fig.set_figheight(int(num_imgs_per_plot/5)*5)
+            fig.set_figwidth(5 * 5)
+
+        col = num_images_plotted % 5
+        row = num_images_plotted // 5
+        col_name = COLUMN_NAMES[col]
+        row_name = ROW_NAMES[row]
+
+        if shape == 'triangle_inverted':
+            plot_shape_name = 't_inv'
+        elif shape == 'diamond':
+            plot_shape_name = 'dmnd'
+        else:
+            plot_shape_name = shape
+        
+        title = 'id({}, {}) | ({}, {}) | cord({}{})'.format(filename[:6], obj_id, plot_shape_name, predicted_class, row_name, col_name)
+
+        ax[row][col].set_title(title, fontsize=10)
+        ax[row][col].imshow(adv_img)
+
+        if num_images_plotted == num_imgs_per_plot-1:
+            fig.savefig('{}/{}/{}/batch_{}.png'.format(plot_folder, shape, group, batch_number), bbox_inches='tight', pad_inches=0)
+            batch_number += 1
+            num_images_plotted = -1
+            plt.close(fig)
+            fig = None
+        
+        num_images_plotted += 1
+
+        df_data.append([filename, obj_id, shape, predicted_shape, predicted_class, group, batch_number, row_name, col_name])
+    
+    if fig:
+        fig.savefig('{}/{}/{}/batch_{}.png'.format(plot_folder, shape, group, batch_number), bbox_inches='tight', pad_inches=0)
+    return df_data
+
+
 def main(args):
 
     # Arguments
@@ -345,27 +394,7 @@ def main(args):
 
     column_names = ['filename', 'object_id', 'shape', 'predicted_shape',
                     'predicted_class', 'group', 'batch_number', 'row', 'column']
-    df_data = []
-
-    num_plots = 100
-    num_images_processed = 0
-
-    fig_objects = []
-    class_counts = np.zeros((len(SHAPE_LIST), 3), dtype=np.int8)
-    class_batch_numbers = np.zeros((len(SHAPE_LIST), 3), dtype=np.int8)
-
-    for i in range(len(SHAPE_LIST)):
-        fig_objects.append([])
-        for group in range(3):
-            fig, ax = plt.subplots(int(num_plots/5), 5)
-            fig.set_figheight(int(num_plots/5)*5)
-            fig.set_figwidth(5 * 5)
-            fig_objects[i].append((fig, ax))
-
-    COLUMN_NAMES = 'abcdefghijklmnopqrstuvwxyz'
-    ROW_NAMES = list(range(num_plots))
-
-    plot_folder = 'mapillaryvistas_plots_model_3_updated'
+    csv_filename = '{}_model_3_updated_optimized.csv'.format(DATASET)
 
     print('[INFO] constructing a dataloader for cropped traffic signs...')
     bs = args.batch_size
@@ -389,8 +418,11 @@ def main(args):
     print(CLASS_LIST)
     print(torch.bincount(y_hat) / len(y_hat))
     print(len(dataset) * torch.bincount(y_hat) / len(y_hat))
+    print()
 
     print('[INFO] running detection algorithm')
+
+    subgroup_to_images = {}
     for img_file, mask_file, y in tqdm(zip(img_files, mask_files, y_hat)):
         filename = img_file.split('/')[-1]
         assert filename == mask_file.split('/')[-1]
@@ -402,55 +434,28 @@ def main(args):
         predicted_class = CLASS_LIST[y]
         predicted_shape = predicted_class.split('-')[0]
         obj_id = filename.split('_')[-1].split('.')[0]
+
         adv_image, shape, group = output
 
-        num_images_processed += 1
-        adv_image = adv_image.permute(1, 2, 0)
+        if (shape, group) not in subgroup_to_images:
+            subgroup_to_images[(shape, group)] = []
 
-        shape_index = SHAPE_LIST.index(shape)
-        col = class_counts[shape_index, group-1] % 5
-        row = class_counts[shape_index, group-1] // 5
+        adv_image = adv_image.permute(1, 2, 0).numpy()
+        subgroup_to_images[(shape, group)].append([adv_image, filename, obj_id, predicted_class])    
 
-        col_name = COLUMN_NAMES[col]
-        row_name = ROW_NAMES[row]
-        if shape != 'triangle_inverted':
-            title = 'id:({}, {}) | pred({}, {}) | gridcord({}{})'.format(
-                filename[:6], obj_id, shape, predicted_class, row_name, col_name)
-        else:
-            title = 'id:({}, {}) | pred({}, {}) | gridcord({}{})'.format(
-                filename[:6], obj_id, 't_inv', predicted_class, row_name, col_name)
-
-        fig_objects[shape_index][group-1][1][row][col].set_title(title)
-        fig_objects[shape_index][group-1][1][row][col].imshow(adv_image.numpy())
-
-        df_data.append([filename, obj_id, shape, predicted_shape, predicted_class, group,
-                        class_batch_numbers[shape_index][group-1], row_name, col_name])
-
-        if not os.path.exists('{}/{}/{}'.format(plot_folder, shape, group)):
-            os.makedirs('{}/{}/{}'.format(plot_folder, shape, group), exist_ok=False)
-        if class_counts[shape_index][group-1] == num_plots-1:
-            fig_objects[shape_index][group-1][0].savefig('{}/{}/{}/batch_{}.png'.format(
-                plot_folder, shape, group, class_batch_numbers[shape_index][group-1]), bbox_inches='tight', pad_inches=0)
-            class_counts[shape_index][group-1] = -1
-            class_batch_numbers[shape_index][group-1] += 1
-
-        class_counts[shape_index][group-1] += 1
-
-        if num_images_processed % 100 == 0:
-            df = pd.DataFrame(df_data, columns=column_names)
-            df.to_csv('{}_model_3_updated.csv'.format(DATASET), index=False)
-
-        if num_images_processed % 1000 == 0:
-            for i in range(len(SHAPE_LIST)):
-                for group in range(1, 4):
-                    if class_counts[i][group-1] < 100:
-                        if not os.path.exists('{}/{}/{}'.format(plot_folder, SHAPE_LIST[i], group)):
-                            os.makedirs('{}/{}/{}'.format(plot_folder, SHAPE_LIST[i], group), exist_ok=False)
-                        fig_objects[i][group - 1][0].savefig('{}/{}/{}/batch_{}.png'.format(
-                            plot_folder, SHAPE_LIST[i],
-                            group, class_batch_numbers[i][group - 1]),
-                            bbox_inches='tight', pad_inches=0)
-
+    df = pd.DataFrame(columns=column_names)
+    for subgroup in tqdm(subgroup_to_images):
+        print(subgroup)
+        shape, group = subgroup
+        data = subgroup_to_images[(shape, group)]
+        data = np.array(data, dtype=object)
+        adversarial_images = data[:, 0]
+        metadata = data[:, 1:]
+        df_data_to_add = plot_subgroup(adversarial_images, metadata, group, shape, plot_folder=PLOT_FOLDER, num_imgs_per_plot=NUM_IMGS_PER_PLOT)
+        df_to_add = pd.DataFrame(df_data_to_add, columns=column_names)
+        # df = pd.DataFrame(df_data, columns=column_names)
+        df = pd.concat([df, df_to_add], axis=0)
+        df.to_csv(csv_filename, index=False)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('Example Transform', parents=[get_args_parser()])
