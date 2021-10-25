@@ -362,14 +362,10 @@ def main(args):
             fig.set_figwidth(5 * 5)
             fig_objects[i].append((fig, ax))
 
-    # print(len(fig_objects))
-    # print(len(fig_objects[0]))
-    # print(len(fig_objects[1]))
-
     COLUMN_NAMES = 'abcdefghijklmnopqrstuvwxyz'
     ROW_NAMES = list(range(num_plots))
 
-    plot_folder = 'mapillaryvistas_plots_model_3'
+    plot_folder = 'mapillaryvistas_plots_model_3_updated'
 
     print('[INFO] constructing a dataloader for cropped traffic signs...')
     bs = args.batch_size
@@ -383,12 +379,16 @@ def main(args):
         dataset, batch_size=bs, shuffle=False, num_workers=8, pin_memory=True)
     y_hat = torch.zeros(len(dataset), dtype=torch.long)
     print('[INFO] classifying traffic signs...')
+
+    # model.eval()
     with torch.no_grad():
         for i, images in enumerate(dataloader):
             y_hat[i * bs:(i + 1) * bs] = model(images.cuda()).argmax(-1).cpu()
 
     print('==> Predicted label distribution')
+    print(CLASS_LIST)
     print(torch.bincount(y_hat) / len(y_hat))
+    print(len(dataset) * torch.bincount(y_hat) / len(y_hat))
 
     print('[INFO] running detection algorithm')
     for img_file, mask_file, y in tqdm(zip(img_files, mask_files, y_hat)):
@@ -404,11 +404,8 @@ def main(args):
         obj_id = filename.split('_')[-1].split('.')[0]
         adv_image, shape, group = output
 
-        # FIXME
-        continue
-
         num_images_processed += 1
-        cropped_image = cropped_image.permute(1, 2, 0)
+        adv_image = adv_image.permute(1, 2, 0)
 
         shape_index = SHAPE_LIST.index(shape)
         col = class_counts[shape_index, group-1] % 5
@@ -424,7 +421,7 @@ def main(args):
                 filename[:6], obj_id, 't_inv', predicted_class, row_name, col_name)
 
         fig_objects[shape_index][group-1][1][row][col].set_title(title)
-        fig_objects[shape_index][group-1][1][row][col].imshow(cropped_image.numpy())
+        fig_objects[shape_index][group-1][1][row][col].imshow(adv_image.numpy())
 
         df_data.append([filename, obj_id, shape, predicted_shape, predicted_class, group,
                         class_batch_numbers[shape_index][group-1], row_name, col_name])
@@ -441,7 +438,7 @@ def main(args):
 
         if num_images_processed % 100 == 0:
             df = pd.DataFrame(df_data, columns=column_names)
-            df.to_csv('{}_model_3.csv'.format(DATASET), index=False)
+            df.to_csv('{}_model_3_updated.csv'.format(DATASET), index=False)
 
         if num_images_processed % 1000 == 0:
             for i in range(len(SHAPE_LIST)):
