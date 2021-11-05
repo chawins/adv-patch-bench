@@ -331,8 +331,15 @@ def main(args):
     model = build_classifier(args)[0]
     model.eval()
 
+    if DATASET == 'mapillaryvistas':
+        img_path = join(data_dir, 'traffic_signs')
+        img_files = sorted([join(img_path, f) for f in listdir(img_path) if
+                            isfile(join(img_path, f)) and f.endswith('.png')])
+        mask_path = join(data_dir, 'masks')
+        mask_files = sorted([join(mask_path, f) for f in listdir(mask_path) if
+                             isfile(join(mask_path, f)) and f.endswith('.png')])
     # TODO: Read in panoptic file
-    if DATASET == 'bdd100k':
+    elif DATASET == 'bdd100k':
         panoptic_json_path = '/data/shared/bdd100k/labels/pan_seg/polygons/pan_seg_train.json'
 
         with open(panoptic_json_path) as panoptic_file:
@@ -381,14 +388,7 @@ def main(args):
 
         np.random.seed(1111)
         np.random.shuffle(filenames)
-    else:
-        img_path = join(data_dir, 'traffic_signs')
-        img_files = sorted([join(img_path, f) for f in listdir(img_path) if
-                            isfile(join(img_path, f)) and f.endswith('.png')])
-        mask_path = join(data_dir, 'masks')
-        mask_files = sorted([join(mask_path, f) for f in listdir(mask_path) if
-                             isfile(join(mask_path, f)) and f.endswith('.png')])
-
+        
     demo_patch = torchvision.io.read_image('demo.png').float()[:3, :, :] / 255
     demo_patch = resize(demo_patch, (32, 32))
 
@@ -453,7 +453,6 @@ def main(args):
         metadata = data[:, 1:]
         df_data_to_add = plot_subgroup(adversarial_images, metadata, group, shape, plot_folder=PLOT_FOLDER, num_imgs_per_plot=NUM_IMGS_PER_PLOT)
         df_to_add = pd.DataFrame(df_data_to_add, columns=column_names)
-        # df = pd.DataFrame(df_data, columns=column_names)
         df = pd.concat([df, df_to_add], axis=0)
         df.to_csv(csv_filename, index=False)
 
