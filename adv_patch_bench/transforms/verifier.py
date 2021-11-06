@@ -119,8 +119,11 @@ def get_box_vertices(vertices, predicted_shape):
     if predicted_shape == 'circle':
         vertices = get_box_from_ellipse(vertices)
     vertices = sort_polygon_vertices(vertices)
-    box = vertices[SHAPE_TO_VERTICES[predicted_shape]]
-    assert box.shape == (4, 2) or box.shape == (3, 2)
+    if predicted_shape in SHAPE_TO_VERTICES:
+        box = vertices[SHAPE_TO_VERTICES[predicted_shape]]
+        assert box.shape == (4, 2) or box.shape == (3, 2)
+    else:
+        box = vertices
     return box
 
 

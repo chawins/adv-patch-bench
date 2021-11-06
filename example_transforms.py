@@ -18,13 +18,13 @@ from PIL import Image
 from torchvision.utils import save_image
 from tqdm.auto import tqdm
 
+from adv_patch_bench.dataloaders import ImageOnlyFolder
 from adv_patch_bench.models import build_classifier
 from adv_patch_bench.transforms import (gen_sign_mask, get_box_vertices,
                                         get_corners, get_shape_from_vertices,
                                         relight_range)
-from adv_patch_bench.utils import (draw_from_contours, get_box,
-                                   img_numpy_to_torch, pad_image)
-from adv_patch_bench.dataloaders import ImageOnlyFolder
+from adv_patch_bench.utils import (draw_from_contours, img_numpy_to_torch,
+                                   pad_image)
 
 DATASET = 'mapillaryvistas'
 # DATASET = 'bdd100k'
@@ -65,6 +65,7 @@ PLOT_FOLDER = 'mapillaryvistas_plots_model_3_updated_optimized'
 NUM_IMGS_PER_PLOT = 100
 COLUMN_NAMES = 'abcdefghijklmnopqrstuvwxyz'
 ROW_NAMES = list(range(NUM_IMGS_PER_PLOT))
+
 
 def get_args_parser():
     parser = argparse.ArgumentParser(description='Part classification', add_help=False)
@@ -122,9 +123,9 @@ def get_sign_canonical(shape, predicted_class, patch_size_in_pixel, patch_size_i
     return sign_canonical, sign_mask, src
 
 
-def draw_vertices(traffic_sign, points):
+def draw_vertices(traffic_sign, points, color=[0, 255, 0]):
     size = traffic_sign.size(-1)
-    vert = draw_from_contours(np.zeros((size, size, 3)), points, color=[0, 255, 0])
+    vert = draw_from_contours(np.zeros((size, size, 3)), points, color=color)
     vert = img_numpy_to_torch(cv.dilate(vert, None))
     vert_mask = (vert.sum(0, keepdim=True) > 0).float()
     return (1 - vert_mask) * traffic_sign + vert_mask * vert
@@ -147,6 +148,10 @@ def compute_example_transform(traffic_sign, mask, predicted_class, demo_patch,
     ellipse = cv.fitEllipse(hull_draw_points)
     ellipse_mask = cv.ellipse(np.zeros_like(bool_mask, dtype=np.float32), ellipse, (1,), thickness=-1)
     ellipse_error = np.abs(ellipse_mask - bool_mask.astype(np.float32)).sum() / bool_mask.sum()
+
+    shape = get_shape_from_vertices(vertices)
+    tgt = get_box_vertices(vertices, shape).astype(np.int64)
+    traffic_sign = draw_vertices(traffic_sign, tgt, color=[0, 0, 255])
 
     # Determine polygon shape from vertices
     shape = get_shape_from_vertices(vertices)
@@ -251,15 +256,13 @@ def compute_example_transform(traffic_sign, mask, predicted_class, demo_patch,
     return traffic_sign, shape, group
 
 
-
-
-
-def plot_subgroup(adversarial_images, metadata, group, shape, plot_folder=PLOT_FOLDER, num_imgs_per_plot=NUM_IMGS_PER_PLOT):
+def plot_subgroup(adversarial_images, metadata, group, shape, plot_folder=PLOT_FOLDER,
+                  num_imgs_per_plot=NUM_IMGS_PER_PLOT):
     if len(adversarial_images) == 0:
         return
     if not os.path.exists('{}/{}/{}'.format(plot_folder, shape, group)):
         os.makedirs('{}/{}/{}'.format(plot_folder, shape, group), exist_ok=False)
-    
+
     fig = None
     num_images_plotted = 0
     batch_number = 0
@@ -285,25 +288,29 @@ def plot_subgroup(adversarial_images, metadata, group, shape, plot_folder=PLOT_F
             plot_shape_name = 'dmnd'
         else:
             plot_shape_name = shape
-        
-        title = 'id({}, {}) | ({}, {}) | cord({}{})'.format(filename[:6], obj_id, plot_shape_name, predicted_class, row_name, col_name)
+
+        title = 'id({}, {}) | ({}, {}) | cord({}{})'.format(
+            filename[:6], obj_id, plot_shape_name, predicted_class, row_name, col_name)
 
         ax[row][col].set_title(title, fontsize=10)
         ax[row][col].imshow(adv_img)
 
         if num_images_plotted == num_imgs_per_plot-1:
-            fig.savefig('{}/{}/{}/batch_{}.png'.format(plot_folder, shape, group, batch_number), bbox_inches='tight', pad_inches=0)
+            fig.savefig('{}/{}/{}/batch_{}.png'.format(plot_folder, shape,
+                        group, batch_number), bbox_inches='tight', pad_inches=0)
             batch_number += 1
             num_images_plotted = -1
             plt.close(fig)
             fig = None
-        
+
         num_images_plotted += 1
 
-        df_data.append([filename, obj_id, shape, predicted_shape, predicted_class, group, batch_number, row_name, col_name])
-    
+        df_data.append([filename, obj_id, shape, predicted_shape,
+                       predicted_class, group, batch_number, row_name, col_name])
+
     if fig:
-        fig.savefig('{}/{}/{}/batch_{}.png'.format(plot_folder, shape, group, batch_number), bbox_inches='tight', pad_inches=0)
+        fig.savefig('{}/{}/{}/batch_{}.png'.format(plot_folder, shape,
+                    group, batch_number), bbox_inches='tight', pad_inches=0)
     return df_data
 
 
@@ -388,7 +395,7 @@ def main(args):
 
         np.random.seed(1111)
         np.random.shuffle(filenames)
-        
+
     demo_patch = torchvision.io.read_image('demo.png').float()[:3, :, :] / 255
     demo_patch = resize(demo_patch, (32, 32))
 
@@ -441,7 +448,7 @@ def main(args):
             subgroup_to_images[(shape, group)] = []
 
         adv_image = adv_image.permute(1, 2, 0).numpy()
-        subgroup_to_images[(shape, group)].append([adv_image, filename, obj_id, predicted_class])    
+        subgroup_to_images[(shape, group)].append([adv_image, filename, obj_id, predicted_class])
 
     df = pd.DataFrame(columns=column_names)
     for subgroup in tqdm(subgroup_to_images):
@@ -451,10 +458,12 @@ def main(args):
         data = np.array(data, dtype=object)
         adversarial_images = data[:, 0]
         metadata = data[:, 1:]
-        df_data_to_add = plot_subgroup(adversarial_images, metadata, group, shape, plot_folder=PLOT_FOLDER, num_imgs_per_plot=NUM_IMGS_PER_PLOT)
+        df_data_to_add = plot_subgroup(adversarial_images, metadata, group, shape,
+                                       plot_folder=PLOT_FOLDER, num_imgs_per_plot=NUM_IMGS_PER_PLOT)
         df_to_add = pd.DataFrame(df_data_to_add, columns=column_names)
         df = pd.concat([df, df_to_add], axis=0)
         df.to_csv(csv_filename, index=False)
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('Example Transform', parents=[get_args_parser()])
