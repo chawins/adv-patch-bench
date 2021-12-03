@@ -20,3 +20,15 @@ export PYTHONPATH="${PYTHONPATH}:/home/chawin/adv-patch-bench/datasets/panoptic_
 - We use `leftImg8bit_trainvaltest.zip` for the raw images and `gtFinePanopticParts_trainval.zip` for segmentation labels.
 - Use API at this [link](https://panoptic-parts.readthedocs.io/en/stable/api_and_code.html#visualization) to visualize the labels.
 
+### MTSD
+
+Get data ready to train YOLOv5.
+
+```bash
+python prep_mtsd_for_yolo.py
+cd data/mtsd
+mkdir images && cd images
+ln -s ../train/ train
+ln -s ../test/ test
+ln -s ../val/ val
+```
