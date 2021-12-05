@@ -20,3 +20,6 @@ export PYTHONPATH="${PYTHONPATH}:/home/chawin/adv-patch-bench/datasets/panoptic_
 - We use `leftImg8bit_trainvaltest.zip` for the raw images and `gtFinePanopticParts_trainval.zip` for segmentation labels.
 - Use API at this [link](https://panoptic-parts.readthedocs.io/en/stable/api_and_code.html#visualization) to visualize the labels.
 
+### Mapillary
+
+- MTSD: [link](https://www.mapillary.com/dataset/trafficsign)
