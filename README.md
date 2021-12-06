@@ -23,3 +23,17 @@ export PYTHONPATH="${PYTHONPATH}:/home/chawin/adv-patch-bench/datasets/panoptic_
 ### Mapillary
 
 - MTSD: [link](https://www.mapillary.com/dataset/trafficsign)
+
+Get data ready to train YOLOv5.
+
+```bash
+python prep_mtsd_for_yolo.py
+cd data/mtsd
+mkdir images && cd images
+ln -s ../train/ train
+ln -s ../test/ test
+ln -s ../val/ val
+
+# ... go to yolov5 dir
+sh run.sh
+```
