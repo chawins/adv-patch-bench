@@ -9,12 +9,14 @@ Usage:
 import argparse
 import json
 import os
+import pickle
 import sys
 from pathlib import Path
 from threading import Thread
 
 import numpy as np
 import torch
+import torch.nn as nn
 import torchvision
 import torchvision.transforms.functional as T
 from PIL import Image
@@ -164,7 +166,7 @@ def run(data,
                                        workers=workers, prefix=colorstr(f'{task}: '))[0]
 
     # EDIT: Randomly select backgrounds and resize
-    bg_size = (1280, 960)
+    bg_size = (960, 1280)
     num_bg = 16
     bg_dir = '/data/shared/mtsd_v2_fully_annotated/test'
     all_bgs = os.listdir(os.path.expanduser(bg_dir))
@@ -177,35 +179,42 @@ def run(data,
     torchvision.utils.save_image(backgrounds, 'backgrounds.png')
 
     # EDIT: set up attack
-    obj_size = int(bg_size[1] * 0.1) * 2        # (256, 256)
+    obj_size = int(min(bg_size) * 0.1) * 2        # (256, 256)
     obj_size = (obj_size, obj_size)
     asset_dir = 'attack_assets/'
+    # TODO: Allow data parallel?
     attack = RP2AttackModule(None, model, None, None, None)
     obj = np.array(Image.open(os.path.join(asset_dir, 'stop_sign.png')).convert('RGBA')) / 255
-    obj_mask = torch.from_numpy(obj[:, :, 0] == 1)
-    obj = torch.from_numpy(obj[:, :, :-1]).permute(2, 0, 1)
+    obj_mask = torch.from_numpy(obj[:, :, 0] == 1).float().unsqueeze(0)
+    obj = torch.from_numpy(obj[:, :, :-1]).float().permute(2, 0, 1)
     # Resize and put object in the middle of zero background
+    pad_size = [(bg_size[1] - obj_size[1]) // 2, (bg_size[0] - obj_size[0]) // 2]  # left/right, top/bottom
     obj = T.resize(obj, obj_size, antialias=True)
-    obj = T.pad(obj, [(bg_size[0] - obj_size[0]) // 2, (bg_size[1] - obj_size[1]) // 2])
+    obj = T.pad(obj, pad_size)
     obj_mask = T.resize(obj_mask, obj_size, interpolation=T.InterpolationMode.NEAREST)
-    obj_mask = T.pad(obj_mask, [(bg_size[0] - obj_size[0]) // 2, (bg_size[1] - obj_size[1]) // 2])
+    obj_mask = T.pad(obj_mask, pad_size)
     # Define patch location and size
     patch_mask = torch.zeros_like(obj_mask)
     # Example: 5x5 inches out of 36x36 inches
-    mid_height = bg_size[0] // 2
+    mid_height = bg_size[0] // 2 + 60
     mid_width = bg_size[1] // 2
-    h = int(5 / 36 / 2 * obj_size[0])
-    w = int(5 / 36 / 2 * obj_size[1])
-    patch_mask[mid_height - h:mid_height + h, mid_width - w:mid_width + w] = 1
+    patch_size = 10
+    h = int(patch_size / 36 / 2 * obj_size[0])
+    w = int(patch_size / 36 / 2 * obj_size[1])
+    patch_mask[:, mid_height - h:mid_height + h, mid_width - w:mid_width + w] = 1
 
     torchvision.utils.save_image(obj, 'obj.png')
     torchvision.utils.save_image(obj_mask, 'obj_mask.png')
     torchvision.utils.save_image(patch_mask, 'patch_mask.png')
+    img = patch_mask + (1 - patch_mask) * (obj_mask * obj + (1 - obj_mask) * backgrounds[0])
+    torchvision.utils.save_image(img, 'img.png')
 
+    with torch.enable_grad():
+        adv_patch = attack.attack(obj.cuda(), obj_mask.cuda(), patch_mask.cuda(), backgrounds.cuda())
+
+    pickle.dump(adv_patch.cpu().numpy(), open('adv_patch.pkl', 'wb'))
     import pdb
     pdb.set_trace()
-
-    adv_patch = attack.attack(obj.cuda(), obj_mask.cuda(), patch_mask.cuda(), backgrounds.cuda())
 
     seen = 0
     confusion_matrix = ConfusionMatrix(nc=nc)
@@ -226,8 +235,6 @@ def run(data,
         nb, _, height, width = im.shape  # batch size, channels, height, width
         t2 = time_sync()
         dt[0] += t2 - t1
-
-        # EDIT
 
         # Inference
         out, train_out = model(im) if training else model(im, augment=augment, val=True)  # inference, loss outputs

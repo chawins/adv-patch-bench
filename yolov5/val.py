@@ -6,16 +6,6 @@ Usage:
     $ python path/to/val.py --data coco128.yaml --weights yolov5s.pt --img 640
 """
 
-import torchvision
-from utils.torch_utils import select_device, time_sync
-from utils.plots import output_to_target, plot_images, plot_val_study
-from utils.metrics import ConfusionMatrix, ap_per_class
-from utils.general import (LOGGER, box_iou, check_dataset, check_img_size, check_requirements, check_yaml,
-                           coco80_to_coco91_class, colorstr, increment_path, non_max_suppression, print_args,
-                           scale_coords, xywh2xyxy, xyxy2xywh)
-from utils.datasets import create_dataloader
-from utils.callbacks import Callbacks
-from models.common import DetectMultiBackend
 import argparse
 import json
 import os
@@ -25,7 +15,18 @@ from threading import Thread
 
 import numpy as np
 import torch
+import torchvision
 from tqdm import tqdm
+
+from models.common import DetectMultiBackend
+from utils.callbacks import Callbacks
+from utils.datasets import create_dataloader
+from utils.general import (LOGGER, box_iou, check_dataset, check_img_size, check_requirements, check_yaml,
+                           coco80_to_coco91_class, colorstr, increment_path, non_max_suppression, print_args,
+                           scale_coords, xywh2xyxy, xyxy2xywh)
+from utils.metrics import ConfusionMatrix, ap_per_class
+from utils.plots import output_to_target, plot_images, plot_val_study
+from utils.torch_utils import select_device, time_sync
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # YOLOv5 root directory
@@ -177,16 +178,16 @@ def run(data,
         dt[0] += t2 - t1
 
         # DEBUG
-        print(im.shape)
-        torchvision.utils.save_image(im, 'im.png')
+        # print(im.shape)
+        # torchvision.utils.save_image(im, 'im.png')
 
         # Inference
         out, train_out = model(im) if training else model(im, augment=augment, val=True)  # inference, loss outputs
         dt[1] += time_sync() - t2
 
         # DEBUG
-        import pdb
-        pdb.set_trace()
+        # import pdb
+        # pdb.set_trace()
 
         # Loss
         if compute_loss:
@@ -198,6 +199,10 @@ def run(data,
         t3 = time_sync()
         out = non_max_suppression(out, conf_thres, iou_thres, labels=lb, multi_label=True, agnostic=single_cls)
         dt[2] += time_sync() - t3
+
+        # DEBUG
+        import pdb
+        pdb.set_trace()
 
         # Metrics
         for si, pred in enumerate(out):

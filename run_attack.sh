@@ -6,3 +6,11 @@ CUDA_VISIBLE_DEVICES=0 python val_attack.py \
 --weights /data/chawin/adv-patch-bench/yolov5/runs/train/exp/weights/best.pt \
 --exist-ok \
 --workers 8
+
+# CUDA_VISIBLE_DEVICES=0 python val.py \
+# --img 1280 \
+# --batch 3 \
+# --data mtsd.yaml \
+# --weights /data/chawin/adv-patch-bench/yolov5/runs/train/exp/weights/best.pt \
+# --exist-ok \
+# --workers 8
