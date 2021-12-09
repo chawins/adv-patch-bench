@@ -169,6 +169,12 @@ class RP2AttackModule(DetectorAttackModule):
             #     x_adv_worst = x_adv * up_mask + x_adv_worst * (1 - up_mask)
             #     worst_losses = fin_losses * up_mask + worst_losses * (1 - up_mask)
 
+                if step >= 802:
+                    outt = non_max_suppression(out.detach(), conf_thres=0.25, iou_thres=0.45)
+                    plot_images(adv_img.detach(), output_to_target(outt), fname=f'rp2_{step-800}.png')
+                if step == 820:
+                    break
+
         # DEBUG
         outt = non_max_suppression(out.detach(), conf_thres=0.25, iou_thres=0.45)
         plot_images(adv_img.detach(), output_to_target(outt))

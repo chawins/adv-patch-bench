@@ -1,3 +1,4 @@
+import csv
 import json
 from os import listdir
 from os.path import isfile, join
@@ -69,13 +70,14 @@ def crop_traffic_signs(filename, panoptic_per_image_id, img_path, label_path,
     img_height, img_width, _ = img.shape
 
     # Pad image to avoid cutting varying shapes due to boundary
-    img_padded, pad_size = pad_image(img, pad_mode='constant', return_pad_size=True, ratio=0.25)
-    id_padded = pad_image(panoptic[:, :, 0], pad_mode='constant', ratio=0.25)
+    img_padded, pad_size = pad_image(img, pad_mode='constant', return_pad_size=True, pad_size=0.25)
+    id_padded = pad_image(panoptic[:, :, 0], pad_mode='constant', pad_size=0.25)
 
     outputs = {
         'images': [],
         'masks': [],
         'obj_id': [],
+        'bbox': [],
     }
     # Crop the specified object
     for obj in segment:
@@ -109,6 +111,7 @@ def crop_traffic_signs(filename, panoptic_per_image_id, img_path, label_path,
         outputs['images'].append(image)
         outputs['masks'].append(bool_mask)
         outputs['obj_id'].append(obj['id'])
+        outputs['bbox'].append((ymin, ymax, xmin, xmax))
 
         # FIXME
         # if DATASET == 'bdd100k':
@@ -125,12 +128,13 @@ def main():
 
     # Arguments
     min_area = 1600
-    max_num_imgs = 200
 
     if DATASET == 'mapillaryvistas':
         data_dir = '/data/shared/mapillary_vistas/training/'
     elif DATASET == 'bdd100k':
         data_dir = '/data/shared/bdd100k/images/10k/train/'
+    else:
+        raise NotImplementedError(f'{DATASET} dataset is not recognized')
 
     # data_dir = '/data/shared/mtsd_v2_fully_annotated/'
     # model_path = '/home/nab_126/adv-patch-bench/model_weights/resnet18_cropped_signs_good_resolution_and_not_edge_10_labels.pth'
@@ -204,16 +208,23 @@ def main():
         filenames = [f for f in listdir(data_dir) if isfile(join(data_dir, f))]
         img_path = data_dir
 
-    np.random.seed(1111)
-    np.random.shuffle(filenames)
+    filename.sort()
 
     print('[INFO] running detection algorithm')
     save_paths = [join(data_dir, 'traffic_signs'), join(data_dir, 'masks')]
+    csv_file = open('offset.csv', mode='w')
+    writer = csv.writer(csv_file, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+    writer.writerow(['filename', 'obj_id', 'ymin', 'ymax', 'xmin', 'xmax'])
     for filename in tqdm(filenames):
         output = crop_traffic_signs(
             filename, panoptic_per_image_id, img_path, label_path,
             min_area=min_area, pad=0.)
         save_images(output, filename.split('.')[0], save_paths)
+        # Save new bbox in a csv file
+        for i, obj_id in enumerate(output['obj_id']):
+            ymin, ymax, xmin, xmax = output['bbox'][i]
+            writer.writerow([filename, obj_id, ymin, ymax, xmin, xmax])
+    csv_file.close()
 
 
 def save_images(output, filename, paths):
