@@ -136,3 +136,4 @@ results/
 mapillaryvistas_plots/
 figures/
 *.jpg
+runs/*
