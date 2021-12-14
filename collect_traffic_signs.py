@@ -1,3 +1,4 @@
+import csv
 import json
 from os import listdir
 from os.path import isfile, join
@@ -74,7 +75,6 @@ def crop_traffic_signs(filename, panoptic_per_image_id, img_path, label_path,
     # Pad image to avoid cutting varying shapes due to boundary
     img_padded, pad_size = pad_image(img, pad_mode='constant', return_pad_size=True, pad_size=0.25)
     id_padded = pad_image(panoptic[:, :, 0], pad_mode='constant', pad_size=0.25)
-    
     outputs = {
         'images': [],
         'masks': [],
@@ -92,13 +92,6 @@ def crop_traffic_signs(filename, panoptic_per_image_id, img_path, label_path,
             ((xmin + width) >= img_width - 1) or ((ymin + height) >= img_height - 1)
         if obj['category_id'] != TRAFFIC_SIGN_LABEL or is_oob:
             continue
-
-        mask = panoptic == obj['id'] 
-        im = Image.fromarray(((1-mask) * 255).astype(np.uint8))
-        im.save("test_mask.png")
-    
-        print(mask.shape)
-        q
 
         # Collect mask
         extra_pad = int(max(width, height) * 0.2)
@@ -122,11 +115,8 @@ def crop_traffic_signs(filename, panoptic_per_image_id, img_path, label_path,
 
         outputs['images'].append(image)
         outputs['masks'].append(bool_mask)
-
-        print(id_padded.shape)
-        print(bool_mask.shape)
-        qqq
         outputs['obj_id'].append(obj['id'])
+        outputs['bbox'].append((ymin, ymax, xmin, xmax))
 
 
         outputs['offset_x'].append(xmin)
@@ -159,12 +149,13 @@ def main():
 
     # Arguments
     min_area = 1600
-    max_num_imgs = 200
 
     if DATASET == 'mapillaryvistas':
         data_dir = '/data/shared/mapillary_vistas/training/'
     elif DATASET == 'bdd100k':
         data_dir = '/data/shared/bdd100k/images/10k/train/'
+    else:
+        raise NotImplementedError(f'{DATASET} dataset is not recognized')
 
     # data_dir = '/data/shared/mtsd_v2_fully_annotated/'
     # model_path = '/home/nab_126/adv-patch-bench/model_weights/resnet18_cropped_signs_good_resolution_and_not_edge_10_labels.pth'
@@ -238,8 +229,7 @@ def main():
         filenames = [f for f in listdir(data_dir) if isfile(join(data_dir, f))]
         img_path = data_dir
 
-    np.random.seed(1111)
-    np.random.shuffle(filenames)
+    filename.sort()
 
     print('[INFO] running detection algorithm')
     save_paths = [join(data_dir, 'traffic_signs'), join(data_dir, 'masks')]
@@ -249,10 +239,7 @@ def main():
         output = crop_traffic_signs(
             filename, panoptic_per_image_id, img_path, label_path,
             min_area=min_area, pad=0.)
-
-        # print(filename)
         # save_images(output, filename.split('.')[0], save_paths)
-        # qqq
         offset_df = save_offset(output, filename.split('.')[0], save_paths, offset_df)
     offset_df.to_csv('offset.csv', index=False)
 
