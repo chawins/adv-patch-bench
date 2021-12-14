@@ -6,6 +6,7 @@ import numpy as np
 import torch.backends.cudnn as cudnn
 from PIL import Image
 from tqdm.auto import tqdm
+import pandas as pd
 
 from adv_patch_bench.utils import get_box, pad_image
 
@@ -64,28 +65,40 @@ def crop_traffic_signs(filename, panoptic_per_image_id, img_path, label_path,
     segment = panoptic_per_image_id[img_id]['segments_info']
     panoptic = np.array(Image.open(join(label_path, f'{img_id}.png')))
 
+    print(panoptic.shape)
+
     img_pil = Image.open(join(img_path, filename))
     img = np.array(img_pil)[:, :, :3]
     img_height, img_width, _ = img.shape
 
     # Pad image to avoid cutting varying shapes due to boundary
-    img_padded, pad_size = pad_image(img, pad_mode='constant', return_pad_size=True, ratio=0.25)
-    id_padded = pad_image(panoptic[:, :, 0], pad_mode='constant', ratio=0.25)
-
+    img_padded, pad_size = pad_image(img, pad_mode='constant', return_pad_size=True, pad_size=0.25)
+    id_padded = pad_image(panoptic[:, :, 0], pad_mode='constant', pad_size=0.25)
+    
     outputs = {
         'images': [],
         'masks': [],
         'obj_id': [],
+        'offset_x': [],
+        'offset_y': [], 
+        'offset_x_ratio': [],
+        'offset_y_ratio':[]
     }
     # Crop the specified object
     for obj in segment:
-
         # Check if bounding box is cut off at the image boundary
         xmin, ymin, width, height = obj['bbox']
         is_oob = (xmin == 0) or (ymin == 0) or \
             ((xmin + width) >= img_width - 1) or ((ymin + height) >= img_height - 1)
         if obj['category_id'] != TRAFFIC_SIGN_LABEL or is_oob:
             continue
+
+        mask = panoptic == obj['id'] 
+        im = Image.fromarray(((1-mask) * 255).astype(np.uint8))
+        im.save("test_mask.png")
+    
+        print(mask.shape)
+        q
 
         # Collect mask
         extra_pad = int(max(width, height) * 0.2)
@@ -97,6 +110,7 @@ def crop_traffic_signs(filename, panoptic_per_image_id, img_path, label_path,
 
         # Get refined crop patch
         ymin_, ymax_, xmin_, xmax_ = get_box(temp_mask, pad)
+
         ymin, ymax, xmin, xmax = ymin + ymin_, ymin + ymax_, xmin + xmin_, xmin + xmax_
         bool_mask = (id_padded[ymin:ymax, xmin:xmax] == obj['id']).astype(np.uint8)
         height, width = bool_mask.shape
@@ -108,7 +122,27 @@ def crop_traffic_signs(filename, panoptic_per_image_id, img_path, label_path,
 
         outputs['images'].append(image)
         outputs['masks'].append(bool_mask)
+
+        print(id_padded.shape)
+        print(bool_mask.shape)
+        qqq
         outputs['obj_id'].append(obj['id'])
+
+
+        outputs['offset_x'].append(xmin)
+        outputs['offset_y'].append(ymin)
+
+        # print(img_padded.shape)
+        # print(img_width)
+        # print(img_height)
+        # qqq
+        assert xmin/img_padded.shape[1] <= 1
+        assert ymin/img_padded.shape[0] <= 1
+        outputs['offset_x_ratio'].append(xmin/img_padded.shape[1])
+        outputs['offset_y_ratio'].append(ymin/img_padded.shape[0])
+        
+
+
 
         # FIXME
         # if DATASET == 'bdd100k':
@@ -209,18 +243,32 @@ def main():
 
     print('[INFO] running detection algorithm')
     save_paths = [join(data_dir, 'traffic_signs'), join(data_dir, 'masks')]
+
+    offset_df = pd.DataFrame(columns=['filename', 'xmin', 'ymin', 'xmin_ratio', 'ymin_ratio'])
     for filename in tqdm(filenames):
         output = crop_traffic_signs(
             filename, panoptic_per_image_id, img_path, label_path,
             min_area=min_area, pad=0.)
-        save_images(output, filename.split('.')[0], save_paths)
 
+        # print(filename)
+        # save_images(output, filename.split('.')[0], save_paths)
+        # qqq
+        offset_df = save_offset(output, filename.split('.')[0], save_paths, offset_df)
+    offset_df.to_csv('offset.csv', index=False)
 
 def save_images(output, filename, paths):
     for img, mask, obj_id in zip(output['images'], output['masks'], output['obj_id']):
         Image.fromarray(img, 'RGB').save(join(paths[0], f'{filename}_{obj_id}.png'))
         Image.fromarray(mask * 255).save(join(paths[1], f'{filename}_{obj_id}.png'))
 
+def save_offset(output, filename, paths, offset_df):
+    # for obj_id in output['obj_id']:
+    for obj_id, xmin, ymin, xmin_ratio, ymin_ratio in zip(output['obj_id'], output['offset_x'], output['offset_y'], output['offset_x_ratio'], output['offset_y_ratio']):
+        # filename = f'{filename}_{obj_id}.png'
+        # print(filename)
+        # qqq
+        offset_df = offset_df.append({'filename': f'{filename}_{obj_id}.png', 'xmin': xmin, 'ymin': ymin, 'xmin_ratio': xmin_ratio, 'ymin_ratio': ymin_ratio}, ignore_index=True)
+    return offset_df
 
 if __name__ == '__main__':
     main()
