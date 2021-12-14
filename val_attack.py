@@ -21,6 +21,7 @@ import torchvision
 import torchvision.transforms.functional as T
 from PIL import Image
 from tqdm import tqdm
+import pandas as pd
 
 from adv_patch_bench.attacks.rp2 import RP2AttackModule
 from yolov5.models.common import DetectMultiBackend
@@ -35,6 +36,12 @@ from yolov5.utils.general import (LOGGER, box_iou, check_dataset,
 from yolov5.utils.metrics import ConfusionMatrix, ap_per_class
 from yolov5.utils.plots import output_to_target, plot_images, plot_val_study
 from yolov5.utils.torch_utils import select_device, time_sync
+
+from kornia.geometry.transform import (get_perspective_transform, resize,
+                                       warp_affine, warp_perspective)
+
+from example_transforms import get_sign_canonical
+import matplotlib.pyplot as plt
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # YOLOv5 root directory
@@ -150,6 +157,8 @@ def run(data,
         # Data
         data = check_dataset(data)  # check
 
+    print(data['train'])
+    
     # Configure
     model.eval()
     is_coco = isinstance(data.get('val'), str) and data['val'].endswith('coco/val2017.txt')  # COCO dataset
@@ -162,6 +171,10 @@ def run(data,
         model.warmup(imgsz=(1, 3, imgsz, imgsz), half=half)  # warmup
         pad = 0.0 if task == 'speed' else 0.5
         task = task if task in ('train', 'val', 'test') else 'val'  # path to train/val/test images
+
+        # TODO: only here for testing. remove next line when done
+        batch_size = 32
+
         dataloader = create_dataloader(data[task], imgsz, batch_size, stride, single_cls, pad=pad, rect=pt,
                                        workers=workers, prefix=colorstr(f'{task}: '))[0]
 
@@ -206,15 +219,17 @@ def run(data,
     torchvision.utils.save_image(obj, 'obj.png')
     torchvision.utils.save_image(obj_mask, 'obj_mask.png')
     torchvision.utils.save_image(patch_mask, 'patch_mask.png')
+    
     img = patch_mask + (1 - patch_mask) * (obj_mask * obj + (1 - obj_mask) * backgrounds[0])
     torchvision.utils.save_image(img, 'img.png')
 
-    with torch.enable_grad():
-        adv_patch = attack.attack(obj.cuda(), obj_mask.cuda(), patch_mask.cuda(), backgrounds.cuda())
+    # with torch.enable_grad():
+    #     adv_patch = attack.attack(obj.cuda(), obj_mask.cuda(), patch_mask.cuda(), backgrounds.cuda())
 
-    pickle.dump(adv_patch.cpu().numpy(), open('adv_patch.pkl', 'wb'))
+    # pickle.dump(adv_patch.cpu().numpy(), open('adv_patch.pkl', 'wb'))
+
     import pdb
-    pdb.set_trace()
+    # pdb.set_trace()
 
     seen = 0
     confusion_matrix = ConfusionMatrix(nc=nc)
@@ -225,7 +240,94 @@ def run(data,
     loss = torch.zeros(3, device=device)
     jdict, stats, ap, ap_class = [], [], [], []
     pbar = tqdm(dataloader, desc=s, bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')  # progress bar
+
+    # df = pd.read_csv('yolov5_help/traffic_sign_annotation_train.csv')
+    # df['filename_without_instance_id'] = df['filename'].str.split('_').str[:-1].str.join('_') + '.jpg'
+    # df = df[df['group'] == 1]
+
+    df = pd.read_csv('mapillaryvistas_data.csv')
+    df['filename_without_instance_id'] = df['filename'].str.split('_').str[:-1].str.join('_') + '.jpg'
+    from ast import literal_eval
+    df["tgt"] = df["tgt"].apply(literal_eval)
+    df = df[df['group'] == 1]
+    
+    # TODO: remove load patch from here and use generated patch
+    demo_patch = torchvision.io.read_image('demo.png').float()[:3, :, :] / 255
+    demo_patch = resize(demo_patch, (32, 32))
+    
     for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
+        for image_i, path in enumerate(paths):
+            filename = path.split('/')[-1]
+            
+            img_df = df[df['filename_without_instance_id'] == filename]
+            print(img_df)
+            if len(img_df) > 0:
+                for _, row in img_df.iterrows():
+                    transform_func = warp_perspective
+                    _, height_, width_ = im[image_i].shape
+
+                    shape = row['shape']
+                    predicted_class = row['predicted_class']
+
+                    patch_size_in_pixel = 32
+                    patch_size_in_mm = 250
+                    sign_canonical, sign_mask, src = get_sign_canonical(
+                        shape, predicted_class, patch_size_in_pixel, patch_size_in_mm)
+                    
+                    alpha = row['alpha']
+                    beta = row['beta']
+                    
+                    new_demo_patch = demo_patch.clone()
+                    new_demo_patch.clamp_(0, 1).mul_(alpha).add_(beta).clamp_(0, 1)
+                    sign_size_in_pixel = sign_canonical.size(-1)
+                    begin = (sign_size_in_pixel - patch_size_in_pixel) // 2
+                    end = begin + patch_size_in_pixel     
+                    
+                    sign_canonical[:-1, begin:end, begin:end] = new_demo_patch
+                    sign_canonical[-1, begin:end, begin:end] = 1
+
+                    # Crop patch that is not on the sign
+                    sign_canonical *= sign_mask
+                    tgt = row['tgt']
+                    src = np.array(src, dtype=np.float32)
+                    tgt = np.array(tgt, dtype=np.float32)
+                    src = torch.from_numpy(src).unsqueeze(0)
+                    tgt = torch.from_numpy(tgt).unsqueeze(0)
+                    M = get_perspective_transform(src, tgt)
+                    M = M.to(torch.float32)
+    
+                    warped_patch = transform_func(sign_canonical.unsqueeze(0),
+                                            M, (height_, width_),
+                                            mode='bicubic',
+                                            padding_mode='zeros')[0].clamp(0, 1)
+
+                    alpha_mask = warped_patch[-1].unsqueeze(0)
+
+                    offset_x_ratio = row['xmin_ratio']
+                    offset_y_ratio = row['ymin_ratio']
+                    offset_x = int(width_ * offset_x_ratio)
+                    offset_y = int(height_ * offset_y_ratio)
+                    alpha_mask = torch.roll(alpha_mask, shifts=(offset_y, offset_x), dims=(1, 2))
+                    warped_patch = torch.roll(warped_patch, shifts=(offset_y, offset_x), dims=(1, 2))
+                    
+                    traffic_sign = (1 - alpha_mask) * im[image_i]/255 + alpha_mask * warped_patch[:-1]
+
+
+                    print(filename)
+                    img_id = filename.split('.jpg')[0]
+                    panoptic = np.array(Image.open(os.path.join('/data/shared/mapillary_vistas/training/v2.0/panoptic/', f'{img_id}.png')))
+                    mask = panoptic == row['object_id']
+                    im_mask = Image.fromarray(((mask) * 255).astype(np.uint8))
+                    im_mask = im_mask.resize((width_, height_))
+                    traffic_sign = traffic_sign.permute(1, 2, 0).numpy()
+                    im_mask = np.asarray(im_mask)/255                    
+                    traffic_sign = np.maximum(traffic_sign, im_mask)
+                    plt.imsave('test_adversarial_patch.png', traffic_sign)
+                    
+                    # debug
+                    pdb.set_trace()
+                    
+
         t1 = time_sync()
         if pt or jit or engine:
             im = im.to(device, non_blocking=True)
@@ -295,6 +397,10 @@ def run(data,
             Thread(target=plot_images, args=(im, targets, paths, f, names), daemon=True).start()
             f = save_dir / f'val_batch{batch_i}_pred.jpg'  # predictions
             Thread(target=plot_images, args=(im, output_to_target(out), paths, f, names), daemon=True).start()
+
+            print(f)
+            
+
 
     # Compute metrics
     stats = [np.concatenate(x, 0) for x in zip(*stats)]  # to numpy
