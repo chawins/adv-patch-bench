@@ -1,7 +1,8 @@
-import pdb
-import os
-from os.path import join, expanduser
 import json
+import os
+import pdb
+from os.path import expanduser, join
+
 from tqdm import tqdm
 
 path = '/data/shared/mtsd_v2_fully_annotated/'

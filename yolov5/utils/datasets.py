@@ -570,6 +570,7 @@ class LoadImagesAndLabels(Dataset):
 
             # Letterbox
             shape = self.batch_shapes[self.batch[index]] if self.rect else self.img_size  # final letterboxed shape
+            # EDIT
             img, ratio, pad = letterbox(img, shape, auto=False, scaleup=self.augment)
             shapes = (h0, w0), ((h / h0, w / w0), pad)  # for COCO mAP rescaling
 
@@ -671,6 +672,7 @@ def load_image(self, i):
             assert im is not None, f'Image Not Found {path}'
         h0, w0 = im.shape[:2]  # orig hw
         r = self.img_size / max(h0, w0)  # ratio
+        # EDIT
         if r != 1:  # if sizes are not equal
             im = cv2.resize(im, (int(w0 * r), int(h0 * r)),
                             interpolation=cv2.INTER_AREA if r < 1 and not self.augment else cv2.INTER_LINEAR)

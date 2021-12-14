@@ -4,7 +4,7 @@ from os.path import join
 
 import numpy as np
 import torch
-import torchvision.transforms.functional as TF
+import torchvision.transforms.functional as T
 
 
 def load_annotation(label_path, image_key):
@@ -30,7 +30,7 @@ def pad_image(img, pad_size=0.1, pad_mode='constant', return_pad_size=False):
     else:
         height, width = img.shape[img.ndim - 2], img.shape[img.ndim - 1]
         pad_size = int(max(height, width) * pad_size) if isinstance(pad_size, float) else pad_size
-        img_padded = TF.pad(img, pad_size, padding_mode=pad_mode)
+        img_padded = T.pad(img, pad_size, padding_mode=pad_mode)
     if return_pad_size:
         return img_padded, pad_size
     return img_padded
@@ -96,3 +96,32 @@ def draw_from_contours(img, contours, color=[0, 0, 255, 255]):
             contour_coord = (contour[:, 1], contour[:, 0])
         img[contour_coord] = color
     return img
+
+
+def letterbox(im, new_shape=(640, 640), color=114, scaleup=True, stride=32):
+    # Resize and pad image while meeting stride-multiple constraints
+    shape = im.shape[2:]  # current shape [height, width]
+    if isinstance(new_shape, int):
+        new_shape = (new_shape, new_shape)
+
+    # Scale ratio (new / old)
+    r = min(new_shape[0] / shape[0], new_shape[1] / shape[1])
+    if not scaleup:  # only scale down, do not scale up (for better val mAP)
+        r = min(r, 1.0)
+
+    # Compute padding
+    ratio = r, r  # width, height ratios
+    new_unpad = int(round(shape[0] * r)), int(round(shape[1] * r))
+    dw, dh = new_shape[1] - new_unpad[1], new_shape[0] - new_unpad[0]  # wh padding
+    dw, dh = np.mod(dw, stride), np.mod(dh, stride)  # wh padding
+
+    dw /= 2  # divide padding into 2 sides
+    dh /= 2
+
+    if shape[::-1] != new_unpad:  # resize
+        im = T.resize(im, new_unpad)
+    top, bottom = int(round(dh - 0.1)), int(round(dh + 0.1))
+    left, right = int(round(dw - 0.1)), int(round(dw + 0.1))
+    im = T.pad(im, [left, right, top, bottom], fill=color)
+    # im = cv2.copyMakeBorder(im, top, bottom, left, right, cv2.BORDER_CONSTANT, value=color)  # add border
+    return im, ratio, (dw, dh)
