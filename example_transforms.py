@@ -61,7 +61,8 @@ SHAPE_LIST = [
     'other'
 ]
 
-PLOT_FOLDER = 'mapillaryvistas_plots_model_3_updated_optimized'
+# PLOT_FOLDER = 'mapillaryvistas_plots_model_3_updated_optimized'
+PLOT_FOLDER = 'delete_mapillaryvistas_plots_model_3_updated_optimized'
 NUM_IMGS_PER_PLOT = 100
 COLUMN_NAMES = 'abcdefghijklmnopqrstuvwxyz'
 ROW_NAMES = list(range(NUM_IMGS_PER_PLOT))
@@ -133,6 +134,11 @@ def draw_vertices(traffic_sign, points, color=[0, 255, 0]):
 
 def compute_example_transform(traffic_sign, mask, predicted_class, demo_patch,
                               patch_size_in_mm=150, patch_size_in_pixel=32):
+    
+    # TODO: temporary only. delete afterwards
+    # predicted_class = 'diamond-600.0'
+    alpha = None
+    beta = None
 
     height, width, _ = traffic_sign.shape
     assert width == height
@@ -155,6 +161,7 @@ def compute_example_transform(traffic_sign, mask, predicted_class, demo_patch,
 
     # Determine polygon shape from vertices
     shape = get_shape_from_vertices(vertices)
+
     if predicted_shape == 'other':
         group = 3
     elif ellipse_error < 0.1:
@@ -197,6 +204,7 @@ def compute_example_transform(traffic_sign, mask, predicted_class, demo_patch,
         if group == 1:
             sign_canonical, sign_mask, src = get_sign_canonical(
                 shape, predicted_class, patch_size_in_pixel, patch_size_in_mm)
+
             old_patch = torch.masked_select(traffic_sign, torch.from_numpy(bool_mask).bool())
             alpha, beta = relight_range(old_patch.numpy().reshape(-1, 1))
 
@@ -208,7 +216,6 @@ def compute_example_transform(traffic_sign, mask, predicted_class, demo_patch,
             end = begin + patch_size_in_pixel
             sign_canonical[:-1, begin:end, begin:end] = new_demo_patch
             sign_canonical[-1, begin:end, begin:end] = 1
-
             # Crop patch that is not on the sign
             sign_canonical *= sign_mask
             patch_mask = torch.zeros((1, sign_size_in_pixel, sign_size_in_pixel))
@@ -217,6 +224,7 @@ def compute_example_transform(traffic_sign, mask, predicted_class, demo_patch,
             # Compute perspective transform
             src = np.array(src).astype(np.float32)
             tgt = tgt.astype(np.float32)
+
             if len(src) == 3:
                 M = torch.from_numpy(cv.getAffineTransform(src, tgt)).unsqueeze(0).float()
                 transform_func = warp_affine
@@ -224,13 +232,15 @@ def compute_example_transform(traffic_sign, mask, predicted_class, demo_patch,
                 src = torch.from_numpy(src).unsqueeze(0)
                 tgt = torch.from_numpy(tgt).unsqueeze(0)
                 M = get_perspective_transform(src, tgt)
+
                 transform_func = warp_perspective
 
             warped_patch = transform_func(sign_canonical.unsqueeze(0),
                                           M, (size, size),
                                           mode='bicubic',
                                           padding_mode='zeros')[0].clamp(0, 1)
-            alpha_mask = warped_patch[-1].unsqueeze(0)
+
+            alpha_mask = warped_patch[-1].unsqueeze(0)            
             traffic_sign = (1 - alpha_mask) * traffic_sign + alpha_mask * warped_patch[:-1]
 
             # DEBUG
@@ -253,7 +263,7 @@ def compute_example_transform(traffic_sign, mask, predicted_class, demo_patch,
     #     import pdb
     #     pdb.set_trace()
 
-    return traffic_sign, shape, group
+    return traffic_sign, shape, group, tgt, alpha, beta
 
 
 def plot_subgroup(adversarial_images, metadata, group, shape, plot_folder=PLOT_FOLDER,
@@ -269,7 +279,7 @@ def plot_subgroup(adversarial_images, metadata, group, shape, plot_folder=PLOT_F
     df_data = []
 
     for i, adv_img in enumerate(adversarial_images):
-        filename, obj_id, predicted_class = metadata[i]
+        filename, obj_id, predicted_class, tgt, alpha, beta = metadata[i]
         predicted_shape = predicted_class.split('-')[0]
 
         if fig is None:
@@ -306,7 +316,7 @@ def plot_subgroup(adversarial_images, metadata, group, shape, plot_folder=PLOT_F
         num_images_plotted += 1
 
         df_data.append([filename, obj_id, shape, predicted_shape,
-                       predicted_class, group, batch_number, row_name, col_name])
+                       predicted_class, group, batch_number, row_name, col_name, tgt[0].tolist(), alpha, beta])
 
     if fig:
         fig.savefig('{}/{}/{}/batch_{}.png'.format(plot_folder, shape,
@@ -399,10 +409,6 @@ def main(args):
     demo_patch = torchvision.io.read_image('demo.png').float()[:3, :, :] / 255
     demo_patch = resize(demo_patch, (32, 32))
 
-    column_names = ['filename', 'object_id', 'shape', 'predicted_shape',
-                    'predicted_class', 'group', 'batch_number', 'row', 'column']
-    csv_filename = '{}_model_3_updated_optimized.csv'.format(DATASET)
-
     print('[INFO] constructing a dataloader for cropped traffic signs...')
     bs = args.batch_size
     transform = transforms.Compose([
@@ -432,27 +438,61 @@ def main(args):
     subgroup_to_images = {}
     for img_file, mask_file, y in tqdm(zip(img_files, mask_files, y_hat)):
         filename = img_file.split('/')[-1]
+
+        # if filename != '0KohgmStOYkLZM6v-Frfew_96.png':
+        #     continue
+
         assert filename == mask_file.split('/')[-1]
         image = np.asarray(Image.open(img_file))
         mask = np.asarray(Image.open(mask_file))
+
         output = compute_example_transform(image, mask, CLASS_LIST[y], demo_patch,
                                            patch_size_in_mm=150,
                                            patch_size_in_pixel=32)
+
+        
+        
         predicted_class = CLASS_LIST[y]
         predicted_shape = predicted_class.split('-')[0]
         obj_id = filename.split('_')[-1].split('.')[0]
 
-        adv_image, shape, group = output
+        adv_image, shape, group, tgt, alpha, beta = output        
 
         if (shape, group) not in subgroup_to_images:
             subgroup_to_images[(shape, group)] = []
 
         adv_image = adv_image.permute(1, 2, 0).numpy()
-        subgroup_to_images[(shape, group)].append([adv_image, filename, obj_id, predicted_class])
+
+        # fig, ax = plt.subplots(1)
+        # ax.imshow(adv_image)
+        # tgt = [[  0., 133.],
+        #  [128.,   2.],
+        #  [263., 147.],
+        #  [157., 261.]]
+        # from matplotlib.patches import Circle
+        # for cord in tgt:
+        #     xx,yy = cord
+        #     circ = Circle((xx,yy),5)
+        #     ax.add_patch(circ)
+        # src = [[  0.,  64.],
+        #  [ 64.,   0.],
+        #  [127.,  64.],
+        #  [ 64., 127.]]
+        # for cord in src:
+        #     xx,yy = cord
+        #     circ = Circle((xx,yy),5, color='red')
+        #     ax.add_patch(circ)
+        # plt.savefig('delete_again.png')
+
+        subgroup_to_images[(shape, group)].append([adv_image, filename, obj_id, predicted_class, tgt, alpha, beta])
+
+    column_names = ['filename', 'object_id', 'shape', 'predicted_shape',
+                    'predicted_class', 'group', 'batch_number', 'row', 'column', 
+                    'tgt', 'alpha', 'beta']
+    csv_filename = '{}_data.csv'.format(DATASET)
 
     df = pd.DataFrame(columns=column_names)
     for subgroup in tqdm(subgroup_to_images):
-        print(subgroup)
         shape, group = subgroup
         data = subgroup_to_images[(shape, group)]
         data = np.array(data, dtype=object)
@@ -463,6 +503,10 @@ def main(args):
         df_to_add = pd.DataFrame(df_data_to_add, columns=column_names)
         df = pd.concat([df, df_to_add], axis=0)
         df.to_csv(csv_filename, index=False)
+
+    offset_df = pd.read_csv('offset.csv')
+    df = df.merge(right=offset_df, on='filename')
+    df.to_csv(csv_filename, index=False)
 
 
 if __name__ == '__main__':
