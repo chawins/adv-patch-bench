@@ -26,6 +26,7 @@ from kornia.geometry.transform import (get_perspective_transform, resize,
                                        warp_affine, warp_perspective)
 from PIL import Image
 from tqdm import tqdm
+from cv2 import getAffineTransform
 
 from adv_patch_bench.attacks.rp2 import RP2AttackModule
 from adv_patch_bench.utils.image import pad_image
@@ -124,6 +125,7 @@ def run(data,
         plots=True,
         callbacks=Callbacks(),
         compute_loss=None,
+        apply_patch=True
         ):
     # Initialize/load model and set device
     training = model is not None
@@ -171,10 +173,6 @@ def run(data,
         model.warmup(imgsz=(1, 3, imgsz, imgsz), half=half)  # warmup
         pad = 0.0 if task == 'speed' else 0.5
         task = task if task in ('train', 'val', 'test') else 'val'  # path to train/val/test images
-
-        # TODO: only here for testing. remove next line when done
-        batch_size = 32
-
         dataloader = create_dataloader(data[task], imgsz, batch_size, stride, single_cls, pad=pad, rect=pt,
                                        workers=workers, prefix=colorstr(f'{task}: '))[0]
 
@@ -223,10 +221,16 @@ def run(data,
     img = patch_mask + (1 - patch_mask) * (obj_mask * obj + (1 - obj_mask) * backgrounds[0])
     torchvision.utils.save_image(img, 'img.png')
 
-    # with torch.enable_grad():
-    #     adv_patch = attack.attack(obj.cuda(), obj_mask.cuda(), patch_mask.cuda(), backgrounds.cuda())
-
-    # pickle.dump(adv_patch.cpu().numpy(), open('adv_patch.pkl', 'wb'))
+    if apply_patch:
+        with torch.enable_grad():
+            adv_patch = attack.attack(obj.cuda(), obj_mask.cuda(), patch_mask.cuda(), backgrounds.cuda())
+        
+        adv_patch = adv_patch[0].detach()
+        adv_patch = adv_patch.cpu().float()
+        adv_patch_cropped = adv_patch[:, mid_height - h:mid_height + h, mid_width - w:mid_width + w]
+        
+        # random patch 
+        # adv_patch_cropped = torch.rand(3, 32, 32) 
 
     seen = 0
     confusion_matrix = ConfusionMatrix(nc=nc)
@@ -238,97 +242,88 @@ def run(data,
     jdict, stats, ap, ap_class = [], [], [], []
     pbar = tqdm(dataloader, desc=s, bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')  # progress bar
 
-    # df = pd.read_csv('yolov5_help/traffic_sign_annotation_train.csv')
-    # df['filename_without_instance_id'] = df['filename'].str.split('_').str[:-1].str.join('_') + '.jpg'
-    # df = df[df['group'] == 1]
-
+    # TODO: use annotated csv
     df = pd.read_csv('mapillaryvistas_data.csv')
-    df['filename_without_instance_id'] = df['filename'].str.split('_').str[:-1].str.join('_') + '.jpg'
+    df['filename'] = df['filename_x']
     from ast import literal_eval
     df["tgt"] = df["tgt"].apply(literal_eval)
     df = df[df['group'] == 1]
-
-    # TODO: remove load patch from here and use generated patch
-    demo_patch = torchvision.io.read_image('demo.png').float()[:3, :, :] / 255
-    demo_patch = resize(demo_patch, (32, 32))
+    
+    if apply_patch:
+        demo_patch = resize(adv_patch_cropped, (32, 32))
+        f = os.path.join(save_dir, 'adversarial_patch.png')
+        torchvision.utils.save_image(demo_patch, f)
 
     for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
         # shapes: [[h0, w0], [h/h0, w/w0], [w_pad, h_pad]]
-        for image_i, path in enumerate(paths):
-            filename = path.split('/')[-1]
+        if apply_patch:
+            for image_i, path in enumerate(paths):
+                filename = path.split('/')[-1]
 
-            img_df = df[df['filename_without_instance_id'] == filename]
-            # print(img_df)
-            if len(img_df) == 0:
-                continue
-            for _, row in img_df.iterrows():
-                transform_func = warp_perspective
-                (h0, w0), ((h_ratio, w_ratio), (w_pad, h_pad)) = shapes[image_i]
+                img_df = df[df['filename'] == filename]
+                if len(img_df) == 0:
+                    continue
 
-                shape = row['shape']
-                predicted_class = row['predicted_class']
+                for _, row in img_df.iterrows():
+                    transform_func = warp_perspective
+                    (h0, w0), ((h_ratio, w_ratio), (w_pad, h_pad)) = shapes[image_i]
 
-                patch_size_in_pixel = 32
-                patch_size_in_mm = 250
-                sign_canonical, sign_mask, src = get_sign_canonical(
-                    shape, predicted_class, patch_size_in_pixel, patch_size_in_mm)
+                    shape = row['shape']
+                    predicted_class = row['predicted_class']
 
-                alpha = row['alpha']
-                beta = row['beta']
+                    patch_size_in_pixel = 32
+                    patch_size_in_mm = 250
+                    sign_canonical, sign_mask, src = get_sign_canonical(
+                        shape, predicted_class, patch_size_in_pixel, patch_size_in_mm)
 
-                new_demo_patch = demo_patch.clone()
-                new_demo_patch.clamp_(0, 1).mul_(alpha).add_(beta).clamp_(0, 1)
-                sign_size_in_pixel = sign_canonical.size(-1)
-                begin = (sign_size_in_pixel - patch_size_in_pixel) // 2
-                end = begin + patch_size_in_pixel
+                    alpha = row['alpha']
+                    beta = row['beta']
 
-                sign_canonical[:-1, begin:end, begin:end] = new_demo_patch
-                sign_canonical[-1, begin:end, begin:end] = 1
+                    new_demo_patch = demo_patch.clone()
+                    new_demo_patch.clamp_(0, 1).mul_(alpha).add_(beta).clamp_(0, 1)
+                    sign_size_in_pixel = sign_canonical.size(-1)
+                    begin = (sign_size_in_pixel - patch_size_in_pixel) // 2
+                    end = begin + patch_size_in_pixel
 
-                # Crop patch that is not on the sign
-                sign_canonical *= sign_mask
-                src = np.array(src, dtype=np.float32)
-                tgt = np.array(row['tgt'], dtype=np.float32)
-                offset_x_ratio = row['xmin_ratio']
-                offset_y_ratio = row['ymin_ratio']
-                # Have to correct for the padding when df is saved (TODO: this should be simplified)
-                pad_size = int(max(h0, w0) * 0.25)
-                x_min = offset_x_ratio * (w0 + pad_size * 2) - pad_size
-                y_min = offset_y_ratio * (h0 + pad_size * 2) - pad_size
-                # Order of coordinate in tgt is inverted, i.e., (x, y) instead of (y, x)
-                tgt[:, 1] = (tgt[:, 1] + y_min) * h_ratio + h_pad
-                tgt[:, 0] = (tgt[:, 0] + x_min) * w_ratio + w_pad
-                src = torch.from_numpy(src).unsqueeze(0)
-                tgt = torch.from_numpy(tgt).unsqueeze(0)
-                M = get_perspective_transform(src, tgt)
-                M = M.to(torch.float32)
+                    sign_canonical[:-1, begin:end, begin:end] = new_demo_patch
+                    sign_canonical[-1, begin:end, begin:end] = 1
 
-                cur_shape = im[image_i].shape[1:]
-                warped_patch = transform_func(sign_canonical.unsqueeze(0),
-                                              M, cur_shape,
-                                              mode='bicubic',
-                                              padding_mode='zeros')[0].clamp(0, 1)
-                alpha_mask = warped_patch[-1].unsqueeze(0)
-                traffic_sign = (1 - alpha_mask) * im[image_i] / 255 + alpha_mask * warped_patch[:-1]
+                    # Crop patch that is not on the sign
+                    sign_canonical *= sign_mask
+                    src = np.array(src, dtype=np.float32)
+                    tgt = np.array(row['tgt'], dtype=np.float32)
+                    offset_x_ratio = row['xmin_ratio']
+                    offset_y_ratio = row['ymin_ratio']
+                    # Have to correct for the padding when df is saved (TODO: this should be simplified)
+                    pad_size = int(max(h0, w0) * 0.25)
+                    x_min = offset_x_ratio * (w0 + pad_size * 2) - pad_size
+                    y_min = offset_y_ratio * (h0 + pad_size * 2) - pad_size
+                    # Order of coordinate in tgt is inverted, i.e., (x, y) instead of (y, x)
 
-                torchvision.utils.save_image(traffic_sign, 'test_adversarial_patch.png')
+                    tgt[:, 1] = (tgt[:, 1] + y_min) * h_ratio + h_pad
+                    tgt[:, 0] = (tgt[:, 0] + x_min) * w_ratio + w_pad
 
-                # print(filename)
-                # img_id = filename.split('.jpg')[0]
-                # panoptic = np.array(Image.open(
-                #     os.path.join(
-                #         '/data/shared/mapillary_vistas/training/v2.0/panoptic/',
-                #         f'{img_id}.png')))
-                # mask = panoptic == row['object_id']
-                # im_mask = Image.fromarray(((mask) * 255).astype(np.uint8))
-                # im_mask = im_mask.resize((width_, height_))
-                # traffic_sign = traffic_sign.permute(1, 2, 0).numpy()
-                # im_mask = np.asarray(im_mask)/255
-                # traffic_sign = np.maximum(traffic_sign, im_mask)
-                # plt.imsave('test_adversarial_patch.png', traffic_sign)
+                    if len(src) == 3:
+                        M = torch.from_numpy(getAffineTransform(src, tgt)).unsqueeze(0).float()
+                        transform_func = warp_affine
+                    else:
+                        src = torch.from_numpy(src).unsqueeze(0)
+                        tgt = torch.from_numpy(tgt).unsqueeze(0)
+                        M = get_perspective_transform(src, tgt)
 
-                # debug
-                pdb.set_trace()
+                        transform_func = warp_perspective
+
+                    cur_shape = im[image_i].shape[1:]
+                    warped_patch = transform_func(sign_canonical.unsqueeze(0),
+                                                M, cur_shape,
+                                                mode='bicubic',
+                                                padding_mode='zeros')[0].clamp(0, 1)
+                    alpha_mask = warped_patch[-1].unsqueeze(0)
+                    traffic_sign = (1 - alpha_mask) * im[image_i] / 255 + alpha_mask * warped_patch[:-1]
+                    im[image_i] = traffic_sign * 255
+                    
+                    # DEBUG
+                    # pdb.set_trace()
 
         t1 = time_sync()
         if pt or jit or engine:
@@ -394,7 +389,7 @@ def run(data,
             callbacks.run('on_val_image_end', pred, predn, path, names, im[si])
 
         # Plot images
-        if plots and batch_i < 3:
+        if plots and batch_i < 10:
             f = save_dir / f'val_batch{batch_i}_labels.jpg'  # labels
             Thread(target=plot_images, args=(im, targets, paths, f, names), daemon=True).start()
             f = save_dir / f'val_batch{batch_i}_pred.jpg'  # predictions
@@ -492,6 +487,8 @@ def parse_opt():
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
     parser.add_argument('--half', action='store_true', help='use FP16 half-precision inference')
     parser.add_argument('--dnn', action='store_true', help='use OpenCV DNN for ONNX inference')
+    parser.add_argument('--apply_patch', action='store_true', help='add adversarial patch to traffic signs if true')
+
     opt = parser.parse_args()
     opt.data = check_yaml(opt.data)  # check YAML
     opt.save_json |= opt.data.endswith('coco.yaml')
@@ -533,4 +530,6 @@ def main(opt):
 
 if __name__ == "__main__":
     opt = parse_opt()
+    # print(opt.apply_patch)
+    # qq
     main(opt)
