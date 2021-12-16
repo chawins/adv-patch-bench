@@ -136,9 +136,9 @@ def compute_example_transform(traffic_sign, mask, predicted_class, demo_patch,
                               patch_size_in_mm=150, patch_size_in_pixel=32):
     
     # TODO: temporary only. delete afterwards
-    # predicted_class = 'diamond-600.0'
     alpha = None
     beta = None
+    src = None
 
     height, width, _ = traffic_sign.shape
     assert width == height
@@ -315,8 +315,11 @@ def plot_subgroup(adversarial_images, metadata, group, shape, plot_folder=PLOT_F
 
         num_images_plotted += 1
 
+        if tgt.ndim == 3:
+            tgt = tgt[0]
+
         df_data.append([filename, obj_id, shape, predicted_shape,
-                       predicted_class, group, batch_number, row_name, col_name, tgt[0].tolist(), alpha, beta])
+                       predicted_class, group, batch_number, row_name, col_name, tgt.tolist(), alpha, beta])
 
     if fig:
         fig.savefig('{}/{}/{}/batch_{}.png'.format(plot_folder, shape,
@@ -450,40 +453,16 @@ def main(args):
                                            patch_size_in_mm=150,
                                            patch_size_in_pixel=32)
 
-        
-        
         predicted_class = CLASS_LIST[y]
         predicted_shape = predicted_class.split('-')[0]
         obj_id = filename.split('_')[-1].split('.')[0]
 
-        adv_image, shape, group, tgt, alpha, beta = output        
+        adv_image, shape, group, tgt, alpha, beta = output
 
         if (shape, group) not in subgroup_to_images:
             subgroup_to_images[(shape, group)] = []
 
         adv_image = adv_image.permute(1, 2, 0).numpy()
-
-        # fig, ax = plt.subplots(1)
-        # ax.imshow(adv_image)
-        # tgt = [[  0., 133.],
-        #  [128.,   2.],
-        #  [263., 147.],
-        #  [157., 261.]]
-        # from matplotlib.patches import Circle
-        # for cord in tgt:
-        #     xx,yy = cord
-        #     circ = Circle((xx,yy),5)
-        #     ax.add_patch(circ)
-        # src = [[  0.,  64.],
-        #  [ 64.,   0.],
-        #  [127.,  64.],
-        #  [ 64., 127.]]
-        # for cord in src:
-        #     xx,yy = cord
-        #     circ = Circle((xx,yy),5, color='red')
-        #     ax.add_patch(circ)
-        # plt.savefig('delete_again.png')
-
         subgroup_to_images[(shape, group)].append([adv_image, filename, obj_id, predicted_class, tgt, alpha, beta])
 
     column_names = ['filename', 'object_id', 'shape', 'predicted_shape',
@@ -505,7 +484,12 @@ def main(args):
         df.to_csv(csv_filename, index=False)
 
     offset_df = pd.read_csv('offset.csv')
-    df = df.merge(right=offset_df, on='filename')
+    df['filename_png'] = df['filename'].str.split('_').str[:-1].str.join('_') + '.png'
+    df['filename'] = df['filename'].str.split('_').str[:-1].str.join('_') + '.jpg'
+
+    df['object_id'] = df['object_id'].astype('int64')
+    offset_df['obj_id'] = offset_df['obj_id'].astype('int64')
+    df = df.merge(right=offset_df, left_on=['filename_png', 'object_id'], right_on=['filename', 'obj_id'])
     df.to_csv(csv_filename, index=False)
 
 
