@@ -20,7 +20,7 @@ class RP2AttackModule(DetectorAttackModule):
         # self.num_restarts = attack_config['num_restarts']
         # self.optimizer = attack_config['optimizer']
 
-        self.num_steps = 1000
+        self.num_steps = 400
         self.step_size = 1e-1
         self.num_restarts = 1
         self.optimizer = 'adam'
@@ -103,8 +103,7 @@ class RP2AttackModule(DetectorAttackModule):
                 o_mask = self.mask_transforms.apply_transform(
                     obj_mask_dup, None, transform=tf_params)
                 adv_img = o_mask * adv_obj + (1 - o_mask) * bgs
-                # adv_img = bgs
-                adv_img = letterbox(adv_img, new_shape=1280)[0]
+                adv_img = letterbox(adv_img, new_shape=self.input_size[1])[0]
 
                 # Compute logits, loss, gradients
                 out, _ = self.core_model(adv_img, val=True)
@@ -129,26 +128,25 @@ class RP2AttackModule(DetectorAttackModule):
                 if step % 100 == 0:
                     print(f'step: {step}   loss: {ema_loss:.6f}')
 
-            # if self.num_restarts == 1:
-            #     x_adv_worst = x_adv
-            # else:
-            #     # Update worst-case inputs with itemized final losses
-            #     fin_losses = self.loss_fn(self.core_model(x_adv), y).reshape(worst_losses.shape)
-            #     up_mask = (fin_losses >= worst_losses).float()
-            #     x_adv_worst = x_adv * up_mask + x_adv_worst * (1 - up_mask)
-            #     worst_losses = fin_losses * up_mask + worst_losses * (1 - up_mask)
+                # if self.num_restarts == 1:
+                #     x_adv_worst = x_adv
+                # else:
+                #     # Update worst-case inputs with itemized final losses
+                #     fin_losses = self.loss_fn(self.core_model(x_adv), y).reshape(worst_losses.shape)
+                #     up_mask = (fin_losses >= worst_losses).float()
+                #     x_adv_worst = x_adv * up_mask + x_adv_worst * (1 - up_mask)
+                #     worst_losses = fin_losses * up_mask + worst_losses * (1 - up_mask)
 
-                if step >= 802:
-                    outt = non_max_suppression(out.detach(), conf_thres=0.25, iou_thres=0.45)
-                    plot_images(adv_img.detach(), output_to_target(outt), fname=f'rp2_{step-800}.png')
-                if step == 820:
-                    break
+                # DEBUG
+                # if step >= 802:
+                #     outt = non_max_suppression(out.detach(), conf_thres=0.25, iou_thres=0.45)
+                #     plot_images(adv_img.detach(), output_to_target(outt), fname=f'rp2_{step-800}.png')
+                # if step == 820:
+                #     break
 
         # DEBUG
         outt = non_max_suppression(out.detach(), conf_thres=0.25, iou_thres=0.45)
         plot_images(adv_img.detach(), output_to_target(outt))
-        # import pdb
-        # pdb.set_trace()
 
         # Return worst-case perturbed input logits
         self.core_model.train(mode)

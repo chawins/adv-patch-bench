@@ -225,8 +225,10 @@ def run(data,
 
     # with torch.enable_grad():
     #     adv_patch = attack.attack(obj.cuda(), obj_mask.cuda(), patch_mask.cuda(), backgrounds.cuda())
-
     # pickle.dump(adv_patch.cpu().numpy(), open('adv_patch.pkl', 'wb'))
+    adv_patch = pickle.load(open('adv_patch.pkl', 'rb'))
+    adv_patch = torch.from_numpy(adv_patch[0, :, mid_height - h:mid_height + h, mid_width - w:mid_width + w])
+    torchvision.utils.save_image(adv_patch, 'adv_patch.png')
 
     seen = 0
     confusion_matrix = ConfusionMatrix(nc=nc)

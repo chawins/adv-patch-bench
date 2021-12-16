@@ -8,7 +8,7 @@
 # --workers 8
 
 # Test attack
-CUDA_VISIBLE_DEVICES=0 python val_attack.py \
+CUDA_VISIBLE_DEVICES=1 python val_attack.py \
 --img 1280 \
 --batch 2 \
 --data mapillary_vistas.yaml \
