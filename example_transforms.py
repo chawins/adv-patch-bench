@@ -182,10 +182,6 @@ def compute_example_transform(traffic_sign, mask, predicted_class, demo_patch,
             # Disagree but not other
             group = 2
 
-    # if shape == 'triangle' and group == 1:
-    #     print(tgt)
-    #     print(len(tgt))
-        
     if shape != 'other':
         tgt = get_box_vertices(vertices, shape).astype(np.int64)
         # Filter some vertices that might be out of bound
@@ -238,11 +234,6 @@ def compute_example_transform(traffic_sign, mask, predicted_class, demo_patch,
                 M = get_perspective_transform(src, tgt)
 
                 transform_func = warp_perspective
-
-            # if shape == 'triangle' and group == 1:
-            #     print(tgt)
-            #     print(len(tgt))
-            #     print()
 
             warped_patch = transform_func(sign_canonical.unsqueeze(0),
                                           M, (size, size),
@@ -493,9 +484,13 @@ def main(args):
         df.to_csv(csv_filename, index=False)
 
     offset_df = pd.read_csv('offset.csv')
-    df.merge(right=offset_df, left_on=['filename_without_instance_id', 'object_id'], right_on=['filename', 'obj_id'])
-    df.to_csv(csv_filename, index=False)
+    df['filename_png'] = df['filename'].str.split('_').str[:-1].str.join('_') + '.png'
+    df['filename'] = df['filename'].str.split('_').str[:-1].str.join('_') + '.jpg'
 
+    df['object_id'] = df['object_id'].astype('int64')
+    offset_df['obj_id'] = offset_df['obj_id'].astype('int64')
+    df = df.merge(right=offset_df, left_on=['filename_png', 'object_id'], right_on=['filename', 'obj_id'])
+    df.to_csv(csv_filename, index=False)
 
 
 if __name__ == '__main__':
