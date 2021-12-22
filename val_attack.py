@@ -224,13 +224,13 @@ def run(data,
     if apply_patch:
         with torch.enable_grad():
             adv_patch = attack.attack(obj.cuda(), obj_mask.cuda(), patch_mask.cuda(), backgrounds.cuda())
-        
+
         adv_patch = adv_patch[0].detach()
         adv_patch = adv_patch.cpu().float()
         adv_patch_cropped = adv_patch[:, mid_height - h:mid_height + h, mid_width - w:mid_width + w]
-        
-        # random patch 
-        # adv_patch_cropped = torch.rand(3, 32, 32) 
+
+        # random patch
+        # adv_patch_cropped = torch.rand(3, 32, 32)
 
     seen = 0
     confusion_matrix = ConfusionMatrix(nc=nc)
@@ -248,7 +248,7 @@ def run(data,
     from ast import literal_eval
     df["tgt"] = df["tgt"].apply(literal_eval)
     df = df[df['group'] == 1]
-    
+
     if apply_patch:
         # demo_patch = torchvision.io.read_image('demo.png').float()[:3, :, :] / 255
         demo_patch = resize(adv_patch_cropped, (32, 32))
@@ -317,9 +317,9 @@ def run(data,
 
                     cur_shape = im[image_i].shape[1:]
                     warped_patch = transform_func(sign_canonical.unsqueeze(0),
-                                                M, cur_shape,
-                                                mode='bicubic',
-                                                padding_mode='zeros')[0].clamp(0, 1)
+                                                  M, cur_shape,
+                                                  mode='bicubic',
+                                                  padding_mode='zeros')[0].clamp(0, 1)
                     alpha_mask = warped_patch[-1].unsqueeze(0)
                     traffic_sign = (1 - alpha_mask) * im[image_i] / 255 + alpha_mask * warped_patch[:-1]
                     im[image_i] = traffic_sign * 255
