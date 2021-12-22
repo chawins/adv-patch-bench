@@ -250,7 +250,9 @@ def run(data,
     df = df[df['group'] == 1]
     
     if apply_patch:
+        # demo_patch = torchvision.io.read_image('demo.png').float()[:3, :, :] / 255
         demo_patch = resize(adv_patch_cropped, (32, 32))
+        demo_patch = resize(demo_patch, (32, 32))
         f = os.path.join(save_dir, 'adversarial_patch.png')
         torchvision.utils.save_image(demo_patch, f)
 
@@ -321,7 +323,7 @@ def run(data,
                     alpha_mask = warped_patch[-1].unsqueeze(0)
                     traffic_sign = (1 - alpha_mask) * im[image_i] / 255 + alpha_mask * warped_patch[:-1]
                     im[image_i] = traffic_sign * 255
-                    
+
                     # DEBUG
                     # pdb.set_trace()
 
@@ -389,7 +391,7 @@ def run(data,
             callbacks.run('on_val_image_end', pred, predn, path, names, im[si])
 
         # Plot images
-        if plots and batch_i < 10:
+        if plots and batch_i < 30:
             f = save_dir / f'val_batch{batch_i}_labels.jpg'  # labels
             Thread(target=plot_images, args=(im, targets, paths, f, names), daemon=True).start()
             f = save_dir / f'val_batch{batch_i}_pred.jpg'  # predictions
