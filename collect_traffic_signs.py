@@ -79,9 +79,9 @@ def crop_traffic_signs(filename, panoptic_per_image_id, img_path, label_path,
         'bbox': [],
         'obj_id': [],
         'offset_x': [],
-        'offset_y': [], 
+        'offset_y': [],
         'offset_x_ratio': [],
-        'offset_y_ratio':[]
+        'offset_y_ratio': []
     }
     # Crop the specified object
     for obj in segment:
@@ -117,7 +117,6 @@ def crop_traffic_signs(filename, panoptic_per_image_id, img_path, label_path,
         outputs['obj_id'].append(obj['id'])
         outputs['bbox'].append((ymin, ymax, xmin, xmax))
 
-
         outputs['offset_x'].append(xmin)
         outputs['offset_y'].append(ymin)
 
@@ -125,9 +124,6 @@ def crop_traffic_signs(filename, panoptic_per_image_id, img_path, label_path,
         assert ymin/img_padded.shape[0] <= 1
         outputs['offset_x_ratio'].append(xmin/img_padded.shape[1])
         outputs['offset_y_ratio'].append(ymin/img_padded.shape[0])
-        
-
-
 
         # FIXME
         # if DATASET == 'bdd100k':
@@ -238,16 +234,27 @@ def main():
         offset_df = save_offset(output, filename.split('.')[0], save_paths, offset_df)
     offset_df.to_csv('offset.csv', index=False)
 
+
 def save_images(output, filename, paths):
     for img, mask, obj_id in zip(output['images'], output['masks'], output['obj_id']):
         Image.fromarray(img, 'RGB').save(join(paths[0], f'{filename}_{obj_id}.png'))
         Image.fromarray(mask * 255).save(join(paths[1], f'{filename}_{obj_id}.png'))
 
+
 def save_offset(output, filename, paths, offset_df):
     # for obj_id in output['obj_id']:
-    for obj_id, xmin, ymin, xmin_ratio, ymin_ratio in zip(output['obj_id'], output['offset_x'], output['offset_y'], output['offset_x_ratio'], output['offset_y_ratio']):
-        offset_df = offset_df.append({'filename': f'{filename}.jpg', 'obj_id': obj_id, 'xmin': xmin, 'ymin': ymin, 'xmin_ratio': xmin_ratio, 'ymin_ratio': ymin_ratio}, ignore_index=True)
+    for obj_id, xmin, ymin, xmin_ratio, ymin_ratio in zip(
+            output['obj_id'],
+            output['offset_x'],
+            output['offset_y'],
+            output['offset_x_ratio'],
+            output['offset_y_ratio']):
+        offset_df = offset_df.append(
+            {'filename': f'{filename}.jpg', 'obj_id': obj_id, 'xmin': xmin, 'ymin': ymin, 'xmin_ratio': xmin_ratio,
+             'ymin_ratio': ymin_ratio},
+            ignore_index=True)
     return offset_df
+
 
 if __name__ == '__main__':
     main()
