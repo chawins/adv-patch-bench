@@ -301,7 +301,6 @@ def run(data,
                     x_min = offset_x_ratio * (w0 + pad_size * 2) - pad_size
                     y_min = offset_y_ratio * (h0 + pad_size * 2) - pad_size
                     # Order of coordinate in tgt is inverted, i.e., (x, y) instead of (y, x)
-
                     tgt[:, 1] = (tgt[:, 1] + y_min) * h_ratio + h_pad
                     tgt[:, 0] = (tgt[:, 0] + x_min) * w_ratio + w_pad
 

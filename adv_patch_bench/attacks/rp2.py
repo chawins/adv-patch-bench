@@ -26,7 +26,7 @@ class RP2AttackModule(DetectorAttackModule):
         self.optimizer = 'adam'
         self.input_size = (960, 1280)      # TODO: rectangle?
         self.num_eot = 5
-        self.bg_transforms = K.RandomResizedCrop(self.input_size)
+        self.bg_transforms = K.RandomResizedCrop(self.input_size, p=1.0)
         # self.obj_transforms = K.container.AugmentationSequential(
         #     K.RandomAffine(30, translate=(0.5, 0.5)),      # Only translate and rotate as in Eykholt et al.
         #     # RandomAffine(30, translate=(0.5, 0.5), scale=(0.25, 4), shear=(0.1, 0.1), p=1.0),
@@ -36,8 +36,8 @@ class RP2AttackModule(DetectorAttackModule):
         # self.mask_transforms = K.container.AugmentationSequential(
         #     K.RandomAffine(30, translate=(0.5, 0.5), resample=Resample.NEAREST),
         # )
-        self.obj_transforms = K.RandomAffine(30, translate=(0.5, 0.5), return_transform=True)
-        self.mask_transforms = K.RandomAffine(30, translate=(0.5, 0.5), resample=Resample.NEAREST)
+        self.obj_transforms = K.RandomAffine(30, translate=(0.5, 0.5), p=1.0, return_transform=True)
+        self.mask_transforms = K.RandomAffine(30, translate=(0.5, 0.5), p=1.0, resample=Resample.NEAREST)
         self.lmbda = 1e-2
 
     def attack(self,
