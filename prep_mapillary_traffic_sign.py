@@ -77,31 +77,17 @@ def main(data_dir, mtsd_label_to_shape_index, dataset_name, pad=0.):
     for split in ['train', 'val']:
         save_dir = join(data_dir, dataset_name, split)
         for i in range(bg_idx + 1):
-            os.makedirs(join(save_dir, str(i)), exist_ok=True)
+            os.makedirs(join(save_dir, f'{i:02d}'), exist_ok=True)
         for i in tqdm(idx[split]):
-            images[i].save(join(save_dir, str(labels[i]), names[i]))
+            images[i].save(join(save_dir, f'{labels[i]:02d}', names[i]))
 
 
 if __name__ == '__main__':
-
     # Set the parameters
     seed = 0
     data_dir = '/data/shared/mtsd_v2_fully_annotated/'
-    csv_path = '/data/shared/mtsd_v2_fully_annotated/traffic_sign_dimension_v5.csv'
-    dataset_name = 'cropped_signs_v6'
-    selected_labels = [
-        'circle-750.0',
-        'triangle-900.0',
-        'triangle_inverted-1220.0',
-        'diamond-600.0',
-        'diamond-915.0',
-        'square-600.0',
-        'rect-458.0-610.0',
-        'rect-762.0-915.0',
-        'rect-915.0-1220.0',
-        'pentagon-915.0',
-        'octagon-915.0',
-    ]
+    csv_path = '/data/shared/mtsd_v2_fully_annotated/traffic_sign_dimension_v6.csv'
+    dataset_name = 'cropped_signs_with_colors'
     pad = 0.
 
     np.random.seed(seed)
@@ -110,9 +96,62 @@ if __name__ == '__main__':
 
     print(np.unique(list(data['target'])))
 
+    # Shape classification only
+    # selected_labels = [
+    #     'circle-750.0',
+    #     'triangle-900.0',
+    #     'triangle_inverted-1220.0',
+    #     'diamond-600.0',
+    #     'diamond-915.0',
+    #     'square-600.0',
+    #     'rect-458.0-610.0',
+    #     'rect-762.0-915.0',
+    #     'rect-915.0-1220.0',
+    #     'pentagon-915.0',
+    #     'octagon-915.0',
+    # ]
+    # mtsd_label_to_shape_index = {}
+    # for _, row in data.iterrows():
+    #     if row['target'] in selected_labels:
+    #         mtsd_label_to_shape_index[row['sign']] = selected_labels.index(row['target'])
+
+    # Shape and some color classification
+    # There is one yellow circle. It is set to white.
+    color_dict = {
+        'circle-750.0': ['white', 'blue', 'red'],   # (1) white+red, (2) blue+white
+        'triangle-900.0': ['white', 'yellow'],  # (1) white, (2) yellow
+        'triangle_inverted-1220.0': [],   # (1) white+red
+        'diamond-600.0': [],    # (1) white+yellow
+        'diamond-915.0': [],    # (1) yellow
+        'square-600.0': [],     # (1) blue
+        'rect-458.0-610.0': ['white', 'other'],  # (1) chevron (also multi-color), (2) white
+        'rect-762.0-915.0': [],  # (1) white
+        'rect-915.0-1220.0': [],    # (1) white
+        'pentagon-915.0': [],   # (1) yellow
+        'octagon-915.0': [],    # (1) red
+    }
+    class_idx = {
+        'circle-750.0': 0,   # (1) white+red, (2) blue+white
+        'triangle-900.0': 3,  # (1) white, (2) yellow
+        'triangle_inverted-1220.0': 5,   # (1) white+red
+        'diamond-600.0': 6,    # (1) white+yellow
+        'diamond-915.0': 7,    # (1) yellow
+        'square-600.0': 8,     # (1) blue
+        'rect-458.0-610.0': 9,  # (1) chevron (also multi-color), (2) white
+        'rect-762.0-915.0': 11,  # (1) white
+        'rect-915.0-1220.0': 12,    # (1) white
+        'pentagon-915.0': 13,   # (1) yellow
+        'octagon-915.0': 14,    # (1) red
+    }
+    selected_labels = list(class_idx.keys())
     mtsd_label_to_shape_index = {}
     for _, row in data.iterrows():
-        if row['target'] in selected_labels:
-            mtsd_label_to_shape_index[row['sign']] = selected_labels.index(row['target'])
+        if row['target'] in class_idx:
+            idx = class_idx[row['target']]
+            color_list = color_dict[row['target']]
+            # print(row['sign'], row['target'])
+            if len(color_list) > 0:
+                idx += color_list.index(row['color'])
+            mtsd_label_to_shape_index[row['sign']] = idx
 
     main(data_dir, mtsd_label_to_shape_index, dataset_name, pad=pad)
