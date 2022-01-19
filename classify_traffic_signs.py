@@ -476,7 +476,7 @@ def main():
     # Arguments
     min_area = 1000
     max_num_imgs = 200
-    label_to_classify = 95
+    label_to_classify = 95      # Class id of traffic signs on Vistas
     conf_thres = 0.
     use_ts_data = False
     data_dir = '/data/shared/mapillary_vistas/training/'
@@ -489,8 +489,11 @@ def main():
     cudnn.benchmark = True
 
     # Create model
-    mean = [0.3891, 0.3978, 0.3728]
-    std = [0.1688, 0.1622, 0.1601]
+    # mean = [0.3891, 0.3978, 0.3728]
+    # std = [0.1688, 0.1622, 0.1601]
+    # For ImageNet scaling
+    mean = [0.485, 0.456, 0.406]
+    std = [0.229, 0.224, 0.225]
     normalize = Normalize(mean, std)
 
     base = models.resnet18(pretrained=False)

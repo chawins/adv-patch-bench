@@ -199,10 +199,10 @@ def train(train_loader, model, criterion, attack, optimizer, scaler, epoch, args
     model.train()
 
     # DEBUG
-    NUM_CLASSES = 16
-    img_list = []
-    for j in range(NUM_CLASSES):
-        img_list.append([])
+    # NUM_CLASSES = 16
+    # img_list = []
+    # for j in range(NUM_CLASSES):
+    #     img_list.append([])
 
     end = time.time()
     for i, samples in enumerate(train_loader):
@@ -212,15 +212,15 @@ def train(train_loader, model, criterion, attack, optimizer, scaler, epoch, args
         batch_size = images.size(0)
 
         # DEBUG
-        for j in range(batch_size):
-            if len(img_list[targets[j]]) < 5:
-                img_list[targets[j]].append(images[j])
-        if min([len(l) for l in img_list]) == 5:
-            imgs = []
-            for j in range(NUM_CLASSES):
-                imgs.extend(img_list[j])
-            save_image(imgs, 'samples.png', nrow=5)
-            assert False
+        # for j in range(batch_size):
+        #     if len(img_list[targets[j]]) < 5:
+        #         img_list[targets[j]].append(images[j])
+        # if min([len(l) for l in img_list]) == 5:
+        #     imgs = []
+        #     for j in range(NUM_CLASSES):
+        #         imgs.extend(img_list[j])
+        #     save_image(imgs, 'samples.png', nrow=5)
+        #     assert False
 
         images = images.cuda(args.gpu, non_blocking=True)
         targets = targets.cuda(args.gpu, non_blocking=True)

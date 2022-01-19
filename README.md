@@ -23,6 +23,7 @@ export PYTHONPATH="${PYTHONPATH}:/home/chawin/adv-patch-bench/datasets/panoptic_
 ### Mapillary
 
 - MTSD: [link](https://www.mapillary.com/dataset/trafficsign)
+- Have not found a way to automatically download the dataset.
 
 Get data ready to train YOLOv5.
 
