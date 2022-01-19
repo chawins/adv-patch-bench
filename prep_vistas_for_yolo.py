@@ -25,7 +25,7 @@ def write_yolo_labels(model, label, panoptic_per_image_id, data_dir, num_classes
     bbox, traffic_signs, = [], []
     filename_to_idx = {}
     obj_idx = 0
-    for filename in tqdm(filenames):
+    for filename in tqdm(filenames[:200]):
         img_id = filename.split('.')[0]
         segment = panoptic_per_image_id[img_id]['segments_info']
         img_pil = Image.open(join(img_path, filename))
@@ -39,7 +39,8 @@ def write_yolo_labels(model, label, panoptic_per_image_id, data_dir, num_classes
             is_oob = (xmin == 0) or (ymin == 0) or \
                 ((xmin + width) >= img_width) or ((ymin + height) >= img_height)
 
-            if obj['category_id'] != label or obj['area'] < min_area or is_oob:
+            if (obj['category_id'] != label or obj['area'] < min_area or is_oob
+                    or width * height < min_area):
                 continue
 
             x_center = (xmin + width / 2) / img_width
@@ -48,9 +49,6 @@ def write_yolo_labels(model, label, panoptic_per_image_id, data_dir, num_classes
             obj_height = height / img_height
             bbox.append([x_center, y_center, obj_width, obj_height])
             traffic_sign = torch.from_numpy(img[ymin:ymin + height, xmin:xmin + width])
-            # if traffic_sign.shape[0] < 1:
-            #     import pdb
-            #     pdb.set_trace()
             traffic_sign = traffic_sign.permute(2, 0, 1).unsqueeze(0) / 255
             traffic_signs.append(TF.resize(traffic_sign, [128, 128]))
             filename_to_idx[img_id].append(obj_idx)
