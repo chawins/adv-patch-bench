@@ -1,7 +1,7 @@
 import argparse
 import json
 from os import listdir
-from os.path import isfile, join
+from os.path import isfile, join, expanduser
 
 import numpy as np
 import torch
@@ -118,7 +118,7 @@ def main():
 
     # Read in panoptic file
     panoptic_json_path = f'{data_dir}/v2.0/panoptic/panoptic_2020.json'
-    with open(panoptic_json_path) as panoptic_file:
+    with open(expanduser(panoptic_json_path)) as panoptic_file:
         panoptic = json.load(panoptic_file)
 
     # Convert annotation infos to image_id indexed dictionary
