@@ -40,10 +40,12 @@ class_idx = {
     'octagon-915.0': 14,    # (1) red
 }
 
-path = '/data/shared/mtsd_v2_fully_annotated/'
+# path = '/data/shared/mtsd_v2_fully_annotated/'
+# csv_path = '/data/shared/mtsd_v2_fully_annotated/traffic_sign_dimension_v6.csv'
+path = expanduser('~/data/mtsd_v2_fully_annotated/')
+csv_path = expanduser('~/data/mtsd_v2_fully_annotated/traffic_sign_dimension_v6.csv')
 anno_path = expanduser(join(path, 'annotations'))
 label_path = expanduser(join(path, 'labels'))
-csv_path = '/data/shared/mtsd_v2_fully_annotated/traffic_sign_dimension_v6.csv'
 data = pd.read_csv(csv_path)
 
 selected_labels = list(class_idx.keys())

@@ -38,3 +38,6 @@ ln -s ../val/ val
 # ... go to yolov5 dir
 sh run.sh
 ```
+
+- `prep_mtsd_for_yolo.py`: Prepare MTSD dataset for YOLOv5.
+- `prep_vistas_for_yolo.py`: Prepare Vistas dataset for YOLOv5 using a pretrained classifier to determine classes of the signs.
