@@ -26,7 +26,7 @@ def write_yolo_labels(model, label, panoptic_per_image_id, data_dir, num_classes
     bbox, traffic_signs, = [], []
     filename_to_idx = {}
     obj_idx = 0
-    for filename in tqdm(filenames[:200]):
+    for filename in tqdm(filenames):
         img_id = filename.split('.')[0]
         segment = panoptic_per_image_id[img_id]['segments_info']
         img_pil = Image.open(join(img_path, filename))
