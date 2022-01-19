@@ -20,16 +20,15 @@ import torchvision.models as models
 import torchvision.transforms.functional as TF
 from matplotlib import cm
 from PIL import Image, ImageColor, ImageDraw, ImageFont
+from skimage.exposure import match_histograms
 from torch.serialization import save
 from torchvision.io import read_image
 from torchvision.utils import draw_segmentation_masks, make_grid, save_image
 from tqdm.auto import tqdm
-from skimage.exposure import match_histograms
 
-from adv_patch_bench.datasets.utils import (get_image_files, load_annotation,
-                                            pad_image)
 from adv_patch_bench.models.common import Normalize
 from adv_patch_bench.transforms import get_box_from_ellipse
+from adv_patch_bench.utils import get_image_files, load_annotation, pad_image
 
 plt.rcParams["savefig.bbox"] = 'tight'
 
