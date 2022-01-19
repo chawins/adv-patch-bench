@@ -49,7 +49,6 @@ def write_yolo_labels(model, label, panoptic_per_image_id, data_dir, num_classes
             bbox.append([x_center, y_center, obj_width, obj_height])
             traffic_sign = torch.from_numpy(img[ymin:ymin + height, xmin:xmin + width])
             traffic_sign = traffic_sign.permute(2, 0, 1).unsqueeze(0) / 255
-            print(traffic_sign.shape)
             traffic_signs.append(TF.resize(traffic_sign, [128, 128]))
             filename_to_idx[img_id].append(obj_idx)
             obj_idx += 1
@@ -83,7 +82,7 @@ def write_yolo_labels(model, label, panoptic_per_image_id, data_dir, num_classes
 
 def main():
     # Arguments
-    min_area = 0  # NOTE: We will ignore small signs in YOLO
+    min_area = 1  # NOTE: We will ignore small signs in YOLO
     label_to_classify = 95      # Class id of traffic signs on Vistas
     conf_thres = 0.
     num_classes = 16
