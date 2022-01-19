@@ -49,6 +49,8 @@ def write_yolo_labels(model, label, panoptic_per_image_id, data_dir, num_classes
             bbox.append([x_center, y_center, obj_width, obj_height])
             traffic_sign = torch.from_numpy(img[ymin:ymin + height, xmin:xmin + width])
             traffic_sign = traffic_sign.permute(2, 0, 1).unsqueeze(0)
+            import pdb
+            pdb.set_trace()
             traffic_signs.append(TF.resize(traffic_sign, [128, 128]))
             filename_to_idx[img_id].append(obj_idx)
             obj_idx += 1
