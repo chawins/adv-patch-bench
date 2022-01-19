@@ -1,6 +1,6 @@
 import argparse
 import json
-from os import listdir
+from os import listdir, makedirs
 from os.path import isfile, join, expanduser
 
 import numpy as np
@@ -18,6 +18,7 @@ def write_yolo_labels(model, label, panoptic_per_image_id, data_dir, num_classes
                       min_area=0, conf_thres=0., device='cuda'):
     img_path = join(data_dir, 'images')
     label_path = join(data_dir, 'labels_v2')
+    makedirs(label_path, exist_ok=True)
 
     filenames = [f for f in listdir(img_path) if isfile(join(img_path, f))]
     filenames.sort()
