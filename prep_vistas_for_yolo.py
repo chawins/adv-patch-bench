@@ -9,6 +9,7 @@ import torch.backends.cudnn as cudnn
 import torch.nn.functional as F
 from PIL import Image
 from tqdm.auto import tqdm
+import torchvision.transforms.functional as TF
 
 from adv_patch_bench.models import build_classifier
 
@@ -46,7 +47,9 @@ def write_yolo_labels(model, label, panoptic_per_image_id, data_dir, num_classes
             obj_width = width / img_width
             obj_height = height / img_height
             bbox.append([x_center, y_center, obj_width, obj_height])
-            traffic_signs.append(torch.from_numpy(img[ymin:ymin + height, xmin:xmin + width]).unsqueeze(0))
+            traffic_sign = torch.from_numpy(img[ymin:ymin + height, xmin:xmin + width])
+            traffic_sign = traffic_sign.permute(2, 0, 1).unsqueeze(0)
+            traffic_signs.append(TF.resize(traffic_sign, [128, 128]))
             filename_to_idx[img_id].append(obj_idx)
             obj_idx += 1
 
@@ -115,6 +118,7 @@ def main():
     args = parser.parse_args()
 
     model, _, _ = build_classifier(args)
+    model = model.module
 
     # Read in panoptic file
     panoptic_json_path = f'{data_dir}/v2.0/panoptic/panoptic_2020.json'
