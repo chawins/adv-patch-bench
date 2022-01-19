@@ -60,7 +60,7 @@ def write_yolo_labels(model, label, panoptic_per_image_id, data_dir, num_classes
     num_samples = len(traffic_signs)
     batch_size = 200
     num_batches = int(np.ceil(num_samples / batch_size))
-    predicted_labels = torch.zeros(len(num_samples))
+    predicted_labels = torch.zeros(num_samples)
     with torch.no_grad():
         for i in tqdm(range(num_batches)):
             begin, end = i * batch_size, (i + 1) * batch_size
