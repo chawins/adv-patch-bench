@@ -4,11 +4,11 @@ CUDA_VISIBLE_DEVICES=0,1 torchrun \
     train_yolov5.py \
     --hyp yolov5/data/hyps/hyp.scratch.yaml \
     --img 1280 \
-    --batch 32 \
+    --batch 40 \
     --data yolov5/data/mtsd.yaml \
     --weights yolov5s.pt \
     --exist-ok \
-    --workers 16 \
+    --workers 8 \
     --device 0,1 
 
 # CUDA_VISIBLE_DEVICES=0,1 python \
