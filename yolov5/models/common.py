@@ -20,7 +20,7 @@ import torch.nn as nn
 from PIL import Image
 from torch.cuda import amp
 
-from utils.datasets import exif_transpose, letterbox
+from yolov5.utils.datasets import exif_transpose, letterbox
 from yolov5.utils.general import (LOGGER, check_requirements, check_suffix, colorstr, increment_path, make_divisible,
                                   non_max_suppression, scale_coords, xywh2xyxy, xyxy2xywh)
 from yolov5.utils.plots import Annotator, colors, save_one_box

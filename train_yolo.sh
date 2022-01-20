@@ -1,7 +1,7 @@
 # Train
 CUDA_VISIBLE_DEVICES=0,1 python -m torch.distributed.launch \
     --standalone --nnodes=1 --max_restarts 0 --nproc_per_node 2 \
-    ./yolov5/train.py \
+    train_yolov5.py \
     --img 1280 \
     --batch 32 \
     --data mtsd.yaml \
