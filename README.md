@@ -77,6 +77,12 @@ ln -s ~/data/mapillary_vistas/training/labels_v2/* .
 ### Training
 
 - Extremely small objects are filtered out by default by YOLO. This is in `utils/autoanchor.py` on line 120.
+- We use the default training hyperparameters: `hyp.scratch.yaml`.
+- The pretrained model is trained on COCO training set.
+
+```bash
+sh train_yolo.sh
+```
 
 ### Other Tips
 

@@ -8,7 +8,7 @@ CUDA_VISIBLE_DEVICES=0,1 torchrun \
     --data yolov5/data/mtsd.yaml \
     --weights yolov5s.pt \
     --exist-ok \
-    --workers 8 \
+    --workers 12 \
     --device 0,1 
 
 # CUDA_VISIBLE_DEVICES=0,1 python \
