@@ -1,5 +1,11 @@
 # adv-patch-bench
 
+Packages
+
+```bash
+conda install -c conda-forge opencv
+```
+
 ## Dataset
 
 ### BDD100K
@@ -41,6 +47,12 @@ sh run.sh
 
 ## YOLOv5
 
+- Install required packages: `pip install -r requirements.txt`
+
+### Data Preparation
+
+- `prep_mtsd_for_yolo.py`: Prepare MTSD dataset for YOLOv5.
+- `prep_vistas_for_yolo.py`: Prepare Vistas dataset for YOLOv5 using a pretrained classifier to determine classes of the signs.
 - YOLO expects samples and labels in `root_dir/images/*` and `root_dir/labels/*`, respectively. See [this link](https://github.com/ultralytics/yolov5/wiki/Train-Custom-Data#13-organize-directories) for more detail.
 - Training set: MTSD training. Symlink to `~/data/yolo_data/(images or labels)/train`.
 - Validation set: MTSD validation Symlink to `~/data/yolo_data/(images or labels)/val`.
@@ -61,9 +73,6 @@ ln -s ~/data/mtsd_v2_fully_annotated/labels_v2/val/* .
 cd ~/data/yolo_data/labels/test
 ln -s ~/data/mapillary_vistas/training/labels_v2/* .
 ```
-
-- `prep_mtsd_for_yolo.py`: Prepare MTSD dataset for YOLOv5.
-- `prep_vistas_for_yolo.py`: Prepare Vistas dataset for YOLOv5 using a pretrained classifier to determine classes of the signs.
 
 ### Other Tips
 
