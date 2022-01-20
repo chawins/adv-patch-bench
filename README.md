@@ -74,6 +74,10 @@ cd ~/data/yolo_data/labels/test
 ln -s ~/data/mapillary_vistas/training/labels_v2/* .
 ```
 
+### Training
+
+- Extremely small objects are filtered out by default by YOLO. This is in `utils/autoanchor.py` on line 120.
+
 ### Other Tips
 
 - If you run into `Argument list too long` error when doing symlink. Try `ulimit -s 65536`.
