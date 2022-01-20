@@ -1,6 +1,17 @@
 # Train
-CUDA_VISIBLE_DEVICES=0,1 python -m torch.distributed.launch \
-    --standalone --nnodes=1 --max_restarts 0 --nproc_per_node 2 \
+# CUDA_VISIBLE_DEVICES=0,1 torchrun \
+#     --standalone --nnodes=1 --max_restarts 0 --nproc_per_node 2 \
+#     train_yolov5.py \
+#     --hyp yolov5/data/hyps/hyp.scratch.yaml \
+#     --img 1280 \
+#     --batch 32 \
+#     --data yolov5/data/mtsd.yaml \
+#     --weights yolov5s.pt \
+#     --exist-ok \
+#     --workers 8 \
+#     --device 0,1 
+
+CUDA_VISIBLE_DEVICES=0,1 python \
     train_yolov5.py \
     --hyp yolov5/data/hyps/hyp.scratch.yaml \
     --img 1280 \
