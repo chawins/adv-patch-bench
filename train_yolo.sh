@@ -4,7 +4,7 @@ CUDA_VISIBLE_DEVICES=0,1 python -m torch.distributed.launch \
     train_yolov5.py \
     --img 1280 \
     --batch 32 \
-    --data mtsd.yaml \
+    --data yolov5/data/mtsd.yaml \
     --weights yolov5s.pt \
     --exist-ok \
     --workers 8 \
