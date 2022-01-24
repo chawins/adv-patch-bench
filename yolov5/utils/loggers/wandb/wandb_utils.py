@@ -10,13 +10,14 @@ from typing import Dict
 import yaml
 from tqdm import tqdm
 
+from yolov5.utils.datasets import LoadImagesAndLabels, img2label_paths
+from yolov5.utils.general import LOGGER, check_dataset, check_file
+
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[3]  # YOLOv5 root directory
 if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))  # add ROOT to PATH
 
-from utils.datasets import LoadImagesAndLabels, img2label_paths
-from utils.general import LOGGER, check_dataset, check_file
 
 try:
     import wandb
@@ -226,7 +227,7 @@ class WandbLogger():
                 config = self.wandb_run.config
                 opt.weights, opt.save_period, opt.batch_size, opt.bbox_interval, opt.epochs, opt.hyp = str(
                     self.weights), config.save_period, config.batch_size, config.bbox_interval, config.epochs, \
-                                                                                                       config.hyp
+                    config.hyp
         data_dict = self.data_dict
         if self.val_artifact is None:  # If --upload_dataset is set, use the existing artifact, don't download
             self.train_artifact_path, self.train_artifact = self.download_dataset_artifact(data_dict.get('train'),

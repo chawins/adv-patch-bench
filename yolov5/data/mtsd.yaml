@@ -8,14 +8,31 @@
 
 
 # Train/val/test sets as 1) dir: path/to/imgs, 2) file: path/to/imgs.txt, or 3) list: [path/to/imgs1, path/to/imgs2, ..]
-path: /data/shared/mtsd_v2_fully_annotated/  # dataset root dir
+path: /home/chawins/data/yolo_data/  # dataset root dir
 train: images/train  # train images (relative to 'path') 128 images
 val: images/val  # val images (relative to 'path') 128 images
 test: images/test # test images (optional)
 
 # Classes
-nc: 1  # number of classes
-names: ['traffic sign']  # class names
+nc: 16  # number of classes
+names: ['circle-white', 'circle-blue', 'circle-red', 'triangle-white', 
+        'triangle-yellow', 'triangle_inverted', 'diamond-600', 'diamond-915', 
+        'square', 'rect-458-610-white', 'rect-458-610-other', 'rect-762-915', 
+        'rect-915-1220', 'pentagon', 'octagon', 'other']  # class names
 
 # Download script/URL (optional)
 download: 
+
+# color_dict = {
+#         'circle-750.0': ['white', 'blue', 'red'],   # (1) white+red, (2) blue+white
+#         'triangle-900.0': ['white', 'yellow'],  # (1) white, (2) yellow
+#         'triangle_inverted-1220.0': [],   # (1) white+red
+#         'diamond-600.0': [],    # (1) white+yellow
+#         'diamond-915.0': [],    # (1) yellow
+#         'square-600.0': [],     # (1) blue
+#         'rect-458.0-610.0': ['white', 'other'],  # (1) chevron (also multi-color), (2) white
+#         'rect-762.0-915.0': [],  # (1) white
+#         'rect-915.0-1220.0': [],    # (1) white
+#         'pentagon-915.0': [],   # (1) yellow
+#         'octagon-915.0': [],    # (1) red
+#     }
