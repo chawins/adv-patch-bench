@@ -22,6 +22,24 @@ def gen_rect_mask(size, ratio=None):
         box = [[0, 0], [size - 1, 0], [size - 1, size - 1], [0, size - 1]]
     return mask, box
 
+def gen_square_mask(size, ratio=None):
+    # ratio = height / width
+    mask = np.zeros((size, size))
+    height = ratio * size if ratio < 1 else size
+    width = height / ratio
+    if ratio > 1:
+        pad = int((size - width) / 2)
+        mask[:, pad:size - pad] = 1
+        box = [[pad, 0], [size - pad, 0], [size - pad, size - 1], [pad, size - 1]]
+    elif ratio < 1:
+        pad = int((size - height) / 2)
+        mask[pad:size - pad, :] = 1
+        box = [[0, pad], [size - 1, pad], [size - 1, size - pad], [0, size - pad]]
+    else:
+        mask[:, :] = 1
+        box = [[0, 0], [size - 1, 0], [size - 1, size - 1], [0, size - 1]]
+    return mask, box
+
 
 def gen_diamond_mask(size, ratio=None):
     mid = round(size / 2)
@@ -78,4 +96,5 @@ SHAPE_TO_MASK = {
     'diamond': gen_diamond_mask,
     'pentagon': gen_pentagon_mask,
     'octagon': gen_octagon_mask,
+    'square': gen_square_mask,
 }

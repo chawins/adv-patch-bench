@@ -40,6 +40,9 @@ def ap_per_class(tp, conf, pred_cls, target_cls, plot=False, save_dir='.', names
     unique_classes, nt = np.unique(target_cls, return_counts=True)
     nc = unique_classes.shape[0]  # number of classes, number of detections
 
+    # print(unique_classes)
+    # print(nc)
+    
     # Create Precision-Recall curve and compute AP for each class
     px, py = np.linspace(0, 1, 1000), []  # for plotting
     ap, p, r = np.zeros((nc, tp.shape[1])), np.zeros((nc, 1000)), np.zeros((nc, 1000))
@@ -47,6 +50,12 @@ def ap_per_class(tp, conf, pred_cls, target_cls, plot=False, save_dir='.', names
         i = pred_cls == c
         n_l = nt[ci]  # number of labels
         n_p = i.sum()  # number of predictions
+
+        # print(ci)
+        # print(c)
+        # print(n_l)
+        # print(n_p)
+        # print()
 
         if n_p == 0 or n_l == 0:
             continue
@@ -68,6 +77,7 @@ def ap_per_class(tp, conf, pred_cls, target_cls, plot=False, save_dir='.', names
                 ap[ci, j], mpre, mrec = compute_ap(recall[:, j], precision[:, j])
                 if plot and j == 0:
                     py.append(np.interp(px, mrec, mpre))  # precision at mAP@0.5
+    # qqq
 
     # Compute F1 (harmonic mean of precision and recall)
     f1 = 2 * p * r / (p + r + eps)
@@ -135,6 +145,7 @@ class ConfusionMatrix:
         detections = detections[detections[:, 4] > self.conf]
         gt_classes = labels[:, 0].int()
         detection_classes = detections[:, 5].int()
+
         iou = box_iou(labels[:, 1:], detections[:, :4])
 
         x = torch.where(iou > self.iou_thres)
@@ -161,6 +172,7 @@ class ConfusionMatrix:
             for i, dc in enumerate(detection_classes):
                 if not any(m1 == i):
                     self.matrix[dc, self.nc] += 1  # background FN
+
 
     def matrix(self):
         return self.matrix

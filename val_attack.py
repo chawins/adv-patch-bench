@@ -44,6 +44,12 @@ from yolov5.utils.metrics import ConfusionMatrix, ap_per_class
 from yolov5.utils.plots import output_to_target, plot_images, plot_val_study
 from yolov5.utils.torch_utils import select_device, time_sync
 
+
+
+import cv2
+
+
+
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # YOLOv5 root directory
 if str(ROOT) not in sys.path:
@@ -127,6 +133,7 @@ def run(data,
         compute_loss=None,
         apply_patch=True
         ):
+
     # Initialize/load model and set device
     training = model is not None
     if training:  # called by train.py
@@ -179,15 +186,19 @@ def run(data,
     # EDIT: Randomly select backgrounds and resize
     bg_size = (960, 1280)
     num_bg = 16
-    bg_dir = '/data/shared/mtsd_v2_fully_annotated/test'
+    # bg_dir = '/data/shared/mtsd_v2_fully_annotated/test'
+    bg_dir = '/data/shared/mtsd_v2_fully_annotated/train'
     all_bgs = os.listdir(os.path.expanduser(bg_dir))
     idx = np.arange(len(all_bgs))
+    print('num backgrouds', len(idx))
+    qqq
     np.random.shuffle(idx)
     backgrounds = torch.zeros((num_bg, 3) + bg_size, )
     for i, index in enumerate(idx[:num_bg]):
         bg = torchvision.io.read_image(os.path.join(bg_dir, all_bgs[index])) / 255
         backgrounds[i] = T.resize(bg, bg_size, antialias=True)
     torchvision.utils.save_image(backgrounds, 'backgrounds.png')
+
 
     # EDIT: set up attack
     obj_size = int(min(bg_size) * 0.1) * 2        # (256, 256)
@@ -225,12 +236,14 @@ def run(data,
         with torch.enable_grad():
             adv_patch = attack.attack(obj.cuda(), obj_mask.cuda(), patch_mask.cuda(), backgrounds.cuda())
 
-        adv_patch = adv_patch[0].detach()
-        adv_patch = adv_patch.cpu().float()
-        adv_patch_cropped = adv_patch[:, mid_height - h:mid_height + h, mid_width - w:mid_width + w]
+        # adv_patch = adv_patch[0].detach()
+        # adv_patch = adv_patch.cpu().float()
+        # adv_patch_cropped = adv_patch[:, mid_height - h:mid_height + h, mid_width - w:mid_width + w]
 
         # random patch
         # adv_patch_cropped = torch.rand(3, 32, 32)
+
+        pass
 
     seen = 0
     confusion_matrix = ConfusionMatrix(nc=nc)
@@ -242,39 +255,72 @@ def run(data,
     jdict, stats, ap, ap_class = [], [], [], []
     pbar = tqdm(dataloader, desc=s, bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')  # progress bar
 
-    # TODO: use annotated csv
-    df = pd.read_csv('mapillaryvistas_data.csv')
-    df['filename'] = df['filename_x']
+    # TODO: use annotated csv (change csv used)
+    # df = pd.read_csv('mapillaryvistas_data.csv')
+    df = pd.read_csv('mapillary_vistas_final_merged.csv')
+    # df['filename'] = df['filename_x']
+
     from ast import literal_eval
-    df["tgt"] = df["tgt"].apply(literal_eval)
-    df = df[df['group'] == 1]
+    # df["tgt"] = df["tgt"].apply(literal_eval)
+    df["tgt_final"] = df["tgt_final"].apply(literal_eval)
+    
+    # TODO: remove
+    # df = df[df['group'] == 1]
+    # print(df.shape)
+    # print(df['final_shape'].unique)
+    df = df[df['final_shape'] != 'other-0.0-0.0']
+
+    print(df.shape)
+    print(df.groupby(by=['final_shape']).count())
 
     if apply_patch:
-        # demo_patch = torchvision.io.read_image('demo.png').float()[:3, :, :] / 255
-        demo_patch = resize(adv_patch_cropped, (32, 32))
+        demo_patch = torchvision.io.read_image('demo.png').float()[:3, :, :] / 255
+        # demo_patch = resize(adv_patch_cropped, (32, 32))
         demo_patch = resize(demo_patch, (32, 32))
         f = os.path.join(save_dir, 'adversarial_patch.png')
         torchvision.utils.save_image(demo_patch, f)
 
+
+    # shape_df = pd.DataFrame(columns=['filename', 'filename_png', 'object_id', 'h0', 'w0', 'h_ratio', 'w_ratio', 'w_pad', 'h_pad'])
+
+    problems = set()
     for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
         # shapes: [[h0, w0], [h/h0, w/w0], [w_pad, h_pad]]
         if apply_patch:
+            
             for image_i, path in enumerate(paths):
                 filename = path.split('/')[-1]
 
-                img_df = df[df['filename'] == filename]
+                # img_df = df[df['filename'] == filename]
+                img_df = df[df['filename_y'] == filename]
                 if len(img_df) == 0:
                     continue
 
                 for _, row in img_df.iterrows():
                     transform_func = warp_perspective
-                    (h0, w0), ((h_ratio, w_ratio), (w_pad, h_pad)) = shapes[image_i]
+                    # (h0, w0), ((h_ratio, w_ratio), (w_pad, h_pad)) = shapes[image_i]
 
-                    shape = row['shape']
-                    predicted_class = row['predicted_class']
+                    # curr_shape_df = {'filename':row['filename'], 'filename_png': row['filename_png'], 'object_id': row['obj_id'], 'h0': h0, 'w0': w0, 'h_ratio': h_ratio, 'w_ratio': w_ratio, 'w_pad': w_pad, 'h_pad': h_pad}
+                    # shape_df = shape_df.append(curr_shape_df, ignore_index=True)
+                    # continue
+
+                    # shape = row['shape']
+                    # predicted_class = row['predicted_class']
+
+                    
+                    predicted_class = row['final_shape']
+                    shape = predicted_class.split('-')[0]
 
                     patch_size_in_pixel = 32
                     patch_size_in_mm = 250
+
+
+                    # TODO: add square
+                    # if shape == 'square':
+                    #     continue
+                    # print(shape)
+                    # print(predicted_class)
+                    
                     sign_canonical, sign_mask, src = get_sign_canonical(
                         shape, predicted_class, patch_size_in_pixel, patch_size_in_mm)
 
@@ -293,26 +339,60 @@ def run(data,
                     # Crop patch that is not on the sign
                     sign_canonical *= sign_mask
                     src = np.array(src, dtype=np.float32)
-                    tgt = np.array(row['tgt'], dtype=np.float32)
-                    offset_x_ratio = row['xmin_ratio']
-                    offset_y_ratio = row['ymin_ratio']
-                    # Have to correct for the padding when df is saved (TODO: this should be simplified)
-                    pad_size = int(max(h0, w0) * 0.25)
-                    x_min = offset_x_ratio * (w0 + pad_size * 2) - pad_size
-                    y_min = offset_y_ratio * (h0 + pad_size * 2) - pad_size
-                    # Order of coordinate in tgt is inverted, i.e., (x, y) instead of (y, x)
-                    tgt[:, 1] = (tgt[:, 1] + y_min) * h_ratio + h_pad
-                    tgt[:, 0] = (tgt[:, 0] + x_min) * w_ratio + w_pad
 
-                    if len(src) == 3:
-                        M = torch.from_numpy(getAffineTransform(src, tgt)).unsqueeze(0).float()
-                        transform_func = warp_affine
-                    else:
-                        src = torch.from_numpy(src).unsqueeze(0)
-                        tgt = torch.from_numpy(tgt).unsqueeze(0)
-                        M = get_perspective_transform(src, tgt)
+                    # tgt = np.array(row['tgt'], dtype=np.float32)
+                    tgt = np.array(row['tgt_final'], dtype=np.float32)
 
-                        transform_func = warp_perspective
+
+                    # offset_x_ratio = row['xmin_ratio']
+                    # offset_y_ratio = row['ymin_ratio']
+                    # # Have to correct for the padding when df is saved (TODO: this should be simplified)
+                    # pad_size = int(max(h0, w0) * 0.25)
+                    # x_min = offset_x_ratio * (w0 + pad_size * 2) - pad_size
+                    # y_min = offset_y_ratio * (h0 + pad_size * 2) - pad_size
+
+                    
+                    # # Order of coordinate in tgt is inverted, i.e., (x, y) instead of (y, x)
+                    # tgt[:, 1] = (tgt[:, 1] + y_min) * h_ratio + h_pad
+                    # tgt[:, 0] = (tgt[:, 0] + x_min) * w_ratio + w_pad
+                    
+                    try:
+                        if len(src) == 3:
+                            M = torch.from_numpy(getAffineTransform(src, tgt)).unsqueeze(0).float()
+                            print(src.shape)
+                            print(tgt.shape)
+                            transform_func = warp_affine
+                        else:
+                            src = torch.from_numpy(src).unsqueeze(0)
+                            tgt = torch.from_numpy(tgt).unsqueeze(0)
+                            M = get_perspective_transform(src, tgt)
+                            transform_func = warp_perspective
+                    except ValueError:
+                        # problems.add(row['filename_y'])
+                        print('ERROR')
+                        print(src.shape)
+                        print(tgt.shape)
+                        print(row['tgt'])
+
+                        print()
+                        print(row['tgt'])
+                        print(row['tgt_final'])
+                        print()
+                        print(row)
+                        print()
+                        qqq
+
+                        continue
+                    except cv2.error:
+                        # print(row)
+                        print('ERROR')
+                        print(src.shape)
+                        print(tgt.shape)
+                        problems.add((row['filename'], row['filename_y']))
+                        # problems.add(row['filename_y'])
+                        # print(problems)
+                        # qqq
+                        continue
 
                     cur_shape = im[image_i].shape[1:]
                     warped_patch = transform_func(sign_canonical.unsqueeze(0),
@@ -325,6 +405,9 @@ def run(data,
 
                     # DEBUG
                     # pdb.set_trace()
+
+        
+        # continue
 
         t1 = time_sync()
         if pt or jit or engine:
@@ -397,6 +480,14 @@ def run(data,
             Thread(target=plot_images, args=(im, output_to_target(out), paths, f, names), daemon=True).start()
 
             print(f)
+
+    print(problems)
+    print()
+    print('num problems', len(problems))
+
+    qqq
+    # shape_df.to_csv('shape_df.csv', index=False)
+    # qqq
 
     # Compute metrics
     stats = [np.concatenate(x, 0) for x in zip(*stats)]  # to numpy

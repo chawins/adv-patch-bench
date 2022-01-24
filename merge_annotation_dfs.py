@@ -206,7 +206,7 @@ def main():
     final_df =final_df.rename(columns={
                                 'shape_x': 'shape', 'predicted_shape_x': 'predicted_shape',
                                 'predicted_class_x': 'predicted_class', 'batch_number_x': 'batch_number',
-                                'row_x': 'row', 'column_x': 'column'
+                                'row_x': 'row', 'column_x': 'column', 'filename_x': 'filename'
                             })
 
     final_df.to_csv('mapillary_vistas_final_merged.csv', index=False)

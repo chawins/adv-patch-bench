@@ -236,14 +236,26 @@ def run(data,
         adv_patch = adv_patch.cpu().float()
         adv_patch_cropped = adv_patch[:, mid_height - h:mid_height + h, mid_width - w:mid_width + w]
 
-        # # random patch
-        # adv_patch_cropped = torch.rand(3, 32, 32)
+        # random patch
+        # adv_patch_cropped = torch.rand(3, 2*h, 2*w)
+        # adv_patch[:, mid_height - h:mid_height + h, mid_width - w:mid_width + w] = adv_patch_cropped
 
-        pass
-    
+        f = os.path.join(save_dir, 'adversarial_patch.png')
+        torchvision.utils.save_image(adv_patch, f)
+
+        f = os.path.join(save_dir, 'adversarial_patch_cropped.png')
+        torchvision.utils.save_image(adv_patch_cropped, f)
+            
     seen = 0
-    confusion_matrix = ConfusionMatrix(nc=nc)
+    
     names = {k: v for k, v in enumerate(model.names if hasattr(model, 'names') else model.module.names)}
+
+    # TODO move to label file instead of adding synthetic stop sign as class here
+    names[1] = 'synthetic_stop_sign'
+    nc += 1
+
+    confusion_matrix = ConfusionMatrix(nc=nc)
+
     class_map = coco80_to_coco91_class() if is_coco else list(range(1000))
     s = ('%20s' + '%11s' * 6) % ('Class', 'Images', 'Labels', 'P', 'R', 'mAP@.5', 'mAP@.5:.95')
     dt, p, r, f1, mp, mr, map50, map = [0.0, 0.0, 0.0], 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
@@ -251,49 +263,25 @@ def run(data,
     jdict, stats, ap, ap_class = [], [], [], []
     pbar = tqdm(dataloader, desc=s, bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')  # progress bar
 
-    if apply_patch:
-        demo_patch = torchvision.io.read_image('demo.png').float()[:3, :, :] / 255
-        # demo_patch = resize(adv_patch_cropped, (32, 32))
-        demo_patch = resize(demo_patch, (32, 32))
-        f = os.path.join(save_dir, 'adversarial_patch.png')
-        torchvision.utils.save_image(demo_patch, f)
+    # if apply_patch:
+    #     demo_patch = torchvision.io.read_image('demo.png').float()[:3, :, :] / 255
+    #     # demo_patch = resize(adv_patch_cropped, (32, 32))
+    #     demo_patch = resize(demo_patch, (32, 32))
+    #     f = os.path.join(save_dir, 'adversarial_patch.png')
+    #     torchvision.utils.save_image(demo_patch, f)
 
     obj_transforms = K.RandomAffine(30, translate=(0.5, 0.5), p=1.0, return_transform=True)
     mask_transforms = K.RandomAffine(30, translate=(0.5, 0.5), p=1.0, resample=Resample.NEAREST)
 
+    num_errors = 0
+
     for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
-        # TODO: remove. only here for testing
-        targets = torch.Tensor()
-
-        # print(len(im))
-        # continue
-        # print(im.shape)
-        # print(targets.shape)
-        # print(targets)
-        # continue
-        
-        # if any(targets[:, 1] != 1):
-        #     print(targets)
-        #     qqq
-        # continue
-        # print()
-        # print()
-        # continue
-        # shapes: [[h0, w0], [h/h0, w/w0], [w_pad, h_pad]]
-        
         for image_i, path in enumerate(paths):
-
-            # print(targets[image_i].shape)
-            # continue
             orig_shape = im[image_i].shape[1:]
-
             resize_transform = torchvision.transforms.Resize(size=(960, 1280))
-            # torchvision.utils.save_image(im[image_i]/255, 'image_i.png')
 
             resized_img = resize_transform(im[image_i])
             
-            # torchvision.utils.save_image(resized_img/255, 'image_i_resized.png')
-
             if apply_patch:
                 adv_obj = patch_mask * adv_patch + (1 - patch_mask) * obj
             else:
@@ -309,41 +297,17 @@ def run(data,
             tf_params = tf_params.cuda()
             o_mask = mask_transforms.apply_transform(
                 obj_mask_dup, None, transform=tf_params)
-            
-            
-            # torchvision.utils.save_image(o_mask, 'image_i_o_mask.png')
-
+        
             o_mask = o_mask.cpu()
-            # print(o_mask.shape)
             indices = np.where(o_mask[0][0]==1)
-            # print(o_mask.shape)
-            # print(indices)
-            # q
-            # x_min, x_max = min(indices[0]), max(indices[0])
-            # y_min, y_max = min(indices[1]), max(indices[1])
             x_min, x_max = min(indices[1]), max(indices[1])
             y_min, y_max = min(indices[0]), max(indices[0])
-            # tgts = targets[image_i]
-            # print(tgts)
-            
-            # image_index, box_label, coords
-            label = [image_i, 0, (x_min+x_max)/(2*1280), (y_min+y_max)/(2*960), (x_max-x_min)/1280, (y_max-y_min)/960]
-            
-            # print(targets.shape)
-            # print(torch.Tensor(label).shape)
-            # print(torch.unsqueeze(torch.Tensor(label), 0))
+
+            label = [image_i, 1, (x_min+x_max)/(2*1280), (y_min+y_max)/(2*960), (x_max-x_min)/1280, (y_max-y_min)/960]
             targets = torch.cat((targets, torch.unsqueeze(torch.Tensor(label), 0)))
-            # targets = torch.cat((targets, torch.Tensor(label)))
-            # print(targets.shape)
-
-            # print(tgts)
-            # qqq
-
             adv_img = o_mask * adv_obj + (1 - o_mask) * resized_img/255
-            # torchvision.utils.save_image(adv_img, 'image_i_.png')
             reresize_transform = torchvision.transforms.Resize(size=orig_shape)
             im[image_i] = reresize_transform(adv_img) * 255
-            # torchvision.utils.save_image(im[image_i]/255, 'image_i_.png')
 
             # qqq
             # DEBUG
@@ -356,8 +320,6 @@ def run(data,
         if pt or jit or engine:
             im = im.to(device, non_blocking=True)
             targets = targets.to(device)
-
-        # qqq
 
         im = im.half() if half else im.float()  # uint8 to fp16/32
         im /= 255  # 0 - 255 to 0.0 - 1.0
@@ -381,6 +343,8 @@ def run(data,
         dt[2] += time_sync() - t3
 
         # Metrics
+        pred_for_plotting = []
+
         for si, pred in enumerate(out):
             labels = targets[targets[:, 0] == si, 1:]
             nl = len(labels)
@@ -397,6 +361,34 @@ def run(data,
             if single_cls:
                 pred[:, 5] = 0
             predn = pred.clone()
+
+            # detections (Array[N, 6]), x1, y1, x2, y2, confidence, class
+            # labels (Array[M, 5]), class, x1, y1, x2, y2
+
+            tbox = xywh2xyxy(labels[:, 1:5]).cpu()  # target boxes
+            class_only = np.expand_dims(labels[:, 0].cpu(), axis=0)
+            tbox = np.concatenate((class_only.T, tbox), axis=1)
+
+            num_labels_changed = 0
+            assert sum(tbox[:, 0]) == 1
+            # print('num predictions for image', len(predn))
+            for lbl in tbox:
+                if lbl[0] == 1:
+                    for pi, prd in enumerate(predn):
+                        # [x1, y1, x2, y2] where xy1=top-left, xy2=bottom-right
+                        if prd[0] > 0.9 * lbl[1] and prd[1] > 0.9 * lbl[2] and prd[2] < 1.1 * lbl[3] and prd[3] < 1.1 * lbl[4]:
+                            predn[pi, 5] = 1
+                            pred[pi, 5] = 1
+                            
+                            if prd[4] > 0.25:
+                                num_labels_changed += 1
+
+            if num_labels_changed > 1:
+                num_errors += 1
+
+            for *box, conf, cls in predn.cpu().numpy():
+                pred_for_plotting.append([si, cls, *list(*xyxy2xywh(np.array(box)[None])), conf])
+
             scale_coords(im[si].shape[1:], predn[:, :4], shape, shapes[si][1])  # native-space pred
 
             # Evaluate
@@ -404,6 +396,7 @@ def run(data,
                 tbox = xywh2xyxy(labels[:, 1:5])  # target boxes
                 scale_coords(im[si].shape[1:], tbox, shape, shapes[si][1])  # native-space labels
                 labelsn = torch.cat((labels[:, 0:1], tbox), 1)  # native-space labels
+                
                 correct = process_batch(predn, labelsn, iouv)
                 if plots:
                     confusion_matrix.process_batch(predn, labelsn)
@@ -424,15 +417,22 @@ def run(data,
             Thread(target=plot_images, args=(im, targets, paths, f, names), daemon=True).start()
             f = save_dir / f'val_batch{batch_i}_pred.jpg'  # predictions
             Thread(target=plot_images, args=(im, output_to_target(out), paths, f, names), daemon=True).start()
+            f = save_dir / f'val_batch{batch_i}_pred_synthetic.jpg'  # predictions
+            Thread(target=plot_images, args=(im, np.array(pred_for_plotting), paths, f, names), daemon=True).start()
 
             print(f)
 
-    q
-    # shape_df.to_csv('shape_df.csv', index=False)
-    # qqq
-
     # Compute metrics
     stats = [np.concatenate(x, 0) for x in zip(*stats)]  # to numpy
+
+    # print('statistics')
+    # # print(stats)
+    # print(len(stats))
+    # print(stats[2])
+    # print(type(stats[2]))
+    # print(set(stats[2]))
+    # qqq
+    
     if len(stats) and stats[0].any():
         tp, fp, p, r, f1, ap, ap_class = ap_per_class(*stats, plot=plots, save_dir=save_dir, names=names)
         ap50, ap = ap[:, 0], ap.mean(1)  # AP@0.5, AP@0.5:0.95
@@ -446,9 +446,14 @@ def run(data,
     LOGGER.info(pf % ('all', seen, nt.sum(), mp, mr, map50, map))
 
     # Print results per class
-    if (verbose or (nc < 50 and not training)) and nc > 1 and len(stats):
-        for i, c in enumerate(ap_class):
-            LOGGER.info(pf % (names[c], seen, nt[c], p[i], r[i], ap50[i], ap[i]))
+    # if (verbose or (nc < 50 and not training)) and nc > 1 and len(stats):
+    print('[INFO] results per class')
+    for i, c in enumerate(ap_class):
+        LOGGER.info(pf % (names[c], seen, nt[c], p[i], r[i], ap50[i], ap[i]))
+
+    print('num_errors', num_errors)
+    print('num_images', seen)
+    print('proportion of errors', num_errors/seen)
 
     # Print speeds
     t = tuple(x / seen * 1E3 for x in dt)  # speeds per image
@@ -493,6 +498,7 @@ def run(data,
         s = f"\n{len(list(save_dir.glob('labels/*.txt')))} labels saved to {save_dir / 'labels'}" if save_txt else ''
         LOGGER.info(f"Results saved to {colorstr('bold', save_dir)}{s}")
     maps = np.zeros(nc) + map
+
     for i, c in enumerate(ap_class):
         maps[c] = ap[i]
     return (mp, mr, map50, map, *(loss.cpu() / len(dataloader)).tolist()), maps, t
@@ -564,6 +570,4 @@ def main(opt):
 
 if __name__ == "__main__":
     opt = parse_opt()
-    # print(opt.apply_patch)
-    # qq
     main(opt)

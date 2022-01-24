@@ -20,7 +20,7 @@ class RP2AttackModule(DetectorAttackModule):
         # self.num_restarts = attack_config['num_restarts']
         # self.optimizer = attack_config['optimizer']
 
-        self.num_steps = 400
+        self.num_steps = 1000
         self.step_size = 1e-1
         self.num_restarts = 1
         self.optimizer = 'adam'
@@ -100,6 +100,10 @@ class RP2AttackModule(DetectorAttackModule):
                 adv_obj = adv_obj.expand(self.num_eot, -1, -1, -1)
                 adv_obj, tf_params = self.obj_transforms(adv_obj)
                 adv_obj = adv_obj.clamp(0, 1)
+
+                # print(obj_mask_dup.shape)
+                # print(tf_params)
+
                 o_mask = self.mask_transforms.apply_transform(
                     obj_mask_dup, None, transform=tf_params)
                 adv_img = o_mask * adv_obj + (1 - o_mask) * bgs
