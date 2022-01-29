@@ -134,21 +134,26 @@ def run(data,
         save_exp_metrics=True
         ):
 
+    DATASET_NAME = 'mapillary' if 'mapillary' in data else 'mtsd'
     try:
         metrics_df = pd.read_csv('runs/results.csv')
-        metrics_df_grouped = metrics_df.groupby(by=['apply_patch', 'random_patch']).count().reset_index()
-        metrics_df_grouped = metrics_df_grouped[(metrics_df_grouped['apply_patch'] == apply_patch) & (metrics_df_grouped['random_patch'] == random_patch)]['name']
-        exp_number = 0 if not len(metrics_df_grouped) else metrics_df_grouped['name'].item()
+        metrics_df = metrics_df.replace({'apply_patch': 'True', 'random_patch': 'True'}, 1)
+        metrics_df = metrics_df.replace({'apply_patch': 'False', 'random_patch': 'False'}, 0)
+        metrics_df['apply_patch'] = metrics_df['apply_patch'].astype(float).astype(bool)
+        metrics_df['random_patch'] = metrics_df['random_patch'].astype(float).astype(bool)
+        metrics_df_grouped = metrics_df.groupby(by=['dataset', 'apply_patch', 'random_patch']).count().reset_index()
+        metrics_df_grouped = metrics_df_grouped[(metrics_df_grouped['dataset'] == DATASET_NAME) & (metrics_df_grouped['apply_patch'] == apply_patch) & (metrics_df_grouped['random_patch'] == random_patch)]['name']
+        exp_number = 0 if not len(metrics_df_grouped) else metrics_df_grouped.item()
     except FileNotFoundError:
         exp_number = 0
 
     if apply_patch:
         if random_patch:
-            name += f'_random_patch_{exp_number}'
+            name += f'_{DATASET_NAME}_random_patch_{exp_number}'
         else:
-            name += f'_rp2_patch_{exp_number}'
+            name += f'_{DATASET_NAME}_rp2_patch_{exp_number}'
     else:
-        name += f'_no_patch_{exp_number}'
+        name += f'_{DATASET_NAME}_no_patch_{exp_number}'
 
     # Initialize/load model and set device
     training = model is not None
@@ -270,7 +275,8 @@ def run(data,
     names = {k: v for k, v in enumerate(model.names if hasattr(model, 'names') else model.module.names)}
     # nc = 1 if single_cls else int(data['nc'])  # number of classes
     nc = len(names)
-    print(names)
+    print('names', names)
+    
     
     # TODO move to label file instead of adding synthetic stop sign as class here
     SYNTHETIC_STOP_SIGN_CLASS = len(names)
@@ -296,12 +302,15 @@ def run(data,
     #     f = os.path.join(save_dir, 'adversarial_patch.png')
     #     torchvision.utils.save_image(demo_patch, f)
 
-    obj_transforms = K.RandomAffine(30, translate=(0.5, 0.5), p=1.0, return_transform=True)
-    mask_transforms = K.RandomAffine(30, translate=(0.5, 0.5), p=1.0, resample=Resample.NEAREST)
+    obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True)
+    mask_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, resample=Resample.NEAREST)
 
     num_errors = 0
+    num_detected = 0
 
     for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
+        if batch_i == 10:
+            break
         for image_i, path in enumerate(paths):
             orig_shape = im[image_i].shape[1:]
             resize_transform = torchvision.transforms.Resize(size=(960, 1280))
@@ -396,22 +405,27 @@ def run(data,
             tbox = np.concatenate((class_only.T, tbox), axis=1)
 
             num_labels_changed = 0
-            # assert sum(tbox[:, 0]) == 1
             # print('num predictions for image', len(predn))
+
             for lbl in tbox:
                 if lbl[0] == SYNTHETIC_STOP_SIGN_CLASS:
                     for pi, prd in enumerate(predn):
                         # [x1, y1, x2, y2] where xy1=top-left, xy2=bottom-right
-                        if prd[0] > 0.9 * lbl[1] and prd[1] > 0.9 * lbl[2] and prd[2] < 1.1 * lbl[3] and prd[3] < 1.1 * lbl[4]:
-                            predn[pi, 5] = SYNTHETIC_STOP_SIGN_CLASS
-                            pred[pi, 5] = SYNTHETIC_STOP_SIGN_CLASS
-                            
+                        if prd[0] >= 0.9 * lbl[1] and prd[1] >= 0.9 * lbl[2] and prd[2] <= 1.1 * lbl[3] and prd[3] <= 1.1 * lbl[4]:
                             # 14 is octagon
-                            if prd[4] > 0.25 and prd[5] == 14:
-                                num_labels_changed += 1
+                            if prd[5] == 14 or True:
+                                predn[pi, 5] = SYNTHETIC_STOP_SIGN_CLASS
+                                pred[pi, 5] = SYNTHETIC_STOP_SIGN_CLASS
+                                
+                                if prd[4] > 0.25:
+                                    num_labels_changed += 1
+                            
+                        
 
             if num_labels_changed > 1:
                 num_errors += 1
+            if num_labels_changed == 1:
+                num_detected += 1
 
             for *box, conf, cls in predn.cpu().numpy():
                 pred_for_plotting.append([si, cls, *list(*xyxy2xywh(np.array(box)[None])), conf])
@@ -444,8 +458,8 @@ def run(data,
             Thread(target=plot_images, args=(im, targets, paths, f, names), daemon=True).start()
             f = save_dir / f'val_batch{batch_i}_pred.jpg'  # predictions
             Thread(target=plot_images, args=(im, output_to_target(out), paths, f, names), daemon=True).start()
-            f = save_dir / f'val_batch{batch_i}_pred_synthetic.jpg'  # predictions
-            Thread(target=plot_images, args=(im, np.array(pred_for_plotting), paths, f, names), daemon=True).start()
+            # f = save_dir / f'val_batch{batch_i}_pred_synthetic.jpg'  # predictions
+            # Thread(target=plot_images, args=(im, np.array(pred_for_plotting), paths, f, names), daemon=True).start()
 
             print(f)
     
@@ -502,10 +516,16 @@ def run(data,
     print('num_images', seen)
     print('proportion of errors', num_errors/seen)
 
+    print('num_errors', num_errors)
+    print('num_images', seen)
+    print('detection rate', num_errors/seen)
+
     metrics_df_column_names.append('num_errors')
     current_exp_metrics['num_errors'] = num_errors
     metrics_df_column_names.append('proportion_of_errors')
     current_exp_metrics['proportion_of_errors'] = num_errors/seen
+    metrics_df_column_names.append('dataset')
+    current_exp_metrics['dataset'] = DATASET_NAME
 
     if save_exp_metrics:
         try:
@@ -517,6 +537,7 @@ def run(data,
         current_exp_metrics['name'] = name
         current_exp_metrics['apply_patch'] = apply_patch
         current_exp_metrics['random_patch'] = random_patch
+        
 
         metrics_df = metrics_df.append(current_exp_metrics, ignore_index=True)
         metrics_df.to_csv('runs/results.csv', index=False)
