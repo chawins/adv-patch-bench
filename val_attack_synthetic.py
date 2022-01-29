@@ -309,8 +309,8 @@ def run(data,
     num_detected = 0
 
     for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
-        if batch_i == 10:
-            break
+        # if batch_i == 10:
+        #     break
         for image_i, path in enumerate(paths):
             orig_shape = im[image_i].shape[1:]
             resize_transform = torchvision.transforms.Resize(size=(960, 1280))
@@ -458,8 +458,6 @@ def run(data,
             Thread(target=plot_images, args=(im, targets, paths, f, names), daemon=True).start()
             f = save_dir / f'val_batch{batch_i}_pred.jpg'  # predictions
             Thread(target=plot_images, args=(im, output_to_target(out), paths, f, names), daemon=True).start()
-            # f = save_dir / f'val_batch{batch_i}_pred_synthetic.jpg'  # predictions
-            # Thread(target=plot_images, args=(im, np.array(pred_for_plotting), paths, f, names), daemon=True).start()
 
             print(f)
     
