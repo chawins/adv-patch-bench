@@ -88,9 +88,10 @@ def main():
     label_to_classify = 95      # Class id of traffic signs on Vistas
     conf_thres = 0.
     num_classes = 16
-    data_dir = expanduser('~/data/mapillary_vistas/training/')
-    # data_dir = '/data/shared/mtsd_v2_fully_annotated/'
-    model_path = expanduser('~/adv-patch-bench/results/5/checkpoint_best.pt')
+    # data_dir = expanduser('~/data/mapillary_vistas/training/')
+    # model_path = expanduser('~/adv-patch-bench/results/5/checkpoint_best.pt')
+    data_dir = '/data/shared/mapillary_vistas/training/'
+    model_path = '/data/shared/adv-patch-bench/results/6/checkpoint_best.pt'
 
     device = 'cuda'
     seed = 2021
