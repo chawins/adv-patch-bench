@@ -301,7 +301,9 @@ def run(data,
     #     demo_patch = resize(demo_patch, (32, 32))
     #     f = os.path.join(save_dir, 'adversarial_patch.png')
     #     torchvision.utils.save_image(demo_patch, f)
-
+    
+    torch.manual_seed(1111)
+    np.random.seed(1111)
     obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True)
     mask_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, resample=Resample.NEAREST)
 
@@ -309,8 +311,8 @@ def run(data,
     num_detected = 0
 
     for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
-        # if batch_i == 10:
-        #     break
+        if batch_i == 10:
+            break
         for image_i, path in enumerate(paths):
             orig_shape = im[image_i].shape[1:]
             resize_transform = torchvision.transforms.Resize(size=(960, 1280))
@@ -407,11 +409,22 @@ def run(data,
             num_labels_changed = 0
             # print('num predictions for image', len(predn))
 
+            # print(path)
+            # qq
+            debug = False
             for lbl in tbox:
                 if lbl[0] == SYNTHETIC_STOP_SIGN_CLASS:
+                    # if '7k1EvXn' in str(path):
+                    #     print(lbl)
+                    #     debug = True
                     for pi, prd in enumerate(predn):
                         # [x1, y1, x2, y2] where xy1=top-left, xy2=bottom-right
-                        if prd[0] >= 0.9 * lbl[1] and prd[1] >= 0.9 * lbl[2] and prd[2] <= 1.1 * lbl[3] and prd[3] <= 1.1 * lbl[4]:
+                        if debug: 
+                            print(prd)
+                        x1 = 0.9 * lbl[1] if 0.9 * lbl[1] > 5 else -20
+                        y1 = 0.9 * lbl[2] if 0.9 * lbl[2] > 5 else -20
+
+                        if prd[0] >= x1 and prd[1] >= y1 and prd[2] <= 1.1 * lbl[3] and prd[3] <= 1.1 * lbl[4]:
                             # 14 is octagon
                             if prd[5] == 14 or True:
                                 predn[pi, 5] = SYNTHETIC_STOP_SIGN_CLASS
@@ -419,8 +432,9 @@ def run(data,
                                 
                                 if prd[4] > 0.25:
                                     num_labels_changed += 1
-                            
-                        
+            # if debug: 
+            #     qqq
+                  
 
             if num_labels_changed > 1:
                 num_errors += 1
