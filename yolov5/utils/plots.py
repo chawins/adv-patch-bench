@@ -209,7 +209,7 @@ def plot_images(images, targets, paths=None, fname='images.jpg', names=None, max
         mosaic = cv2.resize(mosaic, tuple(int(x * ns) for x in (w, h)))
 
     # Annotate
-    fs = int((h + w) * ns * 0.01)  # font size
+    fs = int((h + w) * ns * 0.01 * 0.5)  # font size
     annotator = Annotator(mosaic, line_width=round(fs / 10), font_size=fs, pil=True)
     for i in range(i + 1):
         x, y = int(w * (i // ns)), int(h * (i % ns))  # block origin
@@ -222,13 +222,13 @@ def plot_images(images, targets, paths=None, fname='images.jpg', names=None, max
             classes = ti[:, 1].astype('int')
             labels = ti.shape[1] == 6  # labels if no conf column
             conf = None if labels else ti[:, 6]  # check for confidence presence (label vs pred)
-
             if boxes.shape[1]:
                 if boxes.max() <= 1.01:  # if normalized with tolerance 0.01
                     boxes[[0, 2]] *= w  # scale to pixels
                     boxes[[1, 3]] *= h
                 elif scale < 1:  # absolute coords need scale if image scales
                     boxes *= scale
+
             boxes[[0, 2]] += x
             boxes[[1, 3]] += y
             for j, box in enumerate(boxes.T.tolist()):
@@ -238,6 +238,7 @@ def plot_images(images, targets, paths=None, fname='images.jpg', names=None, max
                 if labels or conf[j] > 0.25:  # 0.25 conf thresh
                     label = f'{cls}' if labels else f'{cls} {conf[j]:.1f}'
                     annotator.box_label(box, label, color=color)
+            
     annotator.im.save(fname)  # save
 
 
