@@ -84,7 +84,6 @@ def gen_octagon_mask(size, ratio=None):
     return mask, [[edge, 0], [size-1, edge], [size-edge, size-1], [0, size-edge]]
     # return mask, [[0, edge], [size - edge, 0], [size - 1, size - edge], [edge, size - 1]]
 
-
 def gen_sign_mask(shape, size, ratio=None):
     return SHAPE_TO_MASK[shape](size, ratio=ratio)
 

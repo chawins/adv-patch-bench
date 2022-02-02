@@ -22,7 +22,7 @@ def ap_per_class(tp, conf, pred_cls, target_cls, plot=False, save_dir='.', names
     """ Compute the average precision, given the recall and precision curves.
     Source: https://github.com/rafaelpadilla/Object-Detection-Metrics.
     # Arguments
-        tp:  True positives (nparray, nx1 or nx10).
+        tp:  True positives (nparray, nx1 or nx10). 10 for 10 IoU levels (0.5-0.95)
         conf:  Objectness value from 0-1 (nparray).
         pred_cls:  Predicted object classes (nparray).
         target_cls:  True object classes (nparray).
@@ -32,12 +32,10 @@ def ap_per_class(tp, conf, pred_cls, target_cls, plot=False, save_dir='.', names
         The average precision as computed in py-faster-rcnn.
     """
 
-    # Sort by objectness
-    # print(conf)
-    # print(conf.shape)
-    
+    # Sort by objectness (from highest to lowest)
     i = np.argsort(-conf)
-    # print('i', i)
+
+    tp, conf, pred_cls = tp[i], conf[i], pred_cls[i]
 
     tp, conf, pred_cls = tp[i], conf[i], pred_cls[i]
     # print('tp shape', tp.shape)
@@ -48,13 +46,14 @@ def ap_per_class(tp, conf, pred_cls, target_cls, plot=False, save_dir='.', names
     unique_classes, nt = np.unique(target_cls, return_counts=True)
     nc = unique_classes.shape[0]  # number of classes, number of detections
 
-    # print(unique_classes)
-    # print(nc)
-    
     # Create Precision-Recall curve and compute AP for each class
     px, py = np.linspace(0, 1, 1000), []  # for plotting
-    ap, p, r = np.zeros((nc, tp.shape[1])), np.zeros((nc, 1000)), np.zeros((nc, 1000))
+    ap, p, r = np.zeros((nc, tp.shape[1])), np.zeros((nc, 1000)), np.zeros((nc, 1000))    
     fnr = np.zeros((nc, 1000))
+
+    recall_per_class = []
+    precision_per_class = []
+
     for ci, c in enumerate(unique_classes):
         i = pred_cls == c
         n_l = nt[ci]  # number of labels
@@ -69,11 +68,13 @@ def ap_per_class(tp, conf, pred_cls, target_cls, plot=False, save_dir='.', names
 
             # Recall / True Positive Rate
             recall = tpc / (n_l + eps)  # recall curve
+            recall_per_class.append(recall[:, 0])
             r[ci] = np.interp(-px, -conf[i], recall[:, 0], left=0)  # negative x, xp because xp decreases
             fnr[ci] = 1 - r[ci]
 
             # Precision
             precision = tpc / (tpc + fpc)  # precision curve
+            precision_per_class.append(precision[:, 0])
             p[ci] = np.interp(-px, -conf[i], precision[:, 0], left=1)  # p at pr_score
 
             # AP from recall-precision curve
@@ -88,6 +89,7 @@ def ap_per_class(tp, conf, pred_cls, target_cls, plot=False, save_dir='.', names
     names = {i: v for i, v in enumerate(names)}  # to dict
     if plot:
         plot_pr_curve(px, py, ap, Path(save_dir) / 'PR_curve.png', names)
+        plot_pr_curve(px, py, ap, Path(save_dir) / 'PR_curve_with_points.png', names, recall_per_class, precision_per_class)
         plot_mc_curve(px, f1, Path(save_dir) / 'F1_curve.png', names, ylabel='F1')
         plot_mc_curve(px, p, Path(save_dir) / 'P_curve.png', names, ylabel='Precision')
         plot_mc_curve(px, r, Path(save_dir) / 'R_curve.png', names, ylabel='Recall/TPR')
@@ -318,14 +320,19 @@ def wh_iou(wh1, wh2):
 
 # Plots ----------------------------------------------------------------------------------------------------------------
 
-def plot_pr_curve(px, py, ap, save_dir='pr_curve.png', names=()):
+def plot_pr_curve(px, py, ap, save_dir='pr_curve.png', names=(), recall_per_class=None, precision_per_class=None):
     # Precision-recall curve
     fig, ax = plt.subplots(1, 1, figsize=(9, 6), tight_layout=True)
     py = np.stack(py, axis=1)
 
     if 0 < len(names) < 21:  # display per-class legend if < 21 classes
-        for i, y in enumerate(py.T):
-            ax.plot(px, y, linewidth=1, label=f'{names[i]} {ap[i, 0]:.3f}')  # plot(recall, precision)
+        for i, y in enumerate(py.T):            
+            if names[i] == 'synthetic_stop_sign':
+                ax.plot(px, y, linewidth=2, label=f'{names[i]} {ap[i, 0]:.3f}', color='indigo', linestyle='--')  # plot(recall, precision)
+                if recall_per_class and precision_per_class:
+                    ax.plot(recall_per_class[i], precision_per_class[i], linestyle='None', color='blueviolet', marker='o', alpha=0.2, markersize=5)
+            else:
+                ax.plot(px, y, linewidth=1, label=f'{names[i]} {ap[i, 0]:.3f}')  # plot(recall, precision)
     else:
         ax.plot(px, py, linewidth=1, color='grey')  # plot(recall, precision)
 
@@ -345,7 +352,10 @@ def plot_mc_curve(px, py, save_dir='mc_curve.png', names=(), xlabel='Confidence'
 
     if 0 < len(names) < 21:  # display per-class legend if < 21 classes
         for i, y in enumerate(py):
-            ax.plot(px, y, linewidth=1, label=f'{names[i]}')  # plot(confidence, metric)
+            if names[i] == 'synthetic_stop_sign':
+                ax.plot(px, y, label=f'{names[i]}', linewidth=2, linestyle='--', color='indigo')  # plot(confidence, metric)
+            else:
+                ax.plot(px, y, linewidth=1, label=f'{names[i]}')  # plot(confidence, metric)
     else:
         ax.plot(px, py.T, linewidth=1, color='grey')  # plot(confidence, metric)
 
