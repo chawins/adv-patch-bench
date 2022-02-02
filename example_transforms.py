@@ -448,7 +448,6 @@ def main(args):
         assert filename == mask_file.split('/')[-1]
         image = np.asarray(Image.open(img_file))
         Image.open(mask_file).save('test_mask.png')
-        qqq
         mask = np.asarray(Image.open(mask_file))
 
         output = compute_example_transform(image, mask, CLASS_LIST[y], demo_patch,
