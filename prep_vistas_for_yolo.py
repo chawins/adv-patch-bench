@@ -92,6 +92,7 @@ def main():
     # model_path = expanduser('~/adv-patch-bench/results/5/checkpoint_best.pt')
     data_dir = '/data/shared/mapillary_vistas/training/'
     model_path = '/data/shared/adv-patch-bench/results/6/checkpoint_best.pt'
+    # /data/chawin/adv-patch-bench/results/6/checkpoint_best.pt
 
     device = 'cuda'
     seed = 2021
