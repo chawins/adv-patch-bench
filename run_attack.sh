@@ -39,61 +39,75 @@ CUDA_VISIBLE_DEVICES=0 python val_attack_synthetic.py \
 --workers 8 \
 --task train \
 --save_exp_metrics \
---synthetic \
+--num_bg 16 \
 --apply_patch \
---num_bg 16
+--plot_octagons
 
-CUDA_VISIBLE_DEVICES=0 python val_attack_synthetic.py \
---img 1280 \
---batch-size 16 \
---data mapillary_vistas.yaml \
---weights /home/chawins/adv-patch-bench/yolov5/runs/train/exp2/weights/best.pt \
---exist-ok \
---workers 8 \
---task train \
---save_exp_metrics \
---synthetic \
---apply_patch \
---num_bg 32
+# CUDA_VISIBLE_DEVICES=0 python val_attack_synthetic.py \
+# --img 1280 \
+# --batch-size 16 \
+# --data mapillary_vistas.yaml \
+# --weights /home/chawins/adv-patch-bench/yolov5/runs/train/exp2/weights/best.pt \
+# --exist-ok \
+# --workers 8 \
+# --task train \
+# --save_exp_metrics \
+# --synthetic \
+# --num_bg 16 \
+# --apply_patch \
 
-CUDA_VISIBLE_DEVICES=0 python val_attack_synthetic.py \
---img 1280 \
---batch-size 16 \
---data mapillary_vistas.yaml \
---weights /home/chawins/adv-patch-bench/yolov5/runs/train/exp2/weights/best.pt \
---exist-ok \
---workers 8 \
---task train \
---save_exp_metrics \
---synthetic \
---apply_patch \
---num_bg 100
 
-CUDA_VISIBLE_DEVICES=0 python val_attack_synthetic.py \
---img 1280 \
---batch-size 16 \
---data mapillary_vistas.yaml \
---weights /home/chawins/adv-patch-bench/yolov5/runs/train/exp2/weights/best.pt \
---exist-ok \
---workers 8 \
---task train \
---save_exp_metrics \
---synthetic \
---apply_patch \
---num_bg 500
+# CUDA_VISIBLE_DEVICES=0 python val_attack_synthetic.py \
+# --img 1280 \
+# --batch-size 16 \
+# --data mapillary_vistas.yaml \
+# --weights /home/chawins/adv-patch-bench/yolov5/runs/train/exp2/weights/best.pt \
+# --exist-ok \
+# --workers 8 \
+# --task train \
+# --save_exp_metrics \
+# --synthetic \
+# --apply_patch \
+# --num_bg 32
 
-CUDA_VISIBLE_DEVICES=0 python val_attack_synthetic.py \
---img 1280 \
---batch-size 16 \
---data mapillary_vistas.yaml \
---weights /home/chawins/adv-patch-bench/yolov5/runs/train/exp2/weights/best.pt \
---exist-ok \
---workers 8 \
---task train \
---save_exp_metrics \
---synthetic \
---apply_patch \
---num_bg 1000
+# CUDA_VISIBLE_DEVICES=0 python val_attack_synthetic.py \
+# --img 1280 \
+# --batch-size 16 \
+# --data mapillary_vistas.yaml \
+# --weights /home/chawins/adv-patch-bench/yolov5/runs/train/exp2/weights/best.pt \
+# --exist-ok \
+# --workers 8 \
+# --task train \
+# --save_exp_metrics \
+# --synthetic \
+# --apply_patch \
+# --num_bg 100
+
+# CUDA_VISIBLE_DEVICES=0 python val_attack_synthetic.py \
+# --img 1280 \
+# --batch-size 16 \
+# --data mapillary_vistas.yaml \
+# --weights /home/chawins/adv-patch-bench/yolov5/runs/train/exp2/weights/best.pt \
+# --exist-ok \
+# --workers 8 \
+# --task train \
+# --save_exp_metrics \
+# --synthetic \
+# --apply_patch \
+# --num_bg 500
+
+# CUDA_VISIBLE_DEVICES=0 python val_attack_synthetic.py \
+# --img 1280 \
+# --batch-size 16 \
+# --data mapillary_vistas.yaml \
+# --weights /home/chawins/adv-patch-bench/yolov5/runs/train/exp2/weights/best.pt \
+# --exist-ok \
+# --workers 8 \
+# --task train \
+# --save_exp_metrics \
+# --synthetic \
+# --apply_patch \
+# --num_bg 1000
 
 
 # \

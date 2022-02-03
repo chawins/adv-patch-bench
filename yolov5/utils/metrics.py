@@ -37,12 +37,6 @@ def ap_per_class(tp, conf, pred_cls, target_cls, plot=False, save_dir='.', names
 
     tp, conf, pred_cls = tp[i], conf[i], pred_cls[i]
 
-    tp, conf, pred_cls = tp[i], conf[i], pred_cls[i]
-    # print('tp shape', tp.shape)
-    # print('conf', conf)
-    # print('pred_cls', pred_cls)
-    # qqq
-    # Find unique classes
     unique_classes, nt = np.unique(target_cls, return_counts=True)
     nc = unique_classes.shape[0]  # number of classes, number of detections
 
@@ -96,7 +90,7 @@ def ap_per_class(tp, conf, pred_cls, target_cls, plot=False, save_dir='.', names
         plot_mc_curve(px, fnr, Path(save_dir) / 'FNR_curve.png', names, ylabel='FNR')
 
     i = f1.mean(0).argmax()  # max F1 index
-    p, r, f1 = p[:, i], r[:, i], f1[:, i]
+    p, r, f1, fnr = p[:, i], r[:, i], f1[:, i], fnr[:, i]
     tp = (r * nt).round()  # true positives
     fp = (tp / (p + eps) - tp).round()  # false positives
     return tp, fp, p, r, f1, ap, unique_classes.astype('int32'), fnr
