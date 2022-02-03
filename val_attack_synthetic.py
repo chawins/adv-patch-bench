@@ -142,7 +142,7 @@ def run(data,
 
     torch.manual_seed(1111)
     np.random.seed(1111)
-    
+
     DATASET_NAME = 'mapillary' if 'mapillary' in data else 'mtsd'
     try:
         metrics_df = pd.read_csv('runs/results.csv')
@@ -151,7 +151,8 @@ def run(data,
         metrics_df['apply_patch'] = metrics_df['apply_patch'].astype(float).astype(bool)
         metrics_df['random_patch'] = metrics_df['random_patch'].astype(float).astype(bool)
         metrics_df_grouped = metrics_df.groupby(by=['dataset', 'apply_patch', 'random_patch']).count().reset_index()
-        metrics_df_grouped = metrics_df_grouped[(metrics_df_grouped['dataset'] == DATASET_NAME) & (metrics_df_grouped['apply_patch'] == apply_patch) & (metrics_df_grouped['random_patch'] == random_patch)]['name']
+        metrics_df_grouped = metrics_df_grouped[(metrics_df_grouped['dataset'] == DATASET_NAME) & (
+            metrics_df_grouped['apply_patch'] == apply_patch) & (metrics_df_grouped['random_patch'] == random_patch)]['name']
         exp_number = 0 if not len(metrics_df_grouped) else metrics_df_grouped.item()
     except FileNotFoundError:
         exp_number = 0
@@ -201,7 +202,7 @@ def run(data,
     # Configure
     model.eval()
     is_coco = isinstance(data.get('val'), str) and data['val'].endswith('coco/val2017.txt')  # COCO dataset
-    
+
     iouv = torch.linspace(0.5, 0.95, 10).to(device)  # iou vector for mAP@0.5:0.95
     niou = iouv.numel()
 
@@ -226,7 +227,6 @@ def run(data,
         bg = torchvision.io.read_image(os.path.join(bg_dir, all_bgs[index])) / 255
         backgrounds[i] = T.resize(bg, bg_size, antialias=True)
     torchvision.utils.save_image(backgrounds, 'backgrounds.png')
-
 
     # EDIT: set up attack
     obj_size = int(min(bg_size) * 0.1) * 2        # (256, 256)
@@ -278,14 +278,14 @@ def run(data,
 
         f = os.path.join(save_dir, 'adversarial_patch_cropped.png')
         torchvision.utils.save_image(adv_patch_cropped, f)
-            
+
     seen = 0
-    
+
     names = {k: v for k, v in enumerate(model.names if hasattr(model, 'names') else model.module.names)}
     # nc = 1 if single_cls else int(data['nc'])  # number of classes
     nc = len(names)
     print('names', names)
-    
+
     # TODO move to label file instead of adding synthetic stop sign as class here
     SYNTHETIC_STOP_SIGN_CLASS = len(names)
     names[SYNTHETIC_STOP_SIGN_CLASS] = 'synthetic_stop_sign'
@@ -306,18 +306,18 @@ def run(data,
     #     demo_patch = resize(demo_patch, (32, 32))
     #     f = os.path.join(save_dir, 'adversarial_patch.png')
     #     torchvision.utils.save_image(demo_patch, f)
-    
+
     if apply_patch and not synthetic:
-        df = pd.read_csv('mapillary_vistas_final_merged_new.csv')
-        # df = pd.read_csv('mapillary_vistas_final_merged.csv')
-        df["tgt_final"] = df["tgt_final"].apply(literal_eval)
+        # df = pd.read_csv('mapillary_vistas_final_merged_new.csv')
+        df = pd.read_csv('mapillary_vistas_final_merged.csv')
+        df['tgt_final'] = df['tgt_final'].apply(literal_eval)
         df = df[df['final_shape'] != 'other-0.0-0.0']
         print(df.shape)
         print(df.groupby(by=['final_shape']).count())
 
         adv_patch_cropped = resize(adv_patch_cropped, (32, 32))
 
-    elif synthetic:    
+    elif synthetic:
         obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True)
         mask_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, resample=Resample.NEAREST)
         resize_transform = torchvision.transforms.Resize(size=(960, 1280))
@@ -329,7 +329,7 @@ def run(data,
         shape_to_plot_data = {}
         shape_to_plot_data['octagon'] = []
     for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
-        # TODO: remove. only for testing/debugging
+        # DEBUG
         # if batch_i == 50:
         #     break
         for image_i, path in enumerate(paths):
@@ -341,7 +341,7 @@ def run(data,
                     continue
                 # for _, row in img_df.iterrows():
                 for _, row in img_df.iterrows():
-                    transform_func = warp_perspective                    
+                    transform_func = warp_perspective
                     predicted_class = row['final_shape']
                     shape = predicted_class.split('-')[0]
 
@@ -350,7 +350,7 @@ def run(data,
                     #     print(shape)
 
                     patch_size_in_pixel = 32
-                    
+
                     # patch_size_in_pixel = 52
                     patch_size_in_mm = 250
                     sign_canonical, sign_mask, src = get_sign_canonical(
@@ -398,7 +398,7 @@ def run(data,
                                                   mode='bicubic',
                                                   padding_mode='zeros')[0].clamp(0, 1)
                     alpha_mask = warped_patch[-1].unsqueeze(0)
-                    
+
                     # if '69Ebl' in str(path):
                     #     print('saving')
                     #     torchvision.utils.save_image(im[image_i]/255, f'image_{iii}.png')
@@ -406,37 +406,37 @@ def run(data,
                     #     torchvision.utils.save_image(1-alpha_mask, f'image_{iii}__.png')
                     #     print(row['tgt_final'])
                     #     print()
-                        
-                        
 
                     traffic_sign = (1 - alpha_mask) * im[image_i] / 255 + alpha_mask * warped_patch[:-1]
                     im[image_i] = traffic_sign * 255
             elif synthetic:
                 orig_shape = im[image_i].shape[1:]
                 resized_img = resize_transform(im[image_i])
-                
+
                 if apply_patch:
                     adv_obj = patch_mask * adv_patch + (1 - patch_mask) * obj
                 else:
                     adv_obj = obj
-                    
+
                 adv_obj, tf_params = obj_transforms(adv_obj)
-                
+
                 adv_obj = adv_obj.clamp(0, 1)
                 num_eot = 1
                 obj_mask = obj_mask.cuda()
                 obj_mask_dup = obj_mask.expand(num_eot, -1, -1, -1)
 
                 tf_params = tf_params.cuda()
-                o_mask = mask_transforms.apply_transform(
-                    obj_mask_dup, None, transform=tf_params)
-            
+                o_mask = mask_transforms.apply_transform(obj_mask_dup, None, transform=tf_params)
+
                 o_mask = o_mask.cpu()
-                indices = np.where(o_mask[0][0]==1)
+                indices = np.where(o_mask[0][0] == 1)
                 x_min, x_max = min(indices[1]), max(indices[1])
                 y_min, y_max = min(indices[0]), max(indices[0])
 
-                label = [image_i, SYNTHETIC_STOP_SIGN_CLASS, (x_min+x_max)/(2*1280), (y_min+y_max)/(2*960), (x_max-x_min)/1280, (y_max-y_min)/960]
+                label = [
+                    image_i, SYNTHETIC_STOP_SIGN_CLASS, (x_min + x_max) / (2 * 1280),
+                    (y_min + y_max) / (2 * 960),
+                    (x_max - x_min) / 1280, (y_max - y_min) / 960]
                 targets = torch.cat((targets, torch.unsqueeze(torch.Tensor(label), 0)))
                 adv_img = o_mask * adv_obj + (1 - o_mask) * resized_img/255
                 reresize_transform = torchvision.transforms.Resize(size=orig_shape)
@@ -446,7 +446,6 @@ def run(data,
             # DEBUG
             # pdb.set_trace()
 
-        
         # continue
 
         t1 = time_sync()
@@ -504,7 +503,7 @@ def run(data,
             tbox = np.concatenate((class_only.T, tbox), axis=1)
 
             num_labels_changed = 0
-            
+
             if synthetic:
                 for lbl in tbox:
                     if lbl[0] == SYNTHETIC_STOP_SIGN_CLASS:
@@ -518,7 +517,7 @@ def run(data,
                                 if prd[5] == 14:
                                     predn[pi, 5] = SYNTHETIC_STOP_SIGN_CLASS
                                     pred[pi, 5] = SYNTHETIC_STOP_SIGN_CLASS
-                                    
+
                                     # if prd[4] > 0.25:
                                     num_labels_changed += 1
 
@@ -537,7 +536,7 @@ def run(data,
                 tbox = xywh2xyxy(labels[:, 1:5])  # target boxes
                 scale_coords(im[si].shape[1:], tbox, shape, shapes[si][1])  # native-space labels
                 labelsn = torch.cat((labels[:, 0:1], tbox), 1)  # native-space labels
-                
+
                 correct = process_batch(predn, labelsn, iouv)
                 if plots:
                     confusion_matrix.process_batch(predn, labelsn)
@@ -554,13 +553,16 @@ def run(data,
 
             # 14 is octagon
             if plot_octagons and 14 in labels:
-                shape_to_plot_data['octagon'].append([im[si:si+1], targets[targets[:, 0] == si, :], path, predictions_for_plotting[predictions_for_plotting[:, 0] == si]])
-
+                shape_to_plot_data['octagon'].append(
+                    [im[si: si + 1],
+                     targets[targets[:, 0] == si, :],
+                     path, predictions_for_plotting[predictions_for_plotting[:, 0] == si]])
 
         # Plot images
         if plots and batch_i < 30:
             if plot_single_images:
-                save_dir_single_plots = increment_path(save_dir / 'single_plots', exist_ok=exist_ok, mkdir=True)  # increment run
+                save_dir_single_plots = increment_path(
+                    save_dir / 'single_plots', exist_ok=exist_ok, mkdir=True)  # increment run
                 for i in range(len(im)):
                     # labels
                     f = save_dir_single_plots / f'val_batch{batch_i}_image{i}_labels.jpg'  # labels
@@ -578,7 +580,7 @@ def run(data,
             f = save_dir / f'val_batch{batch_i}_pred.jpg'  # predictions
             Thread(target=plot_images, args=(im, output_to_target(out), paths, f, names), daemon=True).start()
             print(f)
-    
+
     if plot_octagons:
         save_dir_octagon = increment_path(save_dir / 'octagon', exist_ok=exist_ok, mkdir=True)  # increment run
         for i in range(len(shape_to_plot_data['octagon'])):
@@ -592,7 +594,6 @@ def run(data,
             f = save_dir_octagon / f'image{i}_pred.jpg'  # labels
             out[:, 0] = 0
             plot_images(im, out, [path], f, names)
-    
 
     # Compute metrics
     stats = [np.concatenate(x, 0) for x in zip(*stats)]  # to numpy
@@ -602,7 +603,7 @@ def run(data,
 
     metrics_df_column_names.append('num_bg')
     current_exp_metrics['num_bg'] = num_bg
-    
+
     if len(stats) and stats[0].any():
         tp, fp, p, r, f1, ap, ap_class, fnr = ap_per_class(*stats, plot=plots, save_dir=save_dir, names=names)
         ap50, ap = ap[:, 0], ap.mean(1)  # AP@0.5, AP@0.5:0.95
@@ -645,7 +646,6 @@ def run(data,
         current_exp_metrics[f'ap_50_{names[c]}'] = ap50[i]
         metrics_df_column_names.append(f'ap_50_95_{names[c]}')
         current_exp_metrics[f'ap_50_95_{names[c]}'] = ap[i]
-        
 
         LOGGER.info(pf % (names[c], seen, nt[c], p[i], r[i], ap50[i], ap[i]))
 
@@ -658,7 +658,7 @@ def run(data,
     print('detection rate', num_detected/seen)
 
     metrics_df_column_names.append('num_errors')
-    current_exp_metrics['num_errors'] = num_errors    
+    current_exp_metrics['num_errors'] = num_errors
     metrics_df_column_names.append('proportion_of_errors')
     current_exp_metrics['proportion_of_errors'] = num_errors/seen
     metrics_df_column_names.append('dataset')
@@ -674,7 +674,6 @@ def run(data,
         current_exp_metrics['name'] = name
         current_exp_metrics['apply_patch'] = apply_patch
         current_exp_metrics['random_patch'] = random_patch
-        
 
         metrics_df = metrics_df.append(current_exp_metrics, ignore_index=True)
         metrics_df.to_csv('runs/results.csv', index=False)
@@ -755,8 +754,11 @@ def parse_opt():
     parser.add_argument('--synthetic', action='store_true', help='add adversarial patch to traffic signs if true')
     parser.add_argument('--random_patch', action='store_true', help='adversarial patch is random')
     parser.add_argument('--save_exp_metrics', action='store_true', help='save metrics for this experiment to dataframe')
-    parser.add_argument('--plot_single_images', action='store_true', help='save single images in a folder instead of batch images in a single plot')
-    parser.add_argument('--plot_octagons', action='store_true', help='save single images containing octagons in a folder')
+    parser.add_argument(
+        '--plot_single_images', action='store_true',
+        help='save single images in a folder instead of batch images in a single plot')
+    parser.add_argument('--plot_octagons', action='store_true',
+                        help='save single images containing octagons in a folder')
     parser.add_argument('--num_bg', type=int, default=16, help='number of backgrounds to generate adversarial patch')
 
     opt = parser.parse_args()
