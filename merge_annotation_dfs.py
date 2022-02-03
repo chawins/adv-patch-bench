@@ -1,25 +1,44 @@
-import pandas as pd
-import numpy as np
-import os
 import json
+import os
+from ast import literal_eval
+
+import numpy as np
+import pandas as pd
 from tqdm import tqdm
+
+
+CLASS_LIST = [
+    'circle-750.0',
+    'triangle-900.0',
+    'triangle_inverted-1220.0',
+    'diamond-600.0',
+    'diamond-915.0',
+    'square-600.0',
+    'rect-458.0-610.0',
+    'rect-762.0-915.0',
+    'rect-915.0-1220.0',
+    'pentagon-915.0',
+    'octagon-915.0',
+    'other-0.0-0.0',
+]
+
 
 def main():
     # getting points from manual labeling (instance segmentation) and storing in a dataframe
-    manual_instance_segmentation_annotation_df = pd.DataFrame()
+    manual_inst_seg_anno_df = pd.DataFrame()
 
     json_files = []
 
     for edit_path in ['traffic_signs_wrong_transform', 'traffic_signs_todo']:
         for group in ['1', '2', '3']:
-            path_to_json = f'../../../data/shared/mapillary_vistas/training/hand_annotated_signs/{edit_path}/{group}/'
-            curr_json_files = [path_to_json + pos_json for pos_json in os.listdir(path_to_json) if pos_json.endswith('.json')]  
+            path_to_json = f'/data/shared/mapillary_vistas/training/hand_annotated_signs/{edit_path}/{group}/'
+            curr_json_files = [path_to_json + p for p in os.listdir(path_to_json) if p.endswith('.json')]
             json_files.extend(curr_json_files)
 
     for edit_path in ['traffic_signs_final_check']:
         for group in ['1']:
-            path_to_json = f'../../../data/shared/mapillary_vistas/training/hand_annotated_signs/{edit_path}/{group}/'
-            curr_json_files = [path_to_json + pos_json for pos_json in os.listdir(path_to_json) if pos_json.endswith('.json')]  
+            path_to_json = f'/data/shared/mapillary_vistas/training/hand_annotated_signs/{edit_path}/{group}/'
+            curr_json_files = [path_to_json + p for p in os.listdir(path_to_json) if p.endswith('.json')]
             json_files.extend(curr_json_files)
 
     df_filenames = []
@@ -34,36 +53,22 @@ def main():
         #     print(json_path)
         #     print(edit_path)
         #     qqq
-        
+
         if len(json_data['shapes']) != 1:
             print(json_path)
         assert len(json_data['shapes']) == 1
         for annotation in json_data['shapes']:
             df_points.append(annotation['points'])
 
-    manual_instance_segmentation_annotation_df['filename'] = df_filenames
-    manual_instance_segmentation_annotation_df['points'] = df_points
+    manual_inst_seg_anno_df['filename'] = df_filenames
+    manual_inst_seg_anno_df['points'] = df_points
 
     # loading df with manual class annotations
-    manual_annotated_df = pd.read_csv('../../../data/shared/mtsd_v2_fully_annotated/traffic_sign_annotation_train.csv')
+    manual_annotated_df = pd.read_csv('/data/shared/mtsd_v2_fully_annotated/traffic_sign_annotation_train.csv')
 
     # merging with instance labeling df
-    manual_annotated_df = manual_annotated_df.merge(manual_instance_segmentation_annotation_df, left_on='filename', right_on='filename', how='left')
-
-    CLASS_LIST = [
-        'circle-750.0',
-        'triangle-900.0',
-        'triangle_inverted-1220.0',
-        'diamond-600.0',
-        'diamond-915.0',
-        'square-600.0',
-        'rect-458.0-610.0',
-        'rect-762.0-915.0',
-        'rect-915.0-1220.0',
-        'pentagon-915.0',
-        'octagon-915.0',
-        'other-0.0-0.0',
-    ]
+    manual_annotated_df = manual_annotated_df.merge(
+        manual_inst_seg_anno_df, left_on='filename', right_on='filename', how='left')
 
     # relabeling shapes in df
     final_shapes = []
@@ -89,26 +94,27 @@ def main():
     # read df with tgt, alpha, beta and merge
     df = pd.read_csv('mapillaryvistas_data.csv')
 
-    manual_annotated_df['filename_x'] = manual_annotated_df['filename'].apply(lambda x: '_'.join(x.split('.png')[0].split('_')[:-1]) + '.jpg')
+    manual_annotated_df['filename_x'] = manual_annotated_df['filename'].apply(
+        lambda x: '_'.join(x.split('.png')[0].split('_')[: -1]) + '.jpg')
     manual_annotated_df = manual_annotated_df.merge(df, on=['filename_x', 'object_id'], how='left')
 
-    final_df = manual_annotated_df[['filename', 'object_id', 'shape_x', 'predicted_shape_x', 'predicted_class_x', 'group_x', 'batch_number_x',
-                        'row_x', 'column_x', 'new_class', 'todo', 'use_rect_for_contour', 'wrong_transform',
-                        'use_polygon', 'occlusion', 'final_shape', 'points', 'tgt', 'alpha', 'beta', 'filename_png',
-                        'xmin', 'ymin', 'xmin_ratio', 'ymin_ratio']]
+    final_df = manual_annotated_df[[
+        'filename', 'object_id', 'shape_x', 'predicted_shape_x', 'predicted_class_x',
+        'group_x', 'batch_number_x', 'row_x', 'column_x', 'new_class', 'todo',
+        'use_rect_for_contour', 'wrong_transform', 'use_polygon', 'occlusion',
+        'final_shape', 'points', 'tgt', 'alpha', 'beta', 'filename_png', 'xmin', 'ymin',
+        'xmin_ratio', 'ymin_ratio'
+    ]]
 
     # final_df['tgt_final'] = final_df.apply(lambda x: x['points'] if (x['points'].any() or not np.isnan(x['points'])) else x['tgt'], axis=1)
-    final_df['tgt_final'] = final_df.apply(lambda x: x['points'] if not isinstance(x['points'], float) else x['tgt'], axis=1)
+    final_df['tgt_final'] = final_df.apply(
+        lambda x: x['points'] if not isinstance(x['points'], float) else x['tgt'], axis=1)
 
-
-    from ast import literal_eval
     shape_df = pd.read_csv('shape_df.csv')
 
     # manual_annotated_df = manual_annotated_df.merge(shape_df, left_on=['filename_png', 'object_id'], right_on=['filename_png', 'object_id'], how='left')
     final_df = final_df.merge(shape_df, on=['filename_png', 'object_id'], how='left')
-
     final_df = final_df[final_df['occlusion'].isna()]
-
     tgt_final_values = []
 
     # TODO: remove. only used for debugging
@@ -122,15 +128,16 @@ def main():
             curr_tgt = np.array(curr_tgt)
         except:
             pass
-        
-        if not isinstance(row['points'], float):            
+
+        if not isinstance(row['points'], float):
             tgt_final_values.append(row['points'])
             continue
-        
+
         offset_x_ratio = row['xmin_ratio']
         offset_y_ratio = row['ymin_ratio']
-            
-        h0, w0, h_ratio, w_ratio, w_pad, h_pad = row['h0'], row['w0'], row['h_ratio'], row['w_ratio'], row['w_pad'], row['h_pad']
+        h0, w0 = row['h0'], row['w0']
+        h_ratio, w_ratio = row['h_ratio'], row['w_ratio']
+        h_pad, w_pad = row['h_pad'], row['w_pad']
 
         # Have to correct for the padding when df is saved (TODO: this should be simplified)
         pad_size = int(max(h0, w0) * 0.25)
@@ -147,7 +154,7 @@ def main():
             if len(curr_tgt) != 3:
                 errors.append(row)
                 indices.append(index)
-                
+
         elif shape in ['square', 'diamond', 'octagon', 'circle', 'pentagon', 'rect']:
             if len(curr_tgt) != 4:
                 errors.append(row)
@@ -165,19 +172,19 @@ def main():
 
     final_df['tgt_final'] = tgt_final_values
 
-
-    final_df =final_df.rename(columns={
-                                'shape_x': 'shape', 'predicted_shape_x': 'predicted_shape',
-                                'predicted_class_x': 'predicted_class', 'batch_number_x': 'batch_number',
-                                'row_x': 'row', 'column_x': 'column', 'filename_x': 'filename'
-                            })
+    final_df = final_df.rename(columns={
+        'shape_x': 'shape', 'predicted_shape_x': 'predicted_shape',
+        'predicted_class_x': 'predicted_class', 'batch_number_x': 'batch_number',
+        'row_x': 'row', 'column_x': 'column', 'filename_x': 'filename'
+    })
     missed_alpha_beta_df = pd.read_csv('mapillary_vistas_missed_alpha_beta.csv')
     alpha_list = []
     beta_list = []
     for index, row in tqdm(final_df.iterrows()):
         if row['filename'] in missed_alpha_beta_df['filename'].values:
-            alpha_list.append(missed_alpha_beta_df[missed_alpha_beta_df['filename'] == row['filename']]['alpha'].item())
-            beta_list.append(missed_alpha_beta_df[missed_alpha_beta_df['filename'] == row['filename']]['beta'].item())
+            idx = missed_alpha_beta_df['filename'] == row['filename']
+            alpha_list.append(missed_alpha_beta_df[idx]['alpha'].item())
+            beta_list.append(missed_alpha_beta_df[idx]['beta'].item())
         else:
             alpha_list.append(row['alpha'])
             beta_list.append(row['beta'])
@@ -185,6 +192,6 @@ def main():
     final_df['beta'] = beta_list
     final_df.to_csv('mapillary_vistas_final_merged.csv', index=False)
 
-if __name__  == '__main__':
-    main()
 
+if __name__ == '__main__':
+    main()

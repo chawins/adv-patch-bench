@@ -1,0 +1,1 @@
+filename_x,object_id,shape_x,predicted_shape_x,predicted_class_x,group_x,batch_number_x,row_x,column_x,new_class,todo,use_rect_for_contour,wrong_transform,use_polygon,occlusion,final_shape,points,tgt,alpha,beta,filename_png,xmin,ymin,xmin_ratio,ymin_ratio,tgt_final,filename_y,h0,w0,h_ratio,w_ratio,w_pad,h_pad,final_check,group,filename
