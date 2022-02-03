@@ -215,7 +215,7 @@ def run(data,
 
     # EDIT: Randomly select backgrounds and resize
     bg_size = (960, 1280)
-    num_bg = 16
+    # num_bg = 16
     # bg_dir = '/data/shared/mtsd_v2_fully_annotated/test'
     bg_dir = '/data/shared/mtsd_v2_fully_annotated/train'
     all_bgs = os.listdir(os.path.expanduser(bg_dir))
@@ -330,10 +330,8 @@ def run(data,
         shape_to_plot_data['octagon'] = []
     for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
         # TODO: remove. only for testing/debugging
-        # if batch_i == 1:
-        #     qqq
-        # if batch_i == 50:
-        #     break
+        if batch_i == 50:
+            break
         for image_i, path in enumerate(paths):
             # print(path)
             if apply_patch and not synthetic:
