@@ -266,6 +266,8 @@ def run(data,
 
         adv_patch = adv_patch[0].detach()
         adv_patch = adv_patch.cpu().float()
+        pickle.dump(adv_patch, 'adv_patch.pkl')
+        assert False
         adv_patch_cropped = adv_patch[:, mid_height - h:mid_height + h, mid_width - w:mid_width + w]
 
         if random_patch:
@@ -750,13 +752,13 @@ def parse_opt():
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
     parser.add_argument('--half', action='store_true', help='use FP16 half-precision inference')
     parser.add_argument('--dnn', action='store_true', help='use OpenCV DNN for ONNX inference')
+    # Our attack and evaluate options
     parser.add_argument('--apply_patch', action='store_true', help='add adversarial patch to traffic signs if true')
     parser.add_argument('--synthetic', action='store_true', help='add adversarial patch to traffic signs if true')
     parser.add_argument('--random_patch', action='store_true', help='adversarial patch is random')
     parser.add_argument('--save_exp_metrics', action='store_true', help='save metrics for this experiment to dataframe')
-    parser.add_argument(
-        '--plot_single_images', action='store_true',
-        help='save single images in a folder instead of batch images in a single plot')
+    parser.add_argument('--plot_single_images', action='store_true',
+                        help='save single images in a folder instead of batch images in a single plot')
     parser.add_argument('--plot_octagons', action='store_true',
                         help='save single images containing octagons in a folder')
     parser.add_argument('--num_bg', type=int, default=16, help='number of backgrounds to generate adversarial patch')
