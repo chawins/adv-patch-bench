@@ -183,7 +183,7 @@ def main():
             beta_list.append(row['beta'])
     final_df['alpha'] = alpha_list
     final_df['beta'] = beta_list
-    final_df.to_csv('mapillary_vistas_final_merged_new.csv', index=False)
+    final_df.to_csv('mapillary_vistas_final_merged.csv', index=False)
 
 if __name__  == '__main__':
     main()
