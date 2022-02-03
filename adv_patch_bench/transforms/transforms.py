@@ -80,9 +80,9 @@ def gen_pentagon_mask(size, ratio=None):
 def gen_octagon_mask(size, ratio=None):
     edge = round((2 - np.sqrt(2)) / 2 * size)
     Y, X = np.ogrid[:size, :size]
-    mask = (Y + X >= edge) * (Y - X >= -(size - edge)) * (Y + X <= 2 * size - edge) * (Y + X <= size - edge)
-    return mask, [[0, edge], [size - edge, 0], [size - 1, size - edge], [edge, size - 1]]
-
+    mask = (Y + X >= edge) * (Y - X >= -(size - edge)) * (Y + X <= 2 * size - edge) * (Y - X <= (size - edge))
+    return mask, [[edge, 0], [size-1, edge], [size-edge, size-1], [0, size-edge]]
+    # return mask, [[0, edge], [size - edge, 0], [size - 1, size - edge], [edge, size - 1]]
 
 def gen_sign_mask(shape, size, ratio=None):
     return SHAPE_TO_MASK[shape](size, ratio=ratio)

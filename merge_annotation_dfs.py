@@ -86,7 +86,7 @@ def main():
 
     manual_annotated_df['final_shape'] = final_shapes
 
-    # read df with tgt, alpha, beta and merging
+    # read df with tgt, alpha, beta and merge
     df = pd.read_csv('mapillaryvistas_data.csv')
 
     manual_annotated_df['filename_x'] = manual_annotated_df['filename'].apply(lambda x: '_'.join(x.split('.png')[0].split('_')[:-1]) + '.jpg')
@@ -102,8 +102,6 @@ def main():
 
 
     from ast import literal_eval
-    # final_df["tgt_final"] = final_df["tgt_final"].apply(literal_eval)
-
     shape_df = pd.read_csv('shape_df.csv')
 
     # manual_annotated_df = manual_annotated_df.merge(shape_df, left_on=['filename_png', 'object_id'], right_on=['filename_png', 'object_id'], how='left')
@@ -115,34 +113,18 @@ def main():
 
     # TODO: remove. only used for debugging
     errors = []
-
     indices = []
 
     for index, row in tqdm(final_df.iterrows()):
         shape = row['final_shape'].split('-')[0]
-        # curr_tgt = row['tgt_final'].apply(literal_eval)
         try:
             curr_tgt = literal_eval(row['tgt_final'])
             curr_tgt = np.array(curr_tgt)
         except:
-            # print(row['tgt_final'])
-            # print(type(row['tgt_final']))
-            # qqq
             pass
         
-        if not isinstance(row['points'], float):
-            # tgt_final_values.append(np.array(curr_tgt))
-            
+        if not isinstance(row['points'], float):            
             tgt_final_values.append(row['points'])
-
-            # tgt_final_values.append(curr_tgt)
-            # print(type(row['points']))
-            # print(type(row['points']))
-            # qqq
-            # tgt_final_values.append(str(curr_tgt))
-            # print(curr_tgt)
-            # qqq
-            # tgt_final_values.append(curr_tgt)
             continue
         
         offset_x_ratio = row['xmin_ratio']
@@ -159,34 +141,18 @@ def main():
         curr_tgt[:, 1] = (curr_tgt[:, 1] + y_min) * h_ratio + h_pad
         curr_tgt[:, 0] = (curr_tgt[:, 0] + x_min) * w_ratio + w_pad
 
-        # if row['filename_x'] == '0KohgmStOYkLZM6v-Frfew_43.png':
-            # print(curr_tgt)
-            # print(row['tgt'])
-            # print()
-            # print(row)
-            # qqq
-
         tgt_final_values.append(curr_tgt.tolist())
 
         if shape in ['triangle', 'triangle_inverted']:
-            # assert len(curr_tgt) == 3
             if len(curr_tgt) != 3:
-                # print(row)
                 errors.append(row)
                 indices.append(index)
-                # qqq
+                
         elif shape in ['square', 'diamond', 'octagon', 'circle', 'pentagon', 'rect']:
-            # assert len(curr_tgt) == 4
             if len(curr_tgt) != 4:
-                # print(row)
                 errors.append(row)
                 indices.append(index)
-                # print('here', row.index)
-                # qqq
-                # qqq
 
-        # tgt_final_values.append(curr_tgt)
-        # print(type(curr_tgt))
     print('num errors', len(errors))
 
     error_df = final_df.loc[indices]
@@ -196,9 +162,6 @@ def main():
     error_df['group'] = 1
     error_df['filename'] = error_df['filename_x']
     error_df.to_csv('error_df_2.csv', index=False)
-    
-
-    # qqq
 
     final_df['tgt_final'] = tgt_final_values
 
@@ -208,8 +171,19 @@ def main():
                                 'predicted_class_x': 'predicted_class', 'batch_number_x': 'batch_number',
                                 'row_x': 'row', 'column_x': 'column', 'filename_x': 'filename'
                             })
-
-    final_df.to_csv('mapillary_vistas_final_merged.csv', index=False)
+    missed_alpha_beta_df = pd.read_csv('mapillary_vistas_missed_alpha_beta.csv')
+    alpha_list = []
+    beta_list = []
+    for index, row in tqdm(final_df.iterrows()):
+        if row['filename'] in missed_alpha_beta_df['filename'].values:
+            alpha_list.append(missed_alpha_beta_df[missed_alpha_beta_df['filename'] == row['filename']]['alpha'].item())
+            beta_list.append(missed_alpha_beta_df[missed_alpha_beta_df['filename'] == row['filename']]['beta'].item())
+        else:
+            alpha_list.append(row['alpha'])
+            beta_list.append(row['beta'])
+    final_df['alpha'] = alpha_list
+    final_df['beta'] = beta_list
+    final_df.to_csv('mapillary_vistas_final_merged_new.csv', index=False)
 
 if __name__  == '__main__':
     main()

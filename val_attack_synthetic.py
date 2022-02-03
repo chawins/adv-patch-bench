@@ -14,6 +14,8 @@ import pickle
 import sys
 from pathlib import Path
 from threading import Thread
+from ast import literal_eval
+
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -129,8 +131,38 @@ def run(data,
         plots=True,
         callbacks=Callbacks(),
         compute_loss=None,
-        apply_patch=True
+        apply_patch=True,
+        synthetic=False,
+        random_patch=False,
+        save_exp_metrics=True,
+        plot_single_images=False,
+        plot_octagons=False,
+        num_bg=16
         ):
+
+    torch.manual_seed(1111)
+    np.random.seed(1111)
+    
+    DATASET_NAME = 'mapillary' if 'mapillary' in data else 'mtsd'
+    try:
+        metrics_df = pd.read_csv('runs/results.csv')
+        metrics_df = metrics_df.replace({'apply_patch': 'True', 'random_patch': 'True'}, 1)
+        metrics_df = metrics_df.replace({'apply_patch': 'False', 'random_patch': 'False'}, 0)
+        metrics_df['apply_patch'] = metrics_df['apply_patch'].astype(float).astype(bool)
+        metrics_df['random_patch'] = metrics_df['random_patch'].astype(float).astype(bool)
+        metrics_df_grouped = metrics_df.groupby(by=['dataset', 'apply_patch', 'random_patch']).count().reset_index()
+        metrics_df_grouped = metrics_df_grouped[(metrics_df_grouped['dataset'] == DATASET_NAME) & (metrics_df_grouped['apply_patch'] == apply_patch) & (metrics_df_grouped['random_patch'] == random_patch)]['name']
+        exp_number = 0 if not len(metrics_df_grouped) else metrics_df_grouped.item()
+    except FileNotFoundError:
+        exp_number = 0
+
+    if apply_patch:
+        if random_patch:
+            name += f'_{DATASET_NAME}_random_patch_{exp_number}'
+        else:
+            name += f'_{DATASET_NAME}_rp2_patch_{exp_number}'
+    else:
+        name += f'_{DATASET_NAME}_no_patch_{exp_number}'
 
     # Initialize/load model and set device
     training = model is not None
@@ -169,7 +201,7 @@ def run(data,
     # Configure
     model.eval()
     is_coco = isinstance(data.get('val'), str) and data['val'].endswith('coco/val2017.txt')  # COCO dataset
-    nc = 1 if single_cls else int(data['nc'])  # number of classes
+    
     iouv = torch.linspace(0.5, 0.95, 10).to(device)  # iou vector for mAP@0.5:0.95
     niou = iouv.numel()
 
@@ -236,9 +268,10 @@ def run(data,
         adv_patch = adv_patch.cpu().float()
         adv_patch_cropped = adv_patch[:, mid_height - h:mid_height + h, mid_width - w:mid_width + w]
 
-        # random patch
-        # adv_patch_cropped = torch.rand(3, 2*h, 2*w)
-        # adv_patch[:, mid_height - h:mid_height + h, mid_width - w:mid_width + w] = adv_patch_cropped
+        if random_patch:
+            # random patch
+            adv_patch_cropped = torch.rand(3, 2*h, 2*w)
+            adv_patch[:, mid_height - h:mid_height + h, mid_width - w:mid_width + w] = adv_patch_cropped
 
         f = os.path.join(save_dir, 'adversarial_patch.png')
         torchvision.utils.save_image(adv_patch, f)
@@ -249,9 +282,13 @@ def run(data,
     seen = 0
     
     names = {k: v for k, v in enumerate(model.names if hasattr(model, 'names') else model.module.names)}
-
+    # nc = 1 if single_cls else int(data['nc'])  # number of classes
+    nc = len(names)
+    print('names', names)
+    
     # TODO move to label file instead of adding synthetic stop sign as class here
-    names[1] = 'synthetic_stop_sign'
+    SYNTHETIC_STOP_SIGN_CLASS = len(names)
+    names[SYNTHETIC_STOP_SIGN_CLASS] = 'synthetic_stop_sign'
     nc += 1
 
     confusion_matrix = ConfusionMatrix(nc=nc)
@@ -269,45 +306,143 @@ def run(data,
     #     demo_patch = resize(demo_patch, (32, 32))
     #     f = os.path.join(save_dir, 'adversarial_patch.png')
     #     torchvision.utils.save_image(demo_patch, f)
+    
+    if apply_patch and not synthetic:
+        df = pd.read_csv('mapillary_vistas_final_merged_new.csv')
+        # df = pd.read_csv('mapillary_vistas_final_merged.csv')
+        df["tgt_final"] = df["tgt_final"].apply(literal_eval)
+        df = df[df['final_shape'] != 'other-0.0-0.0']
+        print(df.shape)
+        print(df.groupby(by=['final_shape']).count())
 
-    obj_transforms = K.RandomAffine(30, translate=(0.5, 0.5), p=1.0, return_transform=True)
-    mask_transforms = K.RandomAffine(30, translate=(0.5, 0.5), p=1.0, resample=Resample.NEAREST)
+        adv_patch_cropped = resize(adv_patch_cropped, (32, 32))
+
+    elif synthetic:    
+        obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True)
+        mask_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, resample=Resample.NEAREST)
+        resize_transform = torchvision.transforms.Resize(size=(960, 1280))
 
     num_errors = 0
+    num_detected = 0
 
+    if plot_octagons:
+        shape_to_plot_data = {}
+        shape_to_plot_data['octagon'] = []
     for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
+        # TODO: remove. only for testing/debugging
+        # if batch_i == 1:
+        #     qqq
+        # if batch_i == 50:
+        #     break
         for image_i, path in enumerate(paths):
-            orig_shape = im[image_i].shape[1:]
-            resize_transform = torchvision.transforms.Resize(size=(960, 1280))
+            # print(path)
+            if apply_patch and not synthetic:
+                filename = path.split('/')[-1]
+                img_df = df[df['filename_y'] == filename]
+                if len(img_df) == 0:
+                    continue
+                # for _, row in img_df.iterrows():
+                for _, row in img_df.iterrows():
+                    transform_func = warp_perspective                    
+                    predicted_class = row['final_shape']
+                    shape = predicted_class.split('-')[0]
 
-            resized_img = resize_transform(im[image_i])
-            
-            if apply_patch:
-                adv_obj = patch_mask * adv_patch + (1 - patch_mask) * obj
-            else:
-                adv_obj = obj
+                    # if '69Ebl' in str(path):
+                    #     print(predicted_class)
+                    #     print(shape)
+
+                    patch_size_in_pixel = 32
+                    
+                    # patch_size_in_pixel = 52
+                    patch_size_in_mm = 250
+                    sign_canonical, sign_mask, src = get_sign_canonical(
+                        shape, predicted_class, patch_size_in_pixel, patch_size_in_mm)
+
+                    alpha = row['alpha']
+                    beta = row['beta']
+
+                    new_demo_patch = adv_patch_cropped.clone()
+                    new_demo_patch.clamp_(0, 1).mul_(alpha).add_(beta).clamp_(0, 1)
+                    sign_size_in_pixel = sign_canonical.size(-1)
+                    begin = (sign_size_in_pixel - patch_size_in_pixel) // 2
+                    end = begin + patch_size_in_pixel
+
+                    sign_canonical[:-1, begin:end, begin:end] = new_demo_patch
+                    sign_canonical[-1, begin:end, begin:end] = 1
+
+                    # Crop patch that is not on the sign
+                    sign_canonical *= sign_mask
+                    src = np.array(src, dtype=np.float32)
+
+                    tgt = np.array(row['tgt_final'], dtype=np.float32)
+
+                    # if '69Ebl' in str(path):
+                    #     print(tgt)
+                    #     print(src)
+                    #     print('alpha, beta', alpha, beta)
+                    #     print(sign_mask)
+                    #     print()
+                    #     torchvision.utils.save_image(sign_mask, f'image_{iii}___.png')
+                    #     torchvision.utils.save_image(sign_canonical, f'image_{iii}____.png')
+
+                    if len(src) == 3:
+                        M = torch.from_numpy(getAffineTransform(src, tgt)).unsqueeze(0).float()
+                        transform_func = warp_affine
+                    else:
+                        src = torch.from_numpy(src).unsqueeze(0)
+                        tgt = torch.from_numpy(tgt).unsqueeze(0)
+                        M = get_perspective_transform(src, tgt)
+                        transform_func = warp_perspective
+
+                    cur_shape = im[image_i].shape[1:]
+                    warped_patch = transform_func(sign_canonical.unsqueeze(0),
+                                                  M, cur_shape,
+                                                  mode='bicubic',
+                                                  padding_mode='zeros')[0].clamp(0, 1)
+                    alpha_mask = warped_patch[-1].unsqueeze(0)
+                    
+                    # if '69Ebl' in str(path):
+                    #     print('saving')
+                    #     torchvision.utils.save_image(im[image_i]/255, f'image_{iii}.png')
+                    #     torchvision.utils.save_image(alpha_mask, f'image_{iii}_.png')
+                    #     torchvision.utils.save_image(1-alpha_mask, f'image_{iii}__.png')
+                    #     print(row['tgt_final'])
+                    #     print()
+                        
+                        
+
+                    traffic_sign = (1 - alpha_mask) * im[image_i] / 255 + alpha_mask * warped_patch[:-1]
+                    im[image_i] = traffic_sign * 255
+            elif synthetic:
+                orig_shape = im[image_i].shape[1:]
+                resized_img = resize_transform(im[image_i])
                 
-            adv_obj, tf_params = obj_transforms(adv_obj)
+                if apply_patch:
+                    adv_obj = patch_mask * adv_patch + (1 - patch_mask) * obj
+                else:
+                    adv_obj = obj
+                    
+                adv_obj, tf_params = obj_transforms(adv_obj)
+                
+                adv_obj = adv_obj.clamp(0, 1)
+                num_eot = 1
+                obj_mask = obj_mask.cuda()
+                obj_mask_dup = obj_mask.expand(num_eot, -1, -1, -1)
+
+                tf_params = tf_params.cuda()
+                o_mask = mask_transforms.apply_transform(
+                    obj_mask_dup, None, transform=tf_params)
             
-            adv_obj = adv_obj.clamp(0, 1)
-            num_eot = 1
-            obj_mask = obj_mask.cuda()
-            obj_mask_dup = obj_mask.expand(num_eot, -1, -1, -1)
+                o_mask = o_mask.cpu()
+                indices = np.where(o_mask[0][0]==1)
+                x_min, x_max = min(indices[1]), max(indices[1])
+                y_min, y_max = min(indices[0]), max(indices[0])
 
-            tf_params = tf_params.cuda()
-            o_mask = mask_transforms.apply_transform(
-                obj_mask_dup, None, transform=tf_params)
-        
-            o_mask = o_mask.cpu()
-            indices = np.where(o_mask[0][0]==1)
-            x_min, x_max = min(indices[1]), max(indices[1])
-            y_min, y_max = min(indices[0]), max(indices[0])
-
-            label = [image_i, 1, (x_min+x_max)/(2*1280), (y_min+y_max)/(2*960), (x_max-x_min)/1280, (y_max-y_min)/960]
-            targets = torch.cat((targets, torch.unsqueeze(torch.Tensor(label), 0)))
-            adv_img = o_mask * adv_obj + (1 - o_mask) * resized_img/255
-            reresize_transform = torchvision.transforms.Resize(size=orig_shape)
-            im[image_i] = reresize_transform(adv_img) * 255
+                label = [image_i, SYNTHETIC_STOP_SIGN_CLASS, (x_min+x_max)/(2*1280), (y_min+y_max)/(2*960), (x_max-x_min)/1280, (y_max-y_min)/960]
+                targets = torch.cat((targets, torch.unsqueeze(torch.Tensor(label), 0)))
+                adv_img = o_mask * adv_obj + (1 - o_mask) * resized_img/255
+                reresize_transform = torchvision.transforms.Resize(size=orig_shape)
+                im[image_i] = reresize_transform(adv_img) * 255
 
             # qqq
             # DEBUG
@@ -343,7 +478,8 @@ def run(data,
         dt[2] += time_sync() - t3
 
         # Metrics
-        pred_for_plotting = []
+        # pred_for_plotting = []
+        predictions_for_plotting = output_to_target(out)
 
         for si, pred in enumerate(out):
             labels = targets[targets[:, 0] == si, 1:]
@@ -370,24 +506,31 @@ def run(data,
             tbox = np.concatenate((class_only.T, tbox), axis=1)
 
             num_labels_changed = 0
-            assert sum(tbox[:, 0]) == 1
-            # print('num predictions for image', len(predn))
-            for lbl in tbox:
-                if lbl[0] == 1:
-                    for pi, prd in enumerate(predn):
-                        # [x1, y1, x2, y2] where xy1=top-left, xy2=bottom-right
-                        if prd[0] > 0.9 * lbl[1] and prd[1] > 0.9 * lbl[2] and prd[2] < 1.1 * lbl[3] and prd[3] < 1.1 * lbl[4]:
-                            predn[pi, 5] = 1
-                            pred[pi, 5] = 1
-                            
-                            if prd[4] > 0.25:
-                                num_labels_changed += 1
+            
+            if synthetic:
+                for lbl in tbox:
+                    if lbl[0] == SYNTHETIC_STOP_SIGN_CLASS:
+                        for pi, prd in enumerate(predn):
+                            # [x1, y1, x2, y2] where xy1=top-left, xy2=bottom-right
+                            x1 = 0.9 * lbl[1] if 0.9 * lbl[1] > 5 else -20
+                            y1 = 0.9 * lbl[2] if 0.9 * lbl[2] > 5 else -20
 
-            if num_labels_changed > 1:
-                num_errors += 1
+                            if prd[0] >= x1 and prd[1] >= y1 and prd[2] <= 1.1 * lbl[3] and prd[3] <= 1.1 * lbl[4]:
+                                # 14 is octagon
+                                if prd[5] == 14:
+                                    predn[pi, 5] = SYNTHETIC_STOP_SIGN_CLASS
+                                    pred[pi, 5] = SYNTHETIC_STOP_SIGN_CLASS
+                                    
+                                    # if prd[4] > 0.25:
+                                    num_labels_changed += 1
 
-            for *box, conf, cls in predn.cpu().numpy():
-                pred_for_plotting.append([si, cls, *list(*xyxy2xywh(np.array(box)[None])), conf])
+                if num_labels_changed > 1:
+                    num_errors += 1
+                if num_labels_changed == 1:
+                    num_detected += 1
+
+            # for *box, conf, cls in predn.cpu().numpy():
+            #     pred_for_plotting.append([si, cls, *list(*xyxy2xywh(np.array(box)[None])), conf])
 
             scale_coords(im[si].shape[1:], predn[:, :4], shape, shapes[si][1])  # native-space pred
 
@@ -411,30 +554,59 @@ def run(data,
                 save_one_json(predn, jdict, path, class_map)  # append to COCO-JSON dictionary
             callbacks.run('on_val_image_end', pred, predn, path, names, im[si])
 
+            # 14 is octagon
+            if plot_octagons and 14 in labels:
+                shape_to_plot_data['octagon'].append([im[si:si+1], targets[targets[:, 0] == si, :], path, predictions_for_plotting[predictions_for_plotting[:, 0] == si]])
+
+
         # Plot images
         if plots and batch_i < 30:
+            if plot_single_images:
+                save_dir_single_plots = increment_path(save_dir / 'single_plots', exist_ok=exist_ok, mkdir=True)  # increment run
+                for i in range(len(im)):
+                    # labels
+                    f = save_dir_single_plots / f'val_batch{batch_i}_image{i}_labels.jpg'  # labels
+                    ti = targets[targets[:, 0] == i]
+                    ti[:, 0] = 0
+                    plot_images(im[i:i+1], ti, paths[i:i+1], f, names)
+
+                    # predictions
+                    f = save_dir_single_plots / f'val_batch{batch_i}_image{i}_pred.jpg'  # labels
+                    ti = predictions_for_plotting[predictions_for_plotting[:, 0] == i]
+                    ti[:, 0] = 0
+                    plot_images(im[i:i+1], ti, paths[i:i+1], f, names)
             f = save_dir / f'val_batch{batch_i}_labels.jpg'  # labels
             Thread(target=plot_images, args=(im, targets, paths, f, names), daemon=True).start()
             f = save_dir / f'val_batch{batch_i}_pred.jpg'  # predictions
             Thread(target=plot_images, args=(im, output_to_target(out), paths, f, names), daemon=True).start()
-            f = save_dir / f'val_batch{batch_i}_pred_synthetic.jpg'  # predictions
-            Thread(target=plot_images, args=(im, np.array(pred_for_plotting), paths, f, names), daemon=True).start()
-
             print(f)
+    
+    if plot_octagons:
+        save_dir_octagon = increment_path(save_dir / 'octagon', exist_ok=exist_ok, mkdir=True)  # increment run
+        for i in range(len(shape_to_plot_data['octagon'])):
+            im, targets, path, out = shape_to_plot_data['octagon'][i]
+            # labels
+            f = save_dir_octagon / f'image{i}_labels.jpg'  # labels
+            targets[:, 0] = 0
+            plot_images(im, targets, [path], f, names)
+
+            # predictions
+            f = save_dir_octagon / f'image{i}_pred.jpg'  # labels
+            out[:, 0] = 0
+            plot_images(im, out, [path], f, names)
+    
 
     # Compute metrics
     stats = [np.concatenate(x, 0) for x in zip(*stats)]  # to numpy
 
-    # print('statistics')
-    # # print(stats)
-    # print(len(stats))
-    # print(stats[2])
-    # print(type(stats[2]))
-    # print(set(stats[2]))
-    # qqq
+    metrics_df_column_names = ["name", "apply_patch", "random_patch"]
+    current_exp_metrics = {}
+
+    metrics_df_column_names.append('num_bg')
+    current_exp_metrics['num_bg'] = num_bg
     
     if len(stats) and stats[0].any():
-        tp, fp, p, r, f1, ap, ap_class = ap_per_class(*stats, plot=plots, save_dir=save_dir, names=names)
+        tp, fp, p, r, f1, ap, ap_class, fnr = ap_per_class(*stats, plot=plots, save_dir=save_dir, names=names)
         ap50, ap = ap[:, 0], ap.mean(1)  # AP@0.5, AP@0.5:0.95
         mp, mr, map50, map = p.mean(), r.mean(), ap50.mean(), ap.mean()
         nt = np.bincount(stats[3].astype(np.int64), minlength=nc)  # number of targets per class
@@ -443,17 +615,71 @@ def run(data,
 
     # Print results
     pf = '%20s' + '%11i' * 2 + '%11.3g' * 4  # print format
+    metrics_df_column_names.append('num_images')
+    current_exp_metrics['num_images'] = seen
+    metrics_df_column_names.append('num_targets_all')
+    current_exp_metrics['num_targets_all'] = nt.sum()
+    metrics_df_column_names.append('precision_all')
+    current_exp_metrics['precision_all'] = mp
+    metrics_df_column_names.append('recall_all')
+    current_exp_metrics['recall_all'] = mr
+    metrics_df_column_names.append('map_50_all')
+    current_exp_metrics['map_50_all'] = map50
+    metrics_df_column_names.append('map_50_95_all')
+    current_exp_metrics['map_50_95_all'] = map
     LOGGER.info(pf % ('all', seen, nt.sum(), mp, mr, map50, map))
 
     # Print results per class
     # if (verbose or (nc < 50 and not training)) and nc > 1 and len(stats):
     print('[INFO] results per class')
     for i, c in enumerate(ap_class):
+        # metrics_df_column_names.append(f'num_images_{names[c]}')
+        # current_exp_metrics[f'num_images_{names[c]}'] = seen
+        metrics_df_column_names.append(f'num_targets_{names[c]}')
+        current_exp_metrics[f'num_targets_{names[c]}'] = nt[c]
+        metrics_df_column_names.append(f'precision_{names[c]}')
+        current_exp_metrics[f'precision_{names[c]}'] = p[i]
+        metrics_df_column_names.append(f'recall_{names[c]}')
+        current_exp_metrics[f'recall_{names[c]}'] = r[i]
+        metrics_df_column_names.append(f'fnr_{names[c]}')
+        current_exp_metrics[f'fnr_{names[c]}'] = fnr[i]
+        metrics_df_column_names.append(f'ap_50_{names[c]}')
+        current_exp_metrics[f'ap_50_{names[c]}'] = ap50[i]
+        metrics_df_column_names.append(f'ap_50_95_{names[c]}')
+        current_exp_metrics[f'ap_50_95_{names[c]}'] = ap[i]
+        
+
         LOGGER.info(pf % (names[c], seen, nt[c], p[i], r[i], ap50[i], ap[i]))
 
     print('num_errors', num_errors)
     print('num_images', seen)
     print('proportion of errors', num_errors/seen)
+
+    print('num_errors', num_errors)
+    print('num_images', seen)
+    print('detection rate', num_detected/seen)
+
+    metrics_df_column_names.append('num_errors')
+    current_exp_metrics['num_errors'] = num_errors    
+    metrics_df_column_names.append('proportion_of_errors')
+    current_exp_metrics['proportion_of_errors'] = num_errors/seen
+    metrics_df_column_names.append('dataset')
+    current_exp_metrics['dataset'] = DATASET_NAME
+
+    if save_exp_metrics:
+        try:
+            metrics_df = pd.read_csv('runs/results.csv')
+        except FileNotFoundError:
+            metrics_df = pd.DataFrame(columns=metrics_df_column_names)
+            metrics_df = pd.DataFrame()
+
+        current_exp_metrics['name'] = name
+        current_exp_metrics['apply_patch'] = apply_patch
+        current_exp_metrics['random_patch'] = random_patch
+        
+
+        metrics_df = metrics_df.append(current_exp_metrics, ignore_index=True)
+        metrics_df.to_csv('runs/results.csv', index=False)
 
     # Print speeds
     t = tuple(x / seen * 1E3 for x in dt)  # speeds per image
@@ -528,6 +754,12 @@ def parse_opt():
     parser.add_argument('--half', action='store_true', help='use FP16 half-precision inference')
     parser.add_argument('--dnn', action='store_true', help='use OpenCV DNN for ONNX inference')
     parser.add_argument('--apply_patch', action='store_true', help='add adversarial patch to traffic signs if true')
+    parser.add_argument('--synthetic', action='store_true', help='add adversarial patch to traffic signs if true')
+    parser.add_argument('--random_patch', action='store_true', help='adversarial patch is random')
+    parser.add_argument('--save_exp_metrics', action='store_true', help='save metrics for this experiment to dataframe')
+    parser.add_argument('--plot_single_images', action='store_true', help='save single images in a folder instead of batch images in a single plot')
+    parser.add_argument('--plot_octagons', action='store_true', help='save single images containing octagons in a folder')
+    parser.add_argument('--num_bg', type=int, default=16, help='number of backgrounds to generate adversarial patch')
 
     opt = parser.parse_args()
     opt.data = check_yaml(opt.data)  # check YAML
