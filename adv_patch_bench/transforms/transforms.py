@@ -22,6 +22,7 @@ def gen_rect_mask(size, ratio=None):
         box = [[0, 0], [size - 1, 0], [size - 1, size - 1], [0, size - 1]]
     return mask, box
 
+
 def gen_square_mask(size, ratio=None):
     # ratio = height / width
     mask = np.zeros((size, size))
@@ -81,8 +82,8 @@ def gen_octagon_mask(size, ratio=None):
     edge = round((2 - np.sqrt(2)) / 2 * size)
     Y, X = np.ogrid[:size, :size]
     mask = (Y + X >= edge) * (Y - X >= -(size - edge)) * (Y + X <= 2 * size - edge) * (Y - X <= (size - edge))
-    return mask, [[edge, 0], [size-1, edge], [size-edge, size-1], [0, size-edge]]
-    # return mask, [[0, edge], [size - edge, 0], [size - 1, size - edge], [edge, size - 1]]
+    return mask, [[edge, 0], [size - 1, edge], [size - edge, size - 1], [0, size - edge]]
+
 
 def gen_sign_mask(shape, size, ratio=None):
     return SHAPE_TO_MASK[shape](size, ratio=ratio)

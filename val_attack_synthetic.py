@@ -104,7 +104,8 @@ def process_batch(detections, labels, iouv):
 
 
 @torch.no_grad()
-def run(data,
+def run(args,
+        data,
         weights=None,  # model.pt path(s)
         batch_size=32,  # batch size
         imgsz=640,  # inference size (pixels)
@@ -131,14 +132,17 @@ def run(data,
         plots=True,
         callbacks=Callbacks(),
         compute_loss=None,
-        apply_patch=True,
-        synthetic=False,
-        random_patch=False,
-        save_exp_metrics=True,
-        plot_single_images=False,
-        plot_octagons=False,
-        num_bg=16
+        **kwargs,
         ):
+
+    apply_patch = args.apply_patch
+    synthetic = args.synthetic
+    random_patch = args.random_patch
+    save_exp_metrics = args.save_exp_metrics
+    plot_single_images = args.plot_single_images
+    plot_octagons = args.plot_octagons
+    num_bg = args.num_bg
+    load_patch = args.load_patch
 
     torch.manual_seed(1111)
     np.random.seed(1111)
@@ -245,7 +249,7 @@ def run(data,
     obj_mask = T.pad(obj_mask, pad_size)
     # Define patch location and size
     patch_mask = torch.zeros_like(obj_mask)
-    # Example: 5x5 inches out of 36x36 inches
+    # Example: 10x10-inch patch in the middle of 36x36-inch sign
     mid_height = bg_size[0] // 2 + 60
     mid_width = bg_size[1] // 2
     patch_size = 10
@@ -261,24 +265,32 @@ def run(data,
     torchvision.utils.save_image(img, 'img.png')
 
     if apply_patch:
-        with torch.enable_grad():
-            adv_patch = attack.attack(obj.cuda(), obj_mask.cuda(), patch_mask.cuda(), backgrounds.cuda())
-
-        adv_patch = adv_patch[0].detach()
-        adv_patch = adv_patch.cpu().float()
-        pickle.dump(adv_patch, 'adv_patch.pkl')
-        assert False
-        adv_patch_cropped = adv_patch[:, mid_height - h:mid_height + h, mid_width - w:mid_width + w]
-
-        if random_patch:
-            # random patch
+        if load_patch != '':
+            # Load patch if specified
+            adv_patch = pickle.load(open(load_patch, 'rb'))
+            adv_patch_cropped = adv_patch[:, mid_height - h:mid_height + h, mid_width - w:mid_width + w]
+        elif random_patch:
+            # Random patch
             adv_patch_cropped = torch.rand(3, 2*h, 2*w)
+            adv_patch = torch.zeros_like(patch_mask)
             adv_patch[:, mid_height - h:mid_height + h, mid_width - w:mid_width + w] = adv_patch_cropped
+        else:
+            # Otherwise, generate a new adversarial patch
+            with torch.enable_grad():
+                adv_patch = attack.attack(obj.cuda(), obj_mask.cuda(), patch_mask.cuda(), backgrounds.cuda())
+
+            adv_patch = adv_patch[0].detach()
+            adv_patch = adv_patch.cpu().float()
+            patch_path = './adv_patch.pkl'
+            print(f'Saving the generated adv patch to {patch_path}...')
+            pickle.dump(adv_patch, open(patch_path, 'wb'))
+            adv_patch_cropped = adv_patch[:, mid_height - h:mid_height + h, mid_width - w:mid_width + w]
 
         f = os.path.join(save_dir, 'adversarial_patch.png')
+        print(f'Saving the patch to {f}...')
         torchvision.utils.save_image(adv_patch, f)
-
         f = os.path.join(save_dir, 'adversarial_patch_cropped.png')
+        print(f'Saving the cropped patch to {f}...')
         torchvision.utils.save_image(adv_patch_cropped, f)
 
     seen = 0
@@ -286,7 +298,7 @@ def run(data,
     names = {k: v for k, v in enumerate(model.names if hasattr(model, 'names') else model.module.names)}
     # nc = 1 if single_cls else int(data['nc'])  # number of classes
     nc = len(names)
-    print('names', names)
+    print('Class names: ', names)
 
     # TODO move to label file instead of adding synthetic stop sign as class here
     SYNTHETIC_STOP_SIGN_CLASS = len(names)
@@ -302,6 +314,7 @@ def run(data,
     jdict, stats, ap, ap_class = [], [], [], []
     pbar = tqdm(dataloader, desc=s, bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')  # progress bar
 
+    # DEBUG
     # if apply_patch:
     #     demo_patch = torchvision.io.read_image('demo.png').float()[:3, :, :] / 255
     #     # demo_patch = resize(adv_patch_cropped, (32, 32))
@@ -316,9 +329,7 @@ def run(data,
         df = df[df['final_shape'] != 'other-0.0-0.0']
         print(df.shape)
         print(df.groupby(by=['final_shape']).count())
-
-        adv_patch_cropped = resize(adv_patch_cropped, (32, 32))
-
+        # adv_patch_cropped = resize(adv_patch_cropped, (32, 32))
     elif synthetic:
         obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True)
         mask_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, resample=Resample.NEAREST)
@@ -351,9 +362,8 @@ def run(data,
                     #     print(predicted_class)
                     #     print(shape)
 
-                    patch_size_in_pixel = 32
-
-                    # patch_size_in_pixel = 52
+                    # patch_size_in_pixel = 32
+                    patch_size_in_pixel = adv_patch_cropped.shape[1]
                     patch_size_in_mm = 250
                     sign_canonical, sign_mask, src = get_sign_canonical(
                         shape, predicted_class, patch_size_in_pixel, patch_size_in_mm)
@@ -753,15 +763,16 @@ def parse_opt():
     parser.add_argument('--half', action='store_true', help='use FP16 half-precision inference')
     parser.add_argument('--dnn', action='store_true', help='use OpenCV DNN for ONNX inference')
     # Our attack and evaluate options
-    parser.add_argument('--apply_patch', action='store_true', help='add adversarial patch to traffic signs if true')
+    parser.add_argument('--apply-patch', action='store_true', help='add adversarial patch to traffic signs if true')
     parser.add_argument('--synthetic', action='store_true', help='add adversarial patch to traffic signs if true')
-    parser.add_argument('--random_patch', action='store_true', help='adversarial patch is random')
-    parser.add_argument('--save_exp_metrics', action='store_true', help='save metrics for this experiment to dataframe')
-    parser.add_argument('--plot_single_images', action='store_true',
+    parser.add_argument('--random-patch', action='store_true', help='adversarial patch is random')
+    parser.add_argument('--load-patch', type=str, default='', help='path to adv patch to load')
+    parser.add_argument('--save-exp-metrics', action='store_true', help='save metrics for this experiment to dataframe')
+    parser.add_argument('--plot-single-images', action='store_true',
                         help='save single images in a folder instead of batch images in a single plot')
-    parser.add_argument('--plot_octagons', action='store_true',
+    parser.add_argument('--plot-octagons', action='store_true',
                         help='save single images containing octagons in a folder')
-    parser.add_argument('--num_bg', type=int, default=16, help='number of backgrounds to generate adversarial patch')
+    parser.add_argument('--num-bg', type=int, default=16, help='number of backgrounds to generate adversarial patch')
 
     opt = parser.parse_args()
     opt.data = check_yaml(opt.data)  # check YAML
@@ -777,7 +788,7 @@ def main(opt):
     if opt.task in ('train', 'val', 'test'):  # run normally
         if opt.conf_thres > 0.001:  # https://github.com/ultralytics/yolov5/issues/1466
             LOGGER.info(f'WARNING: confidence threshold {opt.conf_thres} >> 0.001 will produce invalid mAP values.')
-        run(**vars(opt))
+        run(opt, **vars(opt))
 
     else:
         weights = opt.weights if isinstance(opt.weights, list) else [opt.weights]
@@ -786,7 +797,7 @@ def main(opt):
             # python val.py --task speed --data coco.yaml --batch 1 --weights yolov5n.pt yolov5s.pt...
             opt.conf_thres, opt.iou_thres, opt.save_json = 0.25, 0.45, False
             for opt.weights in weights:
-                run(**vars(opt), plots=False)
+                run(opt, **vars(opt), plots=False)
 
         elif opt.task == 'study':  # speed vs mAP benchmarks
             # python val.py --task study --data coco.yaml --iou 0.7 --weights yolov5n.pt yolov5s.pt...
@@ -795,7 +806,7 @@ def main(opt):
                 x, y = list(range(256, 1536 + 128, 128)), []  # x axis (image sizes), y axis
                 for opt.imgsz in x:  # img-size
                     LOGGER.info(f'\nRunning {f} --imgsz {opt.imgsz}...')
-                    r, _, t = run(**vars(opt), plots=False)
+                    r, _, t = run(opt, **vars(opt), plots=False)
                     y.append(r + t)  # results and times
                 np.savetxt(f, y, fmt='%10.4g')  # save
             os.system('zip -r study.zip study_*.txt')
