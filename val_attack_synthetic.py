@@ -330,8 +330,8 @@ def run(data,
         shape_to_plot_data['octagon'] = []
     for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
         # TODO: remove. only for testing/debugging
-        if batch_i == 50:
-            break
+        # if batch_i == 50:
+        #     break
         for image_i, path in enumerate(paths):
             # print(path)
             if apply_patch and not synthetic:
