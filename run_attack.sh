@@ -32,7 +32,7 @@
 
 CUDA_VISIBLE_DEVICES=0 python val_attack_synthetic.py \
     --img 1280 \
-    --batch-size 4 \
+    --batch-size 8 \
     --data mapillary_vistas.yaml \
     --weights /home/chawins/adv-patch-bench/yolov5/runs/train/exp2/weights/best.pt \
     --exist-ok \
@@ -40,8 +40,8 @@ CUDA_VISIBLE_DEVICES=0 python val_attack_synthetic.py \
     --task train \
     --save-exp-metrics \
     --num-bg 16 \
-    --apply-patch \
     --plot-octagons \
+    --apply-patch \
     --load-patch ./adv_patch.pkl
 
 # CUDA_VISIBLE_DEVICES=0 python val_attack_synthetic.py \

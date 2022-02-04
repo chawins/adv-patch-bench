@@ -218,9 +218,11 @@ def run(args,
         dataloader = create_dataloader(data[task], imgsz, batch_size, stride, single_cls, pad=pad, rect=pt,
                                        workers=workers, prefix=colorstr(f'{task}: '))[0]
 
+    img_size = (int(imgsz * 0.75), imgsz)
+    img_height, img_width = img_size
+
     # EDIT: Randomly select backgrounds and resize
-    bg_size = (960, 1280)
-    # num_bg = 16
+    bg_size = img_size
     # bg_dir = '/data/shared/mtsd_v2_fully_annotated/test'
     bg_dir = '/data/shared/mtsd_v2_fully_annotated/train'
     all_bgs = os.listdir(os.path.expanduser(bg_dir))
@@ -333,7 +335,7 @@ def run(args,
     elif synthetic:
         obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True)
         mask_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, resample=Resample.NEAREST)
-        resize_transform = torchvision.transforms.Resize(size=(960, 1280))
+        resize_transform = torchvision.transforms.Resize(size=img_size)
 
     num_errors = 0
     num_detected = 0
@@ -341,10 +343,12 @@ def run(args,
     if plot_octagons:
         shape_to_plot_data = {}
         shape_to_plot_data['octagon'] = []
+    num_samples = 0
     for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
         # DEBUG
-        # if batch_i == 50:
-        #     break
+        num_samples += im.shape[0]
+        if batch_i == 50:
+            break
         for image_i, path in enumerate(paths):
             # print(path)
             if apply_patch and not synthetic:
@@ -352,9 +356,8 @@ def run(args,
                 img_df = df[df['filename_y'] == filename]
                 if len(img_df) == 0:
                     continue
-                # for _, row in img_df.iterrows():
+                # Apply patch on all of the signs on this image
                 for _, row in img_df.iterrows():
-                    transform_func = warp_perspective
                     predicted_class = row['final_shape']
                     shape = predicted_class.split('-')[0]
 
@@ -370,20 +373,19 @@ def run(args,
 
                     alpha = row['alpha']
                     beta = row['beta']
-
-                    new_demo_patch = adv_patch_cropped.clone()
-                    new_demo_patch.clamp_(0, 1).mul_(alpha).add_(beta).clamp_(0, 1)
+                    patch_cropped = adv_patch_cropped.clone()
+                    patch_cropped.clamp_(0, 1).mul_(alpha).add_(beta).clamp_(0, 1)
                     sign_size_in_pixel = sign_canonical.size(-1)
+                    # Patch location (here is center). Should match the
+                    # location used during attack
                     begin = (sign_size_in_pixel - patch_size_in_pixel) // 2
                     end = begin + patch_size_in_pixel
-
-                    sign_canonical[:-1, begin:end, begin:end] = new_demo_patch
+                    sign_canonical[:-1, begin:end, begin:end] = patch_cropped
                     sign_canonical[-1, begin:end, begin:end] = 1
 
                     # Crop patch that is not on the sign
                     sign_canonical *= sign_mask
                     src = np.array(src, dtype=np.float32)
-
                     tgt = np.array(row['tgt_final'], dtype=np.float32)
 
                     # if '69Ebl' in str(path):
@@ -408,7 +410,8 @@ def run(args,
                     warped_patch = transform_func(sign_canonical.unsqueeze(0),
                                                   M, cur_shape,
                                                   mode='bicubic',
-                                                  padding_mode='zeros')[0].clamp(0, 1)
+                                                  padding_mode='zeros')[0]
+                    warped_patch.clamp_(0, 1)
                     alpha_mask = warped_patch[-1].unsqueeze(0)
 
                     # if '69Ebl' in str(path):
@@ -420,7 +423,14 @@ def run(args,
                     #     print()
 
                     traffic_sign = (1 - alpha_mask) * im[image_i] / 255 + alpha_mask * warped_patch[:-1]
+                    # traffic_sign.clamp_(0, 1)
+                    # im[image_i] = (traffic_sign * 255).byte()
                     im[image_i] = traffic_sign * 255
+
+                    # if 'U6RnrAjXMMBCX4SDEnUScQ' in str(path):
+                    # if '_69EblZbqXUcjYKu7myKDg' in path:
+                    #     import pdb
+                    #     pdb.set_trace()
             elif synthetic:
                 orig_shape = im[image_i].shape[1:]
                 resized_img = resize_transform(im[image_i])
@@ -431,8 +441,8 @@ def run(args,
                     adv_obj = obj
 
                 adv_obj, tf_params = obj_transforms(adv_obj)
-
-                adv_obj = adv_obj.clamp(0, 1)
+                adv_obj.clamp_(0, 1)
+                # TODO: clean this part
                 num_eot = 1
                 obj_mask = obj_mask.cuda()
                 obj_mask_dup = obj_mask.expand(num_eot, -1, -1, -1)
@@ -446,9 +456,13 @@ def run(args,
                 y_min, y_max = min(indices[0]), max(indices[0])
 
                 label = [
-                    image_i, SYNTHETIC_STOP_SIGN_CLASS, (x_min + x_max) / (2 * 1280),
-                    (y_min + y_max) / (2 * 960),
-                    (x_max - x_min) / 1280, (y_max - y_min) / 960]
+                    image_i,
+                    SYNTHETIC_STOP_SIGN_CLASS,
+                    (x_min + x_max) / (2 * img_width),
+                    (y_min + y_max) / (2 * img_height),
+                    (x_max - x_min) / img_width,
+                    (y_max - y_min) / img_height,
+                ]
                 targets = torch.cat((targets, torch.unsqueeze(torch.Tensor(label), 0)))
                 adv_img = o_mask * adv_obj + (1 - o_mask) * resized_img/255
                 reresize_transform = torchvision.transforms.Resize(size=orig_shape)
@@ -457,6 +471,9 @@ def run(args,
             # qqq
             # DEBUG
             # pdb.set_trace()
+
+        im = im[:num_samples]
+        targets = targets[:num_samples]
 
         # continue
 
@@ -509,6 +526,9 @@ def run(args,
 
             # detections (Array[N, 6]), x1, y1, x2, y2, confidence, class
             # labels (Array[M, 5]), class, x1, y1, x2, y2
+
+            import pdb
+            pdb.set_trace()
 
             tbox = xywh2xyxy(labels[:, 1:5]).cpu()  # target boxes
             class_only = np.expand_dims(labels[:, 0].cpu(), axis=0)

@@ -6,39 +6,14 @@ from os.path import expanduser, join
 import pandas as pd
 from tqdm import tqdm
 
+from .hparams import TS_COLOR_DICT, TS_COLOR_OFFSET_DICT
+
 
 def readlines(path):
     with open(path, 'r') as f:
         lines = f.readlines()
     return [line.strip() for line in lines]
 
-
-color_dict = {
-    'circle-750.0': ['white', 'blue', 'red'],   # (1) white+red, (2) blue+white
-    'triangle-900.0': ['white', 'yellow'],  # (1) white, (2) yellow
-    'triangle_inverted-1220.0': [],   # (1) white+red
-    'diamond-600.0': [],    # (1) white+yellow
-    'diamond-915.0': [],    # (1) yellow
-    'square-600.0': [],     # (1) blue
-    'rect-458.0-610.0': ['white', 'other'],  # (1) chevron (also multi-color), (2) white
-    'rect-762.0-915.0': [],  # (1) white
-    'rect-915.0-1220.0': [],    # (1) white
-    'pentagon-915.0': [],   # (1) yellow
-    'octagon-915.0': [],    # (1) red
-}
-class_idx = {
-    'circle-750.0': 0,   # (1) white+red, (2) blue+white
-    'triangle-900.0': 3,  # (1) white, (2) yellow
-    'triangle_inverted-1220.0': 5,   # (1) white+red
-    'diamond-600.0': 6,    # (1) white+yellow
-    'diamond-915.0': 7,    # (1) yellow
-    'square-600.0': 8,     # (1) blue
-    'rect-458.0-610.0': 9,  # (1) chevron (also multi-color), (2) white
-    'rect-762.0-915.0': 11,  # (1) white
-    'rect-915.0-1220.0': 12,    # (1) white
-    'pentagon-915.0': 13,   # (1) yellow
-    'octagon-915.0': 14,    # (1) red
-}
 
 path = '/data/shared/mtsd_v2_fully_annotated/'
 csv_path = '/data/shared/mtsd_v2_fully_annotated/traffic_sign_dimension_v6.csv'
@@ -48,12 +23,12 @@ anno_path = expanduser(join(path, 'annotations'))
 label_path = expanduser(join(path, 'labels'))
 data = pd.read_csv(csv_path)
 
-selected_labels = list(class_idx.keys())
+selected_labels = list(TS_COLOR_OFFSET_DICT.keys())
 mtsd_label_to_class_index = {}
 for _, row in data.iterrows():
-    if row['target'] in class_idx:
-        idx = class_idx[row['target']]
-        color_list = color_dict[row['target']]
+    if row['target'] in TS_COLOR_OFFSET_DICT:
+        idx = TS_COLOR_OFFSET_DICT[row['target']]
+        color_list = TS_COLOR_DICT[row['target']]
         # print(row['sign'], row['target'])
         if len(color_list) > 0:
             idx += color_list.index(row['color'])
