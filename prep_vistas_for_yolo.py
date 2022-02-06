@@ -73,21 +73,20 @@ def write_yolo_labels(model, label, panoptic_per_image_id, data_dir,
             obj_idx += 1
 
         # DEBUG
-        if len(bbox) > 100:
-            break
+        # if len(bbox) > 500:
+        #     break
 
     # Classify all patches
     print('==> Classifying traffic signs...')
     traffic_signs = torch.cat(traffic_signs, dim=0)
     num_samples = len(traffic_signs)
     num_batches = int(np.ceil(num_samples / batch_size))
-    predicted_scores = torch.zeros((num_samples, len(TS_COLOR_LABEL_LIST)), device=device)
+    predicted_scores = torch.zeros((num_samples, len(TS_COLOR_LABEL_LIST)))
     with torch.no_grad():
         for i in tqdm(range(num_batches)):
             begin, end = i * batch_size, (i + 1) * batch_size
             logits = model(traffic_signs[begin:end].to(device))
-            predicted_scores[begin:end] = F.softmax(logits, dim=1)
-    predicted_scores = predicted_scores.cpu()
+            predicted_scores[begin:end] = F.softmax(logits, dim=1).cpu()
     predicted_labels = predicted_scores.argmax(1)
     # Set output of low-confidence prediction to "other" clss
     predicted_labels[predicted_scores.max(1)[0] < conf_thres] = num_classes - 1
@@ -112,7 +111,6 @@ def write_yolo_labels(model, label, panoptic_per_image_id, data_dir,
         else:
             # If `correct_shape` can have multiple colors, we pick the color
             # with the highest softmax score
-            print(i)
             prob_wrong += 1
             offset = TS_COLOR_OFFSET_DICT[correct_shape]
             color_idx = predicted_scores[i][offset:offset + num_colors].argmax()
