@@ -331,6 +331,8 @@ def run(args,
         df = df[df['final_shape'] != 'other-0.0-0.0']
         print(df.shape)
         print(df.groupby(by=['final_shape']).count())
+
+        df_use_polygons = df[~df['tgt_polygon'].isna()]
         # adv_patch_cropped = resize(adv_patch_cropped, (32, 32))
     elif synthetic:
         obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True)
@@ -339,6 +341,8 @@ def run(args,
 
     num_errors = 0
     num_detected = 0
+    num_octagon_labels = 0
+    num_octagon_with_patch = 0
 
     if plot_octagons:
         shape_to_plot_data = {}
@@ -347,23 +351,26 @@ def run(args,
     for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
         # DEBUG
         num_samples += im.shape[0]
-        if batch_i == 50:
+        if batch_i == 100:
             break
         for image_i, path in enumerate(paths):
-            # print(path)
             if apply_patch and not synthetic:
                 filename = path.split('/')[-1]
                 img_df = df[df['filename_y'] == filename]
+                
                 if len(img_df) == 0:
                     continue
                 # Apply patch on all of the signs on this image
                 for _, row in img_df.iterrows():
+                    (h0, w0), ((h_ratio, w_ratio), (w_pad, h_pad)) = shapes[image_i]
+
                     predicted_class = row['final_shape']
                     shape = predicted_class.split('-')[0]
 
-                    # if '69Ebl' in str(path):
-                    #     print(predicted_class)
-                    #     print(shape)
+                    # only apply patch to octagons
+                    if shape != 'octagon':
+                        continue
+                    num_octagon_with_patch += shape == 'octagon'
 
                     # patch_size_in_pixel = 32
                     patch_size_in_pixel = adv_patch_cropped.shape[1]
@@ -386,16 +393,89 @@ def run(args,
                     # Crop patch that is not on the sign
                     sign_canonical *= sign_mask
                     src = np.array(src, dtype=np.float32)
-                    tgt = np.array(row['tgt_final'], dtype=np.float32)
 
-                    # if '69Ebl' in str(path):
-                    #     print(tgt)
-                    #     print(src)
-                    #     print('alpha, beta', alpha, beta)
-                    #     print(sign_mask)
+                    # tgt = np.array(row['tgt_final'], dtype=np.float32)
+
+                    # if filename == 'qNYV4-JVTJ-Tw8Q-_0nvdQ.jpg':
                     #     print()
-                    #     torchvision.utils.save_image(sign_mask, f'image_{iii}___.png')
-                    #     torchvision.utils.save_image(sign_canonical, f'image_{iii}____.png')
+                    #     print(tgt)
+                    #     print()
+                    
+
+                    try:
+                        if not pd.isna(row['points']):
+                            # tgt = np.array(row['points'], dtype=np.float32)
+                            tgt = np.array(literal_eval(row['points']), dtype=np.float32)
+
+                            tgt[:, 1] = (tgt[:, 1] * h_ratio) + h_pad 
+                            tgt[:, 0] = (tgt[:, 0] * w_ratio) + w_pad
+                        elif not pd.isna(row['tgt_polygon']):
+                            # count_ += 1
+                            tgt = np.array(literal_eval(row['tgt_polygon']), dtype=np.float32)
+                            offset_x_ratio = row['xmin_ratio']
+                            offset_y_ratio = row['ymin_ratio']
+                            # Have to correct for the padding when df is saved (TODO: this should be simplified)
+                            pad_size = int(max(h0, w0) * 0.25)
+                            x_min = offset_x_ratio * (w0 + pad_size * 2) - pad_size
+                            y_min = offset_y_ratio * (h0 + pad_size * 2) - pad_size
+                            
+                            # Order of coordinate in tgt is inverted, i.e., (x, y) instead of (y, x)
+                            tgt[:, 1] = (tgt[:, 1] + y_min) * h_ratio + h_pad
+                            tgt[:, 0] = (tgt[:, 0] + x_min) * w_ratio + w_pad
+                            
+                        else:
+                            tgt = np.array(literal_eval(row['tgt']), dtype=np.float32)
+
+                            offset_x_ratio = row['xmin_ratio']
+                            offset_y_ratio = row['ymin_ratio']
+                            # Have to correct for the padding when df is saved (TODO: this should be simplified)
+                            pad_size = int(max(h0, w0) * 0.25)
+                            x_min = offset_x_ratio * (w0 + pad_size * 2) - pad_size
+                            y_min = offset_y_ratio * (h0 + pad_size * 2) - pad_size
+                            
+                            # Order of coordinate in tgt is inverted, i.e., (x, y) instead of (y, x)
+                            tgt[:, 1] = (tgt[:, 1] + y_min) * h_ratio + h_pad
+                            tgt[:, 0] = (tgt[:, 0] + x_min) * w_ratio + w_pad
+                    except:
+                        print(filename)
+                        print(row['points'])
+                        qqq
+
+                    # moving patch
+                    sign_height = max(tgt[:, 1]) - min(tgt[:, 1])
+                    tgt[:, 1] += sign_height * 0.3
+
+                    # if filename == 'qNYV4-JVTJ-Tw8Q-_0nvdQ.jpg':
+
+                    #     # J-8nlLTMRhKGH1lokswIzQ
+                    #     if shape == 'octagon':
+                    #         # print(im[image_i].shape) 
+                    #         # print((h0, w0), ((h_ratio, w_ratio), (w_pad, h_pad)))
+
+                    #         # print(h_ratio, im[image_i].shape[1]/h0)
+                    #         # print(w_ratio, im[image_i].shape[2]/w0)
+
+                    #         # print(h_pad/h0 * im[image_i].shape[1], h_pad)
+                    #         # print(w_pad/w0 * im[image_i].shape[2], w_pad)
+                    #         # print()
+                    #         print()
+                    #         print(tgt)
+                    #         print()
+                            
+                    #         tgt[:, 1] = (tgt[:, 1] * h_ratio) + h_pad 
+                    #         tgt[:, 0] = (tgt[:, 0] * w_ratio) + w_pad 
+
+                    #         print()
+                    #         print(tgt)
+                    #         print()
+                            
+                    #         for point in tgt:
+                    #             for dx in range(-2, 3):
+                    #                 for dy in range(-2, 3):
+                    #                     # tgt is [x, y]
+                    #                     im[image_i][:, int(point[1])+dy, int(point[0])+dx] = 0
+                    #         torchvision.utils.save_image(im[image_i]/255, 'test.png')
+                    #         qqq
 
                     if len(src) == 3:
                         M = torch.from_numpy(getAffineTransform(src, tgt)).unsqueeze(0).float()
@@ -414,23 +494,11 @@ def run(args,
                     warped_patch.clamp_(0, 1)
                     alpha_mask = warped_patch[-1].unsqueeze(0)
 
-                    # if '69Ebl' in str(path):
-                    #     print('saving')
-                    #     torchvision.utils.save_image(im[image_i]/255, f'image_{iii}.png')
-                    #     torchvision.utils.save_image(alpha_mask, f'image_{iii}_.png')
-                    #     torchvision.utils.save_image(1-alpha_mask, f'image_{iii}__.png')
-                    #     print(row['tgt_final'])
-                    #     print()
-
                     traffic_sign = (1 - alpha_mask) * im[image_i] / 255 + alpha_mask * warped_patch[:-1]
                     # traffic_sign.clamp_(0, 1)
                     # im[image_i] = (traffic_sign * 255).byte()
                     im[image_i] = traffic_sign * 255
 
-                    # if 'U6RnrAjXMMBCX4SDEnUScQ' in str(path):
-                    # if '_69EblZbqXUcjYKu7myKDg' in path:
-                    #     import pdb
-                    #     pdb.set_trace()
             elif synthetic:
                 orig_shape = im[image_i].shape[1:]
                 resized_img = resize_transform(im[image_i])
@@ -527,8 +595,8 @@ def run(args,
             # detections (Array[N, 6]), x1, y1, x2, y2, confidence, class
             # labels (Array[M, 5]), class, x1, y1, x2, y2
 
-            import pdb
-            pdb.set_trace()
+            # import pdb
+            # pdb.set_trace()
 
             tbox = xywh2xyxy(labels[:, 1:5]).cpu()  # target boxes
             class_only = np.expand_dims(labels[:, 0].cpu(), axis=0)
@@ -584,11 +652,16 @@ def run(args,
             callbacks.run('on_val_image_end', pred, predn, path, names, im[si])
 
             # 14 is octagon
-            if plot_octagons and 14 in labels:
+            if plot_octagons and 14 in labels[:, 0]:
+                num_octagon_labels += sum([1 for x in list(labels[:, 0]) if x == 14])
+                fn = str(path).split('/')[-1]
+                if fn not in df_use_polygons['filename_y'].values:
+                    continue
+                print('path', str(path).split('/')[-1])
                 shape_to_plot_data['octagon'].append(
                     [im[si: si + 1],
-                     targets[targets[:, 0] == si, :],
-                     path, predictions_for_plotting[predictions_for_plotting[:, 0] == si]])
+                    targets[targets[:, 0] == si, :],
+                    path, predictions_for_plotting[predictions_for_plotting[:, 0] == si]])
 
         # Plot images
         if plots and batch_i < 30:
@@ -681,13 +754,9 @@ def run(args,
 
         LOGGER.info(pf % (names[c], seen, nt[c], p[i], r[i], ap50[i], ap[i]))
 
-    print('num_errors', num_errors)
-    print('num_images', seen)
-    print('proportion of errors', num_errors/seen)
 
-    print('num_errors', num_errors)
-    print('num_images', seen)
-    print('detection rate', num_detected/seen)
+    print('num octagon labels', num_octagon_labels)
+    print('num octagon with patch', num_octagon_with_patch)
 
     metrics_df_column_names.append('num_errors')
     current_exp_metrics['num_errors'] = num_errors
