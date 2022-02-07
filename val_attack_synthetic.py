@@ -331,6 +331,8 @@ def run(args,
         df = df[df['final_shape'] != 'other-0.0-0.0']
         print(df.shape)
         print(df.groupby(by=['final_shape']).count())
+
+        df_use_polygons = df[~df['tgt_polygon'].isna()]
         # adv_patch_cropped = resize(adv_patch_cropped, (32, 32))
     elif synthetic:
         obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True)
@@ -356,18 +358,6 @@ def run(args,
                 filename = path.split('/')[-1]
                 img_df = df[df['filename_y'] == filename]
                 
-                # if filename == 'U6RnrAjXMMBCX4SDEnUScQ.jpg':
-                #     print(img_df.shape)
-                #     print(img_df)
-                #     print()
-
-
-                if filename == 'qNYV4-JVTJ-Tw8Q-_0nvdQ.jpg':
-                    # print(img_df)
-                    for _, row in img_df.iterrows():
-                        print(row)
-                    
-
                 if len(img_df) == 0:
                     continue
                 # Apply patch on all of the signs on this image
@@ -376,11 +366,11 @@ def run(args,
 
                     predicted_class = row['final_shape']
                     shape = predicted_class.split('-')[0]
-                    num_octagon_with_patch += shape == 'octagon'
 
-                    # if filename == 'U6RnrAjXMMBCX4SDEnUScQ.jpg':
-                    #     print(predicted_class)
-                    #     print(shape)
+                    # only apply patch to octagons
+                    if shape != 'octagon':
+                        continue
+                    num_octagon_with_patch += shape == 'octagon'
 
                     # patch_size_in_pixel = 32
                     patch_size_in_pixel = adv_patch_cropped.shape[1]
@@ -417,14 +407,24 @@ def run(args,
                             # tgt = np.array(row['points'], dtype=np.float32)
                             tgt = np.array(literal_eval(row['points']), dtype=np.float32)
 
-
                             tgt[:, 1] = (tgt[:, 1] * h_ratio) + h_pad 
                             tgt[:, 0] = (tgt[:, 0] * w_ratio) + w_pad
-
+                        elif not pd.isna(row['tgt_polygon']):
+                            # count_ += 1
+                            tgt = np.array(literal_eval(row['tgt_polygon']), dtype=np.float32)
+                            offset_x_ratio = row['xmin_ratio']
+                            offset_y_ratio = row['ymin_ratio']
+                            # Have to correct for the padding when df is saved (TODO: this should be simplified)
+                            pad_size = int(max(h0, w0) * 0.25)
+                            x_min = offset_x_ratio * (w0 + pad_size * 2) - pad_size
+                            y_min = offset_y_ratio * (h0 + pad_size * 2) - pad_size
+                            
+                            # Order of coordinate in tgt is inverted, i.e., (x, y) instead of (y, x)
+                            tgt[:, 1] = (tgt[:, 1] + y_min) * h_ratio + h_pad
+                            tgt[:, 0] = (tgt[:, 0] + x_min) * w_ratio + w_pad
                             
                         else:
                             tgt = np.array(literal_eval(row['tgt']), dtype=np.float32)
-                            # curr_tgt = literal_eval(row['tgt_final'])
 
                             offset_x_ratio = row['xmin_ratio']
                             offset_y_ratio = row['ymin_ratio']
@@ -498,8 +498,7 @@ def run(args,
                     # traffic_sign.clamp_(0, 1)
                     # im[image_i] = (traffic_sign * 255).byte()
                     im[image_i] = traffic_sign * 255
-                # if filename == 'U6RnrAjXMMBCX4SDEnUScQ.jpg':
-                    # qqq
+
             elif synthetic:
                 orig_shape = im[image_i].shape[1:]
                 resized_img = resize_transform(im[image_i])
@@ -655,10 +654,14 @@ def run(args,
             # 14 is octagon
             if plot_octagons and 14 in labels[:, 0]:
                 num_octagon_labels += sum([1 for x in list(labels[:, 0]) if x == 14])
+                fn = str(path).split('/')[-1]
+                if fn not in df_use_polygons['filename_y'].values:
+                    continue
+                print('path', str(path).split('/')[-1])
                 shape_to_plot_data['octagon'].append(
                     [im[si: si + 1],
-                     targets[targets[:, 0] == si, :],
-                     path, predictions_for_plotting[predictions_for_plotting[:, 0] == si]])
+                    targets[targets[:, 0] == si, :],
+                    path, predictions_for_plotting[predictions_for_plotting[:, 0] == si]])
 
         # Plot images
         if plots and batch_i < 30:
