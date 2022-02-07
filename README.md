@@ -52,11 +52,12 @@ sh run.sh
 ### Data Preparation
 
 - `prep_mtsd_for_yolo.py`: Prepare MTSD dataset for YOLOv5.
-- `prep_vistas_for_yolo.py`: Prepare Vistas dataset for YOLOv5 using a pretrained classifier to determine classes of the signs.
+- `prep_vistas_for_yolo.py`: Prepare Vistas dataset for YOLOv5 using a pretrained classifier to determine classes of the signs. May require substantial memory to run. Insufficient memory can lead to the script getting "killed" with no error message.
 - YOLO expects samples and labels in `root_dir/images/*` and `root_dir/labels/*`, respectively. See [this link](https://github.com/ultralytics/yolov5/wiki/Train-Custom-Data#13-organize-directories) for more detail.
 - Training set: MTSD training. Symlink to `~/data/yolo_data/(images or labels)/train`.
 - Validation set: MTSD validation Symlink to `~/data/yolo_data/(images or labels)/val`.
 - Test set: Combine Vistas training and validation. Symlink to `~/data/yolo_data/(images or labels)/test`.
+- If you run into `Argument list too long` error, try to raise limit of argument stack size by `ulimit -S -s 100000000`. [Ref.](https://unix.stackexchange.com/a/401797)
 
 ```bash
 cd ~/data/yolo_data/images/train
