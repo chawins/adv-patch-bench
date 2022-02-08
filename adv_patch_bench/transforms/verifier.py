@@ -121,11 +121,12 @@ def get_box_vertices(vertices, predicted_shape):
     """
     if predicted_shape == 'circle':
         vertices = get_box_from_ellipse(vertices)
-    
+
     # print(vertices)
     vertices = sort_polygon_vertices(vertices)
     # vertices = vertices[::-1]
-    vertices = vertices[1:] + vertices[0]
+    # vertices = vertices[1:] + vertices[0]
+    vertices = np.roll(vertices, -1, axis=0)
 
     if predicted_shape in SHAPE_TO_VERTICES:
         box = vertices[SHAPE_TO_VERTICES[predicted_shape]]

@@ -329,8 +329,8 @@ def run(args,
         df = pd.read_csv('mapillary_vistas_final_merged.csv')
         df['tgt_final'] = df['tgt_final'].apply(literal_eval)
         df = df[df['final_shape'] != 'other-0.0-0.0']
-        print(df.shape)
-        print(df.groupby(by=['final_shape']).count())
+        # print(df.shape)
+        # print(df.groupby(by=['final_shape']).count())
 
         df_use_polygons = df[~df['tgt_polygon'].isna()]
         # adv_patch_cropped = resize(adv_patch_cropped, (32, 32))
@@ -351,13 +351,13 @@ def run(args,
     for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
         # DEBUG
         num_samples += im.shape[0]
-        if batch_i == 100:
+        if batch_i == 50:
             break
         for image_i, path in enumerate(paths):
             if apply_patch and not synthetic:
                 filename = path.split('/')[-1]
                 img_df = df[df['filename_y'] == filename]
-                
+
                 if len(img_df) == 0:
                     continue
                 # Apply patch on all of the signs on this image
@@ -400,82 +400,66 @@ def run(args,
                     #     print()
                     #     print(tgt)
                     #     print()
-                    
 
-                    try:
-                        if not pd.isna(row['points']):
-                            # tgt = np.array(row['points'], dtype=np.float32)
-                            tgt = np.array(literal_eval(row['points']), dtype=np.float32)
+                    # if annotated, then use those points
+                    if not pd.isna(row['points']):
+                        tgt = np.array(literal_eval(row['points']), dtype=np.float32)
+                        print(row['filename'])
+                        # print(tgt)
+                        # qqq
+                        tgt[:, 1] = (tgt[:, 1] * h_ratio) + h_pad
+                        tgt[:, 0] = (tgt[:, 0] * w_ratio) + w_pad
 
-                            tgt[:, 1] = (tgt[:, 1] * h_ratio) + h_pad 
-                            tgt[:, 0] = (tgt[:, 0] * w_ratio) + w_pad
-                        elif not pd.isna(row['tgt_polygon']):
-                            # count_ += 1
-                            tgt = np.array(literal_eval(row['tgt_polygon']), dtype=np.float32)
-                            offset_x_ratio = row['xmin_ratio']
-                            offset_y_ratio = row['ymin_ratio']
-                            # Have to correct for the padding when df is saved (TODO: this should be simplified)
-                            pad_size = int(max(h0, w0) * 0.25)
-                            x_min = offset_x_ratio * (w0 + pad_size * 2) - pad_size
-                            y_min = offset_y_ratio * (h0 + pad_size * 2) - pad_size
-                            
-                            # Order of coordinate in tgt is inverted, i.e., (x, y) instead of (y, x)
-                            tgt[:, 1] = (tgt[:, 1] + y_min) * h_ratio + h_pad
-                            tgt[:, 0] = (tgt[:, 0] + x_min) * w_ratio + w_pad
-                            
-                        else:
-                            tgt = np.array(literal_eval(row['tgt']), dtype=np.float32)
+                        # for pt in tgt:
+                        #     for dx in range(-2, 3):
+                        #         for dy in range(-2, 3):
+                        #             im[image_i][:, int(pt[1]+dy), int(pt[0]+dx)] = 255
+                        # torchvision.utils.save_image(im[image_i]/255, 'test_.png')
+                        # qqq
 
-                            offset_x_ratio = row['xmin_ratio']
-                            offset_y_ratio = row['ymin_ratio']
-                            # Have to correct for the padding when df is saved (TODO: this should be simplified)
-                            pad_size = int(max(h0, w0) * 0.25)
-                            x_min = offset_x_ratio * (w0 + pad_size * 2) - pad_size
-                            y_min = offset_y_ratio * (h0 + pad_size * 2) - pad_size
-                            
-                            # Order of coordinate in tgt is inverted, i.e., (x, y) instead of (y, x)
-                            tgt[:, 1] = (tgt[:, 1] + y_min) * h_ratio + h_pad
-                            tgt[:, 0] = (tgt[:, 0] + x_min) * w_ratio + w_pad
-                    except:
-                        print(filename)
-                        print(row['points'])
-                        qqq
+                    # if we flagged with 'use_polygon', then use those 'tgt_polygon'
+                    elif not pd.isna(row['tgt_polygon_new']):
+                        tgt = np.array(literal_eval(row['tgt_polygon_new']), dtype=np.float32)
+
+                    # elif not pd.isna(row['tgt_polygon']):
+                    #     tgt = np.array(literal_eval(row['tgt_polygon']), dtype=np.float32)
+
+                        offset_x_ratio = row['xmin_ratio']
+                        offset_y_ratio = row['ymin_ratio']
+                        # Have to correct for the padding when df is saved (TODO: this should be simplified)
+                        pad_size = int(max(h0, w0) * 0.25)
+                        x_min = offset_x_ratio * (w0 + pad_size * 2) - pad_size
+                        y_min = offset_y_ratio * (h0 + pad_size * 2) - pad_size
+
+                        # Order of coordinate in tgt is inverted, i.e., (x, y) instead of (y, x)
+                        tgt[:, 1] = (tgt[:, 1] + y_min) * h_ratio + h_pad
+                        tgt[:, 0] = (tgt[:, 0] + x_min) * w_ratio + w_pad
+
+                        print(tgt)
+                        for ttt in tgt:
+                            for dx in range(-2, 3):
+                                for dy in range(-2, 3):
+                                    print(im[image_i].shape)
+                                    im[image_i][:, int(ttt[1]+dy), int(ttt[0]+dx)] = 255
+                        torchvision.utils.save_image(im[image_i]/255, 'test_.png')
+                        # qqq
+
+                    else:
+                        tgt = np.array(literal_eval(row['tgt']), dtype=np.float32)
+                        offset_x_ratio = row['xmin_ratio']
+                        offset_y_ratio = row['ymin_ratio']
+                        # Have to correct for the padding when df is saved (TODO: this should be simplified)
+                        pad_size = int(max(h0, w0) * 0.25)
+                        x_min = offset_x_ratio * (w0 + pad_size * 2) - pad_size
+                        y_min = offset_y_ratio * (h0 + pad_size * 2) - pad_size
+
+                        # Order of coordinate in tgt is inverted, i.e., (x, y) instead of (y, x)
+                        tgt[:, 1] = (tgt[:, 1] + y_min) * h_ratio + h_pad
+                        tgt[:, 0] = (tgt[:, 0] + x_min) * w_ratio + w_pad
 
                     # moving patch
                     sign_height = max(tgt[:, 1]) - min(tgt[:, 1])
                     tgt[:, 1] += sign_height * 0.3
-
-                    # if filename == 'qNYV4-JVTJ-Tw8Q-_0nvdQ.jpg':
-
-                    #     # J-8nlLTMRhKGH1lokswIzQ
-                    #     if shape == 'octagon':
-                    #         # print(im[image_i].shape) 
-                    #         # print((h0, w0), ((h_ratio, w_ratio), (w_pad, h_pad)))
-
-                    #         # print(h_ratio, im[image_i].shape[1]/h0)
-                    #         # print(w_ratio, im[image_i].shape[2]/w0)
-
-                    #         # print(h_pad/h0 * im[image_i].shape[1], h_pad)
-                    #         # print(w_pad/w0 * im[image_i].shape[2], w_pad)
-                    #         # print()
-                    #         print()
-                    #         print(tgt)
-                    #         print()
-                            
-                    #         tgt[:, 1] = (tgt[:, 1] * h_ratio) + h_pad 
-                    #         tgt[:, 0] = (tgt[:, 0] * w_ratio) + w_pad 
-
-                    #         print()
-                    #         print(tgt)
-                    #         print()
-                            
-                    #         for point in tgt:
-                    #             for dx in range(-2, 3):
-                    #                 for dy in range(-2, 3):
-                    #                     # tgt is [x, y]
-                    #                     im[image_i][:, int(point[1])+dy, int(point[0])+dx] = 0
-                    #         torchvision.utils.save_image(im[image_i]/255, 'test.png')
-                    #         qqq
 
                     if len(src) == 3:
                         M = torch.from_numpy(getAffineTransform(src, tgt)).unsqueeze(0).float()
@@ -655,13 +639,15 @@ def run(args,
             if plot_octagons and 14 in labels[:, 0]:
                 num_octagon_labels += sum([1 for x in list(labels[:, 0]) if x == 14])
                 fn = str(path).split('/')[-1]
-                if fn not in df_use_polygons['filename_y'].values:
-                    continue
+
+                # TODO: remove if condition. only used to debug wrong transforms
+                # if fn not in df_use_polygons['filename_y'].values:
+                #     continue
                 print('path', str(path).split('/')[-1])
                 shape_to_plot_data['octagon'].append(
                     [im[si: si + 1],
-                    targets[targets[:, 0] == si, :],
-                    path, predictions_for_plotting[predictions_for_plotting[:, 0] == si]])
+                     targets[targets[:, 0] == si, :],
+                     path, predictions_for_plotting[predictions_for_plotting[:, 0] == si]])
 
         # Plot images
         if plots and batch_i < 30:
@@ -753,7 +739,6 @@ def run(args,
         current_exp_metrics[f'ap_50_95_{names[c]}'] = ap[i]
 
         LOGGER.info(pf % (names[c], seen, nt[c], p[i], r[i], ap50[i], ap[i]))
-
 
     print('num octagon labels', num_octagon_labels)
     print('num octagon with patch', num_octagon_with_patch)
