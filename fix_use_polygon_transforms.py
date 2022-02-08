@@ -159,8 +159,8 @@ def compute_example_transform(traffic_sign, mask, predicted_class, demo_patch,
     # print(2)
     shape = predicted_shape
     # shape = get_shape_from_vertices(vertices)
-    print(shape)
-    print(vertices)
+    # print(shape)
+    # print(vertices)
     assert shape != 'circle'
 
     tgt = get_box_vertices(vertices, shape).astype(np.int64)
@@ -358,8 +358,8 @@ def main(args):
     cudnn.benchmark = True
 
     # Compute stats of best model
-    model = build_classifier(args)[0]
-    model.eval()
+    # model = build_classifier(args)[0]
+    # model.eval()
 
     if DATASET == 'mapillaryvistas':
         img_path = join(data_dir, 'traffic_signs')
@@ -436,9 +436,9 @@ def main(args):
     print('[INFO] classifying traffic signs...')
 
     # model.eval()
-    with torch.no_grad():
-        for i, images in enumerate(dataloader):
-            y_hat[i * bs:(i + 1) * bs] = model(images.cuda()).argmax(-1).cpu()
+    # with torch.no_grad():
+    #     for i, images in enumerate(dataloader):
+    #         y_hat[i * bs:(i + 1) * bs] = model(images.cuda()).argmax(-1).cpu()
 
     print('==> Predicted label distribution')
     print(CLASS_LIST)
@@ -451,21 +451,20 @@ def main(args):
     subgroup_to_images = {}
 
     final_df = pd.read_csv('mapillary_vistas_final_merged.csv')
-    final_df = final_df[(final_df['final_shape'] != 'circle-750.0') & (final_df['use_polygon'] == 1) & (final_df['points'].isna())]
-
+    final_df = final_df[(final_df['final_shape'] != 'circle-750.0') & (final_df['use_polygon'] == 1) & (final_df['points'].isna()) & (final_df['final_shape'] != 'other-0.0-0.0')]
     print(final_df.shape)
     # qqq
     corrections_df = pd.DataFrame(columns=['filename', 'tgt'])
     filenames_list = []
     tgt_list = []
 
-    num_error = 0
-    for img_file, mask_file, y in tqdm(zip(img_files, mask_files, y_hat)):
+    error_files = []
+    for img_file, mask_file in tqdm(zip(img_files, mask_files)):
         filename = img_file.split('/')[-1]
 
         if filename not in final_df['filename'].values:
             continue
-        print(filename)
+        # print(filename)
 
         row = final_df[final_df['filename'] == filename]
 
@@ -475,11 +474,12 @@ def main(args):
         mask = np.asarray(Image.open(mask_file))
 
         try:
+            
             output = compute_example_transform(image, mask, row['final_shape'].item(), demo_patch,
                                             patch_size_in_mm=150,
                                             patch_size_in_pixel=32)
         except:
-            num_error += 1
+            error_files.append(filename)
             continue
         adv_image, shape, group, tgt, alpha, beta = output
 
@@ -497,10 +497,11 @@ def main(args):
         # print('after')
         # print()
 
-    print(num_error)
-    qqq
+    print('num errors', len(error_files))
+    print(error_files)
+    
     corrections_df['filename'] = filenames_list
-    corrections_df['tgt'] = tgt_list
+    corrections_df['tgt_polygon_new'] = tgt_list
     corrections_df['use_polygon'] = True
     corrections_df.to_csv('use_polygons_corrections_df.csv', index=False)
 

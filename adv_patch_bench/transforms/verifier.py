@@ -79,6 +79,8 @@ def sort_polygon_vertices(vertices):
     mean of all vertices) and sort vertices by the angles.
     """
     # Compute normalized vectors from mean to vertices
+    # print('here')
+    # print(vertices)
     mean = vertices.mean(0)
     vec = vertices - mean
     # NOTE: y-coordinate has to be inverted because zero starts at the top
@@ -88,6 +90,7 @@ def sort_polygon_vertices(vertices):
     # Compute angle from positive x-axis (negative sign is for clockwise)
     # NOTE: numpy.arctan2 takes y and x (not x and y)
     angles = - np.arctan2(vec[:, 1], vec[:, 0])
+    # print(angles)
     sorted_idx = np.argsort(angles)
     vertices = vertices[sorted_idx]
     angles = angles[sorted_idx]
@@ -118,7 +121,13 @@ def get_box_vertices(vertices, predicted_shape):
     """
     if predicted_shape == 'circle':
         vertices = get_box_from_ellipse(vertices)
+
+    # print(vertices)
     vertices = sort_polygon_vertices(vertices)
+    # vertices = vertices[::-1]
+    # vertices = vertices[1:] + vertices[0]
+    vertices = np.roll(vertices, -1, axis=0)
+
     if predicted_shape in SHAPE_TO_VERTICES:
         box = vertices[SHAPE_TO_VERTICES[predicted_shape]]
         assert box.shape == (4, 2) or box.shape == (3, 2)
