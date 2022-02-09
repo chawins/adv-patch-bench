@@ -501,14 +501,14 @@ def main(args):
     print(error_files)
     
     corrections_df['filename'] = filenames_list
-    corrections_df['tgt_polygon_new'] = tgt_list
+    corrections_df['tgt_polygon'] = tgt_list
     corrections_df['use_polygon'] = True
     corrections_df.to_csv('use_polygons_corrections_df.csv', index=False)
 
     main_df = pd.read_csv('mapillary_vistas_final_merged.csv')
     main_df = main_df.merge(corrections_df, on=['filename', 'use_polygon'], how='left', suffixes=('', '_polygon'))
     print('saving df')
-    main_df.to_csv('mapillary_vistas_final_merged_fixed.csv', index=False)
+    main_df.to_csv('mapillary_vistas_final_merged.csv', index=False)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('Example Transform', parents=[get_args_parser()])
