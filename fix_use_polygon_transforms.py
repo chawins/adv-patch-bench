@@ -453,8 +453,8 @@ def main(args):
     final_df = pd.read_csv('mapillary_vistas_final_merged.csv')
     final_df = final_df[(final_df['final_shape'] != 'circle-750.0') & (final_df['use_polygon'] == 1) & (final_df['points'].isna()) & (final_df['final_shape'] != 'other-0.0-0.0')]
     print(final_df.shape)
-    # qqq
-    corrections_df = pd.DataFrame(columns=['filename', 'tgt'])
+
+    corrections_df = pd.DataFrame(columns=['filename', 'tgt_polygon'])
     filenames_list = []
     tgt_list = []
 
@@ -464,7 +464,6 @@ def main(args):
 
         if filename not in final_df['filename'].values:
             continue
-        # print(filename)
 
         row = final_df[final_df['filename'] == filename]
 
