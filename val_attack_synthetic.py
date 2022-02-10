@@ -267,7 +267,20 @@ def run(args,
     torchvision.utils.save_image(img, 'img.png')
 
     if apply_patch:
-        if load_patch != '':
+        if load_patch == 'arrow':
+            # Load 'arrow on checkboard' patch if specified
+            # adv_patch_cropped = torchvision.io.read_image('demo.png').float()[:3, :, :] / 255
+            # adv_patch_cropped = resize(adv_patch_cropped, (2*h, 2*w))
+            # print(adv_patch_cropped.shape)
+            # adv_patch = torch.zeros_like(patch_mask)
+            # adv_patch[:, mid_height - h:mid_height + h, mid_width - w:mid_width + w] = adv_patch_cropped
+            adv_patch_cropped = torchvision.io.read_image('demo.png').float()[:3, :, :] / 255
+            adv_patch_cropped = resize(adv_patch_cropped, (2*h, 2*w))
+            adv_patch = torch.zeros_like(patch_mask)
+            adv_patch = adv_patch.repeat(3, 1, 1)
+            adv_patch[:, mid_height - h:mid_height + h, mid_width - w:mid_width + w] = adv_patch_cropped
+
+        elif load_patch != '':
             # Load patch if specified
             adv_patch = pickle.load(open(load_patch, 'rb'))
             adv_patch_cropped = adv_patch[:, mid_height - h:mid_height + h, mid_width - w:mid_width + w]
@@ -275,7 +288,9 @@ def run(args,
             # Random patch
             adv_patch_cropped = torch.rand(3, 2*h, 2*w)
             adv_patch = torch.zeros_like(patch_mask)
+            adv_patch = adv_patch.repeat(3, 1, 1)
             adv_patch[:, mid_height - h:mid_height + h, mid_width - w:mid_width + w] = adv_patch_cropped
+            qqqq
         else:
             # Otherwise, generate a new adversarial patch
             with torch.enable_grad():
@@ -329,8 +344,8 @@ def run(args,
         df = pd.read_csv('mapillary_vistas_final_merged.csv')
         df['tgt_final'] = df['tgt_final'].apply(literal_eval)
         df = df[df['final_shape'] != 'other-0.0-0.0']
-        # print(df.shape)
-        # print(df.groupby(by=['final_shape']).count())
+        print(df.shape)
+        print(df.groupby(by=['final_shape']).count())
 
         df_use_polygons = df[~df['tgt_polygon'].isna()]
         # adv_patch_cropped = resize(adv_patch_cropped, (32, 32))
@@ -351,8 +366,8 @@ def run(args,
     for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
         # DEBUG
         num_samples += im.shape[0]
-        if batch_i == 50:
-            break
+        # if batch_i == 200:
+        #     break
         for image_i, path in enumerate(paths):
             if apply_patch and not synthetic:
                 filename = path.split('/')[-1]
@@ -404,7 +419,7 @@ def run(args,
                     # if annotated, then use those points
                     if not pd.isna(row['points']):
                         tgt = np.array(literal_eval(row['points']), dtype=np.float32)
-                        print(row['filename'])
+                        # print(row['filename'])
                         # print(tgt)
                         # qqq
                         tgt[:, 1] = (tgt[:, 1] * h_ratio) + h_pad
@@ -418,8 +433,8 @@ def run(args,
                         # qqq
 
                     # if we flagged with 'use_polygon', then use those 'tgt_polygon'
-                    elif not pd.isna(row['tgt_polygon_new']):
-                        tgt = np.array(literal_eval(row['tgt_polygon_new']), dtype=np.float32)
+                    elif not pd.isna(row['tgt_polygon']):
+                        tgt = np.array(literal_eval(row['tgt_polygon']), dtype=np.float32)
 
                     # elif not pd.isna(row['tgt_polygon']):
                     #     tgt = np.array(literal_eval(row['tgt_polygon']), dtype=np.float32)
@@ -435,14 +450,11 @@ def run(args,
                         tgt[:, 1] = (tgt[:, 1] + y_min) * h_ratio + h_pad
                         tgt[:, 0] = (tgt[:, 0] + x_min) * w_ratio + w_pad
 
-                        print(tgt)
-                        for ttt in tgt:
-                            for dx in range(-2, 3):
-                                for dy in range(-2, 3):
-                                    print(im[image_i].shape)
-                                    im[image_i][:, int(ttt[1]+dy), int(ttt[0]+dx)] = 255
+                        # for ttt in tgt:
+                        #     for dx in range(-2, 3):
+                        #         for dy in range(-2, 3):
+                        #             im[image_i][:, int(ttt[1]+dy), int(ttt[0]+dx)] = 255
                         torchvision.utils.save_image(im[image_i]/255, 'test_.png')
-                        # qqq
 
                     else:
                         tgt = np.array(literal_eval(row['tgt']), dtype=np.float32)
@@ -460,6 +472,8 @@ def run(args,
                     # moving patch
                     sign_height = max(tgt[:, 1]) - min(tgt[:, 1])
                     tgt[:, 1] += sign_height * 0.3
+
+                    
 
                     if len(src) == 3:
                         M = torch.from_numpy(getAffineTransform(src, tgt)).unsqueeze(0).float()
@@ -638,16 +652,17 @@ def run(args,
             # 14 is octagon
             if plot_octagons and 14 in labels[:, 0]:
                 num_octagon_labels += sum([1 for x in list(labels[:, 0]) if x == 14])
-                fn = str(path).split('/')[-1]
+                if len(shape_to_plot_data['octagon']) < 50:
+                    fn = str(path).split('/')[-1]
 
-                # TODO: remove if condition. only used to debug wrong transforms
-                # if fn not in df_use_polygons['filename_y'].values:
-                #     continue
-                print('path', str(path).split('/')[-1])
-                shape_to_plot_data['octagon'].append(
-                    [im[si: si + 1],
-                     targets[targets[:, 0] == si, :],
-                     path, predictions_for_plotting[predictions_for_plotting[:, 0] == si]])
+                    # TODO: remove if condition. only used to debug wrong transforms
+                    # if fn not in df_use_polygons['filename_y'].values:
+                    #     continue
+                    # print('path', str(path).split('/')[-1])
+                    shape_to_plot_data['octagon'].append(
+                        [im[si: si + 1],
+                        targets[targets[:, 0] == si, :],
+                        path, predictions_for_plotting[predictions_for_plotting[:, 0] == si]])
 
         # Plot images
         if plots and batch_i < 30:
@@ -696,7 +711,7 @@ def run(args,
     current_exp_metrics['num_bg'] = num_bg
 
     if len(stats) and stats[0].any():
-        tp, fp, p, r, f1, ap, ap_class, fnr = ap_per_class(*stats, plot=plots, save_dir=save_dir, names=names)
+        tp, fp, p, r, f1, ap, ap_class, fnr, fn = ap_per_class(*stats, plot=plots, save_dir=save_dir, names=names)
         ap50, ap = ap[:, 0], ap.mean(1)  # AP@0.5, AP@0.5:0.95
         mp, mr, map50, map = p.mean(), r.mean(), ap50.mean(), ap.mean()
         nt = np.bincount(stats[3].astype(np.int64), minlength=nc)  # number of targets per class
@@ -733,6 +748,10 @@ def run(args,
         current_exp_metrics[f'recall_{names[c]}'] = r[i]
         metrics_df_column_names.append(f'fnr_{names[c]}')
         current_exp_metrics[f'fnr_{names[c]}'] = fnr[i]
+        metrics_df_column_names.append(f'tp_{names[c]}')
+        current_exp_metrics[f'tp_{names[c]}'] = tp[i]
+        metrics_df_column_names.append(f'fn_{names[c]}')
+        current_exp_metrics[f'fn_{names[c]}'] = fn[i]
         metrics_df_column_names.append(f'ap_50_{names[c]}')
         current_exp_metrics[f'ap_50_{names[c]}'] = ap50[i]
         metrics_df_column_names.append(f'ap_50_95_{names[c]}')
@@ -750,6 +769,11 @@ def run(args,
     metrics_df_column_names.append('dataset')
     current_exp_metrics['dataset'] = DATASET_NAME
 
+    metrics_df_column_names.append('num_octagon_labels')
+    current_exp_metrics['num_octagon_labels'] = num_octagon_labels
+    metrics_df_column_names.append('num_octagon_with_patch')
+    current_exp_metrics['num_octagon_with_patch'] = num_octagon_with_patch
+    
     if save_exp_metrics:
         try:
             metrics_df = pd.read_csv('runs/results.csv')

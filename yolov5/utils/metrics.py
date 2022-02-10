@@ -10,6 +10,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+import seaborn as sns
 
 
 def fitness(x):
@@ -18,7 +19,7 @@ def fitness(x):
     return (x[:, :4] * w).sum(1)
 
 
-def ap_per_class(tp, conf, pred_cls, target_cls, plot=False, save_dir='.', names=(), eps=1e-16):
+def ap_per_class(tp, conf, pred_cls, target_cls, plot=False, save_dir='.', names=(), eps=1e-16, synthetic=False):
     """ Compute the average precision, given the recall and precision curves.
     Source: https://github.com/rafaelpadilla/Object-Detection-Metrics.
     # Arguments
@@ -47,6 +48,7 @@ def ap_per_class(tp, conf, pred_cls, target_cls, plot=False, save_dir='.', names
 
     recall_per_class = []
     precision_per_class = []
+    confidence_per_class = []
 
     for ci, c in enumerate(unique_classes):
         i = pred_cls == c
@@ -59,6 +61,8 @@ def ap_per_class(tp, conf, pred_cls, target_cls, plot=False, save_dir='.', names
             # Accumulate FPs and TPs
             fpc = (1 - tp[i]).cumsum(0)
             tpc = tp[i].cumsum(0)
+
+            confidence_per_class.append(conf[i])
 
             # Recall / True Positive Rate
             recall = tpc / (n_l + eps)  # recall curve
@@ -88,12 +92,25 @@ def ap_per_class(tp, conf, pred_cls, target_cls, plot=False, save_dir='.', names
         plot_mc_curve(px, p, Path(save_dir) / 'P_curve.png', names, ylabel='Precision')
         plot_mc_curve(px, r, Path(save_dir) / 'R_curve.png', names, ylabel='Recall/TPR')
         plot_mc_curve(px, fnr, Path(save_dir) / 'FNR_curve.png', names, ylabel='FNR')
+        plot_confidence_distribution(confidence_per_class, Path(save_dir) / 'Confidence_distribution.png', names, ylabel='Density')
 
-    i = f1.mean(0).argmax()  # max F1 index
+    # NOTE: hardcoded index at which f1 score is maximum
+    # if synthetic:
+    #     i = 312
+    # else:
+    i = 359
+
+    # i = f1.mean(0).argmax()  # max F1 index
+    # print('f1 scores')
+    # print(f1.mean(0))
+    # print('best f1 index', i)
+    # print('best f1 index per class', f1.argmax(axis=1))
+    
     p, r, f1, fnr = p[:, i], r[:, i], f1[:, i], fnr[:, i]
     tp = (r * nt).round()  # true positives
     fp = (tp / (p + eps) - tp).round()  # false positives
-    return tp, fp, p, r, f1, ap, unique_classes.astype('int32'), fnr
+    fn = nt - tp
+    return tp, fp, p, r, f1, ap, unique_classes.astype('int32'), fnr, fn
 
 
 def compute_ap(recall, precision):
@@ -324,7 +341,11 @@ def plot_pr_curve(px, py, ap, save_dir='pr_curve.png', names=(), recall_per_clas
             if names[i] == 'synthetic_stop_sign':
                 ax.plot(px, y, linewidth=2, label=f'{names[i]} {ap[i, 0]:.3f}', color='indigo', linestyle='--')  # plot(recall, precision)
                 if recall_per_class and precision_per_class:
-                    ax.plot(recall_per_class[i], precision_per_class[i], linestyle='None', color='blueviolet', marker='o', alpha=0.2, markersize=5)
+                    ax.plot(recall_per_class[i], precision_per_class[i], linestyle='None', color='blueviolet', marker='o', alpha=0.2, markersize=3)
+            elif names[i] == 'octagon':
+                ax.plot(px, y, linewidth=2, label=f'{names[i]} {ap[i, 0]:.3f}', color='orangered', linestyle='--')  # plot(recall, precision)
+                if recall_per_class and precision_per_class:
+                    ax.plot(recall_per_class[i], precision_per_class[i], linestyle='None', color='coral', marker='o', alpha=0.2, markersize=3)
             else:
                 ax.plot(px, y, linewidth=1, label=f'{names[i]} {ap[i, 0]:.3f}')  # plot(recall, precision)
     else:
@@ -348,6 +369,8 @@ def plot_mc_curve(px, py, save_dir='mc_curve.png', names=(), xlabel='Confidence'
         for i, y in enumerate(py):
             if names[i] == 'synthetic_stop_sign':
                 ax.plot(px, y, label=f'{names[i]}', linewidth=2, linestyle='--', color='indigo')  # plot(confidence, metric)
+            elif names[i] == 'octagon':
+                ax.plot(px, y, label=f'{names[i]}', linewidth=2, linestyle='--', color='orangered')  # plot(confidence, metric)
             else:
                 ax.plot(px, y, linewidth=1, label=f'{names[i]}')  # plot(confidence, metric)
     else:
@@ -360,5 +383,33 @@ def plot_mc_curve(px, py, save_dir='mc_curve.png', names=(), xlabel='Confidence'
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1)
     plt.legend(bbox_to_anchor=(1.04, 1), loc="upper left")
+    fig.savefig(Path(save_dir), dpi=250)
+    plt.close()
+
+def plot_confidence_distribution(confidence_per_class, save_dir='Confidence_distribution.png', names=(), xlabel='Confidence', ylabel='Metric'):
+    # Metric-confidence curve
+    fig, ax = plt.subplots(len(names), 1, figsize=(10, len(names) * 7), tight_layout=True)
+
+    if 0 < len(names) < 21:  # display per-class legend if < 21 classes
+        for i, y in enumerate(confidence_per_class):
+            if names[i] == 'synthetic_stop_sign':
+                sns.distplot(confidence_per_class[i], hist=False, ax=ax[i], color='indigo')       
+            elif names[i] == 'octagon':
+                sns.distplot(confidence_per_class[i], hist=False, ax=ax[i], color='orangered')                
+            else:
+                sns.distplot(confidence_per_class[i], hist=False, ax=ax[i])
+            ax[i].set_xlabel(xlabel + '\n' + names[i])
+            ax[i].set_ylabel(ylabel)
+    else:
+        # ax.plot(px, py.T, linewidth=1, color='grey')  # plot(confidence, metric)
+        pass
+
+    # y = py.mean(0)
+    # ax.plot(px, y, linewidth=3, color='blue', label=f'all classes {y.max():.2f} at {px[y.argmax()]:.3f}')
+    # ax.set_xlabel(xlabel)
+    # ax.set_ylabel(ylabel)
+    # ax.set_xlim(0, 1)
+    # ax.set_ylim(0, 1)
+    # plt.legend(bbox_to_anchor=(1.04, 1), loc="upper left")
     fig.savefig(Path(save_dir), dpi=250)
     plt.close()
