@@ -1,9 +1,5 @@
-# YOLOv5 🚀 by Ultralytics, GPL-3.0 license
 """
-Validate a trained YOLOv5 model accuracy on a custom dataset
-
-Usage:
-    $ python path/to/val.py --data coco128.yaml --weights yolov5s.pt --img 640
+Generate adversarial patch
 """
 
 import argparse
@@ -31,12 +27,31 @@ if str(ROOT) not in sys.path:
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 
 
-def generate_adv_patch(model, obj_numpy, patch_mask,
-                       device='cuda', img_size=(960, 1280), obj_size=None,
+def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
+                       img_size=(960, 1280), obj_class=0, obj_size=None,
                        bg_dir='./', num_bg=16, save_images=False, save_dir='./'):
+    """Generate adversarial patch
+
+    Args:
+        model ([type]): [description]
+        obj_numpy (np.ndarray): Image of object in numpy with RGBA channels
+        patch_mask ([type]): [description]
+        device (str, optional): [description]. Defaults to 'cuda'.
+        img_size (tuple, optional): [description]. Defaults to (960, 1280).
+        obj_class (int, optional): [description]. Defaults to 0.
+        obj_size ([type], optional): [description]. Defaults to None.
+        bg_dir (str, optional): [description]. Defaults to './'.
+        num_bg (int, optional): [description]. Defaults to 16.
+        save_images (bool, optional): [description]. Defaults to False.
+        save_dir (str, optional): [description]. Defaults to './'.
+
+    Returns:
+        [type]: [description]
+    """
 
     # Randomly select backgrounds from `bg_dir` and resize them
     all_bgs = os.listdir(os.path.expanduser(bg_dir))
+    print(f'There are {len(all_bgs)} background images in {bg_dir}')
     idx = np.arange(len(all_bgs))
     np.random.shuffle(idx)
     backgrounds = torch.zeros((num_bg, 3) + img_size, )
@@ -44,10 +59,19 @@ def generate_adv_patch(model, obj_numpy, patch_mask,
         bg = torchvision.io.read_image(join(bg_dir, all_bgs[index])) / 255
         backgrounds[i] = T.resize(bg, img_size, antialias=True)
 
+    attack_config = {
+        'rp2_num_steps': 3000,
+        'rp2_step_size': 1e-2,
+        'rp2_num_eot': 8,
+        'rp2_optimizer': 'adam',
+        'rp2_lambda': 1,
+        'rp2_min_conf': 0.25,
+        'input_size': img_size,
+    }
     # TODO: Allow data parallel?
-    attack = RP2AttackModule(None, model, None, None, None)
+    attack = RP2AttackModule(attack_config, model, None, None, None)
 
-    obj_mask = torch.from_numpy(obj_numpy[:, :, 0] == 1).float().unsqueeze(0)
+    obj_mask = torch.from_numpy(obj_numpy[:, :, -1] == 1).float().unsqueeze(0)
     obj = torch.from_numpy(obj_numpy[:, :, :-1]).float().permute(2, 0, 1)
     # Resize and put object in the middle of zero background
     pad_size = [(img_size[1] - obj_size[1]) // 2, (img_size[0] - obj_size[0]) // 2]  # left/right, top/bottom
@@ -61,7 +85,8 @@ def generate_adv_patch(model, obj_numpy, patch_mask,
         adv_patch = attack.attack(obj.to(device),
                                   obj_mask.to(device),
                                   patch_mask.to(device),
-                                  backgrounds.to(device))
+                                  backgrounds.to(device),
+                                  obj_class=obj_class)
     adv_patch = adv_patch[0].detach().cpu().float()
 
     if save_images:
@@ -88,6 +113,7 @@ def main(
     project=ROOT / 'runs/val',  # save to project/name
     name='exp',  # save to project/name
     save_txt=False,  # save results to *.txt
+    obj_class=0,
     obj_size=-1,
     obj_path='',
     bg_dir='./',
@@ -130,28 +156,25 @@ def main(
         obj_size = (int(obj_size * h_w_ratio), obj_size)
 
     # Define patch location and size
-    patch_mask = torch.zeros((3, ) + img_size)
+    patch_mask = torch.zeros((1, ) + img_size)
     # Example: 10x10-inch patch in the middle of 36x36-inch sign
-    mid_height = img_size[0] // 2 + 60
+    # mid_height = img_size[0] // 2 + 40
+    mid_height = img_size[0] // 2
     mid_width = img_size[1] // 2
-    patch_size = 10
+    patch_size = 20
     h = int(patch_size / 36 / 2 * obj_size[0])
     w = int(patch_size / 36 / 2 * obj_size[1])
-
     patch_mask[:, mid_height - h:mid_height + h, mid_width - w:mid_width + w] = 1
 
-    adv_patch = generate_adv_patch(model, obj_numpy, patch_mask, device=device,
-                                   img_size=img_size, obj_size=obj_size, bg_dir=bg_dir,
-                                   num_bg=num_bg, save_images=save_images, save_dir=save_dir)
+    adv_patch = generate_adv_patch(
+        model, obj_numpy, patch_mask, device=device, img_size=img_size,
+        obj_class=obj_class, obj_size=obj_size, bg_dir=bg_dir, num_bg=num_bg,
+        save_images=save_images, save_dir=save_dir)
 
     # Save adv patch
     patch_path = join(save_dir, f'{patch_name}.pkl')
     print(f'Saving the generated adv patch to {patch_path}...')
     pickle.dump(adv_patch, open(patch_path, 'wb'))
-
-    if save_images:
-        adv_patch_cropped = adv_patch[:, mid_height - h:mid_height + h, mid_width - w:mid_width + w]
-        torchvision.utils.save_image(adv_patch_cropped, join(save_dir, 'adversarial_patch_cropped.png'))
 
 
 if __name__ == "__main__":
@@ -170,6 +193,7 @@ if __name__ == "__main__":
     parser.add_argument('--seed', type=int, default=0, help='set random seed')
     parser.add_argument('--patch-name', type=str, default='adv_patch',
                         help='name of pickle file to save the generated patch')
+    parser.add_argument('--obj-class', type=int, default=0, help='class of object to attack')
     parser.add_argument('--obj-size', type=int, default=-1, help='object width in pixels')
     parser.add_argument('--obj-path', type=str, default='', help='path to synthetic image of the object')
     parser.add_argument('--bg-dir', type=str, default='', help='path to background directory')

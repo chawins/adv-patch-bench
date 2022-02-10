@@ -5,7 +5,7 @@ from kornia.constants import Resample
 from yolov5.utils.general import non_max_suppression
 from yolov5.utils.plots import output_to_target, plot_images
 
-from ..utils.image import letterbox
+from ..utils.image import letterbox, mask_to_box
 from .base_detector import DetectorAttackModule
 
 EPS = 1e-6
@@ -14,18 +14,17 @@ EPS = 1e-6
 class RP2AttackModule(DetectorAttackModule):
 
     def __init__(self, attack_config, core_model, loss_fn, norm, eps, **kwargs):
-        super(RP2AttackModule, self).__init__(attack_config, core_model, loss_fn, norm, eps, **kwargs)
-        # self.num_steps = attack_config['rp2_steps']
-        # self.step_size = attack_config['rp2_step_size']
-        # self.num_restarts = attack_config['num_restarts']
-        # self.optimizer = attack_config['optimizer']
-
-        self.num_steps = 1000
-        self.step_size = 1e-1
+        super(RP2AttackModule, self).__init__(
+            attack_config, core_model, loss_fn, norm, eps, **kwargs)
+        self.num_steps = attack_config['rp2_num_steps']
+        self.step_size = attack_config['rp2_step_size']
+        self.optimizer = attack_config['rp2_optimizer']
+        self.num_eot = attack_config['rp2_num_eot']
+        self.lmbda = attack_config['rp2_lambda']
+        self.min_conf = attack_config['rp2_min_conf']
+        self.input_size = attack_config['input_size']
         self.num_restarts = 1
-        self.optimizer = 'adam'
-        self.input_size = (960, 1280)      # TODO: rectangle?
-        self.num_eot = 5
+
         self.bg_transforms = K.RandomResizedCrop(self.input_size, p=1.0)
         # self.obj_transforms = K.container.AugmentationSequential(
         #     K.RandomAffine(30, translate=(0.5, 0.5)),      # Only translate and rotate as in Eykholt et al.
@@ -36,15 +35,15 @@ class RP2AttackModule(DetectorAttackModule):
         # self.mask_transforms = K.container.AugmentationSequential(
         #     K.RandomAffine(30, translate=(0.5, 0.5), resample=Resample.NEAREST),
         # )
-        self.obj_transforms = K.RandomAffine(30, translate=(0.5, 0.5), p=1.0, return_transform=True)
-        self.mask_transforms = K.RandomAffine(30, translate=(0.5, 0.5), p=1.0, resample=Resample.NEAREST)
-        self.lmbda = 1e-2
+        self.obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True)
+        self.mask_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, resample=Resample.NEAREST)
 
     def attack(self,
                obj: torch.Tensor,
                obj_mask: torch.Tensor,
                patch_mask: torch.Tensor,
-               backgrounds: torch.Tensor) -> torch.Tensor:
+               backgrounds: torch.Tensor,
+               obj_class: int = None) -> torch.Tensor:
         """Run RP2 Attack.
 
         Args:
@@ -59,98 +58,108 @@ class RP2AttackModule(DetectorAttackModule):
 
         mode = self.core_model.training
         self.core_model.eval()
-        height, width = obj.shape[-2:]
         device = obj.device
         dtype = obj.dtype
         obj_mask_dup = obj_mask.expand(self.num_eot, -1, -1, -1)
+        ymin, xmin, height, width = mask_to_box(patch_mask)
+        patch_full = torch.zeros_like(obj)
 
         # TODO: Initialize worst-case inputs, use moving average
         # x_adv_worst = x.clone().detach()
         # worst_losses =
+        ema_const = 0.99
         ema_loss = None
 
         for _ in range(self.num_restarts):
 
             # Initialize adversarial perturbation
             z_delta = torch.zeros((1, 3, height, width), device=device, dtype=dtype)
-            z_delta.uniform_(0, 1)
+            z_delta.uniform_(-10, 10)
 
             # Set up optimizer
             if self.optimizer == 'sgd':
-                opt = optim.SGD([z_delta], lr=self.step_size, momentum=0.9)
+                opt = optim.SGD([z_delta], lr=self.step_size, momentum=0.999)
             elif self.optimizer == 'adam':
                 opt = optim.Adam([z_delta], lr=self.step_size)
             elif self.optimizer == 'rmsprop':
                 opt = optim.RMSprop([z_delta], lr=self.step_size)
             else:
                 raise NotImplementedError('Given optimizer not implemented.')
+            lr_schedule = optim.lr_scheduler.ReduceLROnPlateau(
+                opt, factor=0.2, patience=int(self.num_steps / 10),
+                threshold=1e-9, min_lr=self.step_size * 1e-6, verbose=True)
 
             # Run PGD on inputs for specified number of steps
-            for step in range(self.num_steps):
-                z_delta.requires_grad_()
-                delta = self._to_model_space(z_delta, 0, 1)
+            with torch.autograd.set_detect_anomaly(True):
+                for step in range(self.num_steps):
+                    z_delta.requires_grad_()
+                    delta = self._to_model_space(z_delta, 0, 1)
 
-                # Randomly select background and apply transforms (crop and scale)
-                bg_idx = torch.randint(0, len(backgrounds), size=(self.num_eot, ))
-                bgs = backgrounds[bg_idx]
-                bgs = self.bg_transforms(bgs)
+                    # Randomly select background and apply transforms (crop and scale)
+                    bg_idx = torch.randint(0, len(backgrounds), size=(self.num_eot, ))
+                    bgs = backgrounds[bg_idx]
+                    bgs = self.bg_transforms(bgs)
 
-                # Apply random transformations
-                adv_obj = patch_mask * delta + (1 - patch_mask) * obj
-                adv_obj = adv_obj.expand(self.num_eot, -1, -1, -1)
-                adv_obj, tf_params = self.obj_transforms(adv_obj)
-                adv_obj = adv_obj.clamp(0, 1)
+                    # Apply random transformations
+                    patch_full[:, ymin:ymin + height, xmin:xmin + width] = delta
+                    adv_obj = patch_mask * patch_full + (1 - patch_mask) * obj
+                    adv_obj = adv_obj.expand(self.num_eot, -1, -1, -1)
+                    adv_obj, tf_params = self.obj_transforms(adv_obj)
+                    adv_obj = adv_obj.clamp(0, 1)
 
-                # print(obj_mask_dup.shape)
-                # print(tf_params)
+                    o_mask = self.mask_transforms.apply_transform(
+                        obj_mask_dup, None, transform=tf_params)
+                    adv_img = o_mask * adv_obj + (1 - o_mask) * bgs
+                    # Patch image the same way as YOLO
+                    adv_img = letterbox(adv_img, new_shape=self.input_size[1])[0]
 
-                o_mask = self.mask_transforms.apply_transform(
-                    obj_mask_dup, None, transform=tf_params)
-                adv_img = o_mask * adv_obj + (1 - o_mask) * bgs
-                adv_img = letterbox(adv_img, new_shape=self.input_size[1])[0]
+                    # Compute logits, loss, gradients
+                    out, _ = self.core_model(adv_img, val=True)
 
-                # Compute logits, loss, gradients
-                out, _ = self.core_model(adv_img, val=True)
+                    # Use YOLOv5 default values
+                    # nms_out = non_max_suppression(out, conf_thres=0.001, iou_thres=0.6)
+                    loss = 0
+                    for i, det in enumerate(out):
+                        # Confidence = obj_conf * cls_conf
+                        conf = det[:, 4:5] * det[:, 5:]
+                        # Get predicted class
+                        conf, labels = conf.max(1)
+                        # Select only desired class if specified
+                        if obj_class is not None:
+                            conf = conf[labels == obj_class]
+                        if conf.size(0) > 0:
+                            # Select prediction from box with max confidence
+                            # and ignore ones with already low confidence
+                            loss += conf.max().clamp_min(self.min_conf)
 
-                # DEBUG
-                # outt = non_max_suppression(out, conf_thres=0.25, iou_thres=0.45)
-                # plot_images(adv_img, output_to_target(outt))
-                # import pdb
-                # pdb.set_trace()
+                    loss /= self.num_eot
+                    tv = ((delta[:, :, :-1, :] - delta[:, :, 1:, :]).abs().mean() +
+                          (delta[:, :, :, :-1] - delta[:, :, :, 1:]).abs().mean())
+                    # loss = out[:, :, 4].mean() + self.lmbda * tv
+                    loss += self.lmbda * tv
+                    loss.backward(retain_graph=True)
+                    opt.step()
+                    # lr_schedule.step(loss)
 
-                tv = ((delta[:, :, :-1, :] - delta[:, :, 1:, :]).abs().mean() +
-                      (delta[:, :, :, :-1] - delta[:, :, :, 1:]).abs().mean())
-                loss = out[:, :, 4].mean() + self.lmbda * tv
-                loss.backward(retain_graph=True)
-                opt.step()
+                    if ema_loss is None:
+                        ema_loss = loss.item()
+                    else:
+                        ema_loss = ema_const * ema_loss + (1 - ema_const) * loss.item()
+                    if step % 100 == 0:
+                        print(f'step: {step}   loss: {ema_loss:.6f}')
 
-                if ema_loss is None:
-                    ema_loss = loss.item()
-                else:
-                    ema_const = 0.99
-                    ema_loss = ema_const * ema_loss + (1 - ema_const) * loss.item()
-                if step % 100 == 0:
-                    print(f'step: {step}   loss: {ema_loss:.6f}')
-
-                # if self.num_restarts == 1:
-                #     x_adv_worst = x_adv
-                # else:
-                #     # Update worst-case inputs with itemized final losses
-                #     fin_losses = self.loss_fn(self.core_model(x_adv), y).reshape(worst_losses.shape)
-                #     up_mask = (fin_losses >= worst_losses).float()
-                #     x_adv_worst = x_adv * up_mask + x_adv_worst * (1 - up_mask)
-                #     worst_losses = fin_losses * up_mask + worst_losses * (1 - up_mask)
-
-                # DEBUG
-                # if step >= 802:
-                #     outt = non_max_suppression(out.detach(), conf_thres=0.25, iou_thres=0.45)
-                #     plot_images(adv_img.detach(), output_to_target(outt), fname=f'rp2_{step-800}.png')
-                # if step == 820:
-                #     break
+                    # if self.num_restarts == 1:
+                    #     x_adv_worst = x_adv
+                    # else:
+                    #     # Update worst-case inputs with itemized final losses
+                    #     fin_losses = self.loss_fn(self.core_model(x_adv), y).reshape(worst_losses.shape)
+                    #     up_mask = (fin_losses >= worst_losses).float()
+                    #     x_adv_worst = x_adv * up_mask + x_adv_worst * (1 - up_mask)
+                    #     worst_losses = fin_losses * up_mask + worst_losses * (1 - up_mask)
 
         # DEBUG
-        outt = non_max_suppression(out.detach(), conf_thres=0.25, iou_thres=0.45)
-        plot_images(adv_img.detach(), output_to_target(outt))
+        # outt = non_max_suppression(out.detach(), conf_thres=0.25, iou_thres=0.6)
+        # plot_images(adv_img.clamp(0, 1).detach(), c)
 
         # Return worst-case perturbed input logits
         self.core_model.train(mode)

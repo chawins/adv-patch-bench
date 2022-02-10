@@ -48,8 +48,9 @@ CUDA_VISIBLE_DEVICES=0 python generate_adv_patch.py \
     --weights /data/shared/adv-patch-bench/yolov5/runs/train/exp2/weights/best.pt \
     --patch-name stop_sign_v1 \
     --imgsz 1280 \
+    --obj-class 14 \
     --obj-size 128 \
     --obj-path attack_assets/octagon-915.0.png \
-    --num-bg 16 \
+    --num-bg 50 \
     --bg-dir /data/shared/mtsd_v2_fully_annotated/train \
     --save-images
