@@ -388,9 +388,10 @@ def run(args,
             adv_patch[:, mid_height - h:mid_height + h, mid_width - w:mid_width + w] = adv_patch_cropped
         else:
             # Otherwise, generate a new adversarial patch
-            if False: # TODO: add argument for how to generate patch (using synthetic sign or real sign)
+            if True: # TODO: add argument for how to generate patch (using synthetic sign or real sign)
                 with torch.enable_grad():
                     adv_patch = attack.attack(obj.cuda(), obj_mask.cuda(), patch_mask.cuda(), backgrounds.cuda())
+                qqq
             elif True: # TODO: add argument for how to generate patch (using synthetic sign or real sign)
                 attack_images = []
                 s = ('%20s' + '%11s' * 6) % ('Class', 'Images', 'Labels', 'P', 'R', 'mAP@.5', 'mAP@.5:.95')
@@ -400,6 +401,11 @@ def run(args,
                 for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
                     for image_i, path in enumerate(paths):
                         filename = path.split('/')[-1]
+
+                        #TODO: only for debugging
+                        if filename == '8lkcFc59-2RgSU203mlYEQ.jpg':
+                            continue
+
                         img_df = df[df['filename_y'] == filename]
                         if len(img_df) == 0:
                             continue
@@ -415,12 +421,13 @@ def run(args,
                             attack_images.append([im[image_i], [shape, predicted_class, row, h0, w0, h_ratio, w_ratio, w_pad, h_pad], str(filename)])
                     if len(attack_images) > 10:
                         break
-                for i in attack_images:
-                    print(f'tmp/{i[2]}.png')
-                    print(i[0].shape)
-                    print(max(i[0][0][0]))
-                    torchvision.utils.save_image(i[0]/255, f'tmp/{i[2]}.png')
-                qqq
+                # for i in attack_images:
+                #     print(f'tmp/{i[2]}.png')
+                #     print(i[0].shape)
+                #     print(max(i[0][0][0]))
+                #     torchvision.utils.save_image(i[0]/255, f'tmp/{i[2]}.png')
+                # qqq
+
                 with torch.enable_grad():
                     adv_patch = attack.transform_and_attack(attack_images)
                     # TODO: change name of patch which is saved
