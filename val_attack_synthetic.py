@@ -290,7 +290,6 @@ def run(args,
             adv_patch = torch.zeros_like(patch_mask)
             adv_patch = adv_patch.repeat(3, 1, 1)
             adv_patch[:, mid_height - h:mid_height + h, mid_width - w:mid_width + w] = adv_patch_cropped
-            qqqq
         else:
             # Otherwise, generate a new adversarial patch
             with torch.enable_grad():
