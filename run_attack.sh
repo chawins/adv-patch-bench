@@ -30,34 +30,53 @@
 # --save-exp-metrics \
 # --apply-patch
 
-# CUDA_VISIBLE_DEVICES=0 python val_attack_synthetic.py \
+CUDA_VISIBLE_DEVICES=0 python -u generate_adv_patch.py \
+    --seed 0 \
+    --data mapillary_vistas.yaml \
+    --weights /data/shared/adv-patch-bench/yolov5/runs/train/exp2/weights/best.pt \
+    --patch-name stop_sign_transform_generated_v1 \
+    --imgsz 1280 \
+    --obj-class 14 \
+    --obj-size 128 \
+    --obj-path attack_assets/octagon-915.0.png \
+    --num-bg 50 \
+    --bg-dir /data/shared/mtsd_v2_fully_annotated/train \
+    --save-images \
+    --generate_patch transform
+
+
+# CUDA_VISIBLE_DEVICES=0 python -u val_attack_synthetic.py \
 #     --img 1280 \
 #     --batch-size 8 \
 #     --data mapillary_vistas.yaml \
-#     --weights /home/chawins/adv-patch-bench/yolov5/runs/train/exp2/weights/best.pt \
+#     --weights /data/shared/adv-patch-bench/yolov5/runs/train/exp2/weights/best.pt \
 #     --exist-ok \
 #     --workers 8 \
 #     --task train \
 #     --save-exp-metrics \
-#     --num-bg 16 \
 #     --plot-octagons \
 #     --apply-patch \
-#     --load-patch arrow
-    
-CUDA_VISIBLE_DEVICES=0 python val_attack_synthetic.py \
-    --img 1280 \
-    --batch-size 8 \
-    --data mapillary_vistas.yaml \
-    --weights /data/shared/adv-patch-bench/yolov5/runs/train/exp2/weights/best.pt \
-    --exist-ok \
-    --workers 8 \
-    --task train \
-    --save-exp-metrics \
-    --num-bg 16 \
-    --plot-octagons \
-    --apply-patch \
-    --generate-patch transform
+#     --load-patch ./runs/val/exp8/stop_sign_transform_generated_v1.pkl \
+#     --obj-size 128 \
+#     --patch-loc 29,29 \
+#     --patch-size-mm 254.17 
 
+# CUDA_VISIBLE_DEVICES=0 python -u val_attack_synthetic.py \
+#     --img 1280 \
+#     --batch-size 8 \
+#     --data mapillary_vistas.yaml \
+#     --weights /data/shared/adv-patch-bench/yolov5/runs/train/exp2/weights/best.pt \
+#     --exist-ok \
+#     --workers 8 \
+#     --task train \
+#     --save-exp-metrics \
+#     --plot-octagons \
+#     --apply-patch \
+#     --load-patch ./runs/val/exp9/stop_sign_transform_synthetic_v1.pkl \
+#     --obj-size 128 \
+#     --patch-loc 29,29 \
+#     --patch-size-mm 254.17 
+    
 # CUDA_VISIBLE_DEVICES=0 python val_attack_synthetic.py \
 #     --img 1280 \
 #     --batch-size 8 \
