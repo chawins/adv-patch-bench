@@ -179,6 +179,7 @@ def transform_and_apply_patch(image, adv_patch_cropped, shape, predicted_class, 
                                 padding_mode='zeros')[0]
     warped_patch.clamp_(0, 1)
     alpha_mask = warped_patch[-1].unsqueeze(0)
+
     image_with_transformed_patch = (1 - alpha_mask) * image / 255 + alpha_mask * warped_patch[:-1]
     return image_with_transformed_patch
 
@@ -223,6 +224,7 @@ def run(args,
     plot_octagons = args.plot_octagons
     num_bg = args.num_bg
     load_patch = args.load_patch
+    generate_patch = args.generate_patch
 
     torch.manual_seed(1111)
     np.random.seed(1111)
@@ -386,52 +388,9 @@ def run(args,
             adv_patch = torch.zeros_like(patch_mask)
             adv_patch = adv_patch.repeat(3, 1, 1)
             adv_patch[:, mid_height - h:mid_height + h, mid_width - w:mid_width + w] = adv_patch_cropped
-        else:
-            # Otherwise, generate a new adversarial patch
-            if True: # TODO: add argument for how to generate patch (using synthetic sign or real sign)
-                with torch.enable_grad():
-                    adv_patch = attack.attack(obj.cuda(), obj_mask.cuda(), patch_mask.cuda(), backgrounds.cuda())
-                qqq
-            elif True: # TODO: add argument for how to generate patch (using synthetic sign or real sign)
-                attack_images = []
-                s = ('%20s' + '%11s' * 6) % ('Class', 'Images', 'Labels', 'P', 'R', 'mAP@.5', 'mAP@.5:.95')
-                pbar = tqdm(dataloader, desc=s, bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')  # progress bar
-
-                # TODO: split into train and val set and change pbar
-                for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
-                    for image_i, path in enumerate(paths):
-                        filename = path.split('/')[-1]
-
-                        #TODO: only for debugging
-                        if filename == '8lkcFc59-2RgSU203mlYEQ.jpg':
-                            continue
-
-                        img_df = df[df['filename_y'] == filename]
-                        if len(img_df) == 0:
-                            continue
-                        for _, row in img_df.iterrows():
-                            (h0, w0), ((h_ratio, w_ratio), (w_pad, h_pad)) = shapes[image_i]
-                            predicted_class = row['final_shape']
-                            shape = predicted_class.split('-')[0]
-
-                            # only apply patch to octagons
-                            if shape != 'octagon':
-                                continue
-                            # attack_images.append([im[image_i], [shape, predicted_class, row, h0, w0, h_ratio, w_ratio, w_pad, h_pad]])
-                            attack_images.append([im[image_i], [shape, predicted_class, row, h0, w0, h_ratio, w_ratio, w_pad, h_pad], str(filename)])
-                    if len(attack_images) > 10:
-                        break
-                # for i in attack_images:
-                #     print(f'tmp/{i[2]}.png')
-                #     print(i[0].shape)
-                #     print(max(i[0][0][0]))
-                #     torchvision.utils.save_image(i[0]/255, f'tmp/{i[2]}.png')
-                # qqq
-
-                with torch.enable_grad():
-                    adv_patch = attack.transform_and_attack(attack_images)
-                    # TODO: change name of patch which is saved
-                    
+        elif generate_patch == 'synthetic': # TODO: add argument for how to generate patch (using synthetic sign or real sign)
+            with torch.enable_grad():
+                adv_patch = attack.attack(obj.cuda(), obj_mask.cuda(), patch_mask.cuda(), backgrounds.cuda())
             adv_patch = adv_patch[0].detach()
             adv_patch = adv_patch.cpu().float()
             patch_path = './adv_patch.pkl'
@@ -439,8 +398,52 @@ def run(args,
             pickle.dump(adv_patch, open(patch_path, 'wb'))
             adv_patch_cropped = adv_patch[:, mid_height - h:mid_height + h, mid_width - w:mid_width + w]
             
-            # TODO: add argument
-            # adv_patch_cropped = adv_patch
+        elif generate_patch == 'transform': # TODO: add argument for how to generate patch (using synthetic sign or real sign)
+            attack_images = []
+            s = ('%20s' + '%11s' * 6) % ('Class', 'Images', 'Labels', 'P', 'R', 'mAP@.5', 'mAP@.5:.95')
+            pbar = tqdm(dataloader, desc=s, bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')  # progress bar
+
+            # TODO: split into train and val set and change pbar
+            for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
+                for image_i, path in enumerate(paths):
+                    filename = path.split('/')[-1]
+
+                    #TODO: remove 'if' statement below. only here for debugging
+                    if filename == '8lkcFc59-2RgSU203mlYEQ.jpg':
+                        continue
+
+                    img_df = df[df['filename_y'] == filename]
+                    if len(img_df) == 0:
+                        continue
+                    for _, row in img_df.iterrows():
+                        (h0, w0), ((h_ratio, w_ratio), (w_pad, h_pad)) = shapes[image_i]
+                        predicted_class = row['final_shape']
+                        shape = predicted_class.split('-')[0]
+
+                        # only apply patch to octagons
+                        if shape != 'octagon':
+                            continue
+                        # attack_images.append([im[image_i], [shape, predicted_class, row, h0, w0, h_ratio, w_ratio, w_pad, h_pad]])
+                        attack_images.append([im[image_i], [shape, predicted_class, row, h0, w0, h_ratio, w_ratio, w_pad, h_pad], str(filename)])
+                if len(attack_images) > 10:
+                    break
+            # for i in attack_images:
+            #     print(f'tmp/{i[2]}.png')
+            #     print(i[0].shape)
+            #     print(max(i[0][0][0]))
+            #     torchvision.utils.save_image(i[0]/255, f'tmp/{i[2]}.png')
+            # qqq
+
+            with torch.enable_grad():
+                adv_patch = attack.transform_and_attack(attack_images, patch_dims=(h, w))
+                # TODO: change name of patch which is saved
+                
+            adv_patch = adv_patch[0].detach()
+            adv_patch = adv_patch.cpu().float()
+            patch_path = './adv_patch.pkl'
+            # print(f'Saving the generated adv patch to {patch_path}...')
+            # pickle.dump(adv_patch, open(patch_path, 'wb'))
+            adv_patch_cropped = adv_patch
 
         f = os.path.join(save_dir, 'adversarial_patch.png')
         print(f'Saving the patch to {f}...')
@@ -470,16 +473,6 @@ def run(args,
     jdict, stats, ap, ap_class = [], [], [], []
     pbar = tqdm(dataloader, desc=s, bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')  # progress bar
 
-    # DEBUG
-    # if apply_patch:
-    #     demo_patch = torchvision.io.read_image('demo.png').float()[:3, :, :] / 255
-    #     # demo_patch = resize(adv_patch_cropped, (32, 32))
-    #     demo_patch = resize(demo_patch, (32, 32))
-    #     f = os.path.join(save_dir, 'adversarial_patch.png')
-    #     torchvision.utils.save_image(demo_patch, f)
-
-    
-
     num_errors = 0
     num_detected = 0
     num_octagon_labels = 0
@@ -492,8 +485,8 @@ def run(args,
     for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
         # DEBUG
         num_samples += im.shape[0]
-        if batch_i == 200:
-            break
+        # if batch_i == 200:
+        #     break
         for image_i, path in enumerate(paths):
             if apply_patch and not synthetic:
                 filename = path.split('/')[-1]
@@ -617,9 +610,6 @@ def run(args,
             # detections (Array[N, 6]), x1, y1, x2, y2, confidence, class
             # labels (Array[M, 5]), class, x1, y1, x2, y2
 
-            # import pdb
-            # pdb.set_trace()
-
             tbox = xywh2xyxy(labels[:, 1:5]).cpu()  # target boxes
             class_only = np.expand_dims(labels[:, 0].cpu(), axis=0)
             tbox = np.concatenate((class_only.T, tbox), axis=1)
@@ -647,9 +637,6 @@ def run(args,
                     num_errors += 1
                 if num_labels_changed == 1:
                     num_detected += 1
-
-            # for *box, conf, cls in predn.cpu().numpy():
-            #     pred_for_plotting.append([si, cls, *list(*xyxy2xywh(np.array(box)[None])), conf])
 
             scale_coords(im[si].shape[1:], predn[:, :4], shape, shapes[si][1])  # native-space pred
 
@@ -682,7 +669,6 @@ def run(args,
                     # TODO: remove if condition. only used to debug wrong transforms
                     # if fn not in df_use_polygons['filename_y'].values:
                     #     continue
-                    # print('path', str(path).split('/')[-1])
                     shape_to_plot_data['octagon'].append(
                         [im[si: si + 1],
                         targets[targets[:, 0] == si, :],
@@ -895,6 +881,7 @@ def parse_opt():
     parser.add_argument('--plot-octagons', action='store_true',
                         help='save single images containing octagons in a folder')
     parser.add_argument('--num-bg', type=int, default=16, help='number of backgrounds to generate adversarial patch')
+    parser.add_argument('--generate-patch', type=str, default='synthetic', help="create patch using synthetic stop signs if 'synthetic' else use real tranformation if 'transform'")
 
     opt = parser.parse_args()
     opt.data = check_yaml(opt.data)  # check YAML

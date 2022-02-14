@@ -7,9 +7,10 @@ from yolov5.utils.plots import output_to_target, plot_images
 
 from ..utils.image import letterbox
 from .base_detector import DetectorAttackModule
+import torchvision
+from val_attack_synthetic import transform_and_apply_patch
 
 EPS = 1e-6
-
 
 class RP2AttackModule(DetectorAttackModule):
 
@@ -26,7 +27,7 @@ class RP2AttackModule(DetectorAttackModule):
         self.optimizer = 'adam'
         self.input_size = (960, 1280)      # TODO: rectangle?
         self.num_eot = 5
-        self.bg_transforms = K.RandomResizedCrop(self.input_size, p=1.0)
+        # self.bg_transforms = K.RandomResizedCrop(self.input_size, p=1.0)
         # self.obj_transforms = K.container.AugmentationSequential(
         #     K.RandomAffine(30, translate=(0.5, 0.5)),      # Only translate and rotate as in Eykholt et al.
         #     # RandomAffine(30, translate=(0.5, 0.5), scale=(0.25, 4), shear=(0.1, 0.1), p=1.0),
@@ -62,6 +63,7 @@ class RP2AttackModule(DetectorAttackModule):
         height, width = obj.shape[-2:]
         device = obj.device
         dtype = obj.dtype
+
         obj_mask_dup = obj_mask.expand(self.num_eot, -1, -1, -1)
 
         # TODO: Initialize worst-case inputs, use moving average
@@ -70,7 +72,6 @@ class RP2AttackModule(DetectorAttackModule):
         ema_loss = None
 
         for _ in range(self.num_restarts):
-
             # Initialize adversarial perturbation
             z_delta = torch.zeros((1, 3, height, width), device=device, dtype=dtype)
             z_delta.uniform_(0, 1)
@@ -93,17 +94,15 @@ class RP2AttackModule(DetectorAttackModule):
                 # Randomly select background and apply transforms (crop and scale)
                 bg_idx = torch.randint(0, len(backgrounds), size=(self.num_eot, ))
                 bgs = backgrounds[bg_idx]
-                bgs = self.bg_transforms(bgs)
+                # bgs = self.bg_transforms(bgs)
 
                 # Apply random transformations
+                
                 adv_obj = patch_mask * delta + (1 - patch_mask) * obj
+                
                 adv_obj = adv_obj.expand(self.num_eot, -1, -1, -1)
                 adv_obj, tf_params = self.obj_transforms(adv_obj)
                 adv_obj = adv_obj.clamp(0, 1)
-
-                # print(obj_mask_dup.shape)
-                # print(tf_params)
-
                 o_mask = self.mask_transforms.apply_transform(
                     obj_mask_dup, None, transform=tf_params)
                 adv_img = o_mask * adv_obj + (1 - o_mask) * bgs
@@ -147,6 +146,92 @@ class RP2AttackModule(DetectorAttackModule):
                 #     plot_images(adv_img.detach(), output_to_target(outt), fname=f'rp2_{step-800}.png')
                 # if step == 820:
                 #     break
+
+        # DEBUG
+        outt = non_max_suppression(out.detach(), conf_thres=0.25, iou_thres=0.45)
+        plot_images(adv_img.detach(), output_to_target(outt))
+
+        # Return worst-case perturbed input logits
+        self.core_model.train(mode)
+        return delta.detach()
+
+    def transform_and_attack(self,
+               objs,
+               patch_dims):
+        """Run RP2 Attack.
+
+        Args:
+            obj (torch.Tesnor): Object to place the adversarial patch on, shape [C, H, W]
+            obj_mask (torch.Tesnor): Mask of object, must have shape [1, H, W]
+            patch_mask (torch.Tesnor): Mask of the patch, must have shape [1, H, W]
+            backgrounds (torch.Tesnor): Background images, shape [N, C, H, W]
+
+        Returns:
+            torch.Tensor: Adversarial patch with shape [C, H, W]
+        """
+
+        mode = self.core_model.training
+        self.core_model.eval()
+        self.objs = objs
+        device = 'cuda:0'
+        resize_transform = torchvision.transforms.Resize(size=self.input_size)
+        h, w = patch_dims
+
+        ema_loss = None
+        for _ in range(self.num_restarts):
+            # Initialize adversarial perturbation
+            z_delta = torch.zeros((1, 3, h, w), device=device, dtype=torch.float32)
+            z_delta.uniform_(0, 1)
+
+            # Set up optimizer
+            if self.optimizer == 'sgd':
+                opt = optim.SGD([z_delta], lr=self.step_size, momentum=0.9)
+            elif self.optimizer == 'adam':
+                opt = optim.Adam([z_delta], lr=self.step_size)
+            elif self.optimizer == 'rmsprop':
+                opt = optim.RMSprop([z_delta], lr=self.step_size)
+            else:
+                raise NotImplementedError('Given optimizer not implemented.')
+
+            # Run PGD on inputs for specified number of steps
+            for step in range(self.num_steps):
+                z_delta.requires_grad_()
+                delta = self._to_model_space(z_delta, 0, 1)
+
+                # Randomly select background and apply transforms (crop and scale)
+                bg_idx = torch.randint(0, len(self.objs), size=(self.num_eot, ))
+                
+                adv_img = torch.FloatTensor().to(device)
+                adv_img = adv_img.to(device)
+                for idx in bg_idx:
+                    data = self.objs[idx]
+                    background = data[0]
+                    shape, predicted_class, row, h0, w0, h_ratio, w_ratio, w_pad, h_pad = data[1]
+                    curr_adv_img = transform_and_apply_patch(background, delta[0], shape, predicted_class, row, h0, w0, h_ratio, w_ratio, w_pad, h_pad) * 255
+                    
+                    # TODO: remove next 'if' condition. only for debugging
+                    if step % 100 == 0 and idx == 1:
+                        torchvision.utils.save_image(curr_adv_img/255, f'tmp/test_adv_img_{step}.png')
+                    curr_adv_img = resize_transform(curr_adv_img)
+                    curr_adv_img = curr_adv_img.to(device)
+                    adv_img = torch.cat((adv_img, curr_adv_img.unsqueeze(0)), 0)
+                
+                # Compute logits, loss, gradients
+                out, _ = self.core_model(adv_img, val=True)
+
+                tv = ((delta[:, :, :-1, :] - delta[:, :, 1:, :]).abs().mean() +
+                      (delta[:, :, :, :-1] - delta[:, :, :, 1:]).abs().mean())
+                loss = out[:, :, 4].mean() + self.lmbda * tv
+                loss.backward(retain_graph=True)
+                opt.step()
+
+                if ema_loss is None:
+                    ema_loss = loss.item()
+                else:
+                    ema_const = 0.99
+                    ema_loss = ema_const * ema_loss + (1 - ema_const) * loss.item()
+                if step % 100 == 0:
+                    print(f'step: {step}   loss: {ema_loss:.6f}')
 
         # DEBUG
         outt = non_max_suppression(out.detach(), conf_thres=0.25, iou_thres=0.45)
