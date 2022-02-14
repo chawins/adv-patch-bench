@@ -1,3 +1,4 @@
+import os
 import torch
 import torch.optim as optim
 from kornia import augmentation as K
@@ -7,9 +8,10 @@ from yolov5.utils.plots import output_to_target, plot_images
 
 from ..utils.image import letterbox, mask_to_box
 from .base_detector import DetectorAttackModule
+import torchvision
+from val_attack_synthetic import transform_and_apply_patch
 
 EPS = 1e-6
-
 
 class RP2AttackModule(DetectorAttackModule):
 
@@ -60,6 +62,7 @@ class RP2AttackModule(DetectorAttackModule):
         self.core_model.eval()
         device = obj.device
         dtype = obj.dtype
+
         obj_mask_dup = obj_mask.expand(self.num_eot, -1, -1, -1)
         ymin, xmin, height, width = mask_to_box(patch_mask)
         patch_full = torch.zeros_like(obj)
@@ -71,7 +74,6 @@ class RP2AttackModule(DetectorAttackModule):
         ema_loss = None
 
         for _ in range(self.num_restarts):
-
             # Initialize adversarial perturbation
             z_delta = torch.zeros((1, 3, height, width), device=device, dtype=dtype)
             z_delta.uniform_(-10, 10)
@@ -112,6 +114,10 @@ class RP2AttackModule(DetectorAttackModule):
                     adv_img = o_mask * adv_obj + (1 - o_mask) * bgs
                     # Patch image the same way as YOLO
                     adv_img = letterbox(adv_img, new_shape=self.input_size[1])[0]
+
+                    # print(max(adv_img[0][0][0]))
+                    # print(max(adv_img[0][0][1]))
+                    # qqq
 
                     # Compute logits, loss, gradients
                     out, _ = self.core_model(adv_img, val=True)
@@ -160,6 +166,117 @@ class RP2AttackModule(DetectorAttackModule):
         # DEBUG
         # outt = non_max_suppression(out.detach(), conf_thres=0.25, iou_thres=0.6)
         # plot_images(adv_img.clamp(0, 1).detach(), c)
+
+        # Return worst-case perturbed input logits
+        self.core_model.train(mode)
+        return delta.detach()
+
+    def transform_and_attack(self,
+               objs,
+               patch_mask,
+               obj_class):
+        """Run RP2 Attack.
+
+        Args:
+            obj (torch.Tesnor): Object to place the adversarial patch on, shape [C, H, W]
+            obj_mask (torch.Tesnor): Mask of object, must have shape [1, H, W]
+            patch_mask (torch.Tesnor): Mask of the patch, must have shape [1, H, W]
+            backgrounds (torch.Tesnor): Background images, shape [N, C, H, W]
+
+        Returns:
+            torch.Tensor: Adversarial patch with shape [C, H, W]
+        """
+
+        mode = self.core_model.training
+        self.core_model.eval()
+        self.objs = objs
+        device = 'cuda:0'
+        resize_transform = torchvision.transforms.Resize(size=self.input_size)
+        ymin, xmin, height, width = mask_to_box(patch_mask)
+
+        ema_const = 0.99
+        ema_loss = None
+
+        for _ in range(self.num_restarts):
+            # Initialize adversarial perturbation
+            z_delta = torch.zeros((1, 3, height, width), device=device, dtype=torch.float32)
+            z_delta.uniform_(0, 1)
+
+            # Set up optimizer
+            if self.optimizer == 'sgd':
+                opt = optim.SGD([z_delta], lr=self.step_size, momentum=0.9)
+            elif self.optimizer == 'adam':
+                opt = optim.Adam([z_delta], lr=self.step_size)
+            elif self.optimizer == 'rmsprop':
+                opt = optim.RMSprop([z_delta], lr=self.step_size)
+            else:
+                raise NotImplementedError('Given optimizer not implemented.')
+
+            # Run PGD on inputs for specified number of steps
+            for step in range(self.num_steps):
+                z_delta.requires_grad_()
+                delta = self._to_model_space(z_delta, 0, 1)
+
+                # Randomly select background and apply transforms (crop and scale)
+                bg_idx = torch.randint(0, len(self.objs), size=(self.num_eot, ))
+                
+                adv_img = torch.FloatTensor().to(device)
+                adv_img = adv_img.to(device)
+                for idx in bg_idx:
+                    data = self.objs[idx]
+                    background = data[0]
+                    shape, predicted_class, row, h0, w0, h_ratio, w_ratio, w_pad, h_pad = data[1]
+                    # curr_adv_img = transform_and_apply_patch(background, delta[0], shape, predicted_class, row, h0, w0, h_ratio, w_ratio, w_pad, h_pad) * 255
+                    curr_adv_img = transform_and_apply_patch(background, delta[0], shape, predicted_class, row, h0, w0, h_ratio, w_ratio, w_pad, h_pad)
+                    
+                    # TODO: remove next 'if' condition. only for debugging
+                    if step % 100 == 0:
+                        if not os.path.exists(f'tmp/{idx}/test_adv_img_{step}.png'):
+                            os.makedirs(f'tmp/{idx}/', exist_ok=True)
+                        torchvision.utils.save_image(curr_adv_img, f'tmp/{idx}/test_adv_img_{step}.png')
+                    
+                    curr_adv_img = resize_transform(curr_adv_img)
+                    curr_adv_img = curr_adv_img.to(device)
+                    adv_img = torch.cat((adv_img, curr_adv_img.unsqueeze(0)), 0)
+                
+                # Compute logits, loss, gradients
+                out, _ = self.core_model(adv_img, val=True)
+
+                # Use YOLOv5 default values
+                # nms_out = non_max_suppression(out, conf_thres=0.001, iou_thres=0.6)
+                loss = 0
+                for i, det in enumerate(out):
+                    # Confidence = obj_conf * cls_conf
+                    conf = det[:, 4:5] * det[:, 5:]
+                    # Get predicted class
+                    conf, labels = conf.max(1)
+                    # Select only desired class if specified
+                    if obj_class is not None:
+                        conf = conf[labels == obj_class]
+                    if conf.size(0) > 0:
+                        # Select prediction from box with max confidence
+                        # and ignore ones with already low confidence
+                        loss += conf.max().clamp_min(self.min_conf)
+
+                loss /= self.num_eot
+                tv = ((delta[:, :, :-1, :] - delta[:, :, 1:, :]).abs().mean() +
+                        (delta[:, :, :, :-1] - delta[:, :, :, 1:]).abs().mean())
+                # loss = out[:, :, 4].mean() + self.lmbda * tv
+                loss += self.lmbda * tv
+                loss.backward(retain_graph=True)
+                opt.step()
+                # lr_schedule.step(loss)
+
+                if ema_loss is None:
+                    ema_loss = loss.item()
+                else:
+                    ema_loss = ema_const * ema_loss + (1 - ema_const) * loss.item()
+                if step % 100 == 0:
+                    print(f'step: {step}   loss: {ema_loss:.6f}')
+
+        # DEBUG
+        outt = non_max_suppression(out.detach(), conf_thres=0.25, iou_thres=0.45)
+        plot_images(adv_img.detach(), output_to_target(outt))
 
         # Return worst-case perturbed input logits
         self.core_model.train(mode)

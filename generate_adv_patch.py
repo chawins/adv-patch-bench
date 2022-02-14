@@ -10,15 +10,20 @@ from os.path import join
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
+from ast import literal_eval
 import torch
 import torchvision
 import torchvision.transforms.functional as T
 from PIL import Image
+from tqdm import tqdm
 
 from adv_patch_bench.attacks.rp2 import RP2AttackModule
 from yolov5.models.common import DetectMultiBackend
 from yolov5.utils.general import LOGGER, check_img_size, increment_path
 from yolov5.utils.torch_utils import select_device
+from yolov5.utils.datasets import create_dataloader
+from yolov5.utils.general import check_dataset, colorstr, check_yaml
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # YOLOv5 root directory
@@ -29,7 +34,9 @@ ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 
 def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
                        img_size=(960, 1280), obj_class=0, obj_size=None,
-                       bg_dir='./', num_bg=16, save_images=False, save_dir='./'):
+                       bg_dir='./', num_bg=16, save_images=False, save_dir='./', 
+                       generate_patch='synthetic', batch_size=32, imgsz=640, 
+                       half=True, stride=1, pt=None, data=None):
     """Generate adversarial patch
 
     Args:
@@ -60,7 +67,7 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
         backgrounds[i] = T.resize(bg, img_size, antialias=True)
 
     attack_config = {
-        'rp2_num_steps': 3000,
+        'rp2_num_steps': 1000,
         'rp2_step_size': 1e-2,
         'rp2_num_eot': 8,
         'rp2_optimizer': 'adam',
@@ -81,12 +88,60 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
     obj_mask = T.pad(obj_mask, pad_size)
 
     # Generate an adversarial patch
-    with torch.enable_grad():
-        adv_patch = attack.attack(obj.to(device),
-                                  obj_mask.to(device),
-                                  patch_mask.to(device),
-                                  backgrounds.to(device),
-                                  obj_class=obj_class)
+    if generate_patch == 'synthetic':
+        with torch.enable_grad():
+            adv_patch = attack.attack(obj.to(device),
+                                    obj_mask.to(device),
+                                    patch_mask.to(device),
+                                    backgrounds.to(device),
+                                    obj_class=obj_class)
+    elif generate_patch == 'transform':
+        df = pd.read_csv('mapillary_vistas_final_merged.csv')
+        df['tgt_final'] = df['tgt_final'].apply(literal_eval)
+        df = df[df['final_shape'] != 'other-0.0-0.0']
+
+        model.warmup(imgsz=(1, 3, imgsz, imgsz), half=half)  # warmup
+        task = 'train'
+        pad = 0.0 if task == 'speed' else 0.5
+        task = task if task in ('train', 'val', 'test') else 'val'  # path to train/val/test images
+        data = check_yaml(data)  # check YAML
+        data = check_dataset(data)
+        dataloader = create_dataloader(data[task], imgsz, batch_size, stride, single_cls=False, pad=pad, rect=pt,
+                                    workers=8, prefix=colorstr(f'{task}: '))[0]
+
+        attack_images = []
+        s = ('%20s' + '%11s' * 6) % ('Class', 'Images', 'Labels', 'P', 'R', 'mAP@.5', 'mAP@.5:.95')
+        pbar = tqdm(dataloader, desc=s, bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')  # progress bar
+
+        # TODO: split into train and val set and change pbar
+        for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
+            for image_i, path in enumerate(paths):
+                filename = path.split('/')[-1]
+
+                #TODO: remove 'if' statement below. only here for debugging
+                if filename == '8lkcFc59-2RgSU203mlYEQ.jpg':
+                    continue
+
+                img_df = df[df['filename_y'] == filename]
+                if len(img_df) == 0:
+                    continue
+                for _, row in img_df.iterrows():
+                    (h0, w0), ((h_ratio, w_ratio), (w_pad, h_pad)) = shapes[image_i]
+                    predicted_class = row['final_shape']
+                    shape = predicted_class.split('-')[0]
+
+                    # only apply patch to octagons
+                    if shape != 'octagon':
+                        continue
+                    # attack_images.append([im[image_i], [shape, predicted_class, row, h0, w0, h_ratio, w_ratio, w_pad, h_pad]])
+                    attack_images.append([im[image_i], [shape, predicted_class, row, h0, w0, h_ratio, w_ratio, w_pad, h_pad], str(filename)])
+            if len(attack_images) > 10:
+                break
+
+        with torch.enable_grad():
+            adv_patch = attack.transform_and_attack(attack_images, patch_mask=patch_mask, obj_class=obj_class)
+            # adv_patch = attack.transform_and_attack(attack_images, patch_dims=(h, w))
+
     adv_patch = adv_patch[0].detach().cpu().float()
 
     if save_images:
@@ -121,6 +176,8 @@ def main(
     save_images=False,
     patch_name='adv_patch',
     seed=0,
+    generate_patch='synthetic',
+    data=None
 ):
 
     torch.manual_seed(seed)
@@ -169,7 +226,8 @@ def main(
     adv_patch = generate_adv_patch(
         model, obj_numpy, patch_mask, device=device, img_size=img_size,
         obj_class=obj_class, obj_size=obj_size, bg_dir=bg_dir, num_bg=num_bg,
-        save_images=save_images, save_dir=save_dir)
+        save_images=save_images, save_dir=save_dir, generate_patch=generate_patch,
+        batch_size=batch_size, imgsz=imgsz, half=half, stride=stride, pt=pt, data=data)
 
     # Save adv patch
     patch_path = join(save_dir, f'{patch_name}.pkl')
@@ -179,6 +237,7 @@ def main(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument('--data', type=str, default=ROOT / 'data/coco128.yaml', help='dataset.yaml path')
     parser.add_argument('--weights', nargs='+', type=str, default=ROOT / 'yolov5s.pt', help='model.pt path(s)')
     parser.add_argument('--batch-size', type=int, default=32, help='batch size')
     parser.add_argument('--imgsz', type=int, default=640, help='inference size (pixels)')
@@ -199,6 +258,8 @@ if __name__ == "__main__":
     parser.add_argument('--bg-dir', type=str, default='', help='path to background directory')
     parser.add_argument('--num-bg', type=int, default=16, help='number of backgrounds to generate adversarial patch')
     parser.add_argument('--save-images', action='store_true', help='save generated patch')
+    parser.add_argument('--generate_patch', type=str, default='synthetic', help="create patch using synthetic stop signs if 'synthetic' else use real tranformation if 'transform'")
+
     opt = parser.parse_args()
     print(opt)
 

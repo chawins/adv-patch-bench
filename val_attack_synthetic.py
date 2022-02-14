@@ -31,7 +31,7 @@ from kornia.geometry.transform import (get_perspective_transform, resize,
 from PIL import Image
 from tqdm import tqdm
 
-from adv_patch_bench.attacks.rp2 import RP2AttackModule
+# from adv_patch_bench.attacks.rp2 import RP2AttackModule
 from adv_patch_bench.utils.image import mask_to_box, pad_image, prepare_obj
 from example_transforms import get_sign_canonical
 from yolov5.models.common import DetectMultiBackend
@@ -98,6 +98,87 @@ def process_batch(detections, labels, iouv):
         matches = torch.Tensor(matches).to(iouv.device)
         correct[matches[:, 1].long()] = matches[:, 2:3] >= iouv
     return correct
+
+def transform_and_apply_patch(image, adv_patch_cropped, shape, predicted_class, row, h0, w0, h_ratio, w_ratio, w_pad, h_pad):
+    # print('shape', adv_patch_cropped.shape)
+    # qqq
+    patch_size_in_pixel = adv_patch_cropped.shape[1]
+    patch_size_in_mm = 250
+    sign_canonical, sign_mask, src = get_sign_canonical(
+        shape, predicted_class, patch_size_in_pixel, patch_size_in_mm)
+
+    alpha = row['alpha']
+    beta = row['beta']
+    patch_cropped = adv_patch_cropped.clone()
+    patch_cropped.clamp_(0, 1).mul_(alpha).add_(beta).clamp_(0, 1)
+    sign_size_in_pixel = sign_canonical.size(-1)
+    # Patch location (here is center). Should match the
+    # location used during attack
+    begin = (sign_size_in_pixel - patch_size_in_pixel) // 2
+    end = begin + patch_size_in_pixel
+    sign_canonical[:-1, begin:end, begin:end] = patch_cropped
+    sign_canonical[-1, begin:end, begin:end] = 1
+
+    # Crop patch that is not on the sign
+    sign_canonical *= sign_mask
+    src = np.array(src, dtype=np.float32)
+
+    # if annotated, then use those points
+    if not pd.isna(row['points']):
+        tgt = np.array(literal_eval(row['points']), dtype=np.float32)
+        tgt[:, 1] = (tgt[:, 1] * h_ratio) + h_pad
+        tgt[:, 0] = (tgt[:, 0] * w_ratio) + w_pad
+
+    # if we flagged with 'use_polygon', then use those 'tgt_polygon'
+    elif not pd.isna(row['tgt_polygon']):
+        tgt = np.array(literal_eval(row['tgt_polygon']), dtype=np.float32)
+        offset_x_ratio = row['xmin_ratio']
+        offset_y_ratio = row['ymin_ratio']
+        # Have to correct for the padding when df is saved (TODO: this should be simplified)
+        pad_size = int(max(h0, w0) * 0.25)
+        x_min = offset_x_ratio * (w0 + pad_size * 2) - pad_size
+        y_min = offset_y_ratio * (h0 + pad_size * 2) - pad_size
+
+        # Order of coordinate in tgt is inverted, i.e., (x, y) instead of (y, x)
+        tgt[:, 1] = (tgt[:, 1] + y_min) * h_ratio + h_pad
+        tgt[:, 0] = (tgt[:, 0] + x_min) * w_ratio + w_pad
+
+    else:
+        tgt = np.array(literal_eval(row['tgt']), dtype=np.float32)
+        offset_x_ratio = row['xmin_ratio']
+        offset_y_ratio = row['ymin_ratio']
+        # Have to correct for the padding when df is saved (TODO: this should be simplified)
+        pad_size = int(max(h0, w0) * 0.25)
+        x_min = offset_x_ratio * (w0 + pad_size * 2) - pad_size
+        y_min = offset_y_ratio * (h0 + pad_size * 2) - pad_size
+
+        # Order of coordinate in tgt is inverted, i.e., (x, y) instead of (y, x)
+        tgt[:, 1] = (tgt[:, 1] + y_min) * h_ratio + h_pad
+        tgt[:, 0] = (tgt[:, 0] + x_min) * w_ratio + w_pad
+
+    # moving patch
+    sign_height = max(tgt[:, 1]) - min(tgt[:, 1])
+    tgt[:, 1] += sign_height * 0.3
+    
+    if len(src) == 3:
+        M = torch.from_numpy(getAffineTransform(src, tgt)).unsqueeze(0).float()
+        transform_func = warp_affine
+    else:
+        src = torch.from_numpy(src).unsqueeze(0)
+        tgt = torch.from_numpy(tgt).unsqueeze(0)
+        M = get_perspective_transform(src, tgt)
+        transform_func = warp_perspective
+
+    cur_shape = image.shape[1:]
+    warped_patch = transform_func(sign_canonical.unsqueeze(0),
+                                M, cur_shape,
+                                mode='bicubic',
+                                padding_mode='zeros')[0]
+    warped_patch.clamp_(0, 1)
+    alpha_mask = warped_patch[-1].unsqueeze(0)
+
+    image_with_transformed_patch = (1 - alpha_mask) * image / 255 + alpha_mask * warped_patch[:-1]
+    return image_with_transformed_patch
 
 
 @torch.no_grad()
@@ -224,6 +305,9 @@ def run(args,
         # Load patch from a pickle file if specified (TODO: load patch to get size)
         adv_patch = pickle.load(open(load_patch, 'rb'))
         patch_height, patch_width = adv_patch.shape[1:]
+
+        # print(adv_patch.shape)
+        
         if load_patch == 'arrow':
             # Load 'arrow on checkboard' patch if specified
             adv_patch = torchvision.io.read_image('demo.png').float()[:3, :, :] / 255
@@ -298,8 +382,8 @@ def run(args,
     for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
         # DEBUG
         num_samples += im.shape[0]
-        if batch_i == 20:
-            break
+        # if batch_i == 20:
+        #     break
         for image_i, path in enumerate(paths):
             if apply_patch and not synthetic:
                 filename = path.split('/')[-1]
@@ -310,7 +394,6 @@ def run(args,
                 # Apply patch on all of the signs on this image
                 for _, row in img_df.iterrows():
                     (h0, w0), ((h_ratio, w_ratio), (w_pad, h_pad)) = shapes[image_i]
-
                     predicted_class = row['final_shape']
                     shape = predicted_class.split('-')[0]
 
@@ -319,81 +402,9 @@ def run(args,
                         continue
                     num_octagon_with_patch += shape == 'octagon'
 
-                    sign_canonical, sign_mask, src = get_sign_canonical(
-                        shape, predicted_class, patch_width, patch_size_in_mm,
-                        sign_size_in_pixel=obj_size)
-
-                    alpha = row['alpha']
-                    beta = row['beta']
-                    patch_ = adv_patch.clone()
-                    patch_.clamp_(0, 1).mul_(alpha).add_(beta).clamp_(0, 1)
-                    sign_canonical[:-1, ymin:ymin + patch_height, xmin:xmin + patch_width] = patch_
-                    # Set A channel in RGBA
-                    sign_canonical[-1, ymin:ymin + patch_height, xmin:xmin + patch_width] = 1
-
-                    # Crop patch that is not on the sign
-                    sign_canonical *= sign_mask
-                    src = np.array(src, dtype=np.float32)
-
-                    # if annotated, then use those points
-                    if not pd.isna(row['points']):
-                        tgt = np.array(literal_eval(row['points']), dtype=np.float32)
-                        tgt[:, 1] = (tgt[:, 1] * h_ratio) + h_pad
-                        tgt[:, 0] = (tgt[:, 0] * w_ratio) + w_pad
-                    # if we flagged with 'use_polygon', then use those 'tgt_polygon'
-                    elif not pd.isna(row['tgt_polygon']):
-                        tgt = np.array(literal_eval(row['tgt_polygon']), dtype=np.float32)
-                        offset_x_ratio = row['xmin_ratio']
-                        offset_y_ratio = row['ymin_ratio']
-                        # Have to correct for the padding when df is saved (TODO: this should be simplified)
-                        pad_size = int(max(h0, w0) * 0.25)
-                        x_min = offset_x_ratio * (w0 + pad_size * 2) - pad_size
-                        y_min = offset_y_ratio * (h0 + pad_size * 2) - pad_size
-
-                        # Order of coordinate in tgt is inverted, i.e., (x, y) instead of (y, x)
-                        tgt[:, 1] = (tgt[:, 1] + y_min) * h_ratio + h_pad
-                        tgt[:, 0] = (tgt[:, 0] + x_min) * w_ratio + w_pad
-
-                        # for ttt in tgt:
-                        #     for dx in range(-2, 3):
-                        #         for dy in range(-2, 3):
-                        #             im[image_i][:, int(ttt[1]+dy), int(ttt[0]+dx)] = 255
-                        torchvision.utils.save_image(im[image_i]/255, 'test_.png')
-
-                    else:
-                        tgt = np.array(literal_eval(row['tgt']), dtype=np.float32)
-                        offset_x_ratio = row['xmin_ratio']
-                        offset_y_ratio = row['ymin_ratio']
-                        # Have to correct for the padding when df is saved (TODO: this should be simplified)
-                        pad_size = int(max(h0, w0) * 0.25)
-                        x_min = offset_x_ratio * (w0 + pad_size * 2) - pad_size
-                        y_min = offset_y_ratio * (h0 + pad_size * 2) - pad_size
-
-                        # Order of coordinate in tgt is inverted, i.e., (x, y) instead of (y, x)
-                        tgt[:, 1] = (tgt[:, 1] + y_min) * h_ratio + h_pad
-                        tgt[:, 0] = (tgt[:, 0] + x_min) * w_ratio + w_pad
-
-                    if len(src) == 3:
-                        M = torch.from_numpy(getAffineTransform(src, tgt)).unsqueeze(0).float()
-                        transform_func = warp_affine
-                    else:
-                        src = torch.from_numpy(src).unsqueeze(0)
-                        tgt = torch.from_numpy(tgt).unsqueeze(0)
-                        M = get_perspective_transform(src, tgt)
-                        transform_func = warp_perspective
-
-                    cur_shape = im[image_i].shape[1:]
-                    warped_patch = transform_func(sign_canonical.unsqueeze(0),
-                                                  M, cur_shape,
-                                                  mode='bicubic',
-                                                  padding_mode='zeros')[0]
-                    warped_patch.clamp_(0, 1)
-                    alpha_mask = warped_patch[-1].unsqueeze(0)
-
-                    traffic_sign = (1 - alpha_mask) * im[image_i] / 255 + alpha_mask * warped_patch[:-1]
-                    traffic_sign.clamp_(0, 1)
-                    im[image_i] = traffic_sign * 255
-
+                    im[image_i] = transform_and_apply_patch(im[image_i], adv_patch, shape, predicted_class, row, h0, w0, h_ratio, w_ratio, w_pad, h_pad) * 255
+                    # im[image_i] = transform_and_apply_patch(im[image_i], adv_patch_cropped, shape, predicted_class, row, h0, w0, h_ratio, w_ratio, w_pad, h_pad) * 255
+                    print(im[image_i].shape)
             elif synthetic:
                 orig_shape = im[image_i].shape[1:]
                 resized_img = resize_transform(im[image_i])
@@ -490,9 +501,6 @@ def run(args,
             # detections (Array[N, 6]), x1, y1, x2, y2, confidence, class
             # labels (Array[M, 5]), class, x1, y1, x2, y2
 
-            # import pdb
-            # pdb.set_trace()
-
             tbox = xywh2xyxy(labels[:, 1:5]).cpu()  # target boxes
             class_only = np.expand_dims(labels[:, 0].cpu(), axis=0)
             tbox = np.concatenate((class_only.T, tbox), axis=1)
@@ -520,9 +528,6 @@ def run(args,
                     num_errors += 1
                 if num_labels_changed == 1:
                     num_detected += 1
-
-            # for *box, conf, cls in predn.cpu().numpy():
-            #     pred_for_plotting.append([si, cls, *list(*xyxy2xywh(np.array(box)[None])), conf])
 
             scale_coords(im[si].shape[1:], predn[:, :4], shape, shapes[si][1])  # native-space pred
 
@@ -555,7 +560,6 @@ def run(args,
                     # TODO: remove if condition. only used to debug wrong transforms
                     # if fn not in df_use_polygons['filename_y'].values:
                     #     continue
-                    # print('path', str(path).split('/')[-1])
                     shape_to_plot_data['octagon'].append(
                         [im[si: si + 1],
                          targets[targets[:, 0] == si, :],
@@ -768,6 +772,7 @@ def parse_opt():
                         help='save single images in a folder instead of batch images in a single plot')
     parser.add_argument('--plot-octagons', action='store_true',
                         help='save single images containing octagons in a folder')
+    parser.add_argument('--num-bg', type=int, default=16, help='number of backgrounds to generate adversarial patch')
     parser.add_argument('--patch-loc', type=str, default='128,128',
                         help='location to place patch w.r.t. object in tuple (ymin, xmin)')
     parser.add_argument('--patch-size-mm', type=float, default=250, help='patch width in millimeter')
