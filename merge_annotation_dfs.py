@@ -35,7 +35,7 @@ def main():
             curr_json_files = [path_to_json + p for p in os.listdir(path_to_json) if p.endswith('.json')]
             json_files.extend(curr_json_files)
 
-    for edit_path in ['traffic_signs_final_check', 'traffic_signs_use_polygon']:
+    for edit_path in ['traffic_signs_final_check', 'traffic_signs_use_polygon', 'traffic_signs_wrong_octagons']:
         for group in ['1']:
             path_to_json = f'/data/shared/mapillary_vistas/training/hand_annotated_signs/{edit_path}/{group}/'
             curr_json_files = [path_to_json + p for p in os.listdir(path_to_json) if p.endswith('.json')]
