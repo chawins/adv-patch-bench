@@ -5,6 +5,7 @@ from os.path import join
 import numpy as np
 import torch
 import torchvision.transforms.functional as T
+from PIL import Image
 
 
 def load_annotation(label_path, image_key):
@@ -125,3 +126,36 @@ def letterbox(im, new_shape=(640, 640), color=114, scaleup=True, stride=32):
     im = T.pad(im, [left, right, top, bottom], fill=color)
     # im = cv2.copyMakeBorder(im, top, bottom, left, right, cv2.BORDER_CONSTANT, value=color)  # add border
     return im, ratio, (dw, dh)
+
+
+def mask_to_box(mask):
+    if mask.ndim == 3:
+        mask = mask.squeeze(0)
+    assert mask.ndim == 2
+    y, x = torch.where(mask)
+    y_min, x_min = y.min(), x.min()
+    return y_min, x_min, y.max() - y_min, x.max() - x_min
+
+
+def prepare_obj(obj_path, img_size, obj_size):
+    """Load image of an object and place it in the middle of an image tensor of
+    size `img_size`. The object is also resized to `obj_size`.
+
+    Args:
+        obj_path (str): Path to image to load
+        img_size (tuple): Size of image to place object on: (height, width)
+        obj_size (tuple): Size of object in the image: (height, width)
+
+    Returns:
+        torch.Tensor, torch.Tensor: Object and its mask
+    """
+    obj_numpy = np.array(Image.open(obj_path).convert('RGBA')) / 255
+    obj_mask = torch.from_numpy(obj_numpy[:, :, -1] == 1).float().unsqueeze(0)
+    obj = torch.from_numpy(obj_numpy[:, :, :-1]).float().permute(2, 0, 1)
+    # Resize and put object in the middle of zero background
+    pad_size = [(img_size[1] - obj_size[1]) // 2, (img_size[0] - obj_size[0]) // 2]  # left/right, top/bottom
+    obj = T.resize(obj, obj_size, antialias=True)
+    obj = T.pad(obj, pad_size)
+    obj_mask = T.resize(obj_mask, obj_size, interpolation=T.InterpolationMode.NEAREST)
+    obj_mask = T.pad(obj_mask, pad_size)
+    return obj, obj_mask

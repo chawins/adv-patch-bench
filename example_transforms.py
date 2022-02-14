@@ -107,17 +107,21 @@ def get_args_parser():
     return parser
 
 
-def get_sign_canonical(shape, predicted_class, patch_size_in_pixel, patch_size_in_mm):
+def get_sign_canonical(shape, predicted_class, patch_size_in_pixel,
+                       patch_size_in_mm, sign_size_in_pixel=None):
+    sign_width_in_mm = float(predicted_class.split('-')[1])
     if len(predicted_class.split('-')) == 3:
-        sign_width_in_mm = float(predicted_class.split('-')[1])
         sign_height_in_mm = float(predicted_class.split('-')[2])
         hw_ratio = sign_height_in_mm / sign_width_in_mm
-        sign_size_in_mm = max(sign_width_in_mm, sign_height_in_mm)
     else:
-        sign_size_in_mm = float(predicted_class.split('-')[1])
         hw_ratio = 1
-    pixel_mm_ratio = patch_size_in_pixel / patch_size_in_mm
-    sign_size_in_pixel = round(sign_size_in_mm * pixel_mm_ratio)
+    if sign_size_in_pixel is None:
+        if len(predicted_class.split('-')) == 3:
+            sign_size_in_mm = max(sign_width_in_mm, sign_height_in_mm)
+        else:
+            sign_size_in_mm = float(sign_width_in_mm)
+        pixel_mm_ratio = patch_size_in_pixel / patch_size_in_mm
+        sign_size_in_pixel = round(sign_size_in_mm * pixel_mm_ratio)
     sign_canonical = torch.zeros((4, sign_size_in_pixel, sign_size_in_pixel))
     sign_mask, src = gen_sign_mask(shape, sign_size_in_pixel, ratio=hw_ratio)
     sign_mask = torch.from_numpy(sign_mask).float()[None, :, :]
@@ -134,7 +138,7 @@ def draw_vertices(traffic_sign, points, color=[0, 255, 0]):
 
 def compute_example_transform(traffic_sign, mask, predicted_class, demo_patch,
                               patch_size_in_mm=150, patch_size_in_pixel=32):
-    
+
     # TODO: temporary only. delete afterwards
     alpha = None
     beta = None
@@ -240,7 +244,7 @@ def compute_example_transform(traffic_sign, mask, predicted_class, demo_patch,
                                           mode='bicubic',
                                           padding_mode='zeros')[0].clamp(0, 1)
 
-            alpha_mask = warped_patch[-1].unsqueeze(0)            
+            alpha_mask = warped_patch[-1].unsqueeze(0)
             traffic_sign = (1 - alpha_mask) * traffic_sign + alpha_mask * warped_patch[:-1]
 
             # DEBUG
@@ -467,7 +471,7 @@ def main(args):
         subgroup_to_images[(shape, group)].append([adv_image, filename, obj_id, predicted_class, tgt, alpha, beta])
 
     column_names = ['filename', 'object_id', 'shape', 'predicted_shape',
-                    'predicted_class', 'group', 'batch_number', 'row', 'column', 
+                    'predicted_class', 'group', 'batch_number', 'row', 'column',
                     'tgt', 'alpha', 'beta']
     csv_filename = '{}_data.csv'.format(DATASET)
 
