@@ -448,10 +448,9 @@ def main(args):
 
     print('[INFO] running detection algorithm')
 
-    subgroup_to_images = {}
-
     final_df = pd.read_csv('mapillary_vistas_final_merged.csv')
-    final_df = final_df[(final_df['final_shape'] != 'circle-750.0') & (final_df['use_polygon'] == 1) & (final_df['points'].isna()) & (final_df['final_shape'] != 'other-0.0-0.0')]
+    final_df = final_df[(final_df['final_shape'] != 'circle-750.0') & (final_df['points'].isna()) & (final_df['final_shape'] != 'other-0.0-0.0') & (final_df['final_shape'] == 'octagon-915.0')]
+    # final_df = final_df[(final_df['final_shape'] != 'circle-750.0') & (final_df['use_polygon'] == 1) & (final_df['points'].isna()) & (final_df['final_shape'] != 'other-0.0-0.0')]
     print(final_df.shape)
 
     corrections_df = pd.DataFrame(columns=['filename', 'tgt_polygon'])
