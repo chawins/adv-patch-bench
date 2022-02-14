@@ -453,7 +453,8 @@ def main(args):
     # final_df = final_df[(final_df['final_shape'] != 'circle-750.0') & (final_df['use_polygon'] == 1) & (final_df['points'].isna()) & (final_df['final_shape'] != 'other-0.0-0.0')]
     print(final_df.shape)
 
-    corrections_df = pd.DataFrame(columns=['filename', 'tgt_polygon'])
+    # corrections_df = pd.DataFrame(columns=['filename', 'tgt_polygon'])
+    corrections_df = pd.DataFrame(columns=['filename'])
     filenames_list = []
     tgt_list = []
 
@@ -500,11 +501,11 @@ def main(args):
     
     corrections_df['filename'] = filenames_list
     corrections_df['tgt_polygon'] = tgt_list
-    corrections_df['use_polygon'] = True
+    # corrections_df['use_polygon'] = True
     corrections_df.to_csv('use_polygons_corrections_df.csv', index=False)
 
     main_df = pd.read_csv('mapillary_vistas_final_merged.csv')
-    main_df = main_df.merge(corrections_df, on=['filename', 'use_polygon'], how='left', suffixes=('', '_polygon'))
+    main_df = main_df.merge(corrections_df, on=['filename'], how='left', suffixes=('', '_polygon'))
     print('saving df')
     main_df.to_csv('mapillary_vistas_final_merged.csv', index=False)
 
