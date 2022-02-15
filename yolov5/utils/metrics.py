@@ -86,13 +86,17 @@ def ap_per_class(tp, conf, pred_cls, target_cls, plot=False, save_dir='.', names
     names = [v for k, v in names.items() if k in unique_classes]  # list: only classes that have data
     names = {i: v for i, v in enumerate(names)}  # to dict
     if plot:
-        plot_pr_curve(px, py, ap, Path(save_dir) / 'PR_curve.png', names)
-        plot_pr_curve(px, py, ap, Path(save_dir) / 'PR_curve_with_points.png', names, recall_per_class, precision_per_class)
-        plot_mc_curve(px, f1, Path(save_dir) / 'F1_curve.png', names, ylabel='F1')
-        plot_mc_curve(px, p, Path(save_dir) / 'P_curve.png', names, ylabel='Precision')
-        plot_mc_curve(px, r, Path(save_dir) / 'R_curve.png', names, ylabel='Recall/TPR')
-        plot_mc_curve(px, fnr, Path(save_dir) / 'FNR_curve.png', names, ylabel='FNR')
+        plot_pr_curve(px, py, ap, Path(save_dir) / 'PR_curve.png', names, save_dir_str=save_dir)
+        plot_pr_curve(px, py, ap, Path(save_dir) / 'PR_curve_with_points.png', names, recall_per_class, precision_per_class, save_dir_str=save_dir)
+        plot_mc_curve(px, f1, Path(save_dir) / 'F1_curve.png', names, ylabel='F1', save_dir_str=save_dir)
+        plot_mc_curve(px, p, Path(save_dir) / 'P_curve.png', names, ylabel='Precision', save_dir_str=save_dir)
+        plot_mc_curve(px, r, Path(save_dir) / 'R_curve.png', names, ylabel='Recall/TPR', save_dir_str=save_dir)
+        plot_mc_curve(px, fnr, Path(save_dir) / 'FNR_curve.png', names, ylabel='FNR', save_dir_str=save_dir)
         plot_confidence_distribution(confidence_per_class, Path(save_dir) / 'Confidence_distribution.png', names, ylabel='Density')
+
+        numpy_filename = 'x_axis.npy'
+        with open(numpy_filename, 'wb') as f:
+            np.save(f, px)
 
     # NOTE: hardcoded index at which f1 score is maximum
     # if synthetic:
@@ -331,21 +335,29 @@ def wh_iou(wh1, wh2):
 
 # Plots ----------------------------------------------------------------------------------------------------------------
 
-def plot_pr_curve(px, py, ap, save_dir='pr_curve.png', names=(), recall_per_class=None, precision_per_class=None):
+def plot_pr_curve(px, py, ap, save_dir='pr_curve.png', names=(), recall_per_class=None, precision_per_class=None, save_dir_str=None):
     # Precision-recall curve
     fig, ax = plt.subplots(1, 1, figsize=(9, 6), tight_layout=True)
     py = np.stack(py, axis=1)
-
+    
     if 0 < len(names) < 21:  # display per-class legend if < 21 classes
         for i, y in enumerate(py.T):            
             if names[i] == 'synthetic_stop_sign':
                 ax.plot(px, y, linewidth=2, label=f'{names[i]} {ap[i, 0]:.3f}', color='indigo', linestyle='--')  # plot(recall, precision)
                 if recall_per_class and precision_per_class:
                     ax.plot(recall_per_class[i], precision_per_class[i], linestyle='None', color='blueviolet', marker='o', alpha=0.2, markersize=3)
+                
+                numpy_filename = Path(save_dir_str) / (str(save_dir).split('.png')[0].split('/')[-1] + '_' + 'synthetic_stop_sign' + '.npy')
+                with open(numpy_filename, 'wb') as f:
+                    np.save(f, y)
             elif names[i] == 'octagon':
                 ax.plot(px, y, linewidth=2, label=f'{names[i]} {ap[i, 0]:.3f}', color='orangered', linestyle='--')  # plot(recall, precision)
                 if recall_per_class and precision_per_class:
                     ax.plot(recall_per_class[i], precision_per_class[i], linestyle='None', color='coral', marker='o', alpha=0.2, markersize=3)
+                
+                numpy_filename = Path(save_dir_str) / (str(save_dir).split('.png')[0].split('/')[-1] + '_' + 'octagon' + '.npy')
+                with open(numpy_filename, 'wb') as f:
+                    np.save(f, y)
             else:
                 ax.plot(px, y, linewidth=1, label=f'{names[i]} {ap[i, 0]:.3f}')  # plot(recall, precision)
     else:
@@ -361,7 +373,7 @@ def plot_pr_curve(px, py, ap, save_dir='pr_curve.png', names=(), recall_per_clas
     plt.close()
 
 
-def plot_mc_curve(px, py, save_dir='mc_curve.png', names=(), xlabel='Confidence', ylabel='Metric'):
+def plot_mc_curve(px, py, save_dir='mc_curve.png', names=(), xlabel='Confidence', ylabel='Metric', save_dir_str=None):
     # Metric-confidence curve
     fig, ax = plt.subplots(1, 1, figsize=(9, 6), tight_layout=True)
 
@@ -369,8 +381,18 @@ def plot_mc_curve(px, py, save_dir='mc_curve.png', names=(), xlabel='Confidence'
         for i, y in enumerate(py):
             if names[i] == 'synthetic_stop_sign':
                 ax.plot(px, y, label=f'{names[i]}', linewidth=2, linestyle='--', color='indigo')  # plot(confidence, metric)
+                
+                numpy_filename = Path(save_dir_str) / (str(save_dir).split('.png')[0].split('/')[-1] + '_' + 'synthetic_stop_sign' + '.npy')
+                print('filename', numpy_filename)
+                with open(numpy_filename, 'wb') as f:
+                    np.save(f, y)
             elif names[i] == 'octagon':
                 ax.plot(px, y, label=f'{names[i]}', linewidth=2, linestyle='--', color='orangered')  # plot(confidence, metric)
+                
+                numpy_filename = Path(save_dir_str) / (str(save_dir).split('.png')[0].split('/')[-1] + '_' + 'octagon' + '.npy')
+                print('filename', numpy_filename)
+                with open(numpy_filename, 'wb') as f:
+                    np.save(f, y)
             else:
                 ax.plot(px, y, linewidth=1, label=f'{names[i]}')  # plot(confidence, metric)
     else:

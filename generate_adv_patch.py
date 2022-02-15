@@ -69,9 +69,9 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
     attack_config = {
         'rp2_num_steps': 1000,
         'rp2_step_size': 1e-2,
-        'rp2_num_eot': 8,
+        'rp2_num_eot': 10,
         'rp2_optimizer': 'adam',
-        'rp2_lambda': 1,
+        'rp2_lambda': 0,
         'rp2_min_conf': 0.25,
         'input_size': img_size,
     }
@@ -119,8 +119,8 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
                 filename = path.split('/')[-1]
 
                 #TODO: remove 'if' statement below. only here for debugging
-                if filename == '8lkcFc59-2RgSU203mlYEQ.jpg':
-                    continue
+                # if filename == '8lkcFc59-2RgSU203mlYEQ.jpg':
+                #     continue
 
                 img_df = df[df['filename_y'] == filename]
                 if len(img_df) == 0:
@@ -137,10 +137,12 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
                     attack_images.append([im[image_i], [shape, predicted_class, row, h0, w0, h_ratio, w_ratio, w_pad, h_pad], str(filename)])
             if len(attack_images) > 10:
                 break
+        
+        for i in attack_images:
+            torchvision.utils.save_image(i[0]/255, f'tmp/{i[2]}.png')
 
         with torch.enable_grad():
             adv_patch = attack.transform_and_attack(attack_images, patch_mask=patch_mask, obj_class=obj_class)
-            # adv_patch = attack.transform_and_attack(attack_images, patch_dims=(h, w))
 
     adv_patch = adv_patch[0].detach().cpu().float()
 

@@ -389,6 +389,9 @@ def run(args,
                 filename = path.split('/')[-1]
                 img_df = df[df['filename_y'] == filename]
 
+                if filename not in ['36iNN_5lKC_CrOiFjmcF9w.jpg', 'SFhuI4R6dyCdgwFYmMeg7A.jpg', 'T0kvHFtwoqL3HH44FpBzOg.jpg', '_69EblZbqXUcjYKu7myKDg.jpg', 'U6RnrAjXMMBCX4SDEnUScQ.jpg', 'L5NvEU03Y-m2-yWSaqj3Kg.jpg', 'Q3eC_uZh20VujxdQ1ttzRA.jpg', 'Q6I4zxMM376kjtWRy27o3A.jpg', '8lkcFc59-2RgSU203mlYEQ.jpg', 'PCWhGiFuCVMfrfY7sE1h7g.jpg', 'P_WQcMdizCDIHm3VSYACLw.jpg']:
+                    continue
+
                 if len(img_df) == 0:
                     continue
                 # Apply patch on all of the signs on this image
@@ -403,8 +406,7 @@ def run(args,
                     num_octagon_with_patch += shape == 'octagon'
 
                     im[image_i] = transform_and_apply_patch(im[image_i], adv_patch, shape, predicted_class, row, h0, w0, h_ratio, w_ratio, w_pad, h_pad) * 255
-                    # im[image_i] = transform_and_apply_patch(im[image_i], adv_patch_cropped, shape, predicted_class, row, h0, w0, h_ratio, w_ratio, w_pad, h_pad) * 255
-                    print(im[image_i].shape)
+
             elif synthetic:
                 orig_shape = im[image_i].shape[1:]
                 resized_img = resize_transform(im[image_i])

@@ -221,12 +221,10 @@ class RP2AttackModule(DetectorAttackModule):
                 bg_idx = torch.randint(0, len(self.objs), size=(self.num_eot, ))
                 
                 adv_img = torch.FloatTensor().to(device)
-                adv_img = adv_img.to(device)
                 for idx in bg_idx:
                     data = self.objs[idx]
                     background = data[0]
                     shape, predicted_class, row, h0, w0, h_ratio, w_ratio, w_pad, h_pad = data[1]
-                    # curr_adv_img = transform_and_apply_patch(background, delta[0], shape, predicted_class, row, h0, w0, h_ratio, w_ratio, w_pad, h_pad) * 255
                     curr_adv_img = transform_and_apply_patch(background, delta[0], shape, predicted_class, row, h0, w0, h_ratio, w_ratio, w_pad, h_pad)
                     
                     # TODO: remove next 'if' condition. only for debugging
