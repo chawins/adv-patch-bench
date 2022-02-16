@@ -61,7 +61,7 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
 
     attack_config = {
         'rp2_num_steps': 3000,
-        'rp2_step_size': 1e-2,
+        'rp2_step_size': 1e-1,
         'rp2_num_eot': 8,
         'rp2_optimizer': 'adam',
         'rp2_lambda': 1,
@@ -158,10 +158,10 @@ def main(
     # Define patch location and size
     patch_mask = torch.zeros((1, ) + img_size)
     # Example: 10x10-inch patch in the middle of 36x36-inch sign
-    # mid_height = img_size[0] // 2 + 40
+    mid_height = img_size[0] // 2 + 40
     mid_height = img_size[0] // 2
     mid_width = img_size[1] // 2
-    patch_size = 20
+    patch_size = 10
     h = int(patch_size / 36 / 2 * obj_size[0])
     w = int(patch_size / 36 / 2 * obj_size[1])
     patch_mask[:, mid_height - h:mid_height + h, mid_width - w:mid_width + w] = 1

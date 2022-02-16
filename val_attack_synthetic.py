@@ -298,8 +298,8 @@ def run(args,
     for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
         # DEBUG
         num_samples += im.shape[0]
-        if batch_i == 20:
-            break
+        # if batch_i == 20:
+        #     break
         for image_i, path in enumerate(paths):
             if apply_patch and not synthetic:
                 filename = path.split('/')[-1]
@@ -323,8 +323,8 @@ def run(args,
                         shape, predicted_class, patch_width, patch_size_in_mm,
                         sign_size_in_pixel=obj_size)
 
-                    alpha = row['alpha']
-                    beta = row['beta']
+                    # alpha, beta = row['alpha'], row['beta']
+                    alpha, beta = 1, 0
                     patch_ = adv_patch.clone()
                     patch_.clamp_(0, 1).mul_(alpha).add_(beta).clamp_(0, 1)
                     sign_canonical[:-1, ymin:ymin + patch_height, xmin:xmin + patch_width] = patch_

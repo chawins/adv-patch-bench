@@ -30,19 +30,19 @@
 # --save-exp-metrics \
 # --apply-patch
 
-CUDA_VISIBLE_DEVICES=0 python -u generate_adv_patch.py \
-    --seed 0 \
-    --weights /data/shared/adv-patch-bench/yolov5/runs/train/exp2/weights/best.pt \
-    --patch-name stop_sign_v1 \
-    --imgsz 1280 \
-    --obj-class 14 \
-    --obj-size 128 \
-    --obj-path attack_assets/octagon-915.0.png \
-    --num-bg 50 \
-    --bg-dir /data/shared/mtsd_v2_fully_annotated/train \
-    --save-images
+# CUDA_VISIBLE_DEVICES=0 python -u generate_adv_patch.py \
+#     --seed 0 \
+#     --weights /data/shared/adv-patch-bench/yolov5/runs/train/exp2/weights/best.pt \
+#     --patch-name stop_sign_v1 \
+#     --imgsz 1280 \
+#     --obj-class 14 \
+#     --obj-size 128 \
+#     --obj-path attack_assets/octagon-915.0.png \
+#     --num-bg 50 \
+#     --bg-dir /data/shared/mtsd_v2_fully_annotated/val \
+#     --save-images
 
-CUDA_VISIBLE_DEVICES=0 python -u val_attack_synthetic.py \
+CUDA_VISIBLE_DEVICES=1 python -u val_attack_synthetic.py \
     --img 1280 \
     --batch-size 8 \
     --data mapillary_vistas.yaml \
@@ -53,9 +53,9 @@ CUDA_VISIBLE_DEVICES=0 python -u val_attack_synthetic.py \
     --save-exp-metrics \
     --plot-octagons \
     --apply-patch \
-    --load-patch ./runs/val/exp37/stop_sign_v1.pkl \
+    --load-patch ./runs/val/exp41/stop_sign_v1.pkl \
     --obj-size 128 \
-    --patch-loc 29,29 \
+    --patch-loc 87,47 \
     --patch-size-mm 254.17 
     
 # CUDA_VISIBLE_DEVICES=0 python val_attack_synthetic.py \

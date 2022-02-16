@@ -26,6 +26,8 @@ class RP2AttackModule(DetectorAttackModule):
         self.num_restarts = 1
 
         self.bg_transforms = K.RandomResizedCrop(self.input_size, p=1.0)
+        self.obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True)
+        self.mask_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, resample=Resample.NEAREST)
         # self.obj_transforms = K.container.AugmentationSequential(
         #     K.RandomAffine(30, translate=(0.5, 0.5)),      # Only translate and rotate as in Eykholt et al.
         #     # RandomAffine(30, translate=(0.5, 0.5), scale=(0.25, 4), shear=(0.1, 0.1), p=1.0),
@@ -35,8 +37,6 @@ class RP2AttackModule(DetectorAttackModule):
         # self.mask_transforms = K.container.AugmentationSequential(
         #     K.RandomAffine(30, translate=(0.5, 0.5), resample=Resample.NEAREST),
         # )
-        self.obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True)
-        self.mask_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, resample=Resample.NEAREST)
 
     def attack(self,
                obj: torch.Tensor,
@@ -51,6 +51,8 @@ class RP2AttackModule(DetectorAttackModule):
             obj_mask (torch.Tesnor): Mask of object, must have shape [1, H, W]
             patch_mask (torch.Tesnor): Mask of the patch, must have shape [1, H, W]
             backgrounds (torch.Tesnor): Background images, shape [N, C, H, W]
+            obj_class (int): Class of object to attack. If None, attack all
+                classes (default: None).
 
         Returns:
             torch.Tensor: Adversarial patch with shape [C, H, W]
@@ -118,7 +120,8 @@ class RP2AttackModule(DetectorAttackModule):
 
                     # Use YOLOv5 default values
                     # nms_out = non_max_suppression(out, conf_thres=0.001, iou_thres=0.6)
-                    loss = 0
+                    conf_loss = 0
+                    # TODO: vectorize this
                     for i, det in enumerate(out):
                         # Confidence = obj_conf * cls_conf
                         conf = det[:, 4:5] * det[:, 5:]
@@ -130,13 +133,13 @@ class RP2AttackModule(DetectorAttackModule):
                         if conf.size(0) > 0:
                             # Select prediction from box with max confidence
                             # and ignore ones with already low confidence
-                            loss += conf.max().clamp_min(self.min_conf)
+                            conf_loss += conf.max().clamp_min(self.min_conf)
 
-                    loss /= self.num_eot
+                    conf_loss /= self.num_eot
                     tv = ((delta[:, :, :-1, :] - delta[:, :, 1:, :]).abs().mean() +
                           (delta[:, :, :, :-1] - delta[:, :, :, 1:]).abs().mean())
                     # loss = out[:, :, 4].mean() + self.lmbda * tv
-                    loss += self.lmbda * tv
+                    loss = conf_loss + self.lmbda * tv
                     loss.backward(retain_graph=True)
                     opt.step()
                     # lr_schedule.step(loss)
@@ -146,7 +149,8 @@ class RP2AttackModule(DetectorAttackModule):
                     else:
                         ema_loss = ema_const * ema_loss + (1 - ema_const) * loss.item()
                     if step % 100 == 0:
-                        print(f'step: {step}   loss: {ema_loss:.6f}')
+                        print(f'step: {step:4d} | loss: {loss:.4f} (conf/tv: '
+                              f'{conf_loss:.4f}/{tv:.4f}), ema loss: {ema_loss:.4f}')
 
                     # if self.num_restarts == 1:
                     #     x_adv_worst = x_adv
