@@ -240,9 +240,9 @@ def main(
     patch_mask = torch.zeros((1, ) + img_size)
     # Example: 10x10-inch patch in the middle of 36x36-inch sign
     # mid_height = img_size[0] // 2 + 40
-    mid_height = img_size[0] // 2
+    mid_height = img_size[0] // 2 + 40
     mid_width = img_size[1] // 2
-    patch_size = 20
+    patch_size = 10
     h = int(patch_size / 36 / 2 * obj_size[0])
     w = int(patch_size / 36 / 2 * obj_size[1])
     patch_mask[:, mid_height - h:mid_height + h, mid_width - w:mid_width + w] = 1

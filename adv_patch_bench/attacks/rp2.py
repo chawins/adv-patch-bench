@@ -115,79 +115,63 @@ class RP2AttackModule(DetectorAttackModule):
 
                     self.obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True)
                     
-
-                    synthetic_sign_size = 127
-                    old_ratio = synthetic_sign_size/960
-                    prob_array = [0.38879158, 0.26970227, 0.16462349, 0.07530647, 0.04378284, 0.03327496, 0.01050788, 0.00700525, 0.00350263, 0.00350263]
-                    # new_possible_sizes = [63.0220832824707, 110.45516967773438, 157.88824462890625, 205.32131958007812, 252.75440979003906, 300.1875, 347.62054443359375, 395.05364990234375, 442.48675537109375, 489.9197998046875]
-                    new_possible_ratios = [0.06868837028741837, 0.12278514355421066, 0.17688190937042236, 0.23097868263721466, 0.28507545590400696, 0.33917221426963806, 0.39326900243759155, 0.44736576080322266, 0.5014625191688538, 0.5555592775344849]
-                    new_synthetic_sign_ratio = np.random.choice(new_possible_ratios, None, p=prob_array)
                     
-                    old_ratio
-                    new_synthetic_sign_ratio
-                    print(new_synthetic_sign_ratio)
-                    print(old_ratio)
-                    print(self.input_size)
-                    # new_size = self.input_size * new_synthetic_sign_ratio / old_ratio
-                    new_size = (int(self.input_size[0] * new_synthetic_sign_ratio / old_ratio), int(self.input_size[1] * new_synthetic_sign_ratio / old_ratio))
-                    print(new_size)
-                    # qqq
-                    self.resize_transforms = T.Resize(size=new_size)
+                    indices = np.where(obj_mask.cpu()[0] > 0)
+                    x_min, x_max = min(indices[1]), max(indices[1])
+                    y_min, y_max = min(indices[0]), max(indices[0])
+                    # synthetic_sign_height = y_max - y_min
+                    # synthetic_sign_width = x_max - x_min
+                    synthetic_sign_size = x_max - x_min
+
+
+                    old_ratio = synthetic_sign_size/960
+                    # 736, 1312
+                    prob_array = [0.38879158, 0.26970227, 0.16462349, 0.07530647, 0.04378284, 0.03327496, 0.01050788, 0.00700525, 0.00350263, 0.00350263]
+                    new_possible_ratios = [0.05340427, 0.11785139, 0.18229851, 0.24674563, 0.31119275, 0.3756399, 0.440087, 0.5045341 , 0.56898123, 0.6334284, 0.6978755 ]
+                    index_array = np.arange(0, len(new_possible_ratios)-1)
+                    sampled_index = np.random.choice(index_array, None, p=prob_array)
+                    low_bin_edge, high_bin_edge = new_possible_ratios[sampled_index], new_possible_ratios[sampled_index+1]
+                    self.obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True, scale=(low_bin_edge/old_ratio, high_bin_edge/old_ratio))
+                    
+                    # new_size = (int(self.input_size[0] * new_synthetic_sign_ratio / old_ratio), int(self.input_size[1] * new_synthetic_sign_ratio / old_ratio))
+                    # self.resize_transforms = T.Resize(size=new_size)
 
                     # Apply random transformations
                     patch_full[:, ymin:ymin + height, xmin:xmin + width] = delta
                     adv_obj = patch_mask * patch_full + (1 - patch_mask) * obj
                     
-                    # pad_height, pad_width = adv_obj.shape[1] - 400, adv_obj.shape[2] - 533
-                    pad_height, pad_width = adv_obj.shape[1] - new_size[0], adv_obj.shape[2] - new_size[1]
-                    pad_left = pad_width//2
-                    pad_right = pad_width//2 + pad_width % 2
-                    pad_top = pad_height//2
-                    pad_bottom = pad_height//2 + pad_height % 2
-                    adv_obj = self.resize_transforms(adv_obj)                    
-                    adv_obj = F.pad(adv_obj, pad=(pad_left, pad_right, pad_top, pad_bottom))
-                    
                     adv_obj = adv_obj.expand(self.num_eot, -1, -1, -1)
                     adv_obj, tf_params = self.obj_transforms(adv_obj)
-                    adv_obj = adv_obj.clamp(0, 1)
-                    torchvision.utils.save_image(obj_mask_dup, 'tmp/synthetic/test_mask.png')
-                    
-                    obj_mask_dup = self.resize_transforms(obj_mask_dup)
-                    torchvision.utils.save_image(obj_mask_dup, 'tmp/synthetic/test_mask_resized.png')
-                    qqq
-                    obj_mask_dup = F.pad(obj_mask_dup, pad=(pad_left, pad_right, pad_top, pad_bottom))
+                    adv_obj = adv_obj.clamp(0, 1)                    
 
                     o_mask = self.mask_transforms.apply_transform(
                         obj_mask_dup, None, transform=tf_params)
                     adv_img = o_mask * adv_obj + (1 - o_mask) * bgs
+                    # Patch image the same way as YOLO
                     adv_img = letterbox(adv_img, new_shape=self.input_size[1])[0]
 
-                    torchvision.utils.save_image(adv_img[0], f'tmp/synthetic/test_synthetic_adv_img_{step}.png')
-
-                    print(adv_img.shape)
+                    # torchvision.utils.save_image(adv_img[0], f'tmp/synthetic/test_synthetic_adv_img_rescale_{step}.png')
+                    # print(adv_img.shape)
 
                     # Compute logits, loss, gradients
                     out, _ = self.core_model(adv_img, val=True)
-
-                    # Use YOLOv5 default values
-                    # nms_out = non_max_suppression(out, conf_thres=0.001, iou_thres=0.6)
-                    loss = 0
-                    for i, det in enumerate(out):
-                        # Confidence = obj_conf * cls_conf
-                        conf = det[:, 4:5] * det[:, 5:]
-                        # Get predicted class
-                        conf, labels = conf.max(1)
-                        # Select only desired class if specified
-                        if obj_class is not None:
-                            conf = conf[labels == obj_class]
-                        if conf.size(0) > 0:
-                            # Select prediction from box with max confidence
-                            # and ignore ones with already low confidence
-                            loss += conf.max().clamp_min(self.min_conf)
+                    conf = out[:, :, 4:5] * out[:, :, 5:]
+                    conf, labels = conf.max(-1)
+                    if obj_class is not None:
+                        loss = 0
+                        for c, l in zip(conf, labels):
+                            c_l = c[l == obj_class]
+                            if c_l.size(0) > 0:
+                                # Select prediction from box with max confidence and ignore
+                                # ones with already low confidence
+                                loss += c_l.max().clamp_min(self.min_conf)
+                        loss /= self.num_eot
+                    else:
+                        loss = conf.max(1)[0].clamp_min(self.min_conf).mean()
 
                     loss /= self.num_eot
                     tv = ((delta[:, :, :-1, :] - delta[:, :, 1:, :]).abs().mean() +
-                          (delta[:, :, :, :-1] - delta[:, :, :, 1:]).abs().mean())
+                        (delta[:, :, :, :-1] - delta[:, :, :, 1:]).abs().mean())
                     # loss = out[:, :, 4].mean() + self.lmbda * tv
                     loss += self.lmbda * tv
                     loss.backward(retain_graph=True)
