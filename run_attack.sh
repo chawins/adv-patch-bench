@@ -59,7 +59,7 @@ CUDA_VISIBLE_DEVICES=0 python -u generate_adv_patch.py \
     --obj-class 14 \
     --obj-size 128 \
     --obj-path attack_assets/octagon-915.0.png \
-    --num-bg 50 \
+    --num-bg 10 \
     --bg-dir /data/shared/mtsd_v2_fully_annotated/train \
     --save-images \
     --generate_patch synthetic
