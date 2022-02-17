@@ -99,7 +99,9 @@ def process_batch(detections, labels, iouv):
         correct[matches[:, 1].long()] = matches[:, 2:3] >= iouv
     return correct
 
-def transform_and_apply_patch(image, adv_patch_cropped, shape, predicted_class, row, h0, w0, h_ratio, w_ratio, w_pad, h_pad):
+
+def transform_and_apply_patch(image, adv_patch_cropped, shape, predicted_class,
+                              row, h0, w0, h_ratio, w_ratio, w_pad, h_pad):
     # print('shape', adv_patch_cropped.shape)
     # qqq
     patch_size_in_pixel = adv_patch_cropped.shape[1]
@@ -159,7 +161,7 @@ def transform_and_apply_patch(image, adv_patch_cropped, shape, predicted_class, 
     # moving patch
     sign_height = max(tgt[:, 1]) - min(tgt[:, 1])
     tgt[:, 1] += sign_height * 0.3
-    
+
     if len(src) == 3:
         M = torch.from_numpy(getAffineTransform(src, tgt)).unsqueeze(0).float()
         transform_func = warp_affine
@@ -171,9 +173,9 @@ def transform_and_apply_patch(image, adv_patch_cropped, shape, predicted_class, 
 
     cur_shape = image.shape[1:]
     warped_patch = transform_func(sign_canonical.unsqueeze(0),
-                                M, cur_shape,
-                                mode='bicubic',
-                                padding_mode='zeros')[0]
+                                  M, cur_shape,
+                                  mode='bicubic',
+                                  padding_mode='zeros')[0]
     warped_patch.clamp_(0, 1)
     alpha_mask = warped_patch[-1].unsqueeze(0)
 
@@ -307,7 +309,7 @@ def run(args,
         patch_height, patch_width = adv_patch.shape[1:]
 
         # print(adv_patch.shape)
-        
+
         if load_patch == 'arrow':
             # Load 'arrow on checkboard' patch if specified
             adv_patch = torchvision.io.read_image('demo.png').float()[:3, :, :] / 255
@@ -389,7 +391,12 @@ def run(args,
                 filename = path.split('/')[-1]
                 img_df = df[df['filename_y'] == filename]
 
-                if filename not in ['36iNN_5lKC_CrOiFjmcF9w.jpg', 'SFhuI4R6dyCdgwFYmMeg7A.jpg', 'T0kvHFtwoqL3HH44FpBzOg.jpg', '_69EblZbqXUcjYKu7myKDg.jpg', 'U6RnrAjXMMBCX4SDEnUScQ.jpg', 'L5NvEU03Y-m2-yWSaqj3Kg.jpg', 'Q3eC_uZh20VujxdQ1ttzRA.jpg', 'Q6I4zxMM376kjtWRy27o3A.jpg', '8lkcFc59-2RgSU203mlYEQ.jpg', 'PCWhGiFuCVMfrfY7sE1h7g.jpg', 'P_WQcMdizCDIHm3VSYACLw.jpg']:
+                if filename not in ['36iNN_5lKC_CrOiFjmcF9w.jpg', 'SFhuI4R6dyCdgwFYmMeg7A.jpg',
+                                    'T0kvHFtwoqL3HH44FpBzOg.jpg', '_69EblZbqXUcjYKu7myKDg.jpg',
+                                    'U6RnrAjXMMBCX4SDEnUScQ.jpg', 'L5NvEU03Y-m2-yWSaqj3Kg.jpg',
+                                    'Q3eC_uZh20VujxdQ1ttzRA.jpg', 'Q6I4zxMM376kjtWRy27o3A.jpg',
+                                    '8lkcFc59-2RgSU203mlYEQ.jpg', 'PCWhGiFuCVMfrfY7sE1h7g.jpg',
+                                    'P_WQcMdizCDIHm3VSYACLw.jpg']:
                     continue
 
                 if len(img_df) == 0:
@@ -405,7 +412,9 @@ def run(args,
                         continue
                     num_octagon_with_patch += shape == 'octagon'
 
-                    im[image_i] = transform_and_apply_patch(im[image_i], adv_patch, shape, predicted_class, row, h0, w0, h_ratio, w_ratio, w_pad, h_pad) * 255
+                    im[image_i] = transform_and_apply_patch(
+                        im[image_i],
+                        adv_patch, shape, predicted_class, row, h0, w0, h_ratio, w_ratio, w_pad, h_pad) * 255
 
             elif synthetic:
                 orig_shape = im[image_i].shape[1:]
