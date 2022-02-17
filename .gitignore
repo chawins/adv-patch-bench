@@ -137,3 +137,4 @@ mapillaryvistas_plots/
 figures/
 *.jpg
 runs/*
+tmp*
