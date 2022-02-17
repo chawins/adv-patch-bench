@@ -155,7 +155,7 @@ def transform_and_apply_patch(image, adv_patch_cropped, shape, predicted_class, 
         # Order of coordinate in tgt is inverted, i.e., (x, y) instead of (y, x)
         tgt[:, 1] = (tgt[:, 1] + y_min) * h_ratio + h_pad
         tgt[:, 0] = (tgt[:, 0] + x_min) * w_ratio + w_pad
-
+    
     # moving patch
     sign_height = max(tgt[:, 1]) - min(tgt[:, 1])
     tgt[:, 1] += sign_height * 0.3
@@ -223,6 +223,7 @@ def run(args,
     ymin, xmin = tuple([int(x) for x in args.patch_loc.split(',')])
     patch_size_in_mm = args.patch_size_mm
     obj_size = args.obj_size
+    targets_images = args.targets_images
 
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
@@ -378,19 +379,22 @@ def run(args,
     if plot_octagons:
         shape_to_plot_data = {}
         shape_to_plot_data['octagon'] = []
-    num_samples = 0
+    # num_samples = 0
+
+    # TODO: delete next line. only for debugging
+    total_images_processed = 0
     for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
+        filenames = [p.split('/')[-1] for p in paths]
         # DEBUG
-        num_samples += im.shape[0]
-        # if batch_i == 20:
-        #     break
+        # num_samples += im.shape[0]
+
+        if targets_images:
+            targets_indices = [index for index, p in enumerate(filenames) if (p in targets_images)]
+
         for image_i, path in enumerate(paths):
             if apply_patch and not synthetic:
                 filename = path.split('/')[-1]
                 img_df = df[df['filename_y'] == filename]
-
-                if filename not in ['36iNN_5lKC_CrOiFjmcF9w.jpg', 'SFhuI4R6dyCdgwFYmMeg7A.jpg', 'T0kvHFtwoqL3HH44FpBzOg.jpg', '_69EblZbqXUcjYKu7myKDg.jpg', 'U6RnrAjXMMBCX4SDEnUScQ.jpg', 'L5NvEU03Y-m2-yWSaqj3Kg.jpg', 'Q3eC_uZh20VujxdQ1ttzRA.jpg', 'Q6I4zxMM376kjtWRy27o3A.jpg', '8lkcFc59-2RgSU203mlYEQ.jpg', 'PCWhGiFuCVMfrfY7sE1h7g.jpg', 'P_WQcMdizCDIHm3VSYACLw.jpg']:
-                    continue
 
                 if len(img_df) == 0:
                     continue
@@ -403,6 +407,7 @@ def run(args,
                     # only apply patch to octagons
                     if shape != 'octagon':
                         continue
+
                     num_octagon_with_patch += shape == 'octagon'
 
                     im[image_i] = transform_and_apply_patch(im[image_i], adv_patch, shape, predicted_class, row, h0, w0, h_ratio, w_ratio, w_pad, h_pad) * 255
@@ -444,12 +449,20 @@ def run(args,
                 reresize_transform = torchvision.transforms.Resize(size=orig_shape)
                 im[image_i] = reresize_transform(adv_img) * 255
 
-            # qqq
-            # DEBUG
-            # pdb.set_trace()
+        if targets_indices:
+            im = torch.index_select(im, 0, torch.tensor(targets_indices))
+            
+            selected_targets_indices = []
+            for i, tgt in enumerate(targets):
+                if tgt[0] in targets_indices:
+                    selected_targets_indices.append(i)
+            targets = torch.index_select(targets, 0, torch.tensor(selected_targets_indices))
+        else:
+            pass
 
-        im = im[:num_samples]
-        targets = targets[:num_samples]
+        # total_images_processed += len(im)
+        # if total_images_processed > 1:
+        #     qqq
 
         # continue
 
@@ -780,11 +793,15 @@ def parse_opt():
     parser.add_argument('--patch-size-mm', type=float, default=250, help='patch width in millimeter')
     parser.add_argument('--obj-size', type=int, default=128, help='width of the object in pixels')
 
+    parser.add_argument('--targets_images','--list', nargs='+', help='<Required> Set flag', required=False)
+
+
     opt = parser.parse_args()
     opt.data = check_yaml(opt.data)  # check YAML
     opt.save_json |= opt.data.endswith('coco.yaml')
     opt.save_txt |= opt.save_hybrid
     print_args(FILE.stem, opt)
+
     return opt
 
 

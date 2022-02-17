@@ -1,4 +1,5 @@
 import os
+import numpy as np
 import torch
 import torch.optim as optim
 from kornia import augmentation as K
@@ -10,6 +11,10 @@ from ..utils.image import letterbox, mask_to_box
 from .base_detector import DetectorAttackModule
 import torchvision
 from val_attack_synthetic import transform_and_apply_patch
+                    
+import torchvision.transforms as T
+import torch.nn.functional as F
+
 
 EPS = 1e-6
 
@@ -102,22 +107,36 @@ class RP2AttackModule(DetectorAttackModule):
                     bgs = backgrounds[bg_idx]
                     bgs = self.bg_transforms(bgs)
 
+                    self.obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True)
+                    
+                    self.resize_transforms = T.Resize(size=400)
+                    synthetic_sign_size = 127
+                    prob_array = [0.38879158, 0.26970227, 0.16462349, 0.07530647, 0.04378284, 0.03327496, 0.01050788, 0.00700525, 0.00350263, 0.00350263]
+                    new_possible_sizes = [63.0220832824707, 110.45516967773438, 157.88824462890625, 205.32131958007812, 252.75440979003906, 300.1875, 347.62054443359375, 395.05364990234375, 442.48675537109375, 489.9197998046875]
+                    new_synthetic_sign_size = np.random.choice(new_possible_sizes, None, p=prob_array)
+                    
                     # Apply random transformations
                     patch_full[:, ymin:ymin + height, xmin:xmin + width] = delta
                     adv_obj = patch_mask * patch_full + (1 - patch_mask) * obj
+                    
+                    pad_height, pad_width = adv_obj.shape[1] - 400, adv_obj.shape[2] - 533
+                    pad_left = pad_width//2
+                    pad_right = pad_width//2 + pad_width % 2
+                    pad_top = pad_height//2
+                    pad_bottom = pad_height//2 + pad_height % 2
+                    adv_obj = self.resize_transforms(adv_obj)                    
+                    adv_obj = F.pad(adv_obj, pad=(pad_left, pad_right, pad_top, pad_bottom))
+                    
                     adv_obj = adv_obj.expand(self.num_eot, -1, -1, -1)
                     adv_obj, tf_params = self.obj_transforms(adv_obj)
                     adv_obj = adv_obj.clamp(0, 1)
+                    obj_mask_dup = self.resize_transforms(obj_mask_dup)
+                    obj_mask_dup = F.pad(obj_mask_dup, pad=(pad_left, pad_right, pad_top, pad_bottom))
 
                     o_mask = self.mask_transforms.apply_transform(
                         obj_mask_dup, None, transform=tf_params)
                     adv_img = o_mask * adv_obj + (1 - o_mask) * bgs
-                    # Patch image the same way as YOLO
                     adv_img = letterbox(adv_img, new_shape=self.input_size[1])[0]
-
-                    # print(max(adv_img[0][0][0]))
-                    # print(max(adv_img[0][0][1]))
-                    # qqq
 
                     # Compute logits, loss, gradients
                     out, _ = self.core_model(adv_img, val=True)
