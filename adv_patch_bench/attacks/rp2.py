@@ -100,76 +100,68 @@ class RP2AttackModule(DetectorAttackModule):
                 threshold=1e-9, min_lr=self.step_size * 1e-6, verbose=True)
 
             # Run PGD on inputs for specified number of steps
-            with torch.autograd.set_detect_anomaly(True):
-                for step in range(self.num_steps):
-                    z_delta.requires_grad_()
-                    delta = self._to_model_space(z_delta, 0, 1)
+            for step in range(self.num_steps):
+                z_delta.requires_grad_()
+                delta = self._to_model_space(z_delta, 0, 1)
 
-                    # Randomly select background and apply transforms (crop and scale)
-                    bg_idx = torch.randint(0, len(backgrounds), size=(self.num_eot, ))
-                    bgs = backgrounds[bg_idx]
-                    bgs = self.bg_transforms(bgs)
+                # Randomly select background and apply transforms (crop and scale)
+                bg_idx = torch.randint(0, len(backgrounds), size=(self.num_eot, ))
+                bgs = backgrounds[bg_idx]
+                bgs = self.bg_transforms(bgs)
 
-                    # Apply random transformations
-                    patch_full[:, ymin:ymin + height, xmin:xmin + width] = delta
-                    adv_obj = patch_mask * patch_full + (1 - patch_mask) * obj
-                    adv_obj = adv_obj.expand(self.num_eot, -1, -1, -1)
-                    adv_obj, tf_params = self.obj_transforms(adv_obj)
-                    adv_obj = adv_obj.clamp(0, 1)
+                # Apply random transformations
+                patch_full[:, ymin:ymin + height, xmin:xmin + width] = delta
+                adv_obj = patch_mask * patch_full + (1 - patch_mask) * obj
+                adv_obj = adv_obj.expand(self.num_eot, -1, -1, -1)
+                adv_obj, tf_params = self.obj_transforms(adv_obj)
+                adv_obj = adv_obj.clamp(0, 1)
 
-                    o_mask = self.mask_transforms.apply_transform(
-                        obj_mask_dup, None, transform=tf_params)
-                    adv_img = o_mask * adv_obj + (1 - o_mask) * bgs
-                    # Patch image the same way as YOLO
-                    adv_img = letterbox(adv_img, new_shape=self.input_size[1])[0]
+                o_mask = self.mask_transforms.apply_transform(
+                    obj_mask_dup, None, transform=tf_params)
+                adv_img = o_mask * adv_obj + (1 - o_mask) * bgs
+                # Patch image the same way as YOLO
+                adv_img = letterbox(adv_img, new_shape=self.input_size[1])[0]
 
-                    # print(max(adv_img[0][0][0]))
-                    # print(max(adv_img[0][0][1]))
-                    # qqq
-
-                    # Compute logits, loss, gradients
-                    out, _ = self.core_model(adv_img, val=True)
-
-                    # Use YOLOv5 default values
-                    # nms_out = non_max_suppression(out, conf_thres=0.001, iou_thres=0.6)
+                # Compute logits, loss, gradients
+                out, _ = self.core_model(adv_img, val=True)
+                conf = out[:, :, 4:5] * out[:, :, 5:]
+                conf, labels = conf.max(-1)
+                if obj_class is not None:
                     loss = 0
-                    for i, det in enumerate(out):
-                        # Confidence = obj_conf * cls_conf
-                        conf = det[:, 4:5] * det[:, 5:]
-                        # Get predicted class
-                        conf, labels = conf.max(1)
-                        # Select only desired class if specified
-                        if obj_class is not None:
-                            conf = conf[labels == obj_class]
-                        if conf.size(0) > 0:
-                            # Select prediction from box with max confidence
-                            # and ignore ones with already low confidence
-                            loss += conf.max().clamp_min(self.min_conf)
-
+                    for c, l in zip(conf, labels):
+                        c_l = c[l == obj_class]
+                        if c_l.size(0) > 0:
+                            # Select prediction from box with max confidence and ignore
+                            # ones with already low confidence
+                            loss += c_l.max().clamp_min(self.min_conf)
                     loss /= self.num_eot
-                    tv = ((delta[:, :, :-1, :] - delta[:, :, 1:, :]).abs().mean() +
-                          (delta[:, :, :, :-1] - delta[:, :, :, 1:]).abs().mean())
-                    # loss = out[:, :, 4].mean() + self.lmbda * tv
-                    loss += self.lmbda * tv
-                    loss.backward(retain_graph=True)
-                    opt.step()
-                    # lr_schedule.step(loss)
+                else:
+                    loss = conf.max(1)[0].clamp_min(self.min_conf).mean()
 
-                    if ema_loss is None:
-                        ema_loss = loss.item()
-                    else:
-                        ema_loss = ema_const * ema_loss + (1 - ema_const) * loss.item()
-                    if step % 100 == 0:
-                        print(f'step: {step}   loss: {ema_loss:.6f}')
+                loss /= self.num_eot
+                tv = ((delta[:, :, :-1, :] - delta[:, :, 1:, :]).abs().mean() +
+                      (delta[:, :, :, :-1] - delta[:, :, :, 1:]).abs().mean())
+                # loss = out[:, :, 4].mean() + self.lmbda * tv
+                loss += self.lmbda * tv
+                loss.backward(retain_graph=True)
+                opt.step()
+                # lr_schedule.step(loss)
 
-                    # if self.num_restarts == 1:
-                    #     x_adv_worst = x_adv
-                    # else:
-                    #     # Update worst-case inputs with itemized final losses
-                    #     fin_losses = self.loss_fn(self.core_model(x_adv), y).reshape(worst_losses.shape)
-                    #     up_mask = (fin_losses >= worst_losses).float()
-                    #     x_adv_worst = x_adv * up_mask + x_adv_worst * (1 - up_mask)
-                    #     worst_losses = fin_losses * up_mask + worst_losses * (1 - up_mask)
+                if ema_loss is None:
+                    ema_loss = loss.item()
+                else:
+                    ema_loss = ema_const * ema_loss + (1 - ema_const) * loss.item()
+                if step % 100 == 0:
+                    print(f'step: {step}   loss: {ema_loss:.6f}')
+
+                # if self.num_restarts == 1:
+                #     x_adv_worst = x_adv
+                # else:
+                #     # Update worst-case inputs with itemized final losses
+                #     fin_losses = self.loss_fn(self.core_model(x_adv), y).reshape(worst_losses.shape)
+                #     up_mask = (fin_losses >= worst_losses).float()
+                #     x_adv_worst = x_adv * up_mask + x_adv_worst * (1 - up_mask)
+                #     worst_losses = fin_losses * up_mask + worst_losses * (1 - up_mask)
 
         # DEBUG
         # outt = non_max_suppression(out.detach(), conf_thres=0.25, iou_thres=0.6)
