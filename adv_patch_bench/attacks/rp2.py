@@ -105,6 +105,7 @@ class RP2AttackModule(DetectorAttackModule):
                 delta = self._to_model_space(z_delta, 0, 1)
 
                 # Randomly select background and apply transforms (crop and scale)
+                # FIXME
                 bg_idx = torch.randint(0, len(backgrounds), size=(self.num_eot, ))
                 bgs = backgrounds[bg_idx]
                 bgs = self.bg_transforms(bgs)
@@ -183,19 +184,18 @@ class RP2AttackModule(DetectorAttackModule):
         mode = self.core_model.training
         self.core_model.eval()
         self.objs = objs
-        device = 'cuda:0'
         resize_transform = torchvision.transforms.Resize(size=self.input_size)
         ymin, xmin, height, width = mask_to_box(patch_mask)
+        patch_loc = (ymin, xmin, height, width)
 
-        # ema_const = 0.99
-        ema_const = 0
+        ema_const = 0.99
         ema_loss = None
 
-        # Process transform data
-        delta_temp = torch.zeros((3, height, width), device=device, dtype=torch.float32)
+        # Process transform data and create batch tensors
+        sign_size_in_pixel = patch_mask.size(-1)
         # Assume that every signs use the same transform function (len(tgt) = 4)
-        tf_function = get_transform(delta_temp, *objs[0][1])[0]
-        tf_data_temp = [get_transform(delta_temp, *obj[1])[1:] for obj in objs]
+        tf_function = get_transform(sign_size_in_pixel, *objs[0][1])[0]
+        tf_data_temp = [get_transform(sign_size_in_pixel, *obj[1])[1:] for obj in objs]
         tf_data = []
         for i in range(5):
             data_i = []
@@ -236,8 +236,7 @@ class RP2AttackModule(DetectorAttackModule):
 
                 curr_tf_data = [data[bg_idx] for data in tf_data]
                 delta = delta.repeat(self.num_eot, 1, 1, 1)
-                adv_img = apply_transform(
-                    backgrounds[bg_idx], delta, tf_function, *curr_tf_data)
+                adv_img = apply_transform(backgrounds[bg_idx], delta, patch_mask, patch_loc, tf_function, curr_tf_data)
                 adv_img = resize_transform(adv_img)
 
                 # Compute logits, loss, gradients
@@ -272,11 +271,11 @@ class RP2AttackModule(DetectorAttackModule):
                     print(f'step: {step:4d}   loss: {ema_loss:.4f}   time: {time.time() - start_time:.2f}s')
                     start_time = time.time()
                     # DEBUG
-                    # import os
-                    # for idx in range(self.num_eot):
-                    #     if not os.path.exists(f'tmp/{idx}/test_adv_img_{step}.png'):
-                    #         os.makedirs(f'tmp/{idx}/', exist_ok=True)
-                    #     torchvision.utils.save_image(adv_img[idx], f'tmp/{idx}/test_adv_img_{step}.png')
+                    import os
+                    for idx in range(self.num_eot):
+                        if not os.path.exists(f'tmp/{idx}/test_adv_img_{step}.png'):
+                            os.makedirs(f'tmp/{idx}/', exist_ok=True)
+                        torchvision.utils.save_image(adv_img[idx], f'tmp/{idx}/test_adv_img_{step}.png')
 
         # DEBUG
         outt = non_max_suppression(out.detach(), conf_thres=0.25, iou_thres=0.45)
@@ -311,13 +310,11 @@ class RP2AttackModule(DetectorAttackModule):
         return x
 
 
-def get_transform(adv_patch_cropped, shape, predicted_class, row, h0, w0,
+def get_transform(sign_size_in_pixel, shape, predicted_class, row, h0, w0,
                   h_ratio, w_ratio, w_pad, h_pad):
     # TODO: This should directly come from patch mask
-    patch_size_in_pixel = adv_patch_cropped.shape[1]
-    patch_size_in_mm = 250
     sign_canonical, sign_mask, src = get_sign_canonical(
-        shape, predicted_class, patch_size_in_pixel, patch_size_in_mm)
+        shape, predicted_class, None, None, sign_size_in_pixel=sign_size_in_pixel)
     alpha = torch.tensor(row['alpha'])
     beta = torch.tensor(row['beta'])
 
@@ -340,10 +337,6 @@ def get_transform(adv_patch_cropped, shape, predicted_class, row, h0, w0,
         tgt[:, 0] = (tgt[:, 0] + x_min) * w_ratio + w_pad
 
     src = np.array(src, dtype=np.float32)
-    # TODO: moving patch
-    # sign_height = max(tgt[:, 1]) - min(tgt[:, 1])
-    # tgt[:, 1] += sign_height * 0.3
-
     if len(src) == 3:
         M = torch.from_numpy(getAffineTransform(src, tgt)).unsqueeze(0).float()
         transform_func = warp_affine
@@ -356,20 +349,13 @@ def get_transform(adv_patch_cropped, shape, predicted_class, row, h0, w0,
     return transform_func, sign_canonical, sign_mask, M.squeeze(), alpha, beta
 
 
-def apply_transform(image, adv_patch, transform_func, sign_canonical, sign_mask,
-                    M, alpha, beta):
-    batch_size, _, patch_size_in_pixel, _ = adv_patch.shape
+def apply_transform(image, adv_patch, patch_mask, patch_loc, transform_func, tf_data):
+    ymin, xmin, height, width = patch_loc
+    sign_canonical, sign_mask, M, alpha, beta = tf_data
     adv_patch.clamp_(0, 1).mul_(alpha).add_(beta).clamp_(0, 1)
-    sign_size_in_pixel = sign_canonical.size(-1)
-
-    # TODO:
-    # Patch location (here is center). Should match location used during attack
-    begin = (sign_size_in_pixel - patch_size_in_pixel) // 2
-    end = begin + patch_size_in_pixel
-    sign_canonical[:, :-1, begin:end, begin:end] = adv_patch
-    sign_canonical[:, -1, begin:end, begin:end] = 1
-    # Crop patch that is not on the sign
-    sign_canonical = sign_canonical * sign_mask
+    sign_canonical[:, :-1, ymin:ymin + height, xmin:xmin + width] = adv_patch
+    sign_canonical[:, -1, ymin:ymin + height, xmin:xmin + width] = 1
+    sign_canonical = sign_mask * patch_mask * sign_canonical
 
     warped_patch = transform_func(sign_canonical,
                                   M, image.shape[2:],

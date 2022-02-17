@@ -100,29 +100,29 @@ def process_batch(detections, labels, iouv):
     return correct
 
 
-def transform_and_apply_patch(image, adv_patch_cropped, shape, predicted_class,
-                              row, h0, w0, h_ratio, w_ratio, w_pad, h_pad):
-    # print('shape', adv_patch_cropped.shape)
-    # qqq
-    patch_size_in_pixel = adv_patch_cropped.shape[1]
-    patch_size_in_mm = 250
+def transform_and_apply_patch(image, adv_patch, patch_mask, patch_loc,
+                              shape, predicted_class, row, img_data):
+    if adv_patch.ndim == 4:
+        adv_patch = adv_patch[0]
+    if patch_mask.ndim == 4:
+        patch_mask = patch_mask[0]
+
+    ymin, xmin, height, width = patch_loc
+    h0, w0, h_ratio, w_ratio, w_pad, h_pad = img_data
     sign_canonical, sign_mask, src = get_sign_canonical(
-        shape, predicted_class, patch_size_in_pixel, patch_size_in_mm)
+        shape, predicted_class, None, None, sign_size_in_pixel=patch_mask.size(-1))
 
     alpha = row['alpha']
     beta = row['beta']
-    patch_cropped = adv_patch_cropped.clone()
+    patch_cropped = adv_patch.clone()
     patch_cropped.clamp_(0, 1).mul_(alpha).add_(beta).clamp_(0, 1)
-    sign_size_in_pixel = sign_canonical.size(-1)
-    # Patch location (here is center). Should match the
-    # location used during attack
-    begin = (sign_size_in_pixel - patch_size_in_pixel) // 2
-    end = begin + patch_size_in_pixel
-    sign_canonical[:-1, begin:end, begin:end] = patch_cropped
-    sign_canonical[-1, begin:end, begin:end] = 1
+    sign_canonical[:-1, ymin:ymin + height, xmin:xmin + width] = adv_patch
+    sign_canonical[-1, ymin:ymin + height, xmin:xmin + width] = 1
+    sign_canonical = sign_mask * patch_mask * sign_canonical
+    # print(sign_canonical[:-1].sum())
+    # import pdb
+    # pdb.set_trace()
 
-    # Crop patch that is not on the sign
-    sign_canonical *= sign_mask
     src = np.array(src, dtype=np.float32)
 
     # if annotated, then use those points
@@ -130,37 +130,18 @@ def transform_and_apply_patch(image, adv_patch_cropped, shape, predicted_class,
         tgt = np.array(literal_eval(row['points']), dtype=np.float32)
         tgt[:, 1] = (tgt[:, 1] * h_ratio) + h_pad
         tgt[:, 0] = (tgt[:, 0] * w_ratio) + w_pad
-
-    # if we flagged with 'use_polygon', then use those 'tgt_polygon'
-    elif not pd.isna(row['tgt_polygon']):
-        tgt = np.array(literal_eval(row['tgt_polygon']), dtype=np.float32)
-        offset_x_ratio = row['xmin_ratio']
-        offset_y_ratio = row['ymin_ratio']
-        # Have to correct for the padding when df is saved (TODO: this should be simplified)
-        pad_size = int(max(h0, w0) * 0.25)
-        x_min = offset_x_ratio * (w0 + pad_size * 2) - pad_size
-        y_min = offset_y_ratio * (h0 + pad_size * 2) - pad_size
-
-        # Order of coordinate in tgt is inverted, i.e., (x, y) instead of (y, x)
-        tgt[:, 1] = (tgt[:, 1] + y_min) * h_ratio + h_pad
-        tgt[:, 0] = (tgt[:, 0] + x_min) * w_ratio + w_pad
-
     else:
-        tgt = np.array(literal_eval(row['tgt']), dtype=np.float32)
+        tgt = row['tgt'] if pd.isna(row['tgt_polygon']) else row['tgt_polygon']
+        tgt = np.array(literal_eval(tgt), dtype=np.float32)
         offset_x_ratio = row['xmin_ratio']
         offset_y_ratio = row['ymin_ratio']
         # Have to correct for the padding when df is saved (TODO: this should be simplified)
         pad_size = int(max(h0, w0) * 0.25)
         x_min = offset_x_ratio * (w0 + pad_size * 2) - pad_size
         y_min = offset_y_ratio * (h0 + pad_size * 2) - pad_size
-
         # Order of coordinate in tgt is inverted, i.e., (x, y) instead of (y, x)
         tgt[:, 1] = (tgt[:, 1] + y_min) * h_ratio + h_pad
         tgt[:, 0] = (tgt[:, 0] + x_min) * w_ratio + w_pad
-
-    # moving patch
-    sign_height = max(tgt[:, 1]) - min(tgt[:, 1])
-    tgt[:, 1] += sign_height * 0.3
 
     if len(src) == 3:
         M = torch.from_numpy(getAffineTransform(src, tgt)).unsqueeze(0).float()
@@ -223,7 +204,6 @@ def run(args,
     plot_octagons = args.plot_octagons
     load_patch = args.load_patch
     ymin, xmin = tuple([int(x) for x in args.patch_loc.split(',')])
-    patch_size_in_mm = args.patch_size_mm
     obj_size = args.obj_size
 
     torch.manual_seed(args.seed)
@@ -297,26 +277,10 @@ def run(args,
         model.warmup(imgsz=(1, 3, imgsz, imgsz), half=half)  # warmup
         pad = 0.0 if task == 'speed' else 0.5
         task = task if task in ('train', 'val', 'test') else 'val'  # path to train/val/test images
-        dataloader = create_dataloader(data[task], imgsz, batch_size, stride, single_cls, pad=pad, rect=pt,
-                                       workers=workers, prefix=colorstr(f'{task}: '))[0]
-
-    img_size = (int(imgsz * 0.75), imgsz)
-    img_height, img_width = img_size
-
-    if apply_patch:
-        # Load patch from a pickle file if specified (TODO: load patch to get size)
-        adv_patch = pickle.load(open(load_patch, 'rb'))
-        patch_height, patch_width = adv_patch.shape[1:]
-
-        # print(adv_patch.shape)
-
-        if load_patch == 'arrow':
-            # Load 'arrow on checkboard' patch if specified
-            adv_patch = torchvision.io.read_image('demo.png').float()[:3, :, :] / 255
-            adv_patch = resize(adv_patch, (patch_height, patch_width))
-        elif random_patch:
-            # Random patch
-            adv_patch = torch.rand(3, patch_height, patch_width)
+        dataloader = create_dataloader(data[task], imgsz, batch_size, stride,
+                                       single_cls, pad=pad, rect=pt,
+                                       workers=workers,
+                                       prefix=colorstr(f'{task}: '))[0]
 
     seen = 0
     names = {k: v for k, v in enumerate(model.names if hasattr(model, 'names') else model.module.names)}
@@ -346,79 +310,107 @@ def run(args,
     #     f = os.path.join(save_dir, 'adversarial_patch.png')
     #     torchvision.utils.save_image(demo_patch, f)
 
-    if apply_patch and not synthetic:
-        # df = pd.read_csv('mapillary_vistas_final_merged_new.csv')
-        df = pd.read_csv('mapillary_vistas_final_merged.csv')
-        df['tgt_final'] = df['tgt_final'].apply(literal_eval)
-        df = df[df['final_shape'] != 'other-0.0-0.0']
-        print(df.shape)
-        print(df.groupby(by=['final_shape']).count())
+    if apply_patch:
+        # Load patch from a pickle file if specified (TODO: load patch to get size)
+        adv_patch, patch_mask = pickle.load(open(load_patch, 'rb'))
+        patch_height, patch_width = adv_patch.shape[1:]
+        if load_patch == 'arrow':
+            # Load 'arrow on checkboard' patch if specified
+            adv_patch = torchvision.io.read_image('demo.png').float()[:3, :, :] / 255
+            adv_patch = resize(adv_patch, (patch_height, patch_width))
+        elif random_patch:
+            # Random patch
+            adv_patch = torch.rand(3, patch_height, patch_width)
 
-        # df_use_polygons = df[~df['tgt_polygon'].isna()]
-        # adv_patch_cropped = resize(adv_patch_cropped, (32, 32))
-    elif synthetic:
-        obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True)
-        mask_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, resample=Resample.NEAREST)
-        resize_transform = torchvision.transforms.Resize(size=img_size)
-        # TODO: add as arg
-        sign_canonical, sign_mask, src = get_sign_canonical(
-            'octagon', 'octagon-915.0', patch_width, patch_size_in_mm, sign_size_in_pixel=obj_size)
-        # obj_size = sign_canonical.shape[1:]
-        # print('obj_size: ', obj_size)
-        obj, obj_mask = prepare_obj('./attack_assets/octagon-915.0.png', img_size, obj_size)
-        h_offset, w_offset, _, _ = mask_to_box(obj_mask)
-        patch_mask = torch.zeros_like(obj_mask)
-        ymin_ = ymin + h_offset
-        xmin_ = xmin + w_offset
-        patch_mask[:, ymin_:ymin_ + patch_height, xmin_:xmin_ + patch_width] = 1
+        if synthetic:
+            # TODO
+            img_size = args.padded_imgsz
+            img_height, img_width = img_size
+            obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True)
+            mask_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, resample=Resample.NEAREST)
+            # resize_transform = torchvision.transforms.Resize(size=img_size)
+            # TODO: add as arg
+            # sign_canonical, sign_mask, src = get_sign_canonical(
+            #     'octagon', 'octagon-915.0', patch_width, patch_size_in_mm, sign_size_in_pixel=obj_size)
+            # obj_size = sign_canonical.shape[1:]
+            # print('obj_size: ', obj_size)
+            obj, obj_mask = prepare_obj('./attack_assets/octagon-915.0.png', img_size, obj_size)
+            h_offset, w_offset, _, _ = mask_to_box(obj_mask)
+            patch_mask = torch.zeros_like(obj_mask)
+            ymin_ = ymin + h_offset
+            xmin_ = xmin + w_offset
+            patch_mask[:, ymin_:ymin_ + patch_height, xmin_:xmin_ + patch_width] = 1
+        else:
+            df = pd.read_csv('mapillary_vistas_final_merged.csv')
+            df['tgt_final'] = df['tgt_final'].apply(literal_eval)
+            df = df[df['final_shape'] != 'other-0.0-0.0']
+            print(df.shape)
+            print(df.groupby(by=['final_shape']).count())
 
+    # ======================================================================= #
+    #                          BEGIN: Main eval loop                          #
+    # ======================================================================= #
     num_errors = 0
     num_detected = 0
     num_octagon_labels = 0
     num_octagon_with_patch = 0
+    num_apply_imgs = 0
+
+    filename_list = []
+    if args.img_txt_path != '':
+        with open(args.img_txt_path, 'r') as f:
+            filename_list = f.read().splitlines()
+    patch_loc = mask_to_box(patch_mask)
 
     if plot_octagons:
         shape_to_plot_data = {}
         shape_to_plot_data['octagon'] = []
-    num_samples = 0
+    # num_samples = 0
     for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
         # DEBUG
-        num_samples += im.shape[0]
+        # num_samples += im.shape[0]
         # if batch_i == 20:
         #     break
+        if num_apply_imgs >= len(filename_list) and args.run_only_img_txt:
+            break
+        # ======================= BEGIN: apply patch ======================== #
         for image_i, path in enumerate(paths):
+
             if apply_patch and not synthetic:
                 filename = path.split('/')[-1]
                 img_df = df[df['filename_y'] == filename]
-
-                if filename not in ['36iNN_5lKC_CrOiFjmcF9w.jpg', 'SFhuI4R6dyCdgwFYmMeg7A.jpg',
-                                    'T0kvHFtwoqL3HH44FpBzOg.jpg', '_69EblZbqXUcjYKu7myKDg.jpg',
-                                    'U6RnrAjXMMBCX4SDEnUScQ.jpg', 'L5NvEU03Y-m2-yWSaqj3Kg.jpg',
-                                    'Q3eC_uZh20VujxdQ1ttzRA.jpg', 'Q6I4zxMM376kjtWRy27o3A.jpg',
-                                    '8lkcFc59-2RgSU203mlYEQ.jpg', 'PCWhGiFuCVMfrfY7sE1h7g.jpg',
-                                    'P_WQcMdizCDIHm3VSYACLw.jpg']:
-                    continue
-
                 if len(img_df) == 0:
                     continue
+
+                # Skip (or only run on) files listed in the txt file
+                in_list = filename in filename_list
+                if ((in_list and not args.run_only_img_txt) or
+                        (not in_list and args.run_only_img_txt)):
+                    continue
+                num_apply_imgs += 1
+
                 # Apply patch on all of the signs on this image
                 for _, row in img_df.iterrows():
                     (h0, w0), ((h_ratio, w_ratio), (w_pad, h_pad)) = shapes[image_i]
+                    img_data = (h0, w0, h_ratio, w_ratio, w_pad, h_pad)
                     predicted_class = row['final_shape']
                     shape = predicted_class.split('-')[0]
 
-                    # only apply patch to octagons
+                    # FIXME: only apply patch to octagons
                     if shape != 'octagon':
                         continue
                     num_octagon_with_patch += shape == 'octagon'
 
                     im[image_i] = transform_and_apply_patch(
-                        im[image_i],
-                        adv_patch, shape, predicted_class, row, h0, w0, h_ratio, w_ratio, w_pad, h_pad) * 255
+                        im[image_i], adv_patch, patch_mask, patch_loc, shape,
+                        predicted_class, row, img_data) * 255
 
-            elif synthetic:
+            elif apply_patch and synthetic:
+
+                # FIXME
                 orig_shape = im[image_i].shape[1:]
-                resized_img = resize_transform(im[image_i])
+                # resized_img = resize_transform(im[image_i])
+                resized_img = im[image_i]
 
                 if apply_patch:
                     adv_obj = patch_mask * adv_patch + (1 - patch_mask) * obj
@@ -428,9 +420,8 @@ def run(args,
                 adv_obj, tf_params = obj_transforms(adv_obj)
                 adv_obj.clamp_(0, 1)
                 # TODO: clean this part
-                num_eot = 1
                 obj_mask = obj_mask.cuda()
-                obj_mask_dup = obj_mask.expand(num_eot, -1, -1, -1)
+                obj_mask_dup = obj_mask.expand(1, -1, -1, -1)
 
                 tf_params = tf_params.cuda()
                 o_mask = mask_transforms.apply_transform(obj_mask_dup, None, transform=tf_params)
@@ -448,19 +439,11 @@ def run(args,
                     (x_max - x_min) / img_width,
                     (y_max - y_min) / img_height,
                 ]
-                targets = torch.cat((targets, torch.unsqueeze(torch.Tensor(label), 0)))
-                adv_img = o_mask * adv_obj + (1 - o_mask) * resized_img/255
+                targets = torch.cat((targets, torch.unsqueeze(torch.tensor(label), 0)))
+                adv_img = o_mask * adv_obj + (1 - o_mask) * resized_img / 255
                 reresize_transform = torchvision.transforms.Resize(size=orig_shape)
                 im[image_i] = reresize_transform(adv_img) * 255
-
-            # qqq
-            # DEBUG
-            # pdb.set_trace()
-
-        im = im[:num_samples]
-        targets = targets[:num_samples]
-
-        # continue
+        # ======================== END: apply patch ========================= #
 
         t1 = time_sync()
         if pt or jit or engine:
@@ -562,7 +545,7 @@ def run(args,
                 save_one_json(predn, jdict, path, class_map)  # append to COCO-JSON dictionary
             callbacks.run('on_val_image_end', pred, predn, path, names, im[si])
 
-            # 14 is octagon
+            # FIXME: 14 is octagon
             if plot_octagons and 14 in labels[:, 0]:
                 num_octagon_labels += sum([1 for x in list(labels[:, 0]) if x == 14])
                 if len(shape_to_plot_data['octagon']) < 50:
@@ -598,6 +581,9 @@ def run(args,
             f = save_dir / f'val_batch{batch_i}_pred.jpg'  # predictions
             Thread(target=plot_images, args=(im, output_to_target(out), paths, f, names), daemon=True).start()
             print(f)
+    # ======================================================================= #
+    #                            END: Main eval loop                          #
+    # ======================================================================= #
 
     if plot_octagons:
         save_dir_octagon = increment_path(save_dir / 'octagon', exist_ok=exist_ok, mkdir=True)  # increment run
@@ -774,6 +760,8 @@ def parse_opt():
     parser.add_argument('--dnn', action='store_true', help='use OpenCV DNN for ONNX inference')
     # Our attack and evaluate options
     parser.add_argument('--seed', type=int, default=0, help='set random seed')
+    parser.add_argument('--padded_imgsz', type=str, default='736,1312',
+                        help='final image size including padding (height,width); comma-separated')
     parser.add_argument('--apply-patch', action='store_true', help='add adversarial patch to traffic signs if true')
     parser.add_argument('--synthetic', action='store_true', help='add adversarial patch to traffic signs if true')
     parser.add_argument('--random-patch', action='store_true', help='adversarial patch is random')
@@ -786,8 +774,12 @@ def parse_opt():
     parser.add_argument('--num-bg', type=int, default=16, help='number of backgrounds to generate adversarial patch')
     parser.add_argument('--patch-loc', type=str, default='128,128',
                         help='location to place patch w.r.t. object in tuple (ymin, xmin)')
-    parser.add_argument('--patch-size-mm', type=float, default=250, help='patch width in millimeter')
+    # parser.add_argument('--patch-size-mm', type=float, default=250, help='patch width in millimeter')
     parser.add_argument('--obj-size', type=int, default=128, help='width of the object in pixels')
+    parser.add_argument('--img-txt-path', type=str, default='',
+                        help='path to a text file containing image filenames')
+    parser.add_argument('--run-only-img-txt', action='store_true',
+                        help='run evaluation on images listed in img-txt-path. Otherwise, exclude these images.')
 
     opt = parser.parse_args()
     opt.data = check_yaml(opt.data)  # check YAML

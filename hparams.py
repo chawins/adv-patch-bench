@@ -20,7 +20,7 @@ for k in TS_COLOR_DICT:
     TS_COLOR_OFFSET_DICT[k] = idx
     idx += max(1, len(TS_COLOR_DICT[k]))
 
-# Generate dictionary of traffic sign class
+# Generate dictionary of traffic sign class: name -> idx
 TS_COLOR_LABEL_DICT = {}
 idx = 0
 for k in TS_COLOR_DICT:
