@@ -94,7 +94,7 @@ def ap_per_class(tp, conf, pred_cls, target_cls, plot=False, save_dir='.', names
         plot_mc_curve(px, fnr, Path(save_dir) / 'FNR_curve.png', names, ylabel='FNR', save_dir_str=save_dir)
         plot_confidence_distribution(confidence_per_class, Path(save_dir) / 'Confidence_distribution.png', names, ylabel='Density')
 
-        numpy_filename = 'x_axis.npy'
+        numpy_filename = Path(save_dir) / 'x_axis.npy'
         with open(numpy_filename, 'wb') as f:
             np.save(f, px)
 
