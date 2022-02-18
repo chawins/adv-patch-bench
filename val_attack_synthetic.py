@@ -205,6 +205,7 @@ def run(args,
     load_patch = args.load_patch
     ymin, xmin = tuple([int(x) for x in args.patch_loc.split(',')])
     obj_size = args.obj_size
+    targets_images = args.targets_images
 
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
@@ -365,14 +366,19 @@ def run(args,
     if plot_octagons:
         shape_to_plot_data = {}
         shape_to_plot_data['octagon'] = []
-    # num_samples = 0
+
+    # TODO: delete next line. only for debugging
+    total_images_processed = 0
+    targets_indices = None
     for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
+        filenames = [p.split('/')[-1] for p in paths]
         # DEBUG
-        # num_samples += im.shape[0]
         # if batch_i == 20:
         #     break
         if num_apply_imgs >= len(filename_list) and args.run_only_img_txt:
             break
+        if targets_images:
+            targets_indices = [index for index, p in enumerate(filenames) if (p in targets_images)]
         # ======================= BEGIN: apply patch ======================== #
         for image_i, path in enumerate(paths):
 
@@ -399,6 +405,7 @@ def run(args,
                     # FIXME: only apply patch to octagons
                     if shape != 'octagon':
                         continue
+
                     num_octagon_with_patch += shape == 'octagon'
 
                     im[image_i] = transform_and_apply_patch(
@@ -443,7 +450,24 @@ def run(args,
                 adv_img = o_mask * adv_obj + (1 - o_mask) * resized_img / 255
                 reresize_transform = torchvision.transforms.Resize(size=orig_shape)
                 im[image_i] = reresize_transform(adv_img) * 255
-        # ======================== END: apply patch ========================= #
+
+        # TODO: for targeted attack
+        if targets_indices:
+            im = torch.index_select(im, 0, torch.tensor(targets_indices))
+
+            selected_targets_indices = []
+            for i, tgt in enumerate(targets):
+                if tgt[0] in targets_indices:
+                    selected_targets_indices.append(i)
+            targets = torch.index_select(targets, 0, torch.tensor(selected_targets_indices))
+        else:
+            pass
+
+        # total_images_processed += len(im)
+        # if total_images_processed > 1:
+        #     qqq
+
+        # continue
 
         t1 = time_sync()
         if pt or jit or engine:
@@ -781,11 +805,14 @@ def parse_opt():
     parser.add_argument('--run-only-img-txt', action='store_true',
                         help='run evaluation on images listed in img-txt-path. Otherwise, exclude these images.')
 
+    parser.add_argument('--targets_images', '--list', nargs='+', help='<Required> Set flag', required=False)
+
     opt = parser.parse_args()
     opt.data = check_yaml(opt.data)  # check YAML
     opt.save_json |= opt.data.endswith('coco.yaml')
     opt.save_txt |= opt.save_hybrid
     print_args(FILE.stem, opt)
+
     return opt
 
 

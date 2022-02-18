@@ -354,7 +354,7 @@ def apply_transform(image, adv_patch, patch_mask, patch_loc, transform_func, tf_
     sign_canonical, sign_mask, M, alpha, beta = tf_data
     adv_patch.clamp_(0, 1).mul_(alpha).add_(beta).clamp_(0, 1)
     sign_canonical[:, :-1, ymin:ymin + height, xmin:xmin + width] = adv_patch
-    sign_canonical[:, -1, ymin:ymin + height, xmin:xmin + width] = 1
+    sign_canonical[:, -1, ymin:ymin + height, xmin:xmin + width]
     sign_canonical = sign_mask * patch_mask * sign_canonical
 
     warped_patch = transform_func(sign_canonical,
