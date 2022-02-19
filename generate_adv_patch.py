@@ -68,7 +68,7 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
         backgrounds[i] = T.resize(bg, img_size, antialias=True)
 
     attack_config = {
-        'rp2_num_steps': 200,
+        'rp2_num_steps': 2000,
         'rp2_step_size': 1e-2,
         'rp2_num_eot': 5,
         'rp2_optimizer': 'adam',
@@ -82,7 +82,12 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
     obj_mask = torch.from_numpy(obj_numpy[:, :, -1] == 1).float().unsqueeze(0)
     obj = torch.from_numpy(obj_numpy[:, :, :-1]).float().permute(2, 0, 1)
     # Resize and put object in the middle of zero background
-    pad_size = [(img_size[1] - obj_size[1]) // 2, (img_size[0] - obj_size[0]) // 2]  # left/right, top/bottom
+    # pad_size = [(img_size[1] - obj_size[1]) // 2, (img_size[0] - obj_size[0]) // 2]  # left/right, top/bottom
+    pad_size = [(img_size[1] - obj_size[1]) // 2, 
+                (img_size[0] - obj_size[0]) // 2, 
+                (img_size[1] - obj_size[1]) // 2 + obj_size[1] % 2, 
+                (img_size[0] - obj_size[0]) // 2 + obj_size[0] % 2]  # left, top, right, bottom
+
     obj = T.resize(obj, obj_size, antialias=True)
     obj = T.pad(obj, pad_size)
     obj_mask = T.resize(obj_mask, obj_size, interpolation=T.InterpolationMode.NEAREST)
@@ -95,7 +100,8 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
                                       obj_mask.to(device),
                                       patch_mask.to(device),
                                       backgrounds.to(device),
-                                      obj_class=obj_class)
+                                      obj_class=obj_class,
+                                      obj_size=obj_size)
     elif generate_patch == 'transform':
         df = pd.read_csv('mapillary_vistas_final_merged.csv')
         df['tgt_final'] = df['tgt_final'].apply(literal_eval)
@@ -207,6 +213,10 @@ def main(
     torch.manual_seed(seed)
     np.random.seed(seed)
     img_size = (int(imgsz * 0.75), imgsz)
+
+    # TODO: should not be hardcoded?
+    img_size = (736, 1312)
+    
     device = select_device(device, batch_size=batch_size)
 
     # Directories
@@ -230,12 +240,17 @@ def main(
 
     # Configure object size
     obj_numpy = np.array(Image.open(obj_path).convert('RGBA')) / 255
+    
+    # TODO: FIXED? 
     h_w_ratio = obj_numpy.shape[0] / obj_numpy.shape[1]
+    # h_w_ratio = img_size[0] / img_size[1]
+
     if obj_size == -1:
         obj_size = int(min(img_size) * 0.1)
     if isinstance(obj_size, int):
         obj_size = (int(obj_size * h_w_ratio), obj_size)
 
+    print('obj size', obj_size)
     # Define patch location and size
     patch_mask = torch.zeros((1, ) + img_size)
     # Example: 10x10-inch patch in the middle of 36x36-inch sign
@@ -245,6 +260,7 @@ def main(
     patch_size = 10
     h = int(patch_size / 36 / 2 * obj_size[0])
     w = int(patch_size / 36 / 2 * obj_size[1])
+
     patch_mask[:, mid_height - h:mid_height + h, mid_width - w:mid_width + w] = 1
 
     adv_patch = generate_adv_patch(

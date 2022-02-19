@@ -109,8 +109,12 @@ def transform_and_apply_patch(image, adv_patch_cropped, shape, predicted_class,
     sign_canonical, sign_mask, src = get_sign_canonical(
         shape, predicted_class, patch_size_in_pixel, patch_size_in_mm)
 
-    alpha = row['alpha']
-    beta = row['beta']
+    # alpha = row['alpha']
+    # beta = row['beta']
+
+    alpha = 1
+    beta = 0
+
     patch_cropped = adv_patch_cropped.clone()
     patch_cropped.clamp_(0, 1).mul_(alpha).add_(beta).clamp_(0, 1)
     sign_size_in_pixel = sign_canonical.size(-1)
@@ -358,14 +362,19 @@ def run(args,
         # df_use_polygons = df[~df['tgt_polygon'].isna()]
         # adv_patch_cropped = resize(adv_patch_cropped, (32, 32))
     elif synthetic:
-        obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True)
-        mask_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, resample=Resample.NEAREST)
+
+        # obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True)
+        # mask_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, resample=Resample.NEAREST)
         resize_transform = torchvision.transforms.Resize(size=img_size)
         # TODO: add as arg
+
+        # print(obj_size)
+        # print(img_size)
         sign_canonical, sign_mask, src = get_sign_canonical(
             'octagon', 'octagon-915.0', patch_width, patch_size_in_mm, sign_size_in_pixel=obj_size)
-        # obj_size = sign_canonical.shape[1:]
-        # print('obj_size: ', obj_size)
+        obj_size = sign_canonical.shape[1:]
+        print('obj_size: ', obj_size)
+        # qqq
         obj, obj_mask = prepare_obj('./attack_assets/octagon-915.0.png', img_size, obj_size)
         h_offset, w_offset, _, _ = mask_to_box(obj_mask)
         patch_mask = torch.zeros_like(obj_mask)
@@ -419,10 +428,31 @@ def run(args,
                     print('im shape', im[image_i].shape)
 
             elif synthetic:
+                indices = np.where(obj_mask.cpu()[0] > 0)
+                x_min, x_max = min(indices[1]), max(indices[1])
+                y_min, y_max = min(indices[0]), max(indices[0])
+                # synthetic_sign_height = y_max - y_min
+                # synthetic_sign_width = x_max - x_min
+                synthetic_sign_size = x_max - x_min
+
+                old_ratio = synthetic_sign_size/im[image_i].shape[1]
+                prob_array = [0.38879158, 0.26970227, 0.16462349, 0.07530647, 0.04378284, 0.03327496, 0.01050788, 0.00700525, 0.00350263, 0.00350263]
+                new_possible_ratios = [0.05340427, 0.11785139, 0.18229851, 0.24674563, 0.31119275, 0.3756399, 0.440087, 0.5045341 , 0.56898123, 0.6334284, 0.6978755 ]
+                index_array = np.arange(0, len(new_possible_ratios)-1)
+                sampled_index = np.random.choice(index_array, None, p=prob_array)
+                low_bin_edge, high_bin_edge = new_possible_ratios[sampled_index], new_possible_ratios[sampled_index+1]  
+                obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True, scale=None)
+                # obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True, scale=(low_bin_edge/old_ratio, high_bin_edge/old_ratio))
+                mask_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, resample=Resample.NEAREST)
+                
+
                 orig_shape = im[image_i].shape[1:]
                 resized_img = resize_transform(im[image_i])
 
                 if apply_patch:
+                    print(patch_mask.shape)
+                    print(adv_patch.shape)
+                    print(obj.shape)
                     adv_obj = patch_mask * adv_patch + (1 - patch_mask) * obj
                 else:
                     adv_obj = obj

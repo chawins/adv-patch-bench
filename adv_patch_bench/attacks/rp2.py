@@ -56,7 +56,8 @@ class RP2AttackModule(DetectorAttackModule):
                obj_mask: torch.Tensor,
                patch_mask: torch.Tensor,
                backgrounds: torch.Tensor,
-               obj_class: int = None) -> torch.Tensor:
+               obj_class: int = None,
+               obj_size: tuple = None) -> torch.Tensor:
         """Run RP2 Attack.
 
         Args:
@@ -116,23 +117,29 @@ class RP2AttackModule(DetectorAttackModule):
                     self.obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True)
                     
                     
-                    indices = np.where(obj_mask.cpu()[0] > 0)
-                    x_min, x_max = min(indices[1]), max(indices[1])
-                    y_min, y_max = min(indices[0]), max(indices[0])
+                    # indices = np.where(obj_mask.cpu()[0] > 0)
+                    # x_min, x_max = min(indices[1]), max(indices[1])
+                    # y_min, y_max = min(indices[0]), max(indices[0])
                     # synthetic_sign_height = y_max - y_min
                     # synthetic_sign_width = x_max - x_min
-                    synthetic_sign_size = x_max - x_min
+                    # synthetic_sign_size = x_max - x_min
+                    synthetic_sign_size = obj_size[0]
+                    # print(synthetic_sign_size)
+                    # qqq
 
 
-                    old_ratio = synthetic_sign_size/960
+                    # old_ratio = synthetic_sign_size/960
+                    old_ratio = synthetic_sign_size/self.input_size[0]
                     # 736, 1312
                     prob_array = [0.38879158, 0.26970227, 0.16462349, 0.07530647, 0.04378284, 0.03327496, 0.01050788, 0.00700525, 0.00350263, 0.00350263]
                     new_possible_ratios = [0.05340427, 0.11785139, 0.18229851, 0.24674563, 0.31119275, 0.3756399, 0.440087, 0.5045341 , 0.56898123, 0.6334284, 0.6978755 ]
                     index_array = np.arange(0, len(new_possible_ratios)-1)
                     sampled_index = np.random.choice(index_array, None, p=prob_array)
                     low_bin_edge, high_bin_edge = new_possible_ratios[sampled_index], new_possible_ratios[sampled_index+1]
-                    self.obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True, scale=(low_bin_edge/old_ratio, high_bin_edge/old_ratio))
-                    
+                    self.obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True, scale=None)
+                    # self.obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True, scale=(low_bin_edge/old_ratio, high_bin_edge/old_ratio))
+
+                    # print((low_bin_edge/old_ratio, high_bin_edge/old_ratio))
                     # new_size = (int(self.input_size[0] * new_synthetic_sign_ratio / old_ratio), int(self.input_size[1] * new_synthetic_sign_ratio / old_ratio))
                     # self.resize_transforms = T.Resize(size=new_size)
 
@@ -150,8 +157,9 @@ class RP2AttackModule(DetectorAttackModule):
                     # Patch image the same way as YOLO
                     adv_img = letterbox(adv_img, new_shape=self.input_size[1])[0]
 
-                    # torchvision.utils.save_image(adv_img[0], f'tmp/synthetic/test_synthetic_adv_img_rescale_{step}.png')
-                    # print(adv_img.shape)
+                    # torchvision.utils.save_image(adv_img[0], f'tmp/synthetic/test_synthetic_adv_img_{step}.png')
+                    # print('SHAPE', adv_img.shape)
+                    # print(self.input_size)
 
                     # Compute logits, loss, gradients
                     out, _ = self.core_model(adv_img, val=True)
