@@ -1,5 +1,8 @@
-import os
+import time
+from ast import literal_eval
+
 import numpy as np
+import pandas as pd
 import torch
 import torch.optim as optim
 import torchvision
@@ -14,12 +17,6 @@ from yolov5.utils.plots import output_to_target, plot_images
 
 from ..utils.image import letterbox, mask_to_box
 from .base_detector import DetectorAttackModule
-import torchvision
-from val_attack_synthetic import transform_and_apply_patch
-                    
-import torchvision.transforms as T
-import torch.nn.functional as F
-
 
 EPS = 1e-6
 
@@ -177,30 +174,46 @@ class RP2AttackModule(DetectorAttackModule):
                     else:
                         loss = conf.max(1)[0].clamp_min(self.min_conf).mean()
 
+                # Compute logits, loss, gradients
+                out, _ = self.core_model(adv_img, val=True)
+                conf = out[:, :, 4:5] * out[:, :, 5:]
+                conf, labels = conf.max(-1)
+                if obj_class is not None:
+                    loss = 0
+                    for c, l in zip(conf, labels):
+                        c_l = c[l == obj_class]
+                        if c_l.size(0) > 0:
+                            # Select prediction from box with max confidence and ignore
+                            # ones with already low confidence
+                            loss += c_l.max().clamp_min(self.min_conf)
                     loss /= self.num_eot
-                    tv = ((delta[:, :, :-1, :] - delta[:, :, 1:, :]).abs().mean() +
-                        (delta[:, :, :, :-1] - delta[:, :, :, 1:]).abs().mean())
-                    # loss = out[:, :, 4].mean() + self.lmbda * tv
-                    loss += self.lmbda * tv
-                    loss.backward(retain_graph=True)
-                    opt.step()
-                    # lr_schedule.step(loss)
+                else:
+                    loss = conf.max(1)[0].clamp_min(self.min_conf).mean()
 
-                    if ema_loss is None:
-                        ema_loss = loss.item()
-                    else:
-                        ema_loss = ema_const * ema_loss + (1 - ema_const) * loss.item()
-                    if step % 100 == 0:
-                        print(f'step: {step}   loss: {ema_loss:.6f}')
+                loss /= self.num_eot
+                tv = ((delta[:, :, :-1, :] - delta[:, :, 1:, :]).abs().mean() +
+                      (delta[:, :, :, :-1] - delta[:, :, :, 1:]).abs().mean())
+                # loss = out[:, :, 4].mean() + self.lmbda * tv
+                loss += self.lmbda * tv
+                loss.backward(retain_graph=True)
+                opt.step()
+                # lr_schedule.step(loss)
 
-                    # if self.num_restarts == 1:
-                    #     x_adv_worst = x_adv
-                    # else:
-                    #     # Update worst-case inputs with itemized final losses
-                    #     fin_losses = self.loss_fn(self.core_model(x_adv), y).reshape(worst_losses.shape)
-                    #     up_mask = (fin_losses >= worst_losses).float()
-                    #     x_adv_worst = x_adv * up_mask + x_adv_worst * (1 - up_mask)
-                    #     worst_losses = fin_losses * up_mask + worst_losses * (1 - up_mask)
+                if ema_loss is None:
+                    ema_loss = loss.item()
+                else:
+                    ema_loss = ema_const * ema_loss + (1 - ema_const) * loss.item()
+                if step % 100 == 0:
+                    print(f'step: {step}   loss: {ema_loss:.6f}')
+
+                # if self.num_restarts == 1:
+                #     x_adv_worst = x_adv
+                # else:
+                #     # Update worst-case inputs with itemized final losses
+                #     fin_losses = self.loss_fn(self.core_model(x_adv), y).reshape(worst_losses.shape)
+                #     up_mask = (fin_losses >= worst_losses).float()
+                #     x_adv_worst = x_adv * up_mask + x_adv_worst * (1 - up_mask)
+                #     worst_losses = fin_losses * up_mask + worst_losses * (1 - up_mask)
 
         # DEBUG
         # outt = non_max_suppression(out.detach(), conf_thres=0.25, iou_thres=0.6)
@@ -222,19 +235,18 @@ class RP2AttackModule(DetectorAttackModule):
         mode = self.core_model.training
         self.core_model.eval()
         self.objs = objs
-        device = 'cuda:0'
         resize_transform = torchvision.transforms.Resize(size=self.input_size)
         ymin, xmin, height, width = mask_to_box(patch_mask)
+        patch_loc = (ymin, xmin, height, width)
 
-        # ema_const = 0.99
-        ema_const = 0
+        ema_const = 0.99
         ema_loss = None
 
-        # Process transform data
-        delta_temp = torch.zeros((3, height, width), device=device, dtype=torch.float32)
+        # Process transform data and create batch tensors
+        sign_size_in_pixel = patch_mask.size(-1)
         # Assume that every signs use the same transform function (len(tgt) = 4)
-        tf_function = get_transform(delta_temp, *objs[0][1])[0]
-        tf_data_temp = [get_transform(delta_temp, *obj[1])[1:] for obj in objs]
+        tf_function = get_transform(sign_size_in_pixel, *objs[0][1])[0]
+        tf_data_temp = [get_transform(sign_size_in_pixel, *obj[1])[1:] for obj in objs]
         tf_data = []
         for i in range(5):
             data_i = []
@@ -275,8 +287,7 @@ class RP2AttackModule(DetectorAttackModule):
 
                 curr_tf_data = [data[bg_idx] for data in tf_data]
                 delta = delta.repeat(self.num_eot, 1, 1, 1)
-                adv_img = apply_transform(
-                    backgrounds[bg_idx], delta, tf_function, *curr_tf_data)
+                adv_img = apply_transform(backgrounds[bg_idx], delta, patch_mask, patch_loc, tf_function, curr_tf_data)
                 adv_img = resize_transform(adv_img)
 
                 # Compute logits, loss, gradients
@@ -311,11 +322,11 @@ class RP2AttackModule(DetectorAttackModule):
                     print(f'step: {step:4d}   loss: {ema_loss:.4f}   time: {time.time() - start_time:.2f}s')
                     start_time = time.time()
                     # DEBUG
-                    # import os
-                    # for idx in range(self.num_eot):
-                    #     if not os.path.exists(f'tmp/{idx}/test_adv_img_{step}.png'):
-                    #         os.makedirs(f'tmp/{idx}/', exist_ok=True)
-                    #     torchvision.utils.save_image(adv_img[idx], f'tmp/{idx}/test_adv_img_{step}.png')
+                    import os
+                    for idx in range(self.num_eot):
+                        if not os.path.exists(f'tmp/{idx}/test_adv_img_{step}.png'):
+                            os.makedirs(f'tmp/{idx}/', exist_ok=True)
+                        torchvision.utils.save_image(adv_img[idx], f'tmp/{idx}/test_adv_img_{step}.png')
 
         # DEBUG
         outt = non_max_suppression(out.detach(), conf_thres=0.25, iou_thres=0.45)
@@ -350,13 +361,11 @@ class RP2AttackModule(DetectorAttackModule):
         return x
 
 
-def get_transform(adv_patch_cropped, shape, predicted_class, row, h0, w0,
+def get_transform(sign_size_in_pixel, shape, predicted_class, row, h0, w0,
                   h_ratio, w_ratio, w_pad, h_pad):
     # TODO: This should directly come from patch mask
-    patch_size_in_pixel = adv_patch_cropped.shape[1]
-    patch_size_in_mm = 250
     sign_canonical, sign_mask, src = get_sign_canonical(
-        shape, predicted_class, patch_size_in_pixel, patch_size_in_mm)
+        shape, predicted_class, None, None, sign_size_in_pixel=sign_size_in_pixel)
     alpha = torch.tensor(row['alpha'])
     beta = torch.tensor(row['beta'])
 
@@ -379,10 +388,6 @@ def get_transform(adv_patch_cropped, shape, predicted_class, row, h0, w0,
         tgt[:, 0] = (tgt[:, 0] + x_min) * w_ratio + w_pad
 
     src = np.array(src, dtype=np.float32)
-    # TODO: moving patch
-    # sign_height = max(tgt[:, 1]) - min(tgt[:, 1])
-    # tgt[:, 1] += sign_height * 0.3
-
     if len(src) == 3:
         M = torch.from_numpy(getAffineTransform(src, tgt)).unsqueeze(0).float()
         transform_func = warp_affine
@@ -395,20 +400,13 @@ def get_transform(adv_patch_cropped, shape, predicted_class, row, h0, w0,
     return transform_func, sign_canonical, sign_mask, M.squeeze(), alpha, beta
 
 
-def apply_transform(image, adv_patch, transform_func, sign_canonical, sign_mask,
-                    M, alpha, beta):
-    batch_size, _, patch_size_in_pixel, _ = adv_patch.shape
+def apply_transform(image, adv_patch, patch_mask, patch_loc, transform_func, tf_data):
+    ymin, xmin, height, width = patch_loc
+    sign_canonical, sign_mask, M, alpha, beta = tf_data
     adv_patch.clamp_(0, 1).mul_(alpha).add_(beta).clamp_(0, 1)
-    sign_size_in_pixel = sign_canonical.size(-1)
-
-    # TODO:
-    # Patch location (here is center). Should match location used during attack
-    begin = (sign_size_in_pixel - patch_size_in_pixel) // 2
-    end = begin + patch_size_in_pixel
-    sign_canonical[:, :-1, begin:end, begin:end] = adv_patch
-    sign_canonical[:, -1, begin:end, begin:end] = 1
-    # Crop patch that is not on the sign
-    sign_canonical = sign_canonical * sign_mask
+    sign_canonical[:, :-1, ymin:ymin + height, xmin:xmin + width] = adv_patch
+    sign_canonical[:, -1, ymin:ymin + height, xmin:xmin + width]
+    sign_canonical = sign_mask * patch_mask * sign_canonical
 
     warped_patch = transform_func(sign_canonical,
                                   M, image.shape[2:],

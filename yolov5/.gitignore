@@ -20,6 +20,7 @@
 *.data
 *.json
 *.cfg
+*.npy
 !setup.cfg
 !cfg/yolov3*.cfg
 
