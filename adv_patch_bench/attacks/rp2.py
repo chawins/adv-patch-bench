@@ -47,6 +47,8 @@ class RP2AttackModule(DetectorAttackModule):
         # )
         self.obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True)
         self.mask_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, resample=Resample.NEAREST)
+        self.patch_jitter_transform = K.ColorJitter(brightness=(0, 0.3), contrast=(0, 0.3), saturation=(0, 0.3), hue=(0, 0.3))
+        
 
     def attack(self,
                obj: torch.Tensor,
@@ -122,8 +124,6 @@ class RP2AttackModule(DetectorAttackModule):
                     # synthetic_sign_size = x_max - x_min
                     synthetic_sign_size = obj_size[0]
                     # print(synthetic_sign_size)
-                    # qqq
-
 
                     # old_ratio = synthetic_sign_size/960
                     old_ratio = synthetic_sign_size/self.input_size[0]
@@ -133,14 +133,16 @@ class RP2AttackModule(DetectorAttackModule):
                     index_array = np.arange(0, len(new_possible_ratios)-1)
                     sampled_index = np.random.choice(index_array, None, p=prob_array)
                     low_bin_edge, high_bin_edge = new_possible_ratios[sampled_index], new_possible_ratios[sampled_index+1]
-                    self.obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True, scale=None)
-                    # self.obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True, scale=(low_bin_edge/old_ratio, high_bin_edge/old_ratio))
+                    # self.obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True, scale=None)
+                    self.obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True, scale=(low_bin_edge/old_ratio, high_bin_edge/old_ratio))
 
                     # print((low_bin_edge/old_ratio, high_bin_edge/old_ratio))
                     # new_size = (int(self.input_size[0] * new_synthetic_sign_ratio / old_ratio), int(self.input_size[1] * new_synthetic_sign_ratio / old_ratio))
                     # self.resize_transforms = T.Resize(size=new_size)
 
                     # Apply random transformations
+                    # delta = self.patch_jitter_transform(delta)
+
                     patch_full[:, ymin:ymin + height, xmin:xmin + width] = delta
                     adv_obj = patch_mask * patch_full + (1 - patch_mask) * obj
                     

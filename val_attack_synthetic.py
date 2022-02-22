@@ -99,38 +99,6 @@ def process_batch(detections, labels, iouv):
         correct[matches[:, 1].long()] = matches[:, 2:3] >= iouv
     return correct
 
-# def process_batch(detections, labels, iouv, sign_class=None):
-#     """
-#     Return correct predictions matrix. Both sets of boxes are in (x1, y1, x2, y2) format.
-#     Arguments:
-#         detections (Array[N, 6]), x1, y1, x2, y2, conf, class
-#         labels (Array[M, 5]), class, x1, y1, x2, y2
-#     Returns:
-#         correct (Array[N, 10]), for 10 IoU levels
-#     """
-#     correct = torch.zeros(detections.shape[0], iouv.shape[0], dtype=torch.bool, device=iouv.device)
-    
-#     print('keeping only relevant class')
-#     print(labels.shape, detections.shape)
-#     labels = labels[labels[:, 0] == sign_class]
-#     detections = detections[detections[:, 5] == sign_class]
-#     print(labels.shape, detections.shape)
-
-
-#     iou = box_iou(labels[:, 1:5], detections[:, :4])
-#     x = torch.where((iou >= iouv[0]) & (labels[:, 0:1] == detections[:, 5]))  # IoU above threshold and classes match
-#     if x[0].shape[0]:
-#         matches = torch.cat((torch.stack(x, 1), iou[x[0], x[1]][:, None]), 1).cpu().numpy()  # [label, detection, iou]
-#         if x[0].shape[0] > 1:
-#             matches = matches[matches[:, 2].argsort()[::-1]]
-#             matches = matches[np.unique(matches[:, 1], return_index=True)[1]]
-#             # matches = matches[matches[:, 2].argsort()[::-1]]
-#             matches = matches[np.unique(matches[:, 0], return_index=True)[1]]
-#         matches = torch.Tensor(matches).to(iouv.device)
-#         correct[matches[:, 1].long()] = matches[:, 2:3] >= iouv
-#     return correct
-
-
 def transform_and_apply_patch(image, adv_patch, patch_mask, patch_loc,
                               shape, predicted_class, row, img_data, no_transform=False):
     if adv_patch.ndim == 4:
@@ -267,6 +235,7 @@ def run(args,
     ymin, xmin = tuple([int(x) for x in args.patch_loc.split(',')])
     obj_size = args.obj_size
     no_transform = args.no_transform
+    metrics_confidence_threshold = args.metrics_confidence_threshold
 
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
@@ -435,8 +404,8 @@ def run(args,
         targets = torch.nn.functional.pad(targets, (0, 1), "constant", 0)  # effectively zero padding
         filenames = [p.split('/')[-1] for p in paths]
         # DEBUG
-        # if batch_i == 10:
-        #     break
+        if batch_i == 10:
+            break
         if num_apply_imgs >= len(filename_list) and args.run_only_img_txt:
             break
         
@@ -614,20 +583,13 @@ def run(args,
                     confusion_matrix.process_batch(predn, labelsn)
             else:
                 correct = torch.zeros(pred.shape[0], niou, dtype=torch.bool)
-            
-            curr_stats = (correct.cpu(), pred[:, 4].cpu(), pred[:, 5].cpu(), tcls)
-            if len(tcls) > 0:
-                curr_stats = (correct.cpu().numpy(), pred[:, 4].cpu().numpy(), pred[:, 5].cpu().numpy(), np.array(tcls))
-                tp, fp, p, r, f1, ap, ap_class, fnr, fn = ap_per_class(*curr_stats, plot=False, save_dir=None, names=names)
-                if 14 in ap_class:
-                    sign_index = list(ap_class).index(14)
-                    current_image_metrics['fnr'] = fnr[sign_index]
-                    current_image_metrics['fn'] = fn[sign_index]
-                else:
-                    current_image_metrics['fnr'] = None
-                    current_image_metrics['fn'] = None
 
-                metrics_per_image_df = metrics_per_image_df.append(current_image_metrics, ignore_index=True)
+            # FIXME: 14 is octagon   
+            total_positives = sum([1 for x in tcls if x == 14])            
+            sign_indices = np.logical_and(pred.cpu().numpy()[:, 5] == 14, pred.cpu().numpy()[:, 4] > metrics_confidence_threshold)
+            tp = sum(correct.cpu().numpy()[sign_indices, 0])
+            current_image_metrics['fn'] = total_positives - tp
+            metrics_per_image_df = metrics_per_image_df.append(current_image_metrics, ignore_index=True)
 
             stats.append((correct.cpu(), pred[:, 4].cpu(), pred[:, 5].cpu(), tcls))  # (correct, conf, pcls, tcls)
 
@@ -678,7 +640,8 @@ def run(args,
     #                            END: Main eval loop                          #
     # ======================================================================= #
 
-    metrics_per_image_df.to_csv('runs/results_per_image.csv', index=False)
+    metrics_per_image_df.to_csv(f'{project}/{name}/results_per_image.csv', index=False)
+    # metrics_per_image_df.to_csv('runs/results_per_image.csv', index=False)
 
     if plot_octagons:
         save_dir_octagon = increment_path(save_dir / 'octagon', exist_ok=exist_ok, mkdir=True)  # increment run
@@ -701,7 +664,7 @@ def run(args,
     current_exp_metrics = {}
 
     if len(stats) and stats[0].any():
-        tp, fp, p, r, f1, ap, ap_class, fnr, fn = ap_per_class(*stats, plot=plots, save_dir=save_dir, names=names)
+        tp, fp, p, r, f1, ap, ap_class, fnr, fn = ap_per_class(*stats, plot=plots, save_dir=save_dir, names=names, confidence_threshold=metrics_confidence_threshold)
         ap50, ap = ap[:, 0], ap.mean(1)  # AP@0.5, AP@0.5:0.95
         mp, mr, map50, map = p.mean(), r.mean(), ap50.mean(), ap.mean()
         nt = np.bincount(stats[3].astype(np.int64), minlength=nc)  # number of targets per class
@@ -873,6 +836,7 @@ def parse_opt():
     parser.add_argument('--run-only-img-txt', action='store_true',
                         help='run evaluation on images listed in img-txt-path. Otherwise, exclude these images.')
     parser.add_argument('--no-transform', action='store_true', help='do not apply patch to signs using transform. if no-transform==True, patch will face us')
+    parser.add_argument('--metrics-confidence-threshold', type=float, default=0.5, help='confidence threshold')
 
     opt = parser.parse_args()
     opt.data = check_yaml(opt.data)  # check YAML

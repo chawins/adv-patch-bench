@@ -19,7 +19,7 @@ def fitness(x):
     return (x[:, :4] * w).sum(1)
 
 
-def ap_per_class(tp, conf, pred_cls, target_cls, plot=False, save_dir='.', names=(), eps=1e-16, synthetic=False):
+def ap_per_class(tp, conf, pred_cls, target_cls, plot=False, save_dir='.', names=(), eps=1e-16, confidence_threshold=0.5):
     """ Compute the average precision, given the recall and precision curves.
     Source: https://github.com/rafaelpadilla/Object-Detection-Metrics.
     # Arguments
@@ -66,6 +66,9 @@ def ap_per_class(tp, conf, pred_cls, target_cls, plot=False, save_dir='.', names
             # Recall / True Positive Rate
             recall = tpc / (n_l + eps)  # recall curve
             recall_per_class.append(recall[:, 0])
+            # print(recall_per_class[0].shape)
+            # print(recall_per_class)
+            # qqq
             r[ci] = np.interp(-px, -conf[i], recall[:, 0], left=0)  # negative x, xp because xp decreases
             fnr[ci] = 1 - r[ci]
 
@@ -97,11 +100,8 @@ def ap_per_class(tp, conf, pred_cls, target_cls, plot=False, save_dir='.', names
         with open(numpy_filename, 'wb') as f:
             np.save(f, px)
 
-    # NOTE: hardcoded index at which f1 score is maximum
-    # if synthetic:
-    #     i = 312
-    # else:
-    i = 359
+    # i = 359
+    i = int(confidence_threshold * 1000)
 
     # i = f1.mean(0).argmax()  # max F1 index
     # print('f1 scores')
