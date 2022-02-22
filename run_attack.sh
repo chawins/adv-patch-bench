@@ -30,22 +30,21 @@
 # --save-exp-metrics \
 # --apply-patch
 
-CUDA_VISIBLE_DEVICES=1 python -u generate_adv_patch.py \
-    --seed 0 \
-    --data mapillary_vistas.yaml \
-    --weights /data/shared/adv-patch-bench/yolov5/runs/train/exp2/weights/best.pt \
-    --patch-name stop_sign_transform \
-    --imgsz 1280 \
-    --padded_imgsz 736,1312 \
-    --obj-class 14 \
-    --obj-size 128 \
-    --obj-path attack_assets/octagon-915.0.png \
-    --num-bg 50 \
-    --bg-dir /data/shared/mtsd_v2_fully_annotated/train \
-    --csv-path mapillary_vistas_final_merged.csv \
-    --save-images \
-    --generate-patch synthetic
-    # --generate-patch transform
+# CUDA_VISIBLE_DEVICES=1 python -u generate_adv_patch.py \
+#     --seed 0 \
+#     --data mapillary_vistas.yaml \
+#     --weights /data/shared/adv-patch-bench/yolov5/runs/train/exp2/weights/best.pt \
+#     --patch-name stop_sign_transform \
+#     --imgsz 1280 \
+#     --padded_imgsz 736,1312 \
+#     --obj-class 14 \
+#     --obj-size 128 \
+#     --obj-path attack_assets/octagon-915.0.png \
+#     --num-bg 50 \
+#     --bg-dir /data/shared/mtsd_v2_fully_annotated/train \
+#     --csv-path mapillary_vistas_final_merged.csv \
+#     --save-images \
+#     --generate-patch transform
 
 # CUDA_VISIBLE_DEVICES=0 python -u generate_adv_patch.py \
 #     --seed 0 \
@@ -72,10 +71,23 @@ CUDA_VISIBLE_DEVICES=1 python -u val_attack_synthetic.py \
     --task train \
     --save-exp-metrics \
     --plot-octagons \
-    --apply-patch \
-    --load-patch ./runs/val/exp14/stop_sign_transform.pkl \
-    --obj-size 128 \
-    --img-txt-path ./runs/val/exp14/bg_filenames.txt 
+    --obj-size 128 
+    
+# CUDA_VISIBLE_DEVICES=1 python -u val_attack_synthetic.py \
+#     --imgsz 1280 \
+#     --padded_imgsz 736,1312 \
+#     --batch-size 8 \
+#     --data mapillary_vistas.yaml \
+#     --weights /data/shared/adv-patch-bench/yolov5/runs/train/exp2/weights/best.pt \
+#     --exist-ok \
+#     --workers 8 \
+#     --task train \
+#     --save-exp-metrics \
+#     --plot-octagons \
+#     --apply-patch \
+#     --load-patch ./runs/val/exp/stop_sign_transform.pkl \
+#     --obj-size 128 
+    # --img-txt-path ./runs/val/exp14/bg_filenames.txt 
     # --run-only-img-txt
 
 # CUDA_VISIBLE_DEVICES=0 python -u val_attack_synthetic.py \

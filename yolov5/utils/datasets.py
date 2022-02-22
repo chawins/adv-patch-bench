@@ -523,7 +523,6 @@ class LoadImagesAndLabels(Dataset):
                 if msg:
                     msgs.append(msg)
                 pbar.desc = f"{desc}{nf} found, {nm} missing, {ne} empty, {nc} corrupted"
-
         pbar.close()
         if msgs:
             LOGGER.info('\n'.join(msgs))

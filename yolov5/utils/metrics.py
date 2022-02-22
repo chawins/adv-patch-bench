@@ -32,12 +32,11 @@ def ap_per_class(tp, conf, pred_cls, target_cls, plot=False, save_dir='.', names
     # Returns
         The average precision as computed in py-faster-rcnn.
     """
-
     # Sort by objectness (from highest to lowest)
     i = np.argsort(-conf)
 
     tp, conf, pred_cls = tp[i], conf[i], pred_cls[i]
-
+    
     unique_classes, nt = np.unique(target_cls, return_counts=True)
     nc = unique_classes.shape[0]  # number of classes, number of detections
 
@@ -58,10 +57,10 @@ def ap_per_class(tp, conf, pred_cls, target_cls, plot=False, save_dir='.', names
         if n_p == 0 or n_l == 0:
             continue
         else:
-            # Accumulate FPs and TPs
+            # Accumulate FPs and TPs        
             fpc = (1 - tp[i]).cumsum(0)
             tpc = tp[i].cumsum(0)
-
+            
             confidence_per_class.append(conf[i])
 
             # Recall / True Positive Rate
@@ -167,7 +166,7 @@ class ConfusionMatrix:
         gt_classes = labels[:, 0].int()
         detection_classes = detections[:, 5].int()
 
-        iou = box_iou(labels[:, 1:], detections[:, :4])
+        iou = box_iou(labels[:, 1:5], detections[:, :4])
 
         x = torch.where(iou > self.iou_thres)
         if x[0].shape[0]:

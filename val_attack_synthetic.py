@@ -86,7 +86,7 @@ def process_batch(detections, labels, iouv):
         correct (Array[N, 10]), for 10 IoU levels
     """
     correct = torch.zeros(detections.shape[0], iouv.shape[0], dtype=torch.bool, device=iouv.device)
-    iou = box_iou(labels[:, 1:], detections[:, :4])
+    iou = box_iou(labels[:, 1:5], detections[:, :4])
     x = torch.where((iou >= iouv[0]) & (labels[:, 0:1] == detections[:, 5]))  # IoU above threshold and classes match
     if x[0].shape[0]:
         matches = torch.cat((torch.stack(x, 1), iou[x[0], x[1]][:, None]), 1).cpu().numpy()  # [label, detection, iou]
@@ -99,9 +99,40 @@ def process_batch(detections, labels, iouv):
         correct[matches[:, 1].long()] = matches[:, 2:3] >= iouv
     return correct
 
+# def process_batch(detections, labels, iouv, sign_class=None):
+#     """
+#     Return correct predictions matrix. Both sets of boxes are in (x1, y1, x2, y2) format.
+#     Arguments:
+#         detections (Array[N, 6]), x1, y1, x2, y2, conf, class
+#         labels (Array[M, 5]), class, x1, y1, x2, y2
+#     Returns:
+#         correct (Array[N, 10]), for 10 IoU levels
+#     """
+#     correct = torch.zeros(detections.shape[0], iouv.shape[0], dtype=torch.bool, device=iouv.device)
+    
+#     print('keeping only relevant class')
+#     print(labels.shape, detections.shape)
+#     labels = labels[labels[:, 0] == sign_class]
+#     detections = detections[detections[:, 5] == sign_class]
+#     print(labels.shape, detections.shape)
+
+
+#     iou = box_iou(labels[:, 1:5], detections[:, :4])
+#     x = torch.where((iou >= iouv[0]) & (labels[:, 0:1] == detections[:, 5]))  # IoU above threshold and classes match
+#     if x[0].shape[0]:
+#         matches = torch.cat((torch.stack(x, 1), iou[x[0], x[1]][:, None]), 1).cpu().numpy()  # [label, detection, iou]
+#         if x[0].shape[0] > 1:
+#             matches = matches[matches[:, 2].argsort()[::-1]]
+#             matches = matches[np.unique(matches[:, 1], return_index=True)[1]]
+#             # matches = matches[matches[:, 2].argsort()[::-1]]
+#             matches = matches[np.unique(matches[:, 0], return_index=True)[1]]
+#         matches = torch.Tensor(matches).to(iouv.device)
+#         correct[matches[:, 1].long()] = matches[:, 2:3] >= iouv
+#     return correct
+
 
 def transform_and_apply_patch(image, adv_patch, patch_mask, patch_loc,
-                              shape, predicted_class, row, img_data):
+                              shape, predicted_class, row, img_data, no_transform=False):
     if adv_patch.ndim == 4:
         adv_patch = adv_patch[0]
     if patch_mask.ndim == 4:
@@ -119,20 +150,37 @@ def transform_and_apply_patch(image, adv_patch, patch_mask, patch_loc,
     sign_canonical[:-1, ymin:ymin + height, xmin:xmin + width] = adv_patch
     sign_canonical[-1, ymin:ymin + height, xmin:xmin + width] = 1
     sign_canonical = sign_mask * patch_mask * sign_canonical
-    # print(sign_canonical[:-1].sum())
-    # import pdb
-    # pdb.set_trace()
 
     src = np.array(src, dtype=np.float32)
-
+    
     # if annotated, then use those points
     if not pd.isna(row['points']):
         tgt = np.array(literal_eval(row['points']), dtype=np.float32)
+        
+        tgt_shape = (max(tgt[:, 1]) - min(tgt[:, 1]), max(tgt[:, 0]) - min(tgt[:, 0]))
+
         tgt[:, 1] = (tgt[:, 1] * h_ratio) + h_pad
         tgt[:, 0] = (tgt[:, 0] * w_ratio) + w_pad
+
+        if no_transform:
+            # Get the scaling factor
+            src_shape = (max(src[:, 1]) - min(src[:, 1]), max(src[:, 0]) - min(src[:, 0]))
+            scale = np.flipud(np.divide(tgt_shape, src_shape))  # you have to flip because the image.shape is (y,x) but your corner points are (x,y)
+            
+            tgt_untransformed = src.copy()
+            # rescale src
+            tgt_untransformed[:, 1] = tgt_untransformed[:, 1] * scale[0]
+            tgt_untransformed[:, 0] = tgt_untransformed[:, 0] * scale[1]
+            # translate src
+            tgt_untransformed[:, 1] = (tgt_untransformed[:, 1] * h_ratio) + h_pad
+            tgt_untransformed[:, 0] = (tgt_untransformed[:, 0] * w_ratio) + w_pad
+            tgt = tgt_untransformed
     else:
         tgt = row['tgt'] if pd.isna(row['tgt_polygon']) else row['tgt_polygon']
         tgt = np.array(literal_eval(tgt), dtype=np.float32)
+
+        tgt_shape = (max(tgt[:, 1]) - min(tgt[:, 1]), max(tgt[:, 0]) - min(tgt[:, 0]))
+
         offset_x_ratio = row['xmin_ratio']
         offset_y_ratio = row['ymin_ratio']
         # Have to correct for the padding when df is saved (TODO: this should be simplified)
@@ -142,6 +190,19 @@ def transform_and_apply_patch(image, adv_patch, patch_mask, patch_loc,
         # Order of coordinate in tgt is inverted, i.e., (x, y) instead of (y, x)
         tgt[:, 1] = (tgt[:, 1] + y_min) * h_ratio + h_pad
         tgt[:, 0] = (tgt[:, 0] + x_min) * w_ratio + w_pad
+        
+        if no_transform:
+            # Get the scaling factor
+            src_shape = (max(src[:, 1]) - min(src[:, 1]), max(src[:, 0]) - min(src[:, 0]))
+            scale = np.flipud(np.divide(tgt_shape, src_shape))  # you have to flip because the image.shape is (y,x) but your corner points are (x,y)
+            tgt_untransformed = src.copy()
+            # rescale src
+            tgt_untransformed[:, 1] = tgt_untransformed[:, 1] * scale[0]
+            tgt_untransformed[:, 0] = tgt_untransformed[:, 0] * scale[1]
+            # translate src
+            tgt_untransformed[:, 1] = (tgt_untransformed[:, 1] + y_min) * h_ratio + h_pad
+            tgt_untransformed[:, 0] = (tgt_untransformed[:, 0] + x_min) * w_ratio + w_pad
+            tgt = tgt_untransformed
 
     if len(src) == 3:
         M = torch.from_numpy(getAffineTransform(src, tgt)).unsqueeze(0).float()
@@ -205,7 +266,7 @@ def run(args,
     load_patch = args.load_patch
     ymin, xmin = tuple([int(x) for x in args.patch_loc.split(',')])
     obj_size = args.obj_size
-    targets_images = args.targets_images
+    no_transform = args.no_transform
 
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
@@ -361,24 +422,24 @@ def run(args,
     if args.img_txt_path != '':
         with open(args.img_txt_path, 'r') as f:
             filename_list = f.read().splitlines()
-    patch_loc = mask_to_box(patch_mask)
+    
+    if apply_patch:
+        patch_loc = mask_to_box(patch_mask)
 
     if plot_octagons:
         shape_to_plot_data = {}
         shape_to_plot_data['octagon'] = []
 
-    # TODO: delete next line. only for debugging
-    total_images_processed = 0
-    targets_indices = None
+    metrics_per_image_df = pd.DataFrame(columns=['filename', 'num_octagons', 'num_patches', 'fnr', 'fn'])
     for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
+        targets = torch.nn.functional.pad(targets, (0, 1), "constant", 0)  # effectively zero padding
         filenames = [p.split('/')[-1] for p in paths]
         # DEBUG
-        # if batch_i == 20:
+        # if batch_i == 10:
         #     break
         if num_apply_imgs >= len(filename_list) and args.run_only_img_txt:
             break
-        if targets_images:
-            targets_indices = [index for index, p in enumerate(filenames) if (p in targets_images)]
+        
         # ======================= BEGIN: apply patch ======================== #
         for image_i, path in enumerate(paths):
 
@@ -395,6 +456,7 @@ def run(args,
                     continue
                 num_apply_imgs += 1
 
+                num_patches_applied_to_image = 0
                 # Apply patch on all of the signs on this image
                 for _, row in img_df.iterrows():
                     (h0, w0), ((h_ratio, w_ratio), (w_pad, h_pad)) = shapes[image_i]
@@ -410,7 +472,11 @@ def run(args,
 
                     im[image_i] = transform_and_apply_patch(
                         im[image_i], adv_patch, patch_mask, patch_loc, shape,
-                        predicted_class, row, img_data) * 255
+                        predicted_class, row, img_data, no_transform=no_transform) * 255
+                    num_patches_applied_to_image += 1
+
+                # set targets[6] to 1 if patch is applied to image
+                targets[targets[:, 0] == image_i, 6] = num_patches_applied_to_image
 
             elif apply_patch and synthetic:
 
@@ -420,9 +486,6 @@ def run(args,
                 resized_img = im[image_i]
 
                 if apply_patch:
-                    print(patch_mask.shape)
-                    print(adv_patch.shape)
-                    print(obj.shape)
                     adv_obj = patch_mask * adv_patch + (1 - patch_mask) * obj
                 else:
                     adv_obj = obj
@@ -454,24 +517,6 @@ def run(args,
                 reresize_transform = torchvision.transforms.Resize(size=orig_shape)
                 im[image_i] = reresize_transform(adv_img) * 255
 
-        # TODO: for targeted attack
-        if targets_indices:
-            im = torch.index_select(im, 0, torch.tensor(targets_indices))
-
-            selected_targets_indices = []
-            for i, tgt in enumerate(targets):
-                if tgt[0] in targets_indices:
-                    selected_targets_indices.append(i)
-            targets = torch.index_select(targets, 0, torch.tensor(selected_targets_indices))
-        else:
-            pass
-
-        # total_images_processed += len(im)
-        # if total_images_processed > 1:
-        #     qqq
-
-        # continue
-
         t1 = time_sync()
         if pt or jit or engine:
             im = im.to(device, non_blocking=True)
@@ -492,7 +537,7 @@ def run(args,
             loss += compute_loss([x.float() for x in train_out], targets)[1]  # box, obj, cls
 
         # NMS
-        targets[:, 2:] *= torch.Tensor([width, height, width, height]).to(device)  # to pixels
+        targets[:, 2:6] *= torch.Tensor([width, height, width, height]).to(device)  # to pixels
         lb = [targets[targets[:, 0] == i, 1:] for i in range(nb)] if save_hybrid else []  # for autolabelling
         t3 = time_sync()
         out = non_max_suppression(out, conf_thres, iou_thres, labels=lb, multi_label=True, agnostic=single_cls)
@@ -508,7 +553,13 @@ def run(args,
             tcls = labels[:, 0].tolist() if nl else []  # target class
             path, shape = Path(paths[si]), shapes[si][0]
             seen += 1
+            filename = str(path).split('/')[-1]
 
+            current_image_metrics = {}
+            current_image_metrics['filename'] = filename
+            current_image_metrics['num_octagons'] = sum([1 for x in labels[:,0] if x == 14])
+            current_image_metrics['num_patches'] = max(labels[:, 5].tolist() + [0])
+            
             if len(pred) == 0:
                 if nl:
                     stats.append((torch.zeros(0, niou, dtype=torch.bool), torch.Tensor(), torch.Tensor(), tcls))
@@ -563,6 +614,21 @@ def run(args,
                     confusion_matrix.process_batch(predn, labelsn)
             else:
                 correct = torch.zeros(pred.shape[0], niou, dtype=torch.bool)
+            
+            curr_stats = (correct.cpu(), pred[:, 4].cpu(), pred[:, 5].cpu(), tcls)
+            if len(tcls) > 0:
+                curr_stats = (correct.cpu().numpy(), pred[:, 4].cpu().numpy(), pred[:, 5].cpu().numpy(), np.array(tcls))
+                tp, fp, p, r, f1, ap, ap_class, fnr, fn = ap_per_class(*curr_stats, plot=False, save_dir=None, names=names)
+                if 14 in ap_class:
+                    sign_index = list(ap_class).index(14)
+                    current_image_metrics['fnr'] = fnr[sign_index]
+                    current_image_metrics['fn'] = fn[sign_index]
+                else:
+                    current_image_metrics['fnr'] = None
+                    current_image_metrics['fn'] = None
+
+                metrics_per_image_df = metrics_per_image_df.append(current_image_metrics, ignore_index=True)
+
             stats.append((correct.cpu(), pred[:, 4].cpu(), pred[:, 5].cpu(), tcls))  # (correct, conf, pcls, tcls)
 
             # Save/log
@@ -612,6 +678,8 @@ def run(args,
     #                            END: Main eval loop                          #
     # ======================================================================= #
 
+    metrics_per_image_df.to_csv('runs/results_per_image.csv', index=False)
+
     if plot_octagons:
         save_dir_octagon = increment_path(save_dir / 'octagon', exist_ok=exist_ok, mkdir=True)  # increment run
         for i in range(len(shape_to_plot_data['octagon'])):
@@ -631,9 +699,6 @@ def run(args,
 
     metrics_df_column_names = ["name", "apply_patch", "random_patch"]
     current_exp_metrics = {}
-
-    # metrics_df_column_names.append('num_bg')
-    # current_exp_metrics['num_bg'] = num_bg
 
     if len(stats) and stats[0].any():
         tp, fp, p, r, f1, ap, ap_class, fnr, fn = ap_per_class(*stats, plot=plots, save_dir=save_dir, names=names)
@@ -807,8 +872,7 @@ def parse_opt():
                         help='path to a text file containing image filenames')
     parser.add_argument('--run-only-img-txt', action='store_true',
                         help='run evaluation on images listed in img-txt-path. Otherwise, exclude these images.')
-
-    parser.add_argument('--targets_images', '--list', nargs='+', help='<Required> Set flag', required=False)
+    parser.add_argument('--no-transform', action='store_true', help='do not apply patch to signs using transform. if no-transform==True, patch will face us')
 
     opt = parser.parse_args()
     opt.data = check_yaml(opt.data)  # check YAML
