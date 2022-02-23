@@ -80,6 +80,7 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
     attack = RP2AttackModule(attack_config, model, None, None, None)
 
     obj_mask = torch.from_numpy(obj_numpy[:, :, -1] == 1).float().unsqueeze(0)
+    print(obj_mask.shape)
     obj = torch.from_numpy(obj_numpy[:, :, :-1]).float().permute(2, 0, 1)
     # Resize and put object in the middle of zero background
     # pad_size = [(img_size[1] - obj_size[1]) // 2, (img_size[0] - obj_size[0]) // 2]  # left/right, top/bottom
@@ -92,6 +93,8 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
     obj = T.pad(obj, pad_size)
     obj_mask = T.resize(obj_mask, obj_size, interpolation=T.InterpolationMode.NEAREST)
     obj_mask = T.pad(obj_mask, pad_size)
+    print(obj_mask.shape)
+    ww
 
     # Generate an adversarial patch
     if generate_patch == 'synthetic':
@@ -254,6 +257,9 @@ def main(
     h = int(patch_size / 36 / 2 * obj_size[0])
     w = int(patch_size / 36 / 2 * obj_size[1])
 
+    # print(mid_width - w)
+    # print(mid_height - h)
+    
     patch_mask[:, mid_height - h:mid_height + h, mid_width - w:mid_width + w] = 1
 
     dataloader = None

@@ -232,7 +232,7 @@ def run(args,
     plot_single_images = args.plot_single_images
     plot_octagons = args.plot_octagons
     load_patch = args.load_patch
-    ymin, xmin = tuple([int(x) for x in args.patch_loc.split(',')])
+    ymin, xmin = tuple([int(x) for x in args.patch_loc])
     obj_size = args.obj_size
     no_transform = args.no_transform
     metrics_confidence_threshold = args.metrics_confidence_threshold
@@ -355,7 +355,7 @@ def run(args,
 
         if synthetic:
             # TODO
-            img_size = args.padded_imgsz
+            img_size = [int(x) for x in args.padded_imgsz.split(',')]
             img_height, img_width = img_size
             obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True)
             mask_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, resample=Resample.NEAREST)
@@ -365,12 +365,14 @@ def run(args,
             #     'octagon', 'octagon-915.0', patch_width, patch_size_in_mm, sign_size_in_pixel=obj_size)
             # obj_size = sign_canonical.shape[1:]
             # print('obj_size: ', obj_size)
-            obj, obj_mask = prepare_obj('./attack_assets/octagon-915.0.png', img_size, obj_size)
+            obj, obj_mask = prepare_obj('./attack_assets/octagon-915.0.png', img_size, (obj_size, obj_size))
             h_offset, w_offset, _, _ = mask_to_box(obj_mask)
+
             patch_mask = torch.zeros_like(obj_mask)
             ymin_ = ymin + h_offset
             xmin_ = xmin + w_offset
             patch_mask[:, ymin_:ymin_ + patch_height, xmin_:xmin_ + patch_width] = 1
+
         else:
             df = pd.read_csv('mapillary_vistas_final_merged.csv')
             df['tgt_final'] = df['tgt_final'].apply(literal_eval)
@@ -404,8 +406,8 @@ def run(args,
         targets = torch.nn.functional.pad(targets, (0, 1), "constant", 0)  # effectively zero padding
         filenames = [p.split('/')[-1] for p in paths]
         # DEBUG
-        if batch_i == 10:
-            break
+        # if batch_i == 10:
+        #     break
         if num_apply_imgs >= len(filename_list) and args.run_only_img_txt:
             break
         
@@ -452,10 +454,15 @@ def run(args,
                 # FIXME
                 orig_shape = im[image_i].shape[1:]
                 # resized_img = resize_transform(im[image_i])
-                resized_img = im[image_i]
 
+                padded_img = im[image_i]
+                pad_size = [(img_size[1] - orig_shape[1]) // 2, (img_size[0] - orig_shape[0]) // 2]  # left/right, top/bottom
+                padded_img = T.pad(padded_img, pad_size)
+                                
                 if apply_patch:
-                    adv_obj = patch_mask * adv_patch + (1 - patch_mask) * obj
+                    # adv_obj = patch_mask * adv_patch + (1 - patch_mask) * obj
+                    adv_obj = (1 - patch_mask) * obj
+                    adv_obj[:, ymin_:ymin_ + patch_height, xmin_:xmin_ + patch_width] = adv_patch
                 else:
                     adv_obj = obj
 
@@ -480,11 +487,14 @@ def run(args,
                     (y_min + y_max) / (2 * img_height),
                     (x_max - x_min) / img_width,
                     (y_max - y_min) / img_height,
+                    1
                 ]
                 targets = torch.cat((targets, torch.unsqueeze(torch.tensor(label), 0)))
-                adv_img = o_mask * adv_obj + (1 - o_mask) * resized_img / 255
-                reresize_transform = torchvision.transforms.Resize(size=orig_shape)
-                im[image_i] = reresize_transform(adv_img) * 255
+
+                adv_img = o_mask * adv_obj + (1 - o_mask) * padded_img / 255
+                # reresize_transform = torchvision.transforms.Resize(size=orig_shape)
+                # im[image_i] = reresize_transform(adv_img) * 255
+                im[image_i] = adv_img[:, :, pad_size[1]:-pad_size[1], pad_size[0]:orig_shape[1]-pad_size[0]].squeeze() * 255
 
         t1 = time_sync()
         if pt or jit or engine:
@@ -827,7 +837,7 @@ def parse_opt():
     parser.add_argument('--plot-octagons', action='store_true',
                         help='save single images containing octagons in a folder')
     parser.add_argument('--num-bg', type=int, default=16, help='number of backgrounds to generate adversarial patch')
-    parser.add_argument('--patch-loc', type=str, default='128,128',
+    parser.add_argument('--patch-loc', type=str, default='128 128', nargs='*',
                         help='location to place patch w.r.t. object in tuple (ymin, xmin)')
     # parser.add_argument('--patch-size-mm', type=float, default=250, help='patch width in millimeter')
     parser.add_argument('--obj-size', type=int, default=128, help='width of the object in pixels')

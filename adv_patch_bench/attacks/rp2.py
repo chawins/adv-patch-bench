@@ -47,7 +47,8 @@ class RP2AttackModule(DetectorAttackModule):
         # )
         self.obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True)
         self.mask_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, resample=Resample.NEAREST)
-        self.patch_jitter_transform = K.ColorJitter(brightness=(0, 0.3), contrast=(0, 0.3), saturation=(0, 0.3), hue=(0, 0.3))
+        self.patch_jitter_transform = K.ColorJitter(brightness=(0, 0.5), p=0.5)
+        # self.patch_jitter_transform = K.ColorJitter(brightness=(0, 0.1), contrast=(0, 0.1), saturation=(0, 0.1), hue=(0, 0.1))
         
 
     def attack(self,
@@ -141,7 +142,7 @@ class RP2AttackModule(DetectorAttackModule):
                     # self.resize_transforms = T.Resize(size=new_size)
 
                     # Apply random transformations
-                    # delta = self.patch_jitter_transform(delta)
+                    delta = self.patch_jitter_transform(delta)
 
                     patch_full[:, ymin:ymin + height, xmin:xmin + width] = delta
                     adv_obj = patch_mask * patch_full + (1 - patch_mask) * obj
@@ -176,46 +177,30 @@ class RP2AttackModule(DetectorAttackModule):
                     else:
                         loss = conf.max(1)[0].clamp_min(self.min_conf).mean()
 
-                # Compute logits, loss, gradients
-                out, _ = self.core_model(adv_img, val=True)
-                conf = out[:, :, 4:5] * out[:, :, 5:]
-                conf, labels = conf.max(-1)
-                if obj_class is not None:
-                    loss = 0
-                    for c, l in zip(conf, labels):
-                        c_l = c[l == obj_class]
-                        if c_l.size(0) > 0:
-                            # Select prediction from box with max confidence and ignore
-                            # ones with already low confidence
-                            loss += c_l.max().clamp_min(self.min_conf)
                     loss /= self.num_eot
-                else:
-                    loss = conf.max(1)[0].clamp_min(self.min_conf).mean()
+                    tv = ((delta[:, :, :-1, :] - delta[:, :, 1:, :]).abs().mean() +
+                        (delta[:, :, :, :-1] - delta[:, :, :, 1:]).abs().mean())
+                    # loss = out[:, :, 4].mean() + self.lmbda * tv
+                    loss += self.lmbda * tv
+                    loss.backward(retain_graph=True)
+                    opt.step()
+                    # lr_schedule.step(loss)
 
-                loss /= self.num_eot
-                tv = ((delta[:, :, :-1, :] - delta[:, :, 1:, :]).abs().mean() +
-                      (delta[:, :, :, :-1] - delta[:, :, :, 1:]).abs().mean())
-                # loss = out[:, :, 4].mean() + self.lmbda * tv
-                loss += self.lmbda * tv
-                loss.backward(retain_graph=True)
-                opt.step()
-                # lr_schedule.step(loss)
+                    if ema_loss is None:
+                        ema_loss = loss.item()
+                    else:
+                        ema_loss = ema_const * ema_loss + (1 - ema_const) * loss.item()
+                    if step % 100 == 0:
+                        print(f'step: {step}   loss: {ema_loss:.6f}')
 
-                if ema_loss is None:
-                    ema_loss = loss.item()
-                else:
-                    ema_loss = ema_const * ema_loss + (1 - ema_const) * loss.item()
-                if step % 100 == 0:
-                    print(f'step: {step}   loss: {ema_loss:.6f}')
-
-                # if self.num_restarts == 1:
-                #     x_adv_worst = x_adv
-                # else:
-                #     # Update worst-case inputs with itemized final losses
-                #     fin_losses = self.loss_fn(self.core_model(x_adv), y).reshape(worst_losses.shape)
-                #     up_mask = (fin_losses >= worst_losses).float()
-                #     x_adv_worst = x_adv * up_mask + x_adv_worst * (1 - up_mask)
-                #     worst_losses = fin_losses * up_mask + worst_losses * (1 - up_mask)
+                    # if self.num_restarts == 1:
+                    #     x_adv_worst = x_adv
+                    # else:
+                    #     # Update worst-case inputs with itemized final losses
+                    #     fin_losses = self.loss_fn(self.core_model(x_adv), y).reshape(worst_losses.shape)
+                    #     up_mask = (fin_losses >= worst_losses).float()
+                    #     x_adv_worst = x_adv * up_mask + x_adv_worst * (1 - up_mask)
+                    #     worst_losses = fin_losses * up_mask + worst_losses * (1 - up_mask)
 
         # DEBUG
         # outt = non_max_suppression(out.detach(), conf_thres=0.25, iou_thres=0.6)
