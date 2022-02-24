@@ -36,8 +36,8 @@ ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
                        img_size=(736, 1312), obj_class=0, obj_size=None,
                        bg_dir='./', num_bg=16, save_images=False, save_dir='./',
-                       generate_patch='synthetic', csv_path='mapillary.csv',
-                       dataloader=None):
+                       generate_patch='synthetic', rescaling=False, relighting=False, 
+                       csv_path='mapillary.csv', dataloader=None):
     """Generate adversarial patch
 
     Args:
@@ -77,10 +77,9 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
         'input_size': img_size,
     }
     # TODO: Allow data parallel?
-    attack = RP2AttackModule(attack_config, model, None, None, None)
+    attack = RP2AttackModule(attack_config, model, None, None, None, rescaling=rescaling, relighting=relighting)
 
     obj_mask = torch.from_numpy(obj_numpy[:, :, -1] == 1).float().unsqueeze(0)
-    print(obj_mask.shape)
     obj = torch.from_numpy(obj_numpy[:, :, :-1]).float().permute(2, 0, 1)
     # Resize and put object in the middle of zero background
     # pad_size = [(img_size[1] - obj_size[1]) // 2, (img_size[0] - obj_size[0]) // 2]  # left/right, top/bottom
@@ -93,8 +92,6 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
     obj = T.pad(obj, pad_size)
     obj_mask = T.resize(obj_mask, obj_size, interpolation=T.InterpolationMode.NEAREST)
     obj_mask = T.pad(obj_mask, pad_size)
-    print(obj_mask.shape)
-    ww
 
     # Generate an adversarial patch
     if generate_patch == 'synthetic':
@@ -204,6 +201,8 @@ def main(
     patch_name='adv_patch',
     seed=0,
     generate_patch='synthetic',
+    rescaling=False,
+    relighting=False,
     csv_path='',
     data=None,
 ):
@@ -277,12 +276,21 @@ def main(
         model, obj_numpy, patch_mask, device=device, img_size=img_size,
         obj_class=obj_class, obj_size=obj_size, bg_dir=bg_dir, num_bg=num_bg,
         save_images=save_images, save_dir=save_dir, generate_patch=generate_patch,
-        csv_path=csv_path, dataloader=dataloader)
+        rescaling=rescaling, relighting=relighting, csv_path=csv_path, dataloader=dataloader)
 
     # Save adv patch
     patch_path = join(save_dir, f'{patch_name}.pkl')
     print(f'Saving the generated adv patch to {patch_path}...')
     pickle.dump([adv_patch, patch_mask], open(patch_path, 'wb'))
+
+    patch_metadata = {
+                    'generate_patch':generate_patch, 
+                    'rescaling':rescaling,
+                    'relighting':relighting
+                    }
+    patch_metadata_path = join(save_dir, 'patch_metadata.pkl')
+    print(f'Saving the generated adv patch metadata to {patch_metadata_path}...')
+    pickle.dump(patch_metadata, open(patch_metadata_path, 'wb'))
 
 
 if __name__ == "__main__":
@@ -313,6 +321,11 @@ if __name__ == "__main__":
     parser.add_argument('--generate-patch', type=str, default='synthetic',
                         help=("create patch using synthetic stop signs if 'synthetic'"
                               "else use real tranformation if 'transform'"))
+    parser.add_argument('--rescaling', action='store_true', 
+                        help='if true, will randomly rescale synthetic sign size during patch generations. only valid when generate-patch==synthetic')
+    parser.add_argument('--relighting', action='store_true', 
+                        help='if true and generate-patch==synthetic, will randomly add color jitter to patch when generating the patch \
+                                else if true and generate-patch==transform, will perform color transform for patch on real signs')
     parser.add_argument('--csv-path', type=str, default='',
                         help='path to csv file with the annotated transform data')
     opt = parser.parse_args()
