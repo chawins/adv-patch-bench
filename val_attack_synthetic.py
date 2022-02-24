@@ -33,6 +33,7 @@ from tqdm import tqdm
 
 # from adv_patch_bench.attacks.rp2 import RP2AttackModule
 from adv_patch_bench.utils.image import mask_to_box, pad_image, prepare_obj
+from adv_patch_bench.attacks.rp2 import RP2AttackModule
 from example_transforms import get_sign_canonical
 from yolov5.models.common import DetectMultiBackend
 from yolov5.utils.callbacks import Callbacks
@@ -99,6 +100,7 @@ def process_batch(detections, labels, iouv):
         correct[matches[:, 1].long()] = matches[:, 2:3] >= iouv
     return correct
 
+
 def transform_and_apply_patch(image, adv_patch, patch_mask, patch_loc,
                               shape, predicted_class, row, img_data, no_transform=False):
     if adv_patch.ndim == 4:
@@ -120,11 +122,13 @@ def transform_and_apply_patch(image, adv_patch, patch_mask, patch_loc,
     sign_canonical = sign_mask * patch_mask * sign_canonical
 
     src = np.array(src, dtype=np.float32)
-    
+
     # if annotated, then use those points
+    # TODO: unify `points` and other `tgt` in the csv file so this part can be
+    # simplified into one function
     if not pd.isna(row['points']):
         tgt = np.array(literal_eval(row['points']), dtype=np.float32)
-        
+
         offset_y = min(tgt[:, 1])
         offset_x = min(tgt[:, 0])
 
@@ -136,8 +140,9 @@ def transform_and_apply_patch(image, adv_patch, patch_mask, patch_loc,
         if no_transform:
             # Get the scaling factor
             src_shape = (max(src[:, 0]) - min(src[:, 0]), max(src[:, 1]) - min(src[:, 1]))
-            scale = np.divide(tgt_shape, src_shape)  # you have to flip because the image.shape is (y,x) but your corner points are (x,y)
-            
+            # you have to flip because the image.shape is (y,x) but your corner points are (x,y)
+            scale = np.divide(tgt_shape, src_shape)
+
             tgt_untransformed = src.copy()
             # rescale src
             tgt_untransformed[:, 1] = tgt_untransformed[:, 1] * scale[1]
@@ -163,11 +168,12 @@ def transform_and_apply_patch(image, adv_patch, patch_mask, patch_loc,
         # Order of coordinate in tgt is inverted, i.e., (x, y) instead of (y, x)
         tgt[:, 1] = (tgt[:, 1] + y_min) * h_ratio + h_pad
         tgt[:, 0] = (tgt[:, 0] + x_min) * w_ratio + w_pad
-        
+
         if no_transform:
             # Get the scaling factor
             src_shape = (max(src[:, 0]) - min(src[:, 0]), max(src[:, 1]) - min(src[:, 1]))
-            scale = np.divide(tgt_shape, src_shape)  # you have to flip because the image.shape is (y,x) but your corner points are (x,y)
+            # you have to flip because the image.shape is (y,x) but your corner points are (x,y)
+            scale = np.divide(tgt_shape, src_shape)
             tgt_untransformed = src.copy()
             # rescale src
             tgt_untransformed[:, 1] = tgt_untransformed[:, 1] * scale[1]
@@ -237,10 +243,10 @@ def run(args,
     plot_single_images = args.plot_single_images
     plot_octagons = args.plot_octagons
     load_patch = args.load_patch
-    ymin, xmin = tuple([int(x) for x in args.patch_loc])
     obj_size = args.obj_size
     no_transform = args.no_transform
     metrics_confidence_threshold = args.metrics_confidence_threshold
+    img_size = tuple([int(x) for x in args.padded_imgsz.split(',')])
 
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
@@ -359,8 +365,8 @@ def run(args,
             adv_patch = torch.rand(3, patch_height, patch_width)
 
         if synthetic:
-            # TODO
-            img_size = [int(x) for x in args.padded_imgsz.split(',')]
+            # TODO: Save patch mask for synthetic sign too, remove patch_loc
+            ymin, xmin = tuple([int(x) for x in args.patch_loc])
             img_height, img_width = img_size
             obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True)
             mask_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, resample=Resample.NEAREST)
@@ -385,6 +391,20 @@ def run(args,
             print(df.shape)
             print(df.groupby(by=['final_shape']).count())
 
+    # Initialize attack
+    attack_config = {
+        'rp2_num_steps': 2000,
+        'rp2_step_size': 1e-2,
+        'rp2_num_eot': 1,
+        'rp2_optimizer': 'adam',
+        'rp2_lambda': 0,
+        'rp2_min_conf': 0.25,
+        'rp2_augment_real': False,
+        'input_size': img_size,
+    }
+    attack = RP2AttackModule(attack_config, model, None, None, None,
+                             rescaling=False, relighting=False, verbose=False)
+
     # ======================================================================= #
     #                          BEGIN: Main eval loop                          #
     # ======================================================================= #
@@ -398,7 +418,7 @@ def run(args,
     if args.img_txt_path != '':
         with open(args.img_txt_path, 'r') as f:
             filename_list = f.read().splitlines()
-    
+
     if apply_patch:
         patch_loc = mask_to_box(patch_mask)
 
@@ -411,11 +431,11 @@ def run(args,
         targets = torch.nn.functional.pad(targets, (0, 1), "constant", 0)  # effectively zero padding
         filenames = [p.split('/')[-1] for p in paths]
         # DEBUG
-        if batch_i == 100:
+        if batch_i == 500:
             break
         if num_apply_imgs >= len(filename_list) and args.run_only_img_txt:
             break
-        
+
         # ======================= BEGIN: apply patch ======================== #
         for image_i, path in enumerate(paths):
 
@@ -443,9 +463,18 @@ def run(args,
                     # FIXME: only apply patch to octagons
                     if shape != 'octagon':
                         continue
-
                     num_octagon_with_patch += shape == 'octagon'
 
+                    # Run attack for each sign
+                    if args.per_sign_attack:
+                        print('=> Generating adv patch...')
+                        data = [shape, predicted_class, row, *img_data]
+                        attack_images = [[im[image_i], data, str(filename)]]
+                        with torch.enable_grad():
+                            adv_patch = attack.transform_and_attack(
+                                attack_images, patch_mask=patch_mask.to(device), obj_class=14)[0]
+
+                    # Transform and apply patch on the image. `im` has range [0, 255]
                     im[image_i] = transform_and_apply_patch(
                         im[image_i], adv_patch, patch_mask, patch_loc, shape,
                         predicted_class, row, img_data, no_transform=no_transform) * 255
@@ -462,16 +491,17 @@ def run(args,
                     orig_shape = im[image_i].shape[1:]
                     patch_padded = False
                     # resized_img = resize_transform(im[image_i])
-                    
-                    pad_size = [(img_size[1] - orig_shape[1]) // 2, (img_size[0] - orig_shape[0]) // 2]  # left/right, top/bottom
-                    
+
+                    pad_size = [(img_size[1] - orig_shape[1]) // 2,
+                                (img_size[0] - orig_shape[0]) // 2]  # left/right, top/bottom
+
                     if apply_patch:
                         # adv_obj = patch_mask * adv_patch + (1 - patch_mask) * obj
                         adv_obj = (1 - patch_mask) * obj
                         adv_obj[:, ymin_:ymin_ + patch_height, xmin_:xmin_ + patch_width] = adv_patch
                     else:
                         adv_obj = obj
-                    
+
                     # print('adv_obj', adv_obj.shape)
                     if pad_size[0] < 0 or pad_size[1] < 0:
                         new_pad_size = (abs(pad_size[0]), 0)
@@ -488,7 +518,6 @@ def run(args,
                     else:
                         padded_img = T.pad(im[image_i], pad_size)
                         curr_obj_mask = obj_mask
-
 
                     adv_obj, tf_params = obj_transforms(adv_obj)
                     adv_obj.clamp_(0, 1)
@@ -518,11 +547,12 @@ def run(args,
                     adv_img = o_mask * adv_obj + (1 - o_mask) * padded_img / 255
                     # reresize_transform = torchvision.transforms.Resize(size=orig_shape)
                     # im[image_i] = reresize_transform(adv_img) * 255
-                    
+
                     if patch_padded:
                         im[image_i] = adv_img.squeeze() * 255
                     else:
-                        im[image_i] = adv_img[:, :, pad_size[1]:adv_img.shape[2]-pad_size[1], pad_size[0]:adv_img.shape[3]-pad_size[0]].squeeze() * 255
+                        im[image_i] = adv_img[:, :, pad_size[1]:adv_img.shape[2]-pad_size[1],
+                                              pad_size[0]:adv_img.shape[3]-pad_size[0]].squeeze() * 255
                 except Exception as e:
                     print(e)
                     print()
@@ -531,10 +561,10 @@ def run(args,
                     print('orig_shape', orig_shape)
                     print('patch_padded', patch_padded)
                     print(pad_size[1], orig_shape[0]-pad_size[1], pad_size[0], orig_shape[1]-pad_size[0])
-                    print(adv_img[:, :, pad_size[1]:orig_shape[0]-pad_size[1], pad_size[0]:orig_shape[1]-pad_size[0]].squeeze().shape)
+                    print(adv_img[:, :, pad_size[1]:orig_shape[0]-pad_size[1],
+                          pad_size[0]:orig_shape[1]-pad_size[0]].squeeze().shape)
                     print('obj ', obj.shape)
                     qqq
-
 
         t1 = time_sync()
         if pt or jit or engine:
@@ -576,9 +606,9 @@ def run(args,
 
             current_image_metrics = {}
             current_image_metrics['filename'] = filename
-            current_image_metrics['num_octagons'] = sum([1 for x in labels[:,0] if x == 14])
+            current_image_metrics['num_octagons'] = sum([1 for x in labels[:, 0] if x == 14])
             current_image_metrics['num_patches'] = max(labels[:, 5].tolist() + [0])
-            
+
             if len(pred) == 0:
                 if nl:
                     stats.append((torch.zeros(0, niou, dtype=torch.bool), torch.Tensor(), torch.Tensor(), tcls))
@@ -634,9 +664,10 @@ def run(args,
             else:
                 correct = torch.zeros(pred.shape[0], niou, dtype=torch.bool)
 
-            # FIXME: 14 is octagon   
-            total_positives = sum([1 for x in tcls if x == 14])            
-            sign_indices = np.logical_and(pred.cpu().numpy()[:, 5] == 14, pred.cpu().numpy()[:, 4] > metrics_confidence_threshold)
+            # FIXME: 14 is octagon
+            total_positives = sum([1 for x in tcls if x == 14])
+            sign_indices = np.logical_and(pred.cpu().numpy()[:, 5] == 14, pred.cpu().numpy()[
+                                          :, 4] > metrics_confidence_threshold)
             tp = sum(correct.cpu().numpy()[sign_indices, 0])
             current_image_metrics['fn'] = total_positives - tp
             metrics_per_image_df = metrics_per_image_df.append(current_image_metrics, ignore_index=True)
@@ -660,9 +691,8 @@ def run(args,
                     # if fn not in df_use_polygons['filename_y'].values:
                     #     continue
                     shape_to_plot_data['octagon'].append(
-                        [im[si: si + 1],
-                         targets[targets[:, 0] == si, :],
-                         path, predictions_for_plotting[predictions_for_plotting[:, 0] == si]])
+                        [im[si: si + 1], targets[targets[:, 0] == si, :], path,
+                         predictions_for_plotting[predictions_for_plotting[:, 0] == si]])
 
         # Plot images
         if plots and batch_i < 30:
@@ -714,7 +744,8 @@ def run(args,
     current_exp_metrics = {}
 
     if len(stats) and stats[0].any():
-        tp, fp, p, r, f1, ap, ap_class, fnr, fn = ap_per_class(*stats, plot=plots, save_dir=save_dir, names=names, confidence_threshold=metrics_confidence_threshold)
+        tp, fp, p, r, f1, ap, ap_class, fnr, fn = ap_per_class(
+            *stats, plot=plots, save_dir=save_dir, names=names, confidence_threshold=metrics_confidence_threshold)
         ap50, ap = ap[:, 0], ap.mean(1)  # AP@0.5, AP@0.5:0.95
         mp, mr, map50, map = p.mean(), r.mean(), ap50.mean(), ap.mean()
         nt = np.bincount(stats[3].astype(np.int64), minlength=nc)  # number of targets per class
@@ -885,8 +916,11 @@ def parse_opt():
                         help='path to a text file containing image filenames')
     parser.add_argument('--run-only-img-txt', action='store_true',
                         help='run evaluation on images listed in img-txt-path. Otherwise, exclude these images.')
-    parser.add_argument('--no-transform', action='store_true', help='do not apply patch to signs using transform. if no-transform==True, patch will face us')
+    parser.add_argument(
+        '--no-transform', action='store_true',
+        help='do not apply patch to signs using transform. if no-transform==True, patch will face us')
     parser.add_argument('--metrics-confidence-threshold', type=float, default=0.5, help='confidence threshold')
+    parser.add_argument('--per-sign-attack', action='store_true', help='generate adv patch for each sign')
 
     opt = parser.parse_args()
     opt.data = check_yaml(opt.data)  # check YAML

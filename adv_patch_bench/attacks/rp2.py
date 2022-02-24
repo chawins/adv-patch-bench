@@ -23,7 +23,8 @@ EPS = 1e-6
 
 class RP2AttackModule(DetectorAttackModule):
 
-    def __init__(self, attack_config, core_model, loss_fn, norm, eps, rescaling, relighting, **kwargs):
+    def __init__(self, attack_config, core_model, loss_fn, norm, eps,
+                 rescaling=False, relighting=False, verbose=False, **kwargs):
         super(RP2AttackModule, self).__init__(
             attack_config, core_model, loss_fn, norm, eps, **kwargs)
         self.num_steps = attack_config['rp2_num_steps']
@@ -34,10 +35,12 @@ class RP2AttackModule(DetectorAttackModule):
         self.min_conf = attack_config['rp2_min_conf']
         self.input_size = attack_config['input_size']
         self.num_restarts = 1
-        self.rescaling=rescaling
-        self.relighting=relighting
+        self.rescaling = rescaling
+        self.relighting = relighting
+        self.verbose = verbose
+        self.augment_real = attack_config['rp2_augment_real']
 
-        self.bg_transforms = K.RandomResizedCrop(self.input_size, p=1.0)
+        self.bg_transforms = K.RandomResizedCrop(self.input_size, scale=(0.25, 1), p=1.0)
         # self.obj_transforms = K.container.AugmentationSequential(
         #     K.RandomAffine(30, translate=(0.5, 0.5)),      # Only translate and rotate as in Eykholt et al.
         #     # RandomAffine(30, translate=(0.5, 0.5), scale=(0.25, 4), shear=(0.1, 0.1), p=1.0),
@@ -49,10 +52,12 @@ class RP2AttackModule(DetectorAttackModule):
         # )
         self.obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True)
         self.mask_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, resample=Resample.NEAREST)
-        # self.jitter_transform = K.ColorJitter(brightness=1, contrast=0.5, p=1)
-        self.jitter_transform = K.ColorJitter(contrast=0.3, p=1)
-        # self.patch_jitter_transform = K.ColorJitter(brightness=(0, 0.1), contrast=(0, 0.1), saturation=(0, 0.1), hue=(0, 0.1))
-        
+        self.jitter_transform = K.ColorJitter(brightness=0.3, contrast=0.3, p=1.0)
+        self.real_transform = {}
+        if self.augment_real:
+            self.real_transform['tf_patch'] = K.RandomAffine(
+                15, translate=(0.1, 0.1), scale=(0.9, 1.1), p=1.0, resample=Resample.BILINEAR)
+            self.real_transform['tf_bg'] = self.bg_transforms
 
     def attack(self,
                obj: torch.Tensor,
@@ -107,106 +112,106 @@ class RP2AttackModule(DetectorAttackModule):
                 threshold=1e-9, min_lr=self.step_size * 1e-6, verbose=True)
 
             # Run PGD on inputs for specified number of steps
-            with torch.autograd.set_detect_anomaly(True):
-                for step in range(self.num_steps):
-                    z_delta.requires_grad_()
-                    delta = self._to_model_space(z_delta, 0, 1)
+            for step in range(self.num_steps):
+                z_delta.requires_grad_()
+                delta = self._to_model_space(z_delta, 0, 1)
 
-                    # Randomly select background and apply transforms (crop and scale)
-                    bg_idx = torch.randint(0, len(backgrounds), size=(self.num_eot, ))
-                    bgs = backgrounds[bg_idx]
-                    bgs = self.bg_transforms(bgs)
-                    
-                    # indices = np.where(obj_mask.cpu()[0] > 0)
-                    # x_min, x_max = min(indices[1]), max(indices[1])
-                    # y_min, y_max = min(indices[0]), max(indices[0])
-                    # synthetic_sign_height = y_max - y_min
-                    # synthetic_sign_width = x_max - x_min
-                    # synthetic_sign_size = x_max - x_min
-                    synthetic_sign_size = obj_size[0]
-                    # print(synthetic_sign_size)
+                # Randomly select background and apply transforms (crop and scale)
+                bg_idx = torch.randint(0, len(backgrounds), size=(self.num_eot, ))
+                bgs = backgrounds[bg_idx]
+                bgs = self.bg_transforms(bgs)
 
-                    # old_ratio = synthetic_sign_size/960
-                    if self.rescaling:
-                        old_ratio = synthetic_sign_size/self.input_size[0]
-                        prob_array = [0.38879158, 0.26970227, 0.16462349, 0.07530647, 0.04378284, 0.03327496, 0.01050788, 0.00700525, 0.00350263, 0.00350263]
-                        new_possible_ratios = [0.05340427, 0.11785139, 0.18229851, 0.24674563, 0.31119275, 0.3756399, 0.440087, 0.5045341 , 0.56898123, 0.6334284, 0.6978755 ]
-                        index_array = np.arange(0, len(new_possible_ratios)-1)
-                        sampled_index = np.random.choice(index_array, None, p=prob_array)
-                        low_bin_edge, high_bin_edge = new_possible_ratios[sampled_index], new_possible_ratios[sampled_index+1]
-                        self.obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True, scale=(low_bin_edge/old_ratio, high_bin_edge/old_ratio))
-                    else:
-                        self.obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True, scale=None)
-                        
-                    # print((low_bin_edge/old_ratio, high_bin_edge/old_ratio))
-                    # new_size = (int(self.input_size[0] * new_synthetic_sign_ratio / old_ratio), int(self.input_size[1] * new_synthetic_sign_ratio / old_ratio))
-                    # self.resize_transforms = T.Resize(size=new_size)
+                # indices = np.where(obj_mask.cpu()[0] > 0)
+                # x_min, x_max = min(indices[1]), max(indices[1])
+                # y_min, y_max = min(indices[0]), max(indices[0])
+                # synthetic_sign_height = y_max - y_min
+                # synthetic_sign_width = x_max - x_min
+                # synthetic_sign_size = x_max - x_min
+                synthetic_sign_size = obj_size[0]
+                # print(synthetic_sign_size)
 
-                    # Apply random transformations
-                    # if self.relighting:
-                    #     delta = self.patch_jitter_transform(delta)
+                # old_ratio = synthetic_sign_size/960
+                if self.rescaling:
+                    old_ratio = synthetic_sign_size/self.input_size[0]
+                    prob_array = [0.38879158, 0.26970227, 0.16462349, 0.07530647, 0.04378284,
+                                  0.03327496, 0.01050788, 0.00700525, 0.00350263, 0.00350263]
+                    new_possible_ratios = [0.05340427, 0.11785139, 0.18229851, 0.24674563,
+                                           0.31119275, 0.3756399, 0.440087, 0.5045341, 0.56898123, 0.6334284, 0.6978755]
+                    index_array = np.arange(0, len(new_possible_ratios)-1)
+                    sampled_index = np.random.choice(index_array, None, p=prob_array)
+                    low_bin_edge, high_bin_edge = new_possible_ratios[sampled_index], new_possible_ratios[sampled_index+1]
+                    self.obj_transforms = K.RandomAffine(
+                        30, translate=(0.45, 0.45),
+                        p=1.0, return_transform=True, scale=(low_bin_edge / old_ratio, high_bin_edge / old_ratio))
 
-                    
-                    patch_full[:, ymin:ymin + height, xmin:xmin + width] = delta
-                    adv_obj = patch_mask * patch_full + (1 - patch_mask) * obj
-                    
-                    adv_obj = adv_obj.expand(self.num_eot, -1, -1, -1)
-                    if self.relighting:
-                        adv_obj = self.jitter_transform(adv_obj)
-                    adv_obj, tf_params = self.obj_transforms(adv_obj)
-                    adv_obj = adv_obj.clamp(0, 1)                    
+                # print((low_bin_edge/old_ratio, high_bin_edge/old_ratio))
+                # new_size = (int(self.input_size[0] * new_synthetic_sign_ratio / old_ratio), int(self.input_size[1] * new_synthetic_sign_ratio / old_ratio))
+                # self.resize_transforms = T.Resize(size=new_size)
 
-                    o_mask = self.mask_transforms.apply_transform(
-                        obj_mask_dup, None, transform=tf_params)
-                    adv_img = o_mask * adv_obj + (1 - o_mask) * bgs
-                    # Patch image the same way as YOLO
-                    adv_img = letterbox(adv_img, new_shape=self.input_size[1])[0]
-                    
-                    if step % 20 == 0:
-                        torchvision.utils.save_image(adv_img[0], f'tmp/synthetic/test_synthetic_adv_img_{step}.png')
-                    # print('SHAPE', adv_img.shape)
-                    # print(self.input_size)
+                # Apply random transformations
+                # if self.relighting:
+                #     delta = self.patch_jitter_transform(delta)
 
-                    # Compute logits, loss, gradients
-                    out, _ = self.core_model(adv_img, val=True)
-                    conf = out[:, :, 4:5] * out[:, :, 5:]
-                    conf, labels = conf.max(-1)
-                    if obj_class is not None:
-                        loss = 0
-                        for c, l in zip(conf, labels):
-                            c_l = c[l == obj_class]
-                            if c_l.size(0) > 0:
-                                # Select prediction from box with max confidence and ignore
-                                # ones with already low confidence
-                                loss += c_l.max().clamp_min(self.min_conf)
-                        loss /= self.num_eot
-                    else:
-                        loss = conf.max(1)[0].clamp_min(self.min_conf).mean()
+                patch_full[:, ymin:ymin + height, xmin:xmin + width] = delta
+                adv_obj = patch_mask * patch_full + (1 - patch_mask) * obj
 
+                adv_obj = adv_obj.expand(self.num_eot, -1, -1, -1)
+                if self.relighting:
+                    adv_obj = self.jitter_transform(adv_obj)
+                adv_obj, tf_params = self.obj_transforms(adv_obj)
+                adv_obj = adv_obj.clamp(0, 1)
+
+                o_mask = self.mask_transforms.apply_transform(
+                    obj_mask_dup, None, transform=tf_params)
+                adv_img = o_mask * adv_obj + (1 - o_mask) * bgs
+                # Patch image the same way as YOLO
+                adv_img = letterbox(adv_img, new_shape=self.input_size[1])[0]
+
+                if step % 20 == 0:
+                    torchvision.utils.save_image(adv_img[0], f'tmp/synthetic/test_synthetic_adv_img_{step}.png')
+                # print('SHAPE', adv_img.shape)
+                # print(self.input_size)
+
+                # Compute logits, loss, gradients
+                out, _ = self.core_model(adv_img, val=True)
+                conf = out[:, :, 4:5] * out[:, :, 5:]
+                conf, labels = conf.max(-1)
+                if obj_class is not None:
+                    loss = 0
+                    for c, l in zip(conf, labels):
+                        c_l = c[l == obj_class]
+                        if c_l.size(0) > 0:
+                            # Select prediction from box with max confidence and ignore
+                            # ones with already low confidence
+                            loss += c_l.max().clamp_min(self.min_conf)
                     loss /= self.num_eot
-                    tv = ((delta[:, :, :-1, :] - delta[:, :, 1:, :]).abs().mean() +
-                        (delta[:, :, :, :-1] - delta[:, :, :, 1:]).abs().mean())
-                    # loss = out[:, :, 4].mean() + self.lmbda * tv
-                    loss += self.lmbda * tv
-                    loss.backward(retain_graph=True)
-                    opt.step()
-                    # lr_schedule.step(loss)
+                else:
+                    loss = conf.max(1)[0].clamp_min(self.min_conf).mean()
 
-                    if ema_loss is None:
-                        ema_loss = loss.item()
-                    else:
-                        ema_loss = ema_const * ema_loss + (1 - ema_const) * loss.item()
-                    if step % 100 == 0:
-                        print(f'step: {step}   loss: {ema_loss:.6f}')
+                loss /= self.num_eot
+                tv = ((delta[:, :, :-1, :] - delta[:, :, 1:, :]).abs().mean() +
+                      (delta[:, :, :, :-1] - delta[:, :, :, 1:]).abs().mean())
+                # loss = out[:, :, 4].mean() + self.lmbda * tv
+                loss += self.lmbda * tv
+                loss.backward(retain_graph=True)
+                opt.step()
+                # lr_schedule.step(loss)
 
-                    # if self.num_restarts == 1:
-                    #     x_adv_worst = x_adv
-                    # else:
-                    #     # Update worst-case inputs with itemized final losses
-                    #     fin_losses = self.loss_fn(self.core_model(x_adv), y).reshape(worst_losses.shape)
-                    #     up_mask = (fin_losses >= worst_losses).float()
-                    #     x_adv_worst = x_adv * up_mask + x_adv_worst * (1 - up_mask)
-                    #     worst_losses = fin_losses * up_mask + worst_losses * (1 - up_mask)
+                if ema_loss is None:
+                    ema_loss = loss.item()
+                else:
+                    ema_loss = ema_const * ema_loss + (1 - ema_const) * loss.item()
+                if step % 100 == 0 and self.verbose:
+                    print(f'step: {step}   loss: {ema_loss:.6f}')
+
+                # if self.num_restarts == 1:
+                #     x_adv_worst = x_adv
+                # else:
+                #     # Update worst-case inputs with itemized final losses
+                #     fin_losses = self.loss_fn(self.core_model(x_adv), y).reshape(worst_losses.shape)
+                #     up_mask = (fin_losses >= worst_losses).float()
+                #     x_adv_worst = x_adv * up_mask + x_adv_worst * (1 - up_mask)
+                #     worst_losses = fin_losses * up_mask + worst_losses * (1 - up_mask)
 
         # DEBUG
         # outt = non_max_suppression(out.detach(), conf_thres=0.25, iou_thres=0.6)
@@ -237,7 +242,8 @@ class RP2AttackModule(DetectorAttackModule):
 
         # Process transform data and create batch tensors
         sign_size_in_pixel = patch_mask.size(-1)
-        # Assume that every signs use the same transform function (len(tgt) = 4)
+        # TODO: Assume that every signs use the same transform function
+        # i.e., warp_perspetive. Have to fix this for triangles
         tf_function = get_transform(sign_size_in_pixel, *objs[0][1])[0]
         tf_data_temp = [get_transform(sign_size_in_pixel, *obj[1])[1:] for obj in objs]
         tf_data = []
@@ -250,8 +256,6 @@ class RP2AttackModule(DetectorAttackModule):
                 # Add singletons for alpha and beta
                 data_i = data_i[:, None, None, None]
             tf_data.append(data_i)
-
-        # sign_canonical, sign_mask, M, alpha, beta = tf_data
 
         all_bg_idx = np.arange(len(tf_data_temp))
         backgrounds = torch.cat([obj[0].unsqueeze(0) for obj in objs], dim=0).to(device)
@@ -283,8 +287,15 @@ class RP2AttackModule(DetectorAttackModule):
 
                 curr_tf_data = [data[bg_idx] for data in tf_data]
                 delta = delta.repeat(self.num_eot, 1, 1, 1)
-                adv_img = apply_transform(backgrounds[bg_idx], delta, patch_mask, patch_loc, tf_function, curr_tf_data)
+                adv_img = apply_transform(
+                    backgrounds[bg_idx], delta, patch_mask, patch_loc,
+                    tf_function, curr_tf_data, **self.real_transform)
                 adv_img = resize_transform(adv_img)
+
+                # DEBUG
+                # torchvision.utils.save_image(adv_img, 'temp.png')
+                # import pdb
+                # pdb.set_trace()
 
                 # Compute logits, loss, gradients
                 out, _ = self.core_model(adv_img, val=True)
@@ -314,7 +325,7 @@ class RP2AttackModule(DetectorAttackModule):
                     ema_loss = loss.item()
                 else:
                     ema_loss = ema_const * ema_loss + (1 - ema_const) * loss.item()
-                if step % 100 == 0:
+                if step % 100 == 0 and self.verbose:
                     print(f'step: {step:4d}   loss: {ema_loss:.4f}   time: {time.time() - start_time:.2f}s')
                     start_time = time.time()
                     # DEBUG
@@ -396,19 +407,24 @@ def get_transform(sign_size_in_pixel, shape, predicted_class, row, h0, w0,
     return transform_func, sign_canonical, sign_mask, M.squeeze(), alpha, beta
 
 
-def apply_transform(image, adv_patch, patch_mask, patch_loc, transform_func, tf_data):
+def apply_transform(image, adv_patch, patch_mask, patch_loc, transform_func, tf_data,
+                    tf_patch=None, tf_bg=None):
     ymin, xmin, height, width = patch_loc
     sign_canonical, sign_mask, M, alpha, beta = tf_data
     adv_patch.clamp_(0, 1).mul_(alpha).add_(beta).clamp_(0, 1)
     sign_canonical[:, :-1, ymin:ymin + height, xmin:xmin + width] = adv_patch
-    sign_canonical[:, -1, ymin:ymin + height, xmin:xmin + width]
+    sign_canonical[:, -1, ymin:ymin + height, xmin:xmin + width] = 1
     sign_canonical = sign_mask * patch_mask * sign_canonical
+    if tf_patch is not None:
+        sign_canonical = tf_patch(sign_canonical)
 
     warped_patch = transform_func(sign_canonical,
                                   M, image.shape[2:],
-                                  mode='bilinear',  # TODO
+                                  mode='bilinear',  # TODO: try others?
                                   padding_mode='zeros')
     warped_patch.clamp_(0, 1)
     alpha_mask = warped_patch[:, -1].unsqueeze(1)
     final_img = (1 - alpha_mask) * image / 255 + alpha_mask * warped_patch[:, :-1]
+    if tf_bg is not None:
+        final_img = tf_bg(final_img)
     return final_img
