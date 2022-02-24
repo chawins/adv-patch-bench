@@ -21,7 +21,7 @@ def write_yolo_labels(model, label, panoptic_per_image_id, data_dir,
                       num_classes, anno_df, min_area=0, conf_thres=0.,
                       device='cuda', batch_size=128):
     img_path = join(data_dir, 'images')
-    label_path = join(data_dir, 'labels_v6')
+    label_path = join(data_dir, 'labels')
     makedirs(label_path, exist_ok=True)
 
     filenames = [f for f in listdir(img_path) if isfile(join(img_path, f))]

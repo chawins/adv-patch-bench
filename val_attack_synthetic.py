@@ -125,6 +125,9 @@ def transform_and_apply_patch(image, adv_patch, patch_mask, patch_loc,
     if not pd.isna(row['points']):
         tgt = np.array(literal_eval(row['points']), dtype=np.float32)
         
+        offset_y = min(tgt[:, 1])
+        offset_x = min(tgt[:, 0])
+
         tgt_shape = (max(tgt[:, 1]) - min(tgt[:, 1]), max(tgt[:, 0]) - min(tgt[:, 0]))
 
         tgt[:, 1] = (tgt[:, 1] * h_ratio) + h_pad
@@ -132,14 +135,16 @@ def transform_and_apply_patch(image, adv_patch, patch_mask, patch_loc,
 
         if no_transform:
             # Get the scaling factor
-            src_shape = (max(src[:, 1]) - min(src[:, 1]), max(src[:, 0]) - min(src[:, 0]))
-            scale = np.flipud(np.divide(tgt_shape, src_shape))  # you have to flip because the image.shape is (y,x) but your corner points are (x,y)
+            src_shape = (max(src[:, 0]) - min(src[:, 0]), max(src[:, 1]) - min(src[:, 1]))
+            scale = np.divide(tgt_shape, src_shape)  # you have to flip because the image.shape is (y,x) but your corner points are (x,y)
             
             tgt_untransformed = src.copy()
             # rescale src
-            tgt_untransformed[:, 1] = tgt_untransformed[:, 1] * scale[0]
-            tgt_untransformed[:, 0] = tgt_untransformed[:, 0] * scale[1]
+            tgt_untransformed[:, 1] = tgt_untransformed[:, 1] * scale[1]
+            tgt_untransformed[:, 0] = tgt_untransformed[:, 0] * scale[0]
             # translate src
+            tgt_untransformed[:, 1] += offset_y
+            tgt_untransformed[:, 0] += offset_x
             tgt_untransformed[:, 1] = (tgt_untransformed[:, 1] * h_ratio) + h_pad
             tgt_untransformed[:, 0] = (tgt_untransformed[:, 0] * w_ratio) + w_pad
             tgt = tgt_untransformed
@@ -161,12 +166,12 @@ def transform_and_apply_patch(image, adv_patch, patch_mask, patch_loc,
         
         if no_transform:
             # Get the scaling factor
-            src_shape = (max(src[:, 1]) - min(src[:, 1]), max(src[:, 0]) - min(src[:, 0]))
-            scale = np.flipud(np.divide(tgt_shape, src_shape))  # you have to flip because the image.shape is (y,x) but your corner points are (x,y)
+            src_shape = (max(src[:, 0]) - min(src[:, 0]), max(src[:, 1]) - min(src[:, 1]))
+            scale = np.divide(tgt_shape, src_shape)  # you have to flip because the image.shape is (y,x) but your corner points are (x,y)
             tgt_untransformed = src.copy()
             # rescale src
-            tgt_untransformed[:, 1] = tgt_untransformed[:, 1] * scale[0]
-            tgt_untransformed[:, 0] = tgt_untransformed[:, 0] * scale[1]
+            tgt_untransformed[:, 1] = tgt_untransformed[:, 1] * scale[1]
+            tgt_untransformed[:, 0] = tgt_untransformed[:, 0] * scale[0]
             # translate src
             tgt_untransformed[:, 1] = (tgt_untransformed[:, 1] + y_min) * h_ratio + h_pad
             tgt_untransformed[:, 0] = (tgt_untransformed[:, 0] + x_min) * w_ratio + w_pad
@@ -406,8 +411,8 @@ def run(args,
         targets = torch.nn.functional.pad(targets, (0, 1), "constant", 0)  # effectively zero padding
         filenames = [p.split('/')[-1] for p in paths]
         # DEBUG
-        # if batch_i == 10:
-        #     break
+        if batch_i == 100:
+            break
         if num_apply_imgs >= len(filename_list) and args.run_only_img_txt:
             break
         
@@ -450,51 +455,86 @@ def run(args,
                 targets[targets[:, 0] == image_i, 6] = num_patches_applied_to_image
 
             elif apply_patch and synthetic:
+                # if str(path) != '/data/shared/mapillary_vistas/training/images/LNdf-YF4n28uX8omNIzg6g.jpg':
+                #     continue
+                try:
+                    # FIXME
+                    orig_shape = im[image_i].shape[1:]
+                    patch_padded = False
+                    # resized_img = resize_transform(im[image_i])
+                    
+                    pad_size = [(img_size[1] - orig_shape[1]) // 2, (img_size[0] - orig_shape[0]) // 2]  # left/right, top/bottom
+                    
+                    if apply_patch:
+                        # adv_obj = patch_mask * adv_patch + (1 - patch_mask) * obj
+                        adv_obj = (1 - patch_mask) * obj
+                        adv_obj[:, ymin_:ymin_ + patch_height, xmin_:xmin_ + patch_width] = adv_patch
+                    else:
+                        adv_obj = obj
+                    
+                    # print('adv_obj', adv_obj.shape)
+                    if pad_size[0] < 0 or pad_size[1] < 0:
+                        new_pad_size = (abs(pad_size[0]), 0)
+                        adv_obj = T.pad(adv_obj, new_pad_size)
+                        curr_obj_mask = T.pad(obj_mask, new_pad_size)
+                        padded_img = im[image_i]
+                        patch_padded = True
+                    if pad_size[1] < 0:
+                        new_pad_size = (0, abs(pad_size[1]))
+                        adv_obj = T.pad(adv_obj, new_pad_size)
+                        curr_obj_mask = T.pad(obj_mask, new_pad_size)
+                        padded_img = im[image_i]
+                        patch_padded = True
+                    else:
+                        padded_img = T.pad(im[image_i], pad_size)
+                        curr_obj_mask = obj_mask
 
-                # FIXME
-                orig_shape = im[image_i].shape[1:]
-                # resized_img = resize_transform(im[image_i])
 
-                padded_img = im[image_i]
-                pad_size = [(img_size[1] - orig_shape[1]) // 2, (img_size[0] - orig_shape[0]) // 2]  # left/right, top/bottom
-                padded_img = T.pad(padded_img, pad_size)
-                                
-                if apply_patch:
-                    # adv_obj = patch_mask * adv_patch + (1 - patch_mask) * obj
-                    adv_obj = (1 - patch_mask) * obj
-                    adv_obj[:, ymin_:ymin_ + patch_height, xmin_:xmin_ + patch_width] = adv_patch
-                else:
-                    adv_obj = obj
+                    adv_obj, tf_params = obj_transforms(adv_obj)
+                    adv_obj.clamp_(0, 1)
+                    # TODO: clean this part
+                    curr_obj_mask = curr_obj_mask.cuda()
+                    obj_mask_dup = curr_obj_mask.expand(1, -1, -1, -1)
 
-                adv_obj, tf_params = obj_transforms(adv_obj)
-                adv_obj.clamp_(0, 1)
-                # TODO: clean this part
-                obj_mask = obj_mask.cuda()
-                obj_mask_dup = obj_mask.expand(1, -1, -1, -1)
+                    tf_params = tf_params.cuda()
+                    o_mask = mask_transforms.apply_transform(obj_mask_dup, None, transform=tf_params)
 
-                tf_params = tf_params.cuda()
-                o_mask = mask_transforms.apply_transform(obj_mask_dup, None, transform=tf_params)
+                    o_mask = o_mask.cpu()
+                    indices = np.where(o_mask[0][0] == 1)
+                    x_min, x_max = min(indices[1]), max(indices[1])
+                    y_min, y_max = min(indices[0]), max(indices[0])
 
-                o_mask = o_mask.cpu()
-                indices = np.where(o_mask[0][0] == 1)
-                x_min, x_max = min(indices[1]), max(indices[1])
-                y_min, y_max = min(indices[0]), max(indices[0])
+                    label = [
+                        image_i,
+                        SYNTHETIC_STOP_SIGN_CLASS,
+                        (x_min + x_max) / (2 * img_width),
+                        (y_min + y_max) / (2 * img_height),
+                        (x_max - x_min) / img_width,
+                        (y_max - y_min) / img_height,
+                        int(apply_patch)
+                    ]
+                    targets = torch.cat((targets, torch.unsqueeze(torch.tensor(label), 0)))
 
-                label = [
-                    image_i,
-                    SYNTHETIC_STOP_SIGN_CLASS,
-                    (x_min + x_max) / (2 * img_width),
-                    (y_min + y_max) / (2 * img_height),
-                    (x_max - x_min) / img_width,
-                    (y_max - y_min) / img_height,
-                    1
-                ]
-                targets = torch.cat((targets, torch.unsqueeze(torch.tensor(label), 0)))
+                    adv_img = o_mask * adv_obj + (1 - o_mask) * padded_img / 255
+                    # reresize_transform = torchvision.transforms.Resize(size=orig_shape)
+                    # im[image_i] = reresize_transform(adv_img) * 255
+                    
+                    if patch_padded:
+                        im[image_i] = adv_img.squeeze() * 255
+                    else:
+                        im[image_i] = adv_img[:, :, pad_size[1]:adv_img.shape[2]-pad_size[1], pad_size[0]:adv_img.shape[3]-pad_size[0]].squeeze() * 255
+                except Exception as e:
+                    print(e)
+                    print()
+                    print(path)
+                    print('pad size', pad_size)
+                    print('orig_shape', orig_shape)
+                    print('patch_padded', patch_padded)
+                    print(pad_size[1], orig_shape[0]-pad_size[1], pad_size[0], orig_shape[1]-pad_size[0])
+                    print(adv_img[:, :, pad_size[1]:orig_shape[0]-pad_size[1], pad_size[0]:orig_shape[1]-pad_size[0]].squeeze().shape)
+                    print('obj ', obj.shape)
+                    qqq
 
-                adv_img = o_mask * adv_obj + (1 - o_mask) * padded_img / 255
-                # reresize_transform = torchvision.transforms.Resize(size=orig_shape)
-                # im[image_i] = reresize_transform(adv_img) * 255
-                im[image_i] = adv_img[:, :, pad_size[1]:-pad_size[1], pad_size[0]:orig_shape[1]-pad_size[0]].squeeze() * 255
 
         t1 = time_sync()
         if pt or jit or engine:

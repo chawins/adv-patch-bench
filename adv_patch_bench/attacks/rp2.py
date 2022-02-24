@@ -49,7 +49,8 @@ class RP2AttackModule(DetectorAttackModule):
         # )
         self.obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True)
         self.mask_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, resample=Resample.NEAREST)
-        self.patch_jitter_transform = K.ColorJitter(brightness=(0, 0.1), p=0.5)
+        # self.jitter_transform = K.ColorJitter(brightness=1, contrast=0.5, p=1)
+        self.jitter_transform = K.ColorJitter(contrast=0.3, p=1)
         # self.patch_jitter_transform = K.ColorJitter(brightness=(0, 0.1), contrast=(0, 0.1), saturation=(0, 0.1), hue=(0, 0.1))
         
 
@@ -136,19 +137,22 @@ class RP2AttackModule(DetectorAttackModule):
                         self.obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True, scale=(low_bin_edge/old_ratio, high_bin_edge/old_ratio))
                     else:
                         self.obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True, scale=None)
-
+                        
                     # print((low_bin_edge/old_ratio, high_bin_edge/old_ratio))
                     # new_size = (int(self.input_size[0] * new_synthetic_sign_ratio / old_ratio), int(self.input_size[1] * new_synthetic_sign_ratio / old_ratio))
                     # self.resize_transforms = T.Resize(size=new_size)
 
                     # Apply random transformations
-                    if self.relighting:
-                        delta = self.patch_jitter_transform(delta)
+                    # if self.relighting:
+                    #     delta = self.patch_jitter_transform(delta)
 
+                    
                     patch_full[:, ymin:ymin + height, xmin:xmin + width] = delta
                     adv_obj = patch_mask * patch_full + (1 - patch_mask) * obj
                     
                     adv_obj = adv_obj.expand(self.num_eot, -1, -1, -1)
+                    if self.relighting:
+                        adv_obj = self.jitter_transform(adv_obj)
                     adv_obj, tf_params = self.obj_transforms(adv_obj)
                     adv_obj = adv_obj.clamp(0, 1)                    
 
@@ -157,8 +161,9 @@ class RP2AttackModule(DetectorAttackModule):
                     adv_img = o_mask * adv_obj + (1 - o_mask) * bgs
                     # Patch image the same way as YOLO
                     adv_img = letterbox(adv_img, new_shape=self.input_size[1])[0]
-
-                    # torchvision.utils.save_image(adv_img[0], f'tmp/synthetic/test_synthetic_adv_img_{step}.png')
+                    
+                    if step % 20 == 0:
+                        torchvision.utils.save_image(adv_img[0], f'tmp/synthetic/test_synthetic_adv_img_{step}.png')
                     # print('SHAPE', adv_img.shape)
                     # print(self.input_size)
 

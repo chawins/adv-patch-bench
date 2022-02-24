@@ -70,7 +70,7 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
     attack_config = {
         'rp2_num_steps': 1000,
         'rp2_step_size': 1e-2,
-        'rp2_num_eot': 10,
+        'rp2_num_eot': 5,
         'rp2_optimizer': 'adam',
         'rp2_lambda': 0,
         'rp2_min_conf': 0.25,
@@ -88,25 +88,26 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
                 (img_size[1] - obj_size[1]) // 2 + obj_size[1] % 2, 
                 (img_size[0] - obj_size[0]) // 2 + obj_size[0] % 2]  # left, top, right, bottom
 
-    obj = T.resize(obj, obj_size, antialias=True)
-    obj = T.pad(obj, pad_size)
-    obj_mask = T.resize(obj_mask, obj_size, interpolation=T.InterpolationMode.NEAREST)
-    obj_mask = T.pad(obj_mask, pad_size)
+    
 
     # Generate an adversarial patch
     if generate_patch == 'synthetic':
         # Resize object to the specify size and pad obj and masks to image size
-        obj_ = T.resize(obj, obj_size, antialias=True)
-        obj_ = T.pad(obj_, pad_size)
-        mask_interp = T.InterpolationMode.NEAREST
-        obj_mask_ = T.resize(obj_mask, obj_size, interpolation=mask_interp)
-        obj_mask_ = T.pad(obj_mask_, pad_size)
-        patch_mask_ = T.resize(patch_mask, obj_size, interpolation=mask_interp)
+        # obj_ = T.resize(obj, obj_size, antialias=True)
+        # obj_ = T.pad(obj_, pad_size)
+        # mask_interp = T.InterpolationMode.NEAREST
+        # obj_mask_ = T.resize(obj_mask, obj_size, interpolation=mask_interp)
+        # obj_mask_ = T.pad(obj_mask_, pad_size)
+        obj = T.resize(obj, obj_size, antialias=True)
+        obj = T.pad(obj, pad_size)
+        obj_mask = T.resize(obj_mask, obj_size, interpolation=T.InterpolationMode.NEAREST)
+        obj_mask = T.pad(obj_mask, pad_size)
+        patch_mask_ = T.resize(patch_mask, obj_size, interpolation=T.InterpolationMode.NEAREST)
         patch_mask_ = T.pad(patch_mask_, pad_size)
 
         with torch.enable_grad():
-            adv_patch = attack.attack(obj_.to(device),
-                                      obj_mask_.to(device),
+            adv_patch = attack.attack(obj.to(device),
+                                      obj_mask.to(device),
                                       patch_mask_.to(device),
                                       backgrounds.to(device),
                                       obj_class=obj_class,
@@ -308,7 +309,7 @@ if __name__ == "__main__":
     parser.add_argument('--dnn', action='store_true', help='use OpenCV DNN for ONNX inference')
     # Our attack and evaluate
     parser.add_argument('--seed', type=int, default=0, help='set random seed')
-    parser.add_argument('--padded_imgsz', type=str, default='736,1312',
+    parser.add_argument('--padded_imgsz', type=str, default='992,1312',
                         help='final image size including padding (height,width); comma-separated')
     parser.add_argument('--patch-name', type=str, default='adv_patch',
                         help='name of pickle file to save the generated patch')
