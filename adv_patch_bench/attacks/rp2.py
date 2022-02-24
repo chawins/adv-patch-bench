@@ -23,7 +23,7 @@ EPS = 1e-6
 
 class RP2AttackModule(DetectorAttackModule):
 
-    def __init__(self, attack_config, core_model, loss_fn, norm, eps, **kwargs):
+    def __init__(self, attack_config, core_model, loss_fn, norm, eps, rescaling, relighting, **kwargs):
         super(RP2AttackModule, self).__init__(
             attack_config, core_model, loss_fn, norm, eps, **kwargs)
         self.num_steps = attack_config['rp2_num_steps']
@@ -34,6 +34,8 @@ class RP2AttackModule(DetectorAttackModule):
         self.min_conf = attack_config['rp2_min_conf']
         self.input_size = attack_config['input_size']
         self.num_restarts = 1
+        self.rescaling=rescaling
+        self.relighting=relighting
 
         self.bg_transforms = K.RandomResizedCrop(self.input_size, p=1.0)
         # self.obj_transforms = K.container.AugmentationSequential(
@@ -47,7 +49,7 @@ class RP2AttackModule(DetectorAttackModule):
         # )
         self.obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True)
         self.mask_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, resample=Resample.NEAREST)
-        self.patch_jitter_transform = K.ColorJitter(brightness=(0, 0.5), p=0.5)
+        self.patch_jitter_transform = K.ColorJitter(brightness=(0, 0.1), p=0.5)
         # self.patch_jitter_transform = K.ColorJitter(brightness=(0, 0.1), contrast=(0, 0.1), saturation=(0, 0.1), hue=(0, 0.1))
         
 
@@ -113,9 +115,6 @@ class RP2AttackModule(DetectorAttackModule):
                     bg_idx = torch.randint(0, len(backgrounds), size=(self.num_eot, ))
                     bgs = backgrounds[bg_idx]
                     bgs = self.bg_transforms(bgs)
-
-                    self.obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True)
-                    
                     
                     # indices = np.where(obj_mask.cpu()[0] > 0)
                     # x_min, x_max = min(indices[1]), max(indices[1])
@@ -127,22 +126,24 @@ class RP2AttackModule(DetectorAttackModule):
                     # print(synthetic_sign_size)
 
                     # old_ratio = synthetic_sign_size/960
-                    old_ratio = synthetic_sign_size/self.input_size[0]
-                    # 736, 1312
-                    prob_array = [0.38879158, 0.26970227, 0.16462349, 0.07530647, 0.04378284, 0.03327496, 0.01050788, 0.00700525, 0.00350263, 0.00350263]
-                    new_possible_ratios = [0.05340427, 0.11785139, 0.18229851, 0.24674563, 0.31119275, 0.3756399, 0.440087, 0.5045341 , 0.56898123, 0.6334284, 0.6978755 ]
-                    index_array = np.arange(0, len(new_possible_ratios)-1)
-                    sampled_index = np.random.choice(index_array, None, p=prob_array)
-                    low_bin_edge, high_bin_edge = new_possible_ratios[sampled_index], new_possible_ratios[sampled_index+1]
-                    # self.obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True, scale=None)
-                    self.obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True, scale=(low_bin_edge/old_ratio, high_bin_edge/old_ratio))
+                    if self.rescaling:
+                        old_ratio = synthetic_sign_size/self.input_size[0]
+                        prob_array = [0.38879158, 0.26970227, 0.16462349, 0.07530647, 0.04378284, 0.03327496, 0.01050788, 0.00700525, 0.00350263, 0.00350263]
+                        new_possible_ratios = [0.05340427, 0.11785139, 0.18229851, 0.24674563, 0.31119275, 0.3756399, 0.440087, 0.5045341 , 0.56898123, 0.6334284, 0.6978755 ]
+                        index_array = np.arange(0, len(new_possible_ratios)-1)
+                        sampled_index = np.random.choice(index_array, None, p=prob_array)
+                        low_bin_edge, high_bin_edge = new_possible_ratios[sampled_index], new_possible_ratios[sampled_index+1]
+                        self.obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True, scale=(low_bin_edge/old_ratio, high_bin_edge/old_ratio))
+                    else:
+                        self.obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True, scale=None)
 
                     # print((low_bin_edge/old_ratio, high_bin_edge/old_ratio))
                     # new_size = (int(self.input_size[0] * new_synthetic_sign_ratio / old_ratio), int(self.input_size[1] * new_synthetic_sign_ratio / old_ratio))
                     # self.resize_transforms = T.Resize(size=new_size)
 
                     # Apply random transformations
-                    delta = self.patch_jitter_transform(delta)
+                    if self.relighting:
+                        delta = self.patch_jitter_transform(delta)
 
                     patch_full[:, ymin:ymin + height, xmin:xmin + width] = delta
                     adv_obj = patch_mask * patch_full + (1 - patch_mask) * obj
@@ -244,6 +245,9 @@ class RP2AttackModule(DetectorAttackModule):
                 # Add singletons for alpha and beta
                 data_i = data_i[:, None, None, None]
             tf_data.append(data_i)
+
+        # sign_canonical, sign_mask, M, alpha, beta = tf_data
+
         all_bg_idx = np.arange(len(tf_data_temp))
         backgrounds = torch.cat([obj[0].unsqueeze(0) for obj in objs], dim=0).to(device)
 
