@@ -143,10 +143,6 @@ class RP2AttackModule(DetectorAttackModule):
                     # self.resize_transforms = T.Resize(size=new_size)
 
                     # Apply random transformations
-                    # if self.relighting:
-                    #     delta = self.patch_jitter_transform(delta)
-
-                    
                     patch_full[:, ymin:ymin + height, xmin:xmin + width] = delta
                     adv_obj = patch_mask * patch_full + (1 - patch_mask) * obj
                     
@@ -162,8 +158,9 @@ class RP2AttackModule(DetectorAttackModule):
                     # Patch image the same way as YOLO
                     adv_img = letterbox(adv_img, new_shape=self.input_size[1])[0]
                     
-                    if step % 20 == 0:
-                        torchvision.utils.save_image(adv_img[0], f'tmp/synthetic/test_synthetic_adv_img_{step}.png')
+                    # if step % 100 == 0:
+                    #     torchvision.utils.save_image(adv_img[0], f'tmp/synthetic/test_synthetic_adv_img_{step}.png')
+                    
                     # print('SHAPE', adv_img.shape)
                     # print(self.input_size)
 

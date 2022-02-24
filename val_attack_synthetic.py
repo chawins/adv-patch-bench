@@ -237,7 +237,8 @@ def run(args,
     plot_single_images = args.plot_single_images
     plot_octagons = args.plot_octagons
     load_patch = args.load_patch
-    ymin, xmin = tuple([int(x) for x in args.patch_loc])
+    if args.patch_loc:
+        ymin, xmin = tuple([int(x) for x in args.patch_loc])
     obj_size = args.obj_size
     no_transform = args.no_transform
     metrics_confidence_threshold = args.metrics_confidence_threshold
@@ -411,8 +412,8 @@ def run(args,
         targets = torch.nn.functional.pad(targets, (0, 1), "constant", 0)  # effectively zero padding
         filenames = [p.split('/')[-1] for p in paths]
         # DEBUG
-        if batch_i == 100:
-            break
+        # if batch_i == 100:
+        #     break
         if num_apply_imgs >= len(filename_list) and args.run_only_img_txt:
             break
         
@@ -457,84 +458,57 @@ def run(args,
             elif apply_patch and synthetic:
                 # if str(path) != '/data/shared/mapillary_vistas/training/images/LNdf-YF4n28uX8omNIzg6g.jpg':
                 #     continue
-                try:
-                    # FIXME
-                    orig_shape = im[image_i].shape[1:]
-                    patch_padded = False
-                    # resized_img = resize_transform(im[image_i])
-                    
-                    pad_size = [(img_size[1] - orig_shape[1]) // 2, (img_size[0] - orig_shape[0]) // 2]  # left/right, top/bottom
-                    
-                    if apply_patch:
-                        # adv_obj = patch_mask * adv_patch + (1 - patch_mask) * obj
-                        adv_obj = (1 - patch_mask) * obj
-                        adv_obj[:, ymin_:ymin_ + patch_height, xmin_:xmin_ + patch_width] = adv_patch
-                    else:
-                        adv_obj = obj
-                    
-                    # print('adv_obj', adv_obj.shape)
-                    if pad_size[0] < 0 or pad_size[1] < 0:
-                        new_pad_size = (abs(pad_size[0]), 0)
-                        adv_obj = T.pad(adv_obj, new_pad_size)
-                        curr_obj_mask = T.pad(obj_mask, new_pad_size)
-                        padded_img = im[image_i]
-                        patch_padded = True
-                    if pad_size[1] < 0:
-                        new_pad_size = (0, abs(pad_size[1]))
-                        adv_obj = T.pad(adv_obj, new_pad_size)
-                        curr_obj_mask = T.pad(obj_mask, new_pad_size)
-                        padded_img = im[image_i]
-                        patch_padded = True
-                    else:
-                        padded_img = T.pad(im[image_i], pad_size)
-                        curr_obj_mask = obj_mask
+                # FIXME
+                orig_shape = im[image_i].shape[1:]
+
+                # pad_size = [(img_size[1] - orig_shape[1]) // 2, (img_size[0] - orig_shape[0]) // 2]  # left/right, top/bottom
+                # print(pad_size)
+                if apply_patch:
+                    # adv_obj = patch_mask * adv_patch + (1 - patch_mask) * obj
+                    adv_obj = (1 - patch_mask) * obj
+                    adv_obj[:, ymin_:ymin_ + patch_height, xmin_:xmin_ + patch_width] = adv_patch
+                else:
+                    adv_obj = obj
+                
+
+                # padded_img = T.pad(im[image_i], pad_size)
+                # curr_obj_mask = obj_mask
 
 
-                    adv_obj, tf_params = obj_transforms(adv_obj)
-                    adv_obj.clamp_(0, 1)
-                    # TODO: clean this part
-                    curr_obj_mask = curr_obj_mask.cuda()
-                    obj_mask_dup = curr_obj_mask.expand(1, -1, -1, -1)
+                adv_obj, tf_params = obj_transforms(adv_obj)
+                adv_obj.clamp_(0, 1)
+                # TODO: clean this part
+                obj_mask = obj_mask.cuda()
+                obj_mask_dup = obj_mask.expand(1, -1, -1, -1)
 
-                    tf_params = tf_params.cuda()
-                    o_mask = mask_transforms.apply_transform(obj_mask_dup, None, transform=tf_params)
+                tf_params = tf_params.cuda()
+                o_mask = mask_transforms.apply_transform(obj_mask_dup, None, transform=tf_params)
 
-                    o_mask = o_mask.cpu()
-                    indices = np.where(o_mask[0][0] == 1)
-                    x_min, x_max = min(indices[1]), max(indices[1])
-                    y_min, y_max = min(indices[0]), max(indices[0])
+                o_mask = o_mask.cpu()
+                indices = np.where(o_mask[0][0] == 1)
+                x_min, x_max = min(indices[1]), max(indices[1])
+                y_min, y_max = min(indices[0]), max(indices[0])
 
-                    label = [
-                        image_i,
-                        SYNTHETIC_STOP_SIGN_CLASS,
-                        (x_min + x_max) / (2 * img_width),
-                        (y_min + y_max) / (2 * img_height),
-                        (x_max - x_min) / img_width,
-                        (y_max - y_min) / img_height,
-                        int(apply_patch)
-                    ]
-                    targets = torch.cat((targets, torch.unsqueeze(torch.tensor(label), 0)))
+                label = [
+                    image_i,
+                    SYNTHETIC_STOP_SIGN_CLASS,
+                    (x_min + x_max) / (2 * img_width),
+                    (y_min + y_max) / (2 * img_height),
+                    (x_max - x_min) / img_width,
+                    (y_max - y_min) / img_height,
+                    int(apply_patch)
+                ]
+                targets = torch.cat((targets, torch.unsqueeze(torch.tensor(label), 0)))
 
-                    adv_img = o_mask * adv_obj + (1 - o_mask) * padded_img / 255
-                    # reresize_transform = torchvision.transforms.Resize(size=orig_shape)
-                    # im[image_i] = reresize_transform(adv_img) * 255
-                    
-                    if patch_padded:
-                        im[image_i] = adv_img.squeeze() * 255
-                    else:
-                        im[image_i] = adv_img[:, :, pad_size[1]:adv_img.shape[2]-pad_size[1], pad_size[0]:adv_img.shape[3]-pad_size[0]].squeeze() * 255
-                except Exception as e:
-                    print(e)
-                    print()
-                    print(path)
-                    print('pad size', pad_size)
-                    print('orig_shape', orig_shape)
-                    print('patch_padded', patch_padded)
-                    print(pad_size[1], orig_shape[0]-pad_size[1], pad_size[0], orig_shape[1]-pad_size[0])
-                    print(adv_img[:, :, pad_size[1]:orig_shape[0]-pad_size[1], pad_size[0]:orig_shape[1]-pad_size[0]].squeeze().shape)
-                    print('obj ', obj.shape)
-                    qqq
-
+                adv_img = o_mask * adv_obj + (1 - o_mask) * im[image_i] / 255
+                # reresize_transform = torchvision.transforms.Resize(size=orig_shape)
+                # im[image_i] = reresize_transform(adv_img) * 255
+                
+                # if patch_padded:
+                #     im[image_i] = adv_img.squeeze() * 255
+                # else:
+                #     im[image_i] = adv_img[:, :, pad_size[1]:adv_img.shape[2]-pad_size[1], pad_size[0]:adv_img.shape[3]-pad_size[0]].squeeze() * 255
+                im[image_i] = adv_img.squeeze() * 255
 
         t1 = time_sync()
         if pt or jit or engine:
@@ -788,6 +762,22 @@ def run(args,
         current_exp_metrics['apply_patch'] = apply_patch
         current_exp_metrics['random_patch'] = random_patch
 
+        try:
+            metrics_df_column_names.append('generate_patch')
+            metrics_df_column_names.append('rescaling')
+            metrics_df_column_names.append('relighting')
+            if load_patch:
+                patch_metadata_folder = '/'.join(load_patch.split('/')[:-1])
+                patch_metadata_path = os.path.join(patch_metadata_folder, 'patch_metadata.pkl')
+                print(patch_metadata_path)
+                with open(patch_metadata_path, 'rb') as f:
+                    patch_metadata = pickle.load(f)
+                current_exp_metrics['generate_patch'] = patch_metadata['generate_patch']
+                current_exp_metrics['rescaling'] = patch_metadata['rescaling']
+                current_exp_metrics['relighting'] = patch_metadata['relighting']
+        except:
+            pass
+
         metrics_df = metrics_df.append(current_exp_metrics, ignore_index=True)
         metrics_df.to_csv('runs/results.csv', index=False)
 
@@ -877,7 +867,7 @@ def parse_opt():
     parser.add_argument('--plot-octagons', action='store_true',
                         help='save single images containing octagons in a folder')
     parser.add_argument('--num-bg', type=int, default=16, help='number of backgrounds to generate adversarial patch')
-    parser.add_argument('--patch-loc', type=str, default='128 128', nargs='*',
+    parser.add_argument('--patch-loc', type=str, default='', nargs='*',
                         help='location to place patch w.r.t. object in tuple (ymin, xmin)')
     # parser.add_argument('--patch-size-mm', type=float, default=250, help='patch width in millimeter')
     parser.add_argument('--obj-size', type=int, default=128, help='width of the object in pixels')
