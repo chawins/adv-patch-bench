@@ -161,9 +161,6 @@ class RP2AttackModule(DetectorAttackModule):
                     # if step % 100 == 0:
                     #     torchvision.utils.save_image(adv_img[0], f'tmp/synthetic/test_synthetic_adv_img_{step}.png')
                     
-                    # print('SHAPE', adv_img.shape)
-                    # print(self.input_size)
-
                     # Compute logits, loss, gradients
                     out, _ = self.core_model(adv_img, val=True)
                     conf = out[:, :, 4:5] * out[:, :, 5:]
