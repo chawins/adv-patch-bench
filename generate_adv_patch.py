@@ -68,11 +68,11 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
         backgrounds[i] = T.resize(bg, img_size, antialias=True)
 
     attack_config = {
-        'rp2_num_steps': 1000,
+        'rp2_num_steps': 2000,
         'rp2_step_size': 1e-2,
         'rp2_num_eot': 5,
         'rp2_optimizer': 'adam',
-        'rp2_lambda': 0,
+        'rp2_lambda': 0.25,
         'rp2_min_conf': 0.25,
         'input_size': img_size,
     }
