@@ -113,9 +113,10 @@ def transform_and_apply_patch(image, adv_patch, patch_mask, patch_loc,
 
     alpha = row['alpha']
     beta = row['beta']
+
     patch_cropped = adv_patch.clone()
     patch_cropped.clamp_(0, 1).mul_(alpha).add_(beta).clamp_(0, 1)
-    sign_canonical[:-1, ymin:ymin + height, xmin:xmin + width] = adv_patch
+    sign_canonical[:-1, ymin:ymin + height, xmin:xmin + width] = patch_cropped
     sign_canonical[-1, ymin:ymin + height, xmin:xmin + width] = 1
     sign_canonical = sign_mask * patch_mask * sign_canonical
 
@@ -455,25 +456,14 @@ def run(args,
                 # set targets[6] to 1 if patch is applied to image
                 targets[targets[:, 0] == image_i, 6] = num_patches_applied_to_image
 
-            elif apply_patch and synthetic:
-                # if str(path) != '/data/shared/mapillary_vistas/training/images/LNdf-YF4n28uX8omNIzg6g.jpg':
-                #     continue
-                # FIXME
+            elif synthetic:
                 orig_shape = im[image_i].shape[1:]
-
-                # pad_size = [(img_size[1] - orig_shape[1]) // 2, (img_size[0] - orig_shape[0]) // 2]  # left/right, top/bottom
-                # print(pad_size)
                 if apply_patch:
                     # adv_obj = patch_mask * adv_patch + (1 - patch_mask) * obj
                     adv_obj = (1 - patch_mask) * obj
                     adv_obj[:, ymin_:ymin_ + patch_height, xmin_:xmin_ + patch_width] = adv_patch
                 else:
                     adv_obj = obj
-                
-
-                # padded_img = T.pad(im[image_i], pad_size)
-                # curr_obj_mask = obj_mask
-
 
                 adv_obj, tf_params = obj_transforms(adv_obj)
                 adv_obj.clamp_(0, 1)
@@ -630,13 +620,17 @@ def run(args,
                 if len(shape_to_plot_data['octagon']) < 50:
                     fn = str(path).split('/')[-1]
 
-                    # TODO: remove if condition. only used to debug wrong transforms
-                    # if fn not in df_use_polygons['filename_y'].values:
-                    #     continue
+                    # if fn in ['-9KGl9SjjCNY1k7e7kZAQw.jpg', '2EG-9qqAB81t0bjWF0iS9Q.jpg', '2Nvhp5duIvb-OYY7xAMwZw.jpg', '2SYXukg_XcwH7F-6qHAXDg.jpg','2_Fnzu8YIZ6zSI348MosAA.jpg', '47yDC2IeDHcYjmx84kySNg.jpg', '5UIDjjCd-ZX6kIIlUIqY-A.jpg', '8lkcFc59-2RgSU203mlYEQ.jpg', 'Bk56TB3UXwQPPpI3l5DE8A.jpg', 'Rnd44l5YT6De9xazPe5gog.jpg',
+                    #         'Tji-mT9uSpJBrkpgiOYh0w.jpg', 'UATnqpo1FEgpkYhLKKSFOQ.jpg', 'WZW-sT3UBZNIhS33ABGtRA.jpg', 'XrOIVvWi3cybs5eoA5TWAg.jpg', 'Y2V2xZLzeTGMNM0JWqwGNQ.jpg', 'ZRJFX8E6ls076pkO1-_mqg.jpg', '_iN9KqCNguVQqoSlHTSAbA.jpg',
+                    #         '_zyWmZg0lfs_VV3eGc3fRQ.jpg', 'cp2b41bAzpc3pz2hDU3_tA.jpg', 'dudfDGkgKVvU6svtnV4MOA.jpg', 'j5SRLeWOR4sCr6UnrNLDeQ.jpg', 'lQXJRin862diB-ycBEI07Q.jpg', 'lS2eAyh4pLjSrBx6AoCkTw.jpg', 'sVfs9ru80iIlDilXAtjDkg.jpg', 'tNm0eslf8vm0zO8_2I-XWg.jpg', 'v6qkSgVYFmNbitJMGWmGiA.jpg', 'xplR-2-JZioNw-wndJoFJQ.jpg']:
+
+                        # TODO: remove if condition. only used to debug wrong transforms
+                        # if fn not in df_use_polygons['filename_y'].values:
+                        #     continue
                     shape_to_plot_data['octagon'].append(
                         [im[si: si + 1],
-                         targets[targets[:, 0] == si, :],
-                         path, predictions_for_plotting[predictions_for_plotting[:, 0] == si]])
+                        targets[targets[:, 0] == si, :],
+                        path, predictions_for_plotting[predictions_for_plotting[:, 0] == si]])
 
         # Plot images
         if plots and batch_i < 30:
