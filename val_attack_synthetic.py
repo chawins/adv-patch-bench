@@ -431,8 +431,8 @@ def run(args,
         targets = torch.nn.functional.pad(targets, (0, 1), "constant", 0)  # effectively zero padding
         filenames = [p.split('/')[-1] for p in paths]
         # DEBUG
-        if batch_i == 500:
-            break
+        # if batch_i == 500:
+        #     break
         if num_apply_imgs >= len(filename_list) and args.run_only_img_txt:
             break
 
