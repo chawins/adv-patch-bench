@@ -72,7 +72,7 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
         'rp2_step_size': 1e-2,
         'rp2_num_eot': 5,
         'rp2_optimizer': 'adam',
-        'rp2_lambda': 0.25,
+        'rp2_lambda': 0,
         'rp2_min_conf': 0.25,
         'input_size': img_size,
     }
@@ -138,6 +138,7 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
                         continue
                     # Pad to make sure all images are of same size
                     img = im[image_i]
+
                     assert img_size[0] >= img.size(1) and img_size[1] >= img.size(2)
                     add_h_pad = (img_size[0] - img.size(1)) // 2
                     add_w_pad = (img_size[1] - img.size(2)) // 2
@@ -167,6 +168,9 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
             adv_patch = attack.transform_and_attack(attack_images,
                                                     patch_mask=patch_mask.to(device),
                                                     obj_class=obj_class)
+            # adv_patch = attack.transform_and_attack_pgd(attack_images,
+            #                                         patch_mask=patch_mask.to(device),
+            #                                         obj_class=obj_class)
 
     adv_patch = adv_patch[0].detach().cpu().float()
 
