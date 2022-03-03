@@ -13,7 +13,6 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import torch
-import torch.nn.functional as F
 import torchvision
 import torchvision.transforms.functional as T
 from PIL import Image
@@ -33,10 +32,29 @@ if str(ROOT) not in sys.path:
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 
 
+def load_yolov5(weights, device, imgsz, img_size, data, dnn, half):
+    """Set up YOLOv5 model. This can be replaced with other models."""
+    model = DetectMultiBackend(weights, device=device, dnn=dnn)
+    stride, pt, jit, engine = model.stride, model.pt, model.jit, model.engine
+    half &= (pt or jit or engine) and device.type != 'cpu'  # half precision only supported by PyTorch on CUDA
+    if pt or jit:
+        model.model.half() if half else model.model.float()
+    elif engine:
+        batch_size = model.batch_size
+    else:
+        LOGGER.info(f'Forcing --batch-size 1 square inference shape(1,3,{imgsz},{imgsz}) for non-PyTorch backends')
+
+    model.warmup(imgsz=(1, 3) + img_size, half=half)  # warmup
+    data = check_yaml(data)  # check YAML
+    data = check_dataset(data)
+    imgsz = check_img_size(imgsz, s=stride)
+    return model, data
+
+
 def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
                        img_size=(736, 1312), obj_class=0, obj_size=None,
                        bg_dir='./', num_bg=16, save_images=False, save_dir='./',
-                       generate_patch='synthetic', rescaling=False, relighting=False, 
+                       generate_patch='synthetic', rescaling=False, relighting=False,
                        csv_path='mapillary.csv', dataloader=None):
     """Generate adversarial patch
 
@@ -59,7 +77,7 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
 
     # Randomly select backgrounds from `bg_dir` and resize them
     all_bgs = os.listdir(os.path.expanduser(bg_dir))
-    print(f'There are {len(all_bgs)} background images in {bg_dir}')
+    print(f'There are {len(all_bgs)} background images in {bg_dir}.')
     idx = np.arange(len(all_bgs))
     np.random.shuffle(idx)
     backgrounds = torch.zeros((num_bg, 3) + img_size, )
@@ -67,6 +85,7 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
         bg = torchvision.io.read_image(join(bg_dir, all_bgs[index])) / 255
         backgrounds[i] = T.resize(bg, img_size, antialias=True)
 
+    print(f'=> Initializing attack...')
     attack_config = {
         'rp2_num_steps': 2000,
         'rp2_step_size': 1e-2,
@@ -74,31 +93,25 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
         'rp2_optimizer': 'adam',
         'rp2_lambda': 0,
         'rp2_min_conf': 0.25,
+        'rp2_augment_real': True,
         'input_size': img_size,
-        'attack_mode': ''
+        'attack_mode': 'pgd'
     }
     # TODO: Allow data parallel?
-    attack = RP2AttackModule(attack_config, model, None, None, None, rescaling=rescaling, relighting=relighting)
-
-    obj_mask = torch.from_numpy(obj_numpy[:, :, -1] == 1).float().unsqueeze(0)
-    obj = torch.from_numpy(obj_numpy[:, :, :-1]).float().permute(2, 0, 1)
-    # Resize and put object in the middle of zero background
-    # pad_size = [(img_size[1] - obj_size[1]) // 2, (img_size[0] - obj_size[0]) // 2]  # left/right, top/bottom
-    pad_size = [(img_size[1] - obj_size[1]) // 2, 
-                (img_size[0] - obj_size[0]) // 2, 
-                (img_size[1] - obj_size[1]) // 2 + obj_size[1] % 2, 
-                (img_size[0] - obj_size[0]) // 2 + obj_size[0] % 2]  # left, top, right, bottom
-
-    
+    attack = RP2AttackModule(attack_config, model, None, None, None,
+                             rescaling=rescaling, relighting=relighting, verbose=True)
 
     # Generate an adversarial patch
     if generate_patch == 'synthetic':
+        print('=> Generating adversarial patch on synthetic signs...')
+        obj_mask = torch.from_numpy(obj_numpy[:, :, -1] == 1).float().unsqueeze(0)
+        obj = torch.from_numpy(obj_numpy[:, :, :-1]).float().permute(2, 0, 1)
         # Resize object to the specify size and pad obj and masks to image size
-        # obj_ = T.resize(obj, obj_size, antialias=True)
-        # obj_ = T.pad(obj_, pad_size)
-        # mask_interp = T.InterpolationMode.NEAREST
-        # obj_mask_ = T.resize(obj_mask, obj_size, interpolation=mask_interp)
-        # obj_mask_ = T.pad(obj_mask_, pad_size)
+        # pad_size = [(img_size[1] - obj_size[1]) // 2, (img_size[0] - obj_size[0]) // 2]  # left/right, top/bottom
+        pad_size = [(img_size[1] - obj_size[1]) // 2,
+                    (img_size[0] - obj_size[0]) // 2,
+                    (img_size[1] - obj_size[1]) // 2 + obj_size[1] % 2,
+                    (img_size[0] - obj_size[0]) // 2 + obj_size[0] % 2]  # left, top, right, bottom
         obj = T.resize(obj, obj_size, antialias=True)
         obj = T.pad(obj, pad_size)
         obj_mask = T.resize(obj_mask, obj_size, interpolation=T.InterpolationMode.NEAREST)
@@ -106,6 +119,7 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
         patch_mask_ = T.resize(patch_mask, obj_size, interpolation=T.InterpolationMode.NEAREST)
         patch_mask_ = T.pad(patch_mask_, pad_size)
 
+        print(f'=> Start attacking...')
         with torch.enable_grad():
             adv_patch = attack.attack(obj.to(device),
                                       obj_mask.to(device),
@@ -113,13 +127,20 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
                                       backgrounds.to(device),
                                       obj_class=obj_class,
                                       obj_size=obj_size)
-    elif generate_patch == 'transform':
 
+        if save_images:
+            torchvision.utils.save_image(obj, join(save_dir, 'obj.png'))
+            torchvision.utils.save_image(obj_mask, join(save_dir, 'obj_mask.png'))
+            torchvision.utils.save_image(backgrounds, join(save_dir, 'backgrounds.png'))
+
+    elif generate_patch == 'real':
+        print('=> Generating adversarial patch on real signs...')
         df = pd.read_csv(csv_path)
         df['tgt_final'] = df['tgt_final'].apply(literal_eval)
         df = df[df['final_shape'] != 'other-0.0-0.0']
 
         attack_images = []
+        print('=> Collecting background images...')
         for batch_i, (im, targets, paths, shapes) in enumerate(dataloader):
             for image_i, path in enumerate(paths):
                 filename = path.split('/')[-1]
@@ -139,14 +160,14 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
                         continue
                     # Pad to make sure all images are of same size
                     img = im[image_i]
-
-                    assert img_size[0] >= img.size(1) and img_size[1] >= img.size(2)
-                    add_h_pad = (img_size[0] - img.size(1)) // 2
-                    add_w_pad = (img_size[1] - img.size(2)) // 2
-                    pad = (add_w_pad, add_w_pad, add_h_pad, add_h_pad)
-                    img = F.pad(img, pad, value=114)
-                    w_pad += add_w_pad
-                    h_pad += add_h_pad
+                    # TODO: no longer need to pad since we fix the size
+                    # assert img_size[0] >= img.size(1) and img_size[1] >= img.size(2)
+                    # add_h_pad = (img_size[0] - img.size(1)) // 2
+                    # add_w_pad = (img_size[1] - img.size(2)) // 2
+                    # pad = (add_w_pad, add_w_pad, add_h_pad, add_h_pad)
+                    # img = F.pad(img, pad, value=114)
+                    # w_pad += add_w_pad
+                    # h_pad += add_h_pad
                     data = [shape, predicted_class, row, h0, w0, h_ratio, w_ratio, w_pad, h_pad]
                     attack_images.append([img, data, str(filename)])
                     break   # This prevents duplicating the background
@@ -154,6 +175,7 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
             if len(attack_images) >= num_bg:
                 break
 
+        print(f'=> {len(attack_images)} backgrounds collected.')
         attack_images = attack_images[:num_bg]
 
         # DEBUG: Save all the background images
@@ -161,10 +183,12 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
             torchvision.utils.save_image(img[0] / 255, f'tmp/{img[2]}.png')
 
         # Save background filenames in txt file
+        print(f'=> Saving used backgrounds in a txt file.')
         with open(join(save_dir, 'bg_filenames.txt'), 'w') as f:
             for img in attack_images:
                 f.write(f'{img[2]}\n')
 
+        print(f'=> Start attacking...')
         with torch.enable_grad():
             adv_patch = attack.transform_and_attack(attack_images,
                                                     patch_mask=patch_mask.to(device),
@@ -173,10 +197,7 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
     adv_patch = adv_patch[0].detach().cpu().float()
 
     if save_images:
-        torchvision.utils.save_image(obj, join(save_dir, 'obj.png'))
-        torchvision.utils.save_image(obj_mask, join(save_dir, 'obj_mask.png'))
         torchvision.utils.save_image(patch_mask, join(save_dir, 'patch_mask.png'))
-        torchvision.utils.save_image(backgrounds, join(save_dir, 'backgrounds.png'))
         torchvision.utils.save_image(adv_patch, join(save_dir, 'adversarial_patch.png'))
 
     return adv_patch
@@ -187,9 +208,9 @@ def main(
     device='',  # cuda device, i.e. 0 or 0,1,2,3 or cpu
     weights=None,  # model.pt path(s)
     imgsz=1280,  # image width
-    padded_imgsz='736,1312',
-    half=True,  # use FP16 half-precision inference
+    padded_imgsz='992,1312',
     dnn=False,  # use OpenCV DNN for ONNX inference
+    half=False,
     save_dir=Path(''),
     exist_ok=True,  # existing project/name ok, do not increment
     project=ROOT / 'runs/val',  # save to project/name
@@ -221,15 +242,7 @@ def main(
     (save_dir / 'labels' if save_txt else save_dir).mkdir(parents=True, exist_ok=True)  # make dir
 
     # Load model (YOLOv5)
-    model = DetectMultiBackend(weights, device=device, dnn=dnn)
-    stride, pt, jit, engine = model.stride, model.pt, model.jit, model.engine
-    half &= (pt or jit or engine) and device.type != 'cpu'  # half precision only supported by PyTorch on CUDA
-    if pt or jit:
-        model.model.half() if half else model.model.float()
-    elif engine:
-        batch_size = model.batch_size
-    else:
-        LOGGER.info(f'Forcing --batch-size 1 square inference shape(1,3,{imgsz},{imgsz}) for non-PyTorch backends')
+    model, data = load_yolov5(weights, device, imgsz, img_size, data, dnn, half)
 
     # Configure object size
     # NOTE: We assume that the target object fits the tensor in the same way
@@ -237,8 +250,8 @@ def main(
     # etc. in a square). Patch and patch mask are defined with respect to this
     # object tensor, and they should all have the same width and height.
     obj_numpy = np.array(Image.open(obj_path).convert('RGBA')) / 255
-    
-    # TODO: FIXED? 
+
+    # TODO: FIXED?
     h_w_ratio = obj_numpy.shape[0] / obj_numpy.shape[1]
     # h_w_ratio = img_size[0] / img_size[1]
 
@@ -258,19 +271,12 @@ def main(
     patch_size = 10
     h = int(patch_size / 36 / 2 * obj_size[0])
     w = int(patch_size / 36 / 2 * obj_size[1])
-
-    # print(mid_width - w)
-    # print(mid_height - h)
-    
     patch_mask[:, mid_height - h:mid_height + h, mid_width - w:mid_width + w] = 1
 
     dataloader = None
-    if generate_patch == 'transform':
-        model.warmup(imgsz=(1, 3) + img_size, half=half)  # warmup
+    if generate_patch == 'real':
         task = 'train'  # Use transform-annotated images from training set
-        data = check_yaml(data)  # check YAML
-        data = check_dataset(data)
-        imgsz = check_img_size(imgsz, s=stride)
+        stride, pt = model.stride, model.pt
         dataloader = create_dataloader(data[task], imgsz, batch_size, stride,
                                        single_cls=False, pad=0.5, rect=pt, shuffle=True,
                                        workers=8, prefix=colorstr(f'{task}: '))[0]
@@ -287,10 +293,10 @@ def main(
     pickle.dump([adv_patch, patch_mask], open(patch_path, 'wb'))
 
     patch_metadata = {
-                    'generate_patch':generate_patch, 
-                    'rescaling':rescaling,
-                    'relighting':relighting
-                    }
+        'generate_patch': generate_patch,
+        'rescaling': rescaling,
+        'relighting': relighting
+    }
     patch_metadata_path = join(save_dir, 'patch_metadata.pkl')
     print(f'Saving the generated adv patch metadata to {patch_metadata_path}...')
     pickle.dump(patch_metadata, open(patch_metadata_path, 'wb'))
@@ -322,15 +328,15 @@ if __name__ == "__main__":
     parser.add_argument('--num-bg', type=int, default=16, help='number of backgrounds to generate adversarial patch')
     parser.add_argument('--save-images', action='store_true', help='save generated patch')
     parser.add_argument('--generate-patch', type=str, default='synthetic',
-                        help=("create patch using synthetic stop signs if 'synthetic'"
-                              "else use real tranformation if 'transform'"))
-    parser.add_argument('--rescaling', action='store_true', 
-                        help='if true, will randomly rescale synthetic sign size during patch generations. only valid when generate-patch==synthetic')
-    parser.add_argument('--relighting', action='store_true', 
-                        help='if true and generate-patch==synthetic, will randomly add color jitter to patch when generating the patch \
-                                else if true and generate-patch==transform, will perform color transform for patch on real signs')
+                        help=("create patch using synthetic stop signs if 'synthetic', use real signs if 'real'"))
+    parser.add_argument('--rescaling', action='store_true',
+                        help=('randomly rescale synthetic sign size during patch generations'
+                              '(use with --generate-patch synthetic)'))
+    parser.add_argument('--relighting', action='store_true',
+                        help='apply color jitter to patch during attack')
     parser.add_argument('--csv-path', type=str, default='',
-                        help='path to csv file with the annotated transform data')
+                        help=('path to csv file with the annotated transform '
+                              'data (required if --generate-patch real)'))
     opt = parser.parse_args()
     print(opt)
 
