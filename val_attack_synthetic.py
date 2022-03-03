@@ -47,6 +47,14 @@ from yolov5.utils.metrics import ConfusionMatrix, ap_per_class
 from yolov5.utils.plots import output_to_target, plot_images, plot_val_study
 from yolov5.utils.torch_utils import select_device, time_sync
 
+
+
+import warnings
+warnings.filterwarnings("ignore")
+
+
+
+
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # YOLOv5 root directory
 if str(ROOT) not in sys.path:
@@ -87,17 +95,19 @@ def process_batch(detections, labels, iouv):
     """
     correct = torch.zeros(detections.shape[0], iouv.shape[0], dtype=torch.bool, device=iouv.device)
     iou = box_iou(labels[:, 1:5], detections[:, :4])
+
     x = torch.where((iou >= iouv[0]) & (labels[:, 0:1] == detections[:, 5]))  # IoU above threshold and classes match
+
+    matches = []
     if x[0].shape[0]:
         matches = torch.cat((torch.stack(x, 1), iou[x[0], x[1]][:, None]), 1).cpu().numpy()  # [label, detection, iou]
         if x[0].shape[0] > 1:
             matches = matches[matches[:, 2].argsort()[::-1]]
             matches = matches[np.unique(matches[:, 1], return_index=True)[1]]
-            # matches = matches[matches[:, 2].argsort()[::-1]]
             matches = matches[np.unique(matches[:, 0], return_index=True)[1]]
         matches = torch.Tensor(matches).to(iouv.device)
         correct[matches[:, 1].long()] = matches[:, 2:3] >= iouv
-    return correct
+    return correct, matches
 
 def transform_and_apply_patch(image, adv_patch, patch_mask, patch_loc,
                               shape, predicted_class, row, img_data, no_transform=False):
@@ -408,19 +418,20 @@ def run(args,
         shape_to_plot_data = {}
         shape_to_plot_data['octagon'] = []
 
-    metrics_per_image_df = pd.DataFrame(columns=['filename', 'num_octagons', 'num_patches', 'fnr', 'fn'])
+    metrics_per_image_df = pd.DataFrame(columns=['filename', 'num_octagons', 'num_patches', 'fn'])
+    metrics_per_label_df = pd.DataFrame(columns=['filename', 'obj_id', 'label', 'correct_prediction', 'sign_width', 'sign_height'])
     for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
-        targets = torch.nn.functional.pad(targets, (0, 1), "constant", 0)  # effectively zero padding
-        filenames = [p.split('/')[-1] for p in paths]
+        targets = torch.nn.functional.pad(targets, (0, 2), "constant", 0)  # effectively zero padding
+        
         # DEBUG
-        # if batch_i == 100:
+        # if batch_i == 200:
         #     break
         if num_apply_imgs >= len(filename_list) and args.run_only_img_txt:
             break
         
         # ======================= BEGIN: apply patch ======================== #
         for image_i, path in enumerate(paths):
-
+            targets[targets[:, 0] == image_i, 7] = torch.FloatTensor(np.arange(len(targets[targets[:, 0] == image_i])))
             if apply_patch and not synthetic:
                 filename = path.split('/')[-1]
                 img_df = df[df['filename_y'] == filename]
@@ -435,6 +446,7 @@ def run(args,
                 num_apply_imgs += 1
 
                 num_patches_applied_to_image = 0
+
                 # Apply patch on all of the signs on this image
                 for _, row in img_df.iterrows():
                     (h0, w0), ((h_ratio, w_ratio), (w_pad, h_pad)) = shapes[image_i]
@@ -453,8 +465,10 @@ def run(args,
                         predicted_class, row, img_data, no_transform=no_transform) * 255
                     num_patches_applied_to_image += 1
 
-                # set targets[6] to 1 if patch is applied to image
+                # set targets[6] to #patches_applied_to_image
                 targets[targets[:, 0] == image_i, 6] = num_patches_applied_to_image
+                # print(len(targets[targets[:, 0] == image_i]))
+                
 
             elif synthetic:
                 orig_shape = im[image_i].shape[1:]
@@ -527,11 +541,11 @@ def run(args,
         dt[2] += time_sync() - t3
 
         # Metrics
-        # pred_for_plotting = []
         predictions_for_plotting = output_to_target(out)
 
         for si, pred in enumerate(out):
             labels = targets[targets[:, 0] == si, 1:]
+            
             nl = len(labels)
             tcls = labels[:, 0].tolist() if nl else []  # target class
             path, shape = Path(paths[si]), shapes[si][0]
@@ -546,6 +560,19 @@ def run(args,
             if len(pred) == 0:
                 if nl:
                     stats.append((torch.zeros(0, niou, dtype=torch.bool), torch.Tensor(), torch.Tensor(), tcls))
+
+                for lbl_ in labels:
+                    if lbl_[0] == 14:
+                        lbl_ = lbl_.cpu()
+                        current_label_metric = {}
+                        current_label_metric['filename'] = filename
+                        current_label_metric['obj_id'] = lbl_[6].item()
+                        current_label_metric['label'] = lbl_[0].item()
+                        current_label_metric['correct_prediction'] = 0
+                        current_label_metric['sign_width'] = lbl_[3].item()
+                        current_label_metric['sign_height'] = lbl_[4].item()
+                        metrics_per_label_df = metrics_per_label_df.append(current_label_metric, ignore_index=True)
+                        
                 continue
 
             # Predictions
@@ -592,14 +619,35 @@ def run(args,
                 scale_coords(im[si].shape[1:], tbox, shape, shapes[si][1])  # native-space labels
                 labelsn = torch.cat((labels[:, 0:1], tbox), 1)  # native-space labels
 
-                correct = process_batch(predn, labelsn, iouv)
+                correct, matches = process_batch(predn, labelsn, iouv)
                 if plots:
                     confusion_matrix.process_batch(predn, labelsn)
             else:
-                correct = torch.zeros(pred.shape[0], niou, dtype=torch.bool)
+                correct, matches = torch.zeros(pred.shape[0], niou, dtype=torch.bool), []
 
-            # FIXME: 14 is octagon   
-            total_positives = sum([1 for x in tcls if x == 14])            
+            # FIXME: 14 is octagon
+            for lbl_ in labels:
+                if lbl_[0] == 14:
+                    lbl_ = lbl_.cpu()
+                    current_label_metric = {}
+                    current_label_metric['filename'] = filename
+                    current_label_metric['obj_id'] = lbl_[6].item()
+                    current_label_metric['label'] = lbl_[0].item()
+                    current_label_metric['correct_prediction'] = 0
+                    current_label_metric['sign_width'] = lbl_[3].item()
+                    current_label_metric['sign_height'] = lbl_[4].item()
+                    
+                    if len(matches) > 0:
+                        # match on obj_id 
+                        match = matches[matches[:, 0] == lbl_[6]]
+                        assert len(match) <= 1
+                        if len(match) > 0:
+                            detection_index = int(match[0, 1])
+                            if pred.cpu().numpy()[detection_index, 5] == 14 and pred.cpu().numpy()[detection_index, 4] > metrics_confidence_threshold and correct[detection_index, 0]:
+                                current_label_metric['correct_prediction'] = 1
+                    metrics_per_label_df = metrics_per_label_df.append(current_label_metric, ignore_index=True)
+                        
+            total_positives = sum([1 for x in tcls if x == 14])         
             sign_indices = np.logical_and(pred.cpu().numpy()[:, 5] == 14, pred.cpu().numpy()[:, 4] > metrics_confidence_threshold)
             tp = sum(correct.cpu().numpy()[sign_indices, 0])
             current_image_metrics['fn'] = total_positives - tp
@@ -659,6 +707,7 @@ def run(args,
     # ======================================================================= #
 
     metrics_per_image_df.to_csv(f'{project}/{name}/results_per_image.csv', index=False)
+    metrics_per_label_df.to_csv(f'{project}/{name}/results_per_label.csv', index=False)
     # metrics_per_image_df.to_csv('runs/results_per_image.csv', index=False)
 
     if plot_octagons:

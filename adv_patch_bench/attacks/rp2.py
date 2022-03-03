@@ -33,6 +33,8 @@ class RP2AttackModule(DetectorAttackModule):
         self.lmbda = attack_config['rp2_lambda']
         self.min_conf = attack_config['rp2_min_conf']
         self.input_size = attack_config['input_size']
+        self.attack_mode = attack_config['attack_mode']
+
         self.num_restarts = 1
         self.rescaling=rescaling
         self.relighting=relighting
@@ -273,8 +275,11 @@ class RP2AttackModule(DetectorAttackModule):
             # Run PGD on inputs for specified number of steps
             for step in range(self.num_steps):
                 z_delta.requires_grad_()
-                delta = self._to_model_space(z_delta, 0, 1)
-                # delta = z_delta
+
+                if self.attack_mode == 'pgd':
+                    delta = z_delta
+                else:
+                    delta = self._to_model_space(z_delta, 0, 1)
 
                 # Randomly select background and apply transforms (crop and scale)
                 np.random.shuffle(all_bg_idx)
@@ -283,7 +288,6 @@ class RP2AttackModule(DetectorAttackModule):
                 curr_tf_data = [data[bg_idx] for data in tf_data]
 
                 delta = delta.repeat(self.num_eot, 1, 1, 1)
-                # delta = z_delta.repeat(self.num_eot, 1, 1, 1)
 
                 adv_img = apply_transform(backgrounds[bg_idx], delta, patch_mask, patch_loc, tf_function, curr_tf_data)
                 adv_img = resize_transform(adv_img)
@@ -310,23 +314,13 @@ class RP2AttackModule(DetectorAttackModule):
                 loss += self.lmbda * tv
                 loss.backward(retain_graph=True)
 
-                # grad = torch.autograd.grad(loss, z_delta, allow_unused=True)[0].detach()
-
-                # print(z_delta.grad)
-                # print(torch.sum(z_delta > 0))
-                # print()
-                # print(delta.grad)
-                # print()
-                
-                # import pdb
-                # pdb.set_trace()
-
-                # grad = z_delta.grad
-                # grad = torch.sign(grad)
-                # z_delta = z_delta.detach() + self.alpha * grad
-                # z_delta = z_delta.clamp_(0, 1)
-
-                opt.step()
+                if self.attack_mode == 'pgd':
+                    grad = z_delta.grad.detach()
+                    grad = torch.sign(grad)
+                    z_delta = z_delta.detach() - self.alpha * grad
+                    z_delta = z_delta.clamp_(0, 1)
+                else:
+                    opt.step()
 
                 # lr_schedule.step(loss)
 
@@ -586,7 +580,7 @@ def apply_transform(image, adv_patch, patch_mask, patch_loc, transform_func, tf_
     sign_canonical, sign_mask, M, alpha, beta = tf_data
     adv_patch.clamp_(0, 1).mul_(alpha).add_(beta).clamp_(0, 1)
     sign_canonical[:, :-1, ymin:ymin + height, xmin:xmin + width] = adv_patch
-    sign_canonical[:, -1, ymin:ymin + height, xmin:xmin + width]
+    sign_canonical[:, -1, ymin:ymin + height, xmin:xmin + width] = 1
     sign_canonical = sign_mask * patch_mask * sign_canonical
 
     warped_patch = transform_func(sign_canonical,

@@ -75,6 +75,7 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
         'rp2_lambda': 0,
         'rp2_min_conf': 0.25,
         'input_size': img_size,
+        'attack_mode': ''
     }
     # TODO: Allow data parallel?
     attack = RP2AttackModule(attack_config, model, None, None, None, rescaling=rescaling, relighting=relighting)
@@ -168,9 +169,6 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
             adv_patch = attack.transform_and_attack(attack_images,
                                                     patch_mask=patch_mask.to(device),
                                                     obj_class=obj_class)
-            # adv_patch = attack.transform_and_attack_pgd(attack_images,
-            #                                         patch_mask=patch_mask.to(device),
-            #                                         obj_class=obj_class)
 
     adv_patch = adv_patch[0].detach().cpu().float()
 
