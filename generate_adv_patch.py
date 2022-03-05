@@ -36,7 +36,7 @@ ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
                        img_size=(736, 1312), obj_class=0, obj_size=None,
                        bg_dir='./', num_bg=16, save_images=False, save_dir='./',
-                       generate_patch='synthetic', rescaling=False, relighting=False, 
+                       generate_patch='synthetic', rescaling=False, relighting=False,
                        csv_path='mapillary.csv', dataloader=None):
     """Generate adversarial patch
 
@@ -83,12 +83,10 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
     obj = torch.from_numpy(obj_numpy[:, :, :-1]).float().permute(2, 0, 1)
     # Resize and put object in the middle of zero background
     # pad_size = [(img_size[1] - obj_size[1]) // 2, (img_size[0] - obj_size[0]) // 2]  # left/right, top/bottom
-    pad_size = [(img_size[1] - obj_size[1]) // 2, 
-                (img_size[0] - obj_size[0]) // 2, 
-                (img_size[1] - obj_size[1]) // 2 + obj_size[1] % 2, 
+    pad_size = [(img_size[1] - obj_size[1]) // 2,
+                (img_size[0] - obj_size[0]) // 2,
+                (img_size[1] - obj_size[1]) // 2 + obj_size[1] % 2,
                 (img_size[0] - obj_size[0]) // 2 + obj_size[0] % 2]  # left, top, right, bottom
-
-    
 
     # Generate an adversarial patch
     if generate_patch == 'synthetic':
@@ -190,7 +188,7 @@ def main(
     weights=None,  # model.pt path(s)
     imgsz=1280,  # image width
     padded_imgsz='736,1312',
-    half=True,  # use FP16 half-precision inference
+    half=False,  # use FP16 half-precision inference
     dnn=False,  # use OpenCV DNN for ONNX inference
     save_dir=Path(''),
     exist_ok=True,  # existing project/name ok, do not increment
@@ -239,8 +237,8 @@ def main(
     # etc. in a square). Patch and patch mask are defined with respect to this
     # object tensor, and they should all have the same width and height.
     obj_numpy = np.array(Image.open(obj_path).convert('RGBA')) / 255
-    
-    # TODO: FIXED? 
+
+    # TODO: FIXED?
     h_w_ratio = obj_numpy.shape[0] / obj_numpy.shape[1]
     # h_w_ratio = img_size[0] / img_size[1]
 
@@ -263,7 +261,7 @@ def main(
 
     # print(mid_width - w)
     # print(mid_height - h)
-    
+
     patch_mask[:, mid_height - h:mid_height + h, mid_width - w:mid_width + w] = 1
 
     dataloader = None
@@ -289,10 +287,10 @@ def main(
     pickle.dump([adv_patch, patch_mask], open(patch_path, 'wb'))
 
     patch_metadata = {
-                    'generate_patch':generate_patch, 
-                    'rescaling':rescaling,
-                    'relighting':relighting
-                    }
+        'generate_patch': generate_patch,
+        'rescaling': rescaling,
+        'relighting': relighting
+    }
     patch_metadata_path = join(save_dir, 'patch_metadata.pkl')
     print(f'Saving the generated adv patch metadata to {patch_metadata_path}...')
     pickle.dump(patch_metadata, open(patch_metadata_path, 'wb'))
@@ -326,10 +324,12 @@ if __name__ == "__main__":
     parser.add_argument('--generate-patch', type=str, default='synthetic',
                         help=("create patch using synthetic stop signs if 'synthetic'"
                               "else use real tranformation if 'transform'"))
-    parser.add_argument('--rescaling', action='store_true', 
-                        help='if true, will randomly rescale synthetic sign size during patch generations. only valid when generate-patch==synthetic')
-    parser.add_argument('--relighting', action='store_true', 
-                        help='if true and generate-patch==synthetic, will randomly add color jitter to patch when generating the patch \
+    parser.add_argument(
+        '--rescaling', action='store_true',
+        help='if true, will randomly rescale synthetic sign size during patch generations. only valid when generate-patch==synthetic')
+    parser.add_argument(
+        '--relighting', action='store_true',
+        help='if true and generate-patch==synthetic, will randomly add color jitter to patch when generating the patch \
                                 else if true and generate-patch==transform, will perform color transform for patch on real signs')
     parser.add_argument('--csv-path', type=str, default='',
                         help='path to csv file with the annotated transform data')

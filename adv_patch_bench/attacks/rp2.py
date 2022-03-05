@@ -34,8 +34,8 @@ class RP2AttackModule(DetectorAttackModule):
         self.min_conf = attack_config['rp2_min_conf']
         self.input_size = attack_config['input_size']
         self.num_restarts = 1
-        self.rescaling=rescaling
-        self.relighting=relighting
+        self.rescaling = rescaling
+        self.relighting = relighting
 
         self.bg_transforms = K.RandomResizedCrop(self.input_size, p=1.0)
         # self.obj_transforms = K.container.AugmentationSequential(
@@ -52,7 +52,6 @@ class RP2AttackModule(DetectorAttackModule):
         # self.jitter_transform = K.ColorJitter(brightness=1, contrast=0.5, p=1)
         self.jitter_transform = K.ColorJitter(contrast=0.3, p=1)
         # self.patch_jitter_transform = K.ColorJitter(brightness=(0, 0.1), contrast=(0, 0.1), saturation=(0, 0.1), hue=(0, 0.1))
-        
 
     def attack(self,
                obj: torch.Tensor,
@@ -116,7 +115,7 @@ class RP2AttackModule(DetectorAttackModule):
                     bg_idx = torch.randint(0, len(backgrounds), size=(self.num_eot, ))
                     bgs = backgrounds[bg_idx]
                     bgs = self.bg_transforms(bgs)
-                    
+
                     # indices = np.where(obj_mask.cpu()[0] > 0)
                     # x_min, x_max = min(indices[1]), max(indices[1])
                     # y_min, y_max = min(indices[0]), max(indices[0])
@@ -129,15 +128,21 @@ class RP2AttackModule(DetectorAttackModule):
                     # old_ratio = synthetic_sign_size/960
                     if self.rescaling:
                         old_ratio = synthetic_sign_size/self.input_size[0]
-                        prob_array = [0.38879158, 0.26970227, 0.16462349, 0.07530647, 0.04378284, 0.03327496, 0.01050788, 0.00700525, 0.00350263, 0.00350263]
-                        new_possible_ratios = [0.05340427, 0.11785139, 0.18229851, 0.24674563, 0.31119275, 0.3756399, 0.440087, 0.5045341 , 0.56898123, 0.6334284, 0.6978755 ]
+                        prob_array = [0.38879158, 0.26970227, 0.16462349, 0.07530647, 0.04378284,
+                                      0.03327496, 0.01050788, 0.00700525, 0.00350263, 0.00350263]
+                        new_possible_ratios = [0.05340427, 0.11785139, 0.18229851, 0.24674563,
+                                               0.31119275, 0.3756399, 0.440087, 0.5045341, 0.56898123, 0.6334284, 0.6978755]
                         index_array = np.arange(0, len(new_possible_ratios)-1)
                         sampled_index = np.random.choice(index_array, None, p=prob_array)
                         low_bin_edge, high_bin_edge = new_possible_ratios[sampled_index], new_possible_ratios[sampled_index+1]
-                        self.obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True, scale=(low_bin_edge/old_ratio, high_bin_edge/old_ratio))
+                        self.obj_transforms = K.RandomAffine(
+                            30, translate=(0.45, 0.45),
+                            p=1.0, return_transform=True, scale=(low_bin_edge / old_ratio, high_bin_edge / old_ratio))
                     else:
-                        self.obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True, scale=None)
-                        
+                        self.obj_transforms = K.RandomAffine(
+                            30, translate=(0.45, 0.45),
+                            p=1.0, return_transform=True, scale=None)
+
                     # print((low_bin_edge/old_ratio, high_bin_edge/old_ratio))
                     # new_size = (int(self.input_size[0] * new_synthetic_sign_ratio / old_ratio), int(self.input_size[1] * new_synthetic_sign_ratio / old_ratio))
                     # self.resize_transforms = T.Resize(size=new_size)
@@ -145,22 +150,22 @@ class RP2AttackModule(DetectorAttackModule):
                     # Apply random transformations
                     patch_full[:, ymin:ymin + height, xmin:xmin + width] = delta
                     adv_obj = patch_mask * patch_full + (1 - patch_mask) * obj
-                    
+
                     adv_obj = adv_obj.expand(self.num_eot, -1, -1, -1)
                     if self.relighting:
                         adv_obj = self.jitter_transform(adv_obj)
                     adv_obj, tf_params = self.obj_transforms(adv_obj)
-                    adv_obj = adv_obj.clamp(0, 1)                    
+                    adv_obj = adv_obj.clamp(0, 1)
 
                     o_mask = self.mask_transforms.apply_transform(
                         obj_mask_dup, None, transform=tf_params)
                     adv_img = o_mask * adv_obj + (1 - o_mask) * bgs
                     # Patch image the same way as YOLO
                     adv_img = letterbox(adv_img, new_shape=self.input_size[1])[0]
-                    
+
                     # if step % 100 == 0:
                     #     torchvision.utils.save_image(adv_img[0], f'tmp/synthetic/test_synthetic_adv_img_{step}.png')
-                    
+
                     # Compute logits, loss, gradients
                     out, _ = self.core_model(adv_img, val=True)
                     conf = out[:, :, 4:5] * out[:, :, 5:]
@@ -179,7 +184,7 @@ class RP2AttackModule(DetectorAttackModule):
 
                     loss /= self.num_eot
                     tv = ((delta[:, :, :-1, :] - delta[:, :, 1:, :]).abs().mean() +
-                        (delta[:, :, :, :-1] - delta[:, :, :, 1:]).abs().mean())
+                          (delta[:, :, :, :-1] - delta[:, :, :, 1:]).abs().mean())
                     # loss = out[:, :, 4].mean() + self.lmbda * tv
                     loss += self.lmbda * tv
                     loss.backward(retain_graph=True)
@@ -230,7 +235,6 @@ class RP2AttackModule(DetectorAttackModule):
         ema_const = 0
         ema_loss = None
 
-        
         self.alpha = 1e-2
 
         # Process transform data and create batch tensors
@@ -248,8 +252,6 @@ class RP2AttackModule(DetectorAttackModule):
                 # Add singletons for alpha and beta
                 data_i = data_i[:, None, None, None]
             tf_data.append(data_i)
-
-        # sign_canonical, sign_mask, M, alpha, beta = tf_data
 
         all_bg_idx = np.arange(len(tf_data_temp))
         backgrounds = torch.cat([obj[0].unsqueeze(0) for obj in objs], dim=0).to(device)
@@ -274,18 +276,16 @@ class RP2AttackModule(DetectorAttackModule):
             for step in range(self.num_steps):
                 z_delta.requires_grad_()
                 delta = self._to_model_space(z_delta, 0, 1)
-                # delta = z_delta
 
                 # Randomly select background and apply transforms (crop and scale)
                 np.random.shuffle(all_bg_idx)
                 bg_idx = all_bg_idx[:self.num_eot]
 
                 curr_tf_data = [data[bg_idx] for data in tf_data]
-
-                delta = delta.repeat(self.num_eot, 1, 1, 1)
-                # delta = z_delta.repeat(self.num_eot, 1, 1, 1)
-
-                adv_img = apply_transform(backgrounds[bg_idx], delta, patch_mask, patch_loc, tf_function, curr_tf_data)
+                delta_repeat = delta.repeat(self.num_eot, 1, 1, 1)
+                adv_img = apply_transform(
+                    backgrounds[bg_idx], delta_repeat, patch_mask, patch_loc,
+                    tf_function, curr_tf_data)
                 adv_img = resize_transform(adv_img)
 
                 # Compute logits, loss, gradients
@@ -317,7 +317,7 @@ class RP2AttackModule(DetectorAttackModule):
                 # print()
                 # print(delta.grad)
                 # print()
-                
+
                 # import pdb
                 # pdb.set_trace()
 
@@ -334,7 +334,7 @@ class RP2AttackModule(DetectorAttackModule):
                     ema_loss = loss.item()
                 else:
                     ema_loss = ema_const * ema_loss + (1 - ema_const) * loss.item()
-                if step % 100 == 0:
+                if step % 1 == 0:
                     print(f'step: {step:4d}   loss: {ema_loss:.4f}   time: {time.time() - start_time:.2f}s')
                     start_time = time.time()
                     # DEBUG
@@ -371,9 +371,8 @@ class RP2AttackModule(DetectorAttackModule):
         ema_const = 0.99
         ema_loss = None
 
-        
         self.alpha = 1e-2
-        
+
         # Process transform data and create batch tensors
         sign_size_in_pixel = patch_mask.size(-1)
         # Assume that every signs use the same transform function (len(tgt) = 4)
@@ -397,8 +396,11 @@ class RP2AttackModule(DetectorAttackModule):
 
         for _ in range(self.num_restarts):
             # Initialize adversarial perturbation
-            delta = torch.autograd.Variable(torch.rand((1, 3, height, width), device=device, dtype=torch.float32), requires_grad=True)
-            
+            delta = torch.autograd.Variable(
+                torch.rand((1, 3, height, width),
+                           device=device, dtype=torch.float32),
+                requires_grad=True)
+
             # Set up optimizer
             # if self.optimizer == 'sgd':
             #     opt = optim.SGD([delta], lr=self.step_size, momentum=0.9)
@@ -413,7 +415,7 @@ class RP2AttackModule(DetectorAttackModule):
             # Run PGD on inputs for specified number of steps
             for step in range(self.num_steps):
                 delta.requires_grad_()
-                
+
                 # Randomly select background and apply transforms (crop and scale)
                 np.random.shuffle(all_bg_idx)
                 bg_idx = all_bg_idx[:self.num_eot]
@@ -422,7 +424,8 @@ class RP2AttackModule(DetectorAttackModule):
 
                 delta_repeat = delta.repeat(self.num_eot, 1, 1, 1)
 
-                adv_img = apply_transform(backgrounds[bg_idx], delta_repeat, patch_mask, patch_loc, tf_function, curr_tf_data)
+                adv_img = apply_transform(backgrounds[bg_idx], delta_repeat,
+                                          patch_mask, patch_loc, tf_function, curr_tf_data)
                 adv_img = resize_transform(adv_img)
 
                 # Compute logits, loss, gradients
@@ -443,7 +446,7 @@ class RP2AttackModule(DetectorAttackModule):
 
                 tv = ((delta[:, :, :-1, :] - delta[:, :, 1:, :]).abs().mean() +
                       (delta[:, :, :, :-1] - delta[:, :, :, 1:]).abs().mean())
-                
+
                 loss += self.lmbda * tv
 
                 # delta_repeat.retain_grad()
@@ -456,7 +459,7 @@ class RP2AttackModule(DetectorAttackModule):
                 import pdb
                 pdb.set_trace()
                 # qqq
-                
+
                 # grad = torch.mean(delta_repeat, axis=0, keepdim=True)
                 grad = torch.sign(grad)
                 delta = delta.detach() + self.alpha * grad
@@ -586,7 +589,7 @@ def apply_transform(image, adv_patch, patch_mask, patch_loc, transform_func, tf_
     sign_canonical, sign_mask, M, alpha, beta = tf_data
     adv_patch.clamp_(0, 1).mul_(alpha).add_(beta).clamp_(0, 1)
     sign_canonical[:, :-1, ymin:ymin + height, xmin:xmin + width] = adv_patch
-    sign_canonical[:, -1, ymin:ymin + height, xmin:xmin + width]
+    sign_canonical[:, -1, ymin:ymin + height, xmin:xmin + width] = 1
     sign_canonical = sign_mask * patch_mask * sign_canonical
 
     warped_patch = transform_func(sign_canonical,
