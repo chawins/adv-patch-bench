@@ -154,10 +154,6 @@ def prepare_obj(obj_path, img_size, obj_size):
     obj = torch.from_numpy(obj_numpy[:, :, :-1]).float().permute(2, 0, 1)
     # Resize and put object in the middle of zero background
     pad_size = [(img_size[1] - obj_size[1]) // 2, (img_size[0] - obj_size[0]) // 2]  # left/right, top/bottom
-    # pad_size = [(img_size[1] - obj_size[1]) // 2, 
-    #             (img_size[0] - obj_size[0]) // 2, 
-    #             (img_size[1] - obj_size[1]) // 2 + obj_size[1] % 2, 
-    #             (img_size[0] - obj_size[0]) // 2 + obj_size[0] % 2]  # left, top, right, bottom
     obj = T.resize(obj, obj_size, antialias=True)
     obj = T.pad(obj, pad_size)
     obj_mask = T.resize(obj_mask, obj_size, interpolation=T.InterpolationMode.NEAREST)

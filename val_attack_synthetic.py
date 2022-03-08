@@ -103,14 +103,22 @@ def process_batch(detections, labels, iouv):
     if x[0].shape[0]:
         matches = torch.cat((torch.stack(x, 1), iou[x[0], x[1]][:, None]), 1).cpu().numpy()  # [label, detection, iou]
         if x[0].shape[0] > 1:
+            #TODO: add comments
             matches = matches[matches[:, 2].argsort()[::-1]]
+            # print(matches)
             matches = matches[np.unique(matches[:, 1], return_index=True)[1]]
+            # print(matches)
             matches = matches[np.unique(matches[:, 0], return_index=True)[1]]
+            # print(matches)
         matches = torch.Tensor(matches).to(iouv.device)
+        # print(matches)
+        # import pdb
+        # pdb.set_trace()
         correct[matches[:, 1].long()] = matches[:, 2:3] >= iouv
     return correct, matches
 
 
+# TODO: have this function use 'get_transform' and 'apply_transform' from rp2.py
 def transform_and_apply_patch(image, adv_patch, patch_mask, patch_loc,
                               shape, predicted_class, row, img_data, no_transform=False):
     if adv_patch.ndim == 4:
@@ -247,6 +255,7 @@ def run(args,
         **kwargs,
         ):
 
+
     apply_patch = args.apply_patch
     synthetic = args.synthetic
     random_patch = args.random_patch
@@ -254,9 +263,13 @@ def run(args,
     plot_single_images = args.plot_single_images
     plot_octagons = args.plot_octagons
     load_patch = args.load_patch
+
+    #TODO: have the location come from the mask directly
     if args.patch_loc:
         ymin, xmin = tuple([int(x) for x in args.patch_loc])
-    obj_size = args.obj_size
+    
+    # TODO: might break
+    # obj_size = args.obj_size
     no_transform = args.no_transform
     metrics_confidence_threshold = args.metrics_confidence_threshold
     img_size = tuple([int(x) for x in args.padded_imgsz.split(',')])
@@ -343,10 +356,10 @@ def run(args,
     nc = len(names)
     print('Class names: ', names)
 
-    # TODO move to label file instead of adding synthetic stop sign as class here
-    SYNTHETIC_STOP_SIGN_CLASS = len(names)
-    names[SYNTHETIC_STOP_SIGN_CLASS] = 'synthetic_stop_sign'
-    nc += 1
+    if synthetic:
+        SYNTHETIC_STOP_SIGN_CLASS = len(names)
+        names[SYNTHETIC_STOP_SIGN_CLASS] = 'synthetic_stop_sign'
+        nc += 1
 
     confusion_matrix = ConfusionMatrix(nc=nc)
 
@@ -366,10 +379,12 @@ def run(args,
     #     torchvision.utils.save_image(demo_patch, f)
 
     if apply_patch:
-        # Load patch from a pickle file if specified (TODO: load patch to get size)
-        
-        # if load_patch:
+        # Load patch from a pickle file if specified
+
         adv_patch, patch_mask = pickle.load(open(load_patch, 'rb'))
+        patch_mask_cpu = patch_mask
+        patch_mask = patch_mask.to(device)
+    
         patch_height, patch_width = adv_patch.shape[1:]
 
         if load_patch == 'arrow':
@@ -392,24 +407,32 @@ def run(args,
             #     'octagon', 'octagon-915.0', patch_width, patch_size_in_mm, sign_size_in_pixel=obj_size)
             # obj_size = sign_canonical.shape[1:]
             # print('obj_size: ', obj_size)
-            obj, obj_mask = prepare_obj('./attack_assets/octagon-915.0.png', img_size, (obj_size, obj_size))
-            h_offset, w_offset, _, _ = mask_to_box(obj_mask)
 
-            patch_mask = torch.zeros_like(obj_mask)
-            ymin_ = ymin + h_offset
-            xmin_ = xmin + w_offset
-            patch_mask[:, ymin_:ymin_ + patch_height, xmin_:xmin_ + patch_width] = 1
+            #TODO: might break
+            obj_size = patch_mask.shape[1]
+            print(patch_mask.shape)
+            import pdb
+            pdb.set_trace()
+            obj, obj_mask = prepare_obj('./attack_assets/octagon-915.0.png', img_size, (obj_size, obj_size))
+            
+            #TODO: pad patch_mask the same way we pad obj_mask
+            #TODO: have a function which only does the padding. so we can do the padding on both obj_mask and patch_mask with a single function
+            # patch_mask = 
 
         else:
+            # TODO: move csv file path to arg
             df = pd.read_csv('mapillary_vistas_final_merged.csv')
+
+            # TODO: add comments
             df['tgt_final'] = df['tgt_final'].apply(literal_eval)
             df = df[df['final_shape'] != 'other-0.0-0.0']
             print(df.shape)
             print(df.groupby(by=['final_shape']).count())
-
+    
+    #TODO: move to args 
     # Initialize attack
     attack_config = {
-        'rp2_num_steps': 500,
+        'rp2_num_steps': 2000,
         'rp2_step_size': 1e-2,
         'rp2_num_eot': 1,
         'rp2_optimizer': 'adam',
@@ -439,24 +462,33 @@ def run(args,
     if apply_patch:
         patch_loc = mask_to_box(patch_mask)
 
+    # TODO: generalize to CLASS_NUMBER (e.g, white circle)
     if plot_octagons:
         shape_to_plot_data = {}
         shape_to_plot_data['octagon'] = []
 
+    # TODO: remove 'metrics_per_image_df' in the future
     metrics_per_image_df = pd.DataFrame(columns=['filename', 'num_octagons', 'num_patches', 'fn'])
     metrics_per_label_df = pd.DataFrame(columns=['filename', 'obj_id', 'label', 'correct_prediction', 'sign_width', 'sign_height', 'confidence'])
     for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
+        # TODO: check if we still need number of patches applied to the image
+        # 'targets' shape is # number of labels by 8 (image_id, class, x1, y1, label width, label height, number of patches applied, obj id)
         targets = torch.nn.functional.pad(targets, (0, 2), "constant", 0)  # effectively zero padding
         
         # DEBUG
-        # if batch_i == 200:
-        #     break
-        if num_apply_imgs >= len(filename_list) and args.run_only_img_txt:
+        if batch_i == 500:
             break
+
+        # if num_octagon_with_patch >= 100:
+        #     break
+
+        # if num_apply_imgs >= len(filename_list) and args.run_only_img_txt:
+            # break
 
         # ======================= BEGIN: apply patch ======================== #
         for image_i, path in enumerate(paths):
-            targets[targets[:, 0] == image_i, 7] = torch.FloatTensor(np.arange(len(targets[targets[:, 0] == image_i])))
+            # TODO: add comment. make sure it works
+            targets[targets[:, 0] == image_i, 7] = torch.arange(torch.sum(targets[:, 0] == image_i), dtype=targets.dtype)
             if apply_patch and not synthetic:
                 filename = path.split('/')[-1]
                 img_df = df[df['filename_y'] == filename]
@@ -477,6 +509,7 @@ def run(args,
                     (h0, w0), ((h_ratio, w_ratio), (w_pad, h_pad)) = shapes[image_i]
                     img_data = (h0, w0, h_ratio, w_ratio, w_pad, h_pad)
                     predicted_class = row['final_shape']
+                    #TODO: no need to use shape. when we pass predicted class to a function, we can get shape
                     shape = predicted_class.split('-')[0]
 
                     # FIXME: only apply patch to octagons
@@ -490,39 +523,45 @@ def run(args,
                         data = [shape, predicted_class, row, *img_data]
                         attack_images = [[im[image_i], data, str(filename)]]
                         with torch.enable_grad():
+                            # FIXME: generalize 14 for octagon
                             adv_patch = attack.transform_and_attack(
-                                attack_images, patch_mask=patch_mask.to(device), obj_class=14)[0]
+                                attack_images, patch_mask=patch_mask, obj_class=14)[0]
 
                     # Transform and apply patch on the image. `im` has range [0, 255]
                     im[image_i] = transform_and_apply_patch(
-                        im[image_i], adv_patch, patch_mask, patch_loc, shape,
+                        im[image_i], adv_patch, patch_mask_cpu, patch_loc, shape,
                         predicted_class, row, img_data, no_transform=no_transform) * 255
                     num_patches_applied_to_image += 1
 
                 # set targets[6] to #patches_applied_to_image
                 targets[targets[:, 0] == image_i, 6] = num_patches_applied_to_image
-                # print(len(targets[targets[:, 0] == image_i]))
                 
-
             elif synthetic:
                 orig_shape = im[image_i].shape[1:]
                 if apply_patch:
-                    # adv_obj = patch_mask * adv_patch + (1 - patch_mask) * obj
-                    adv_obj = (1 - patch_mask) * obj
-                    adv_obj[:, ymin_:ymin_ + patch_height, xmin_:xmin_ + patch_width] = adv_patch
+                    adv_obj = patch_mask * adv_patch + (1 - patch_mask) * obj
+
+                    # adv_obj = (1 - patch_mask) * obj
+                    # # TODO: might break
+                    # ymin_, xmin_, _, _ = patch_loc
+                    # adv_obj[:, ymin_:ymin_ + patch_height, xmin_:xmin_ + patch_width] = adv_patch
                 else:
                     adv_obj = obj
 
                 adv_obj, tf_params = obj_transforms(adv_obj)
                 adv_obj.clamp_(0, 1)
                 # TODO: clean this part
+                # TODO might break. if it breaks, try using unsqueeze instead of expand
                 obj_mask = obj_mask.cuda()
-                obj_mask_dup = obj_mask.expand(1, -1, -1, -1)
+                # obj_mask_dup = obj_mask.expand(1, -1, -1, -1)
 
                 tf_params = tf_params.cuda()
-                o_mask = mask_transforms.apply_transform(obj_mask_dup, None, transform=tf_params)
+                o_mask = mask_transforms.apply_transform(obj_mask, None, transform=tf_params)
+                # o_mask = mask_transforms.apply_transform(obj_mask_dup, None, transform=tf_params)
 
                 o_mask = o_mask.cpu()
+
+                # TODO: add comment here
                 indices = np.where(o_mask[0][0] == 1)
                 x_min, x_max = min(indices[1]), max(indices[1])
                 y_min, y_max = min(indices[0]), max(indices[0])
@@ -539,13 +578,6 @@ def run(args,
                 targets = torch.cat((targets, torch.unsqueeze(torch.tensor(label), 0)))
 
                 adv_img = o_mask * adv_obj + (1 - o_mask) * im[image_i] / 255
-                # reresize_transform = torchvision.transforms.Resize(size=orig_shape)
-                # im[image_i] = reresize_transform(adv_img) * 255
-                
-                # if patch_padded:
-                #     im[image_i] = adv_img.squeeze() * 255
-                # else:
-                #     im[image_i] = adv_img[:, :, pad_size[1]:adv_img.shape[2]-pad_size[1], pad_size[0]:adv_img.shape[3]-pad_size[0]].squeeze() * 255
                 im[image_i] = adv_img.squeeze() * 255
 
         t1 = time_sync()
@@ -588,6 +620,7 @@ def run(args,
 
             current_image_metrics = {}
             current_image_metrics['filename'] = filename
+            # FIXME: 14 for octagon
             current_image_metrics['num_octagons'] = sum([1 for x in labels[:, 0] if x == 14])
             current_image_metrics['num_patches'] = max(labels[:, 5].tolist() + [0])
 
@@ -596,6 +629,7 @@ def run(args,
                     stats.append((torch.zeros(0, niou, dtype=torch.bool), torch.Tensor(), torch.Tensor(), tcls))
 
                 for lbl_ in labels:
+                    # FIXME: 14 for octagon
                     if lbl_[0] == 14:
                         lbl_ = lbl_.cpu()
                         current_label_metric = {}
@@ -677,6 +711,7 @@ def run(args,
                         # match on obj_id 
                         match = matches[matches[:, 0] == lbl_[6]]
                         assert len(match) <= 1
+                        # FIXME: 14 for octagon
                         if len(match) > 0:
                             detection_index = int(match[0, 1])
                             current_label_metric['confidence'] = pred.cpu().numpy()[detection_index, 4]
@@ -708,10 +743,10 @@ def run(args,
 
                     # TODO: remove. only for debugging
                     # if fn in filename_list and args.run_only_img_txt:
-                    if fn not in filename_list and args.run_only_img_txt:
-                        shape_to_plot_data['octagon'].append(
-                            [im[si: si + 1], targets[targets[:, 0] == si, :], path,
-                            predictions_for_plotting[predictions_for_plotting[:, 0] == si]])
+                    # if fn not in filename_list and args.run_only_img_txt:
+                    shape_to_plot_data['octagon'].append(
+                        [im[si: si + 1], targets[targets[:, 0] == si, :], path,
+                        predictions_for_plotting[predictions_for_plotting[:, 0] == si]])
 
         # Plot images
         if plots and batch_i < 30:
