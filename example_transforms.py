@@ -107,8 +107,9 @@ def get_args_parser():
     return parser
 
 
-def get_sign_canonical(shape, predicted_class, patch_size_in_pixel,
+def get_sign_canonical(predicted_class, patch_size_in_pixel,
                        patch_size_in_mm, sign_size_in_pixel=None):
+    shape = predicted_class.split('-')[0]
     sign_width_in_mm = float(predicted_class.split('-')[1])
     if len(predicted_class.split('-')) == 3:
         sign_height_in_mm = float(predicted_class.split('-')[2])

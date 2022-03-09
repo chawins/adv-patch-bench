@@ -28,7 +28,9 @@ CUDA_VISIBLE_DEVICES=1 python -u val_attack_synthetic.py \
     --metrics-confidence-threshold 0.359 \
     --apply-patch \
     --load-patch ./runs/val/exp/stop_sign_synthetic_generated.pkl \
-    --per-sign-attack
+    --per-sign-attack \
+    --tgt-csv-filepath mapillary_vistas_final_merged.csv \
+    --attack-config-path attack_config.yaml
 
     # --img-txt-path ./runs/successful_attack_filenames.txt \
     # --run-only-img-txt

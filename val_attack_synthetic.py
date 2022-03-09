@@ -12,6 +12,7 @@ import os
 import pdb
 import pickle
 import sys
+import yaml
 from ast import literal_eval
 from pathlib import Path
 from threading import Thread
@@ -30,6 +31,8 @@ from kornia.geometry.transform import (get_perspective_transform, resize,
                                        warp_affine, warp_perspective)
 from PIL import Image
 from tqdm import tqdm
+
+from adv_patch_bench.attacks.rp2 import get_transform, apply_transform
 
 # from adv_patch_bench.attacks.rp2 import RP2AttackModule
 from adv_patch_bench.utils.image import mask_to_box, pad_image, prepare_obj
@@ -103,24 +106,28 @@ def process_batch(detections, labels, iouv):
     if x[0].shape[0]:
         matches = torch.cat((torch.stack(x, 1), iou[x[0], x[1]][:, None]), 1).cpu().numpy()  # [label, detection, iou]
         if x[0].shape[0] > 1:
-            #TODO: add comments
+            # sort matches by decreasing order of IOU
             matches = matches[matches[:, 2].argsort()[::-1]]
-            # print(matches)
+            # for each (label, detection) pair, select the one with highest IOU score
             matches = matches[np.unique(matches[:, 1], return_index=True)[1]]
-            # print(matches)
             matches = matches[np.unique(matches[:, 0], return_index=True)[1]]
-            # print(matches)
         matches = torch.Tensor(matches).to(iouv.device)
-        # print(matches)
-        # import pdb
-        # pdb.set_trace()
         correct[matches[:, 1].long()] = matches[:, 2:3] >= iouv
     return correct, matches
 
 
 # TODO: have this function use 'get_transform' and 'apply_transform' from rp2.py
+def transform_and_apply_patch_v2(image, adv_patch, patch_mask, patch_loc,
+                              predicted_class, row, img_data, no_transform=False, device=None):
+    h0, w0, h_ratio, w_ratio, w_pad, h_pad = img_data
+    sign_size_in_pixel=patch_mask.size(-1)
+    tf_function, sign_canonical, sign_mask, M, alpha, beta = get_transform(sign_size_in_pixel, predicted_class, row, h0, w0, h_ratio, w_ratio, w_pad, h_pad)
+    tf_data = [sign_canonical.unsqueeze(0), sign_mask.unsqueeze(0), M.unsqueeze(0), alpha, beta]
+    adv_img = apply_transform(image.unsqueeze(0), adv_patch, patch_mask, patch_loc, tf_function, tf_data, tf_patch=None, tf_bg=None)
+    return adv_img.squeeze()
+    
 def transform_and_apply_patch(image, adv_patch, patch_mask, patch_loc,
-                              shape, predicted_class, row, img_data, no_transform=False):
+                              predicted_class, row, img_data, no_transform=False, device=None):
     if adv_patch.ndim == 4:
         adv_patch = adv_patch[0]
     if patch_mask.ndim == 4:
@@ -129,7 +136,7 @@ def transform_and_apply_patch(image, adv_patch, patch_mask, patch_loc,
     ymin, xmin, height, width = patch_loc
     h0, w0, h_ratio, w_ratio, w_pad, h_pad = img_data
     sign_canonical, sign_mask, src = get_sign_canonical(
-        shape, predicted_class, None, None, sign_size_in_pixel=patch_mask.size(-1))
+        predicted_class, None, None, sign_size_in_pixel=patch_mask.size(-1))
 
     alpha = row['alpha']
     beta = row['beta']
@@ -255,7 +262,7 @@ def run(args,
         **kwargs,
         ):
 
-
+    # load args
     apply_patch = args.apply_patch
     synthetic = args.synthetic
     random_patch = args.random_patch
@@ -263,6 +270,8 @@ def run(args,
     plot_single_images = args.plot_single_images
     plot_octagons = args.plot_octagons
     load_patch = args.load_patch
+    tgt_csv_filepath = args.tgt_csv_filepath
+    attack_config_path = args.attack_config_path
 
     #TODO: have the location come from the mask directly
     if args.patch_loc:
@@ -420,28 +429,36 @@ def run(args,
             # patch_mask = 
 
         else:
-            # TODO: move csv file path to arg
-            df = pd.read_csv('mapillary_vistas_final_merged.csv')
-
-            # TODO: add comments
+            # load csv file containing target points for transform
+            df = pd.read_csv(tgt_csv_filepath)
+            # converts 'tgt_final' from string to list format
             df['tgt_final'] = df['tgt_final'].apply(literal_eval)
+            # exclude shapes to which we do not apply the transform to
             df = df[df['final_shape'] != 'other-0.0-0.0']
             print(df.shape)
             print(df.groupby(by=['final_shape']).count())
     
     #TODO: move to args 
+    
+
+    if args.per_sign_attack:
+        with open(attack_config_path) as file:
+            attack_config = yaml.load(file, Loader=yaml.FullLoader)
+            attack_config['input_size'] = img_size
+    else:
+        raise Exception('Config file not provided for targeted attacks')
     # Initialize attack
-    attack_config = {
-        'rp2_num_steps': 2000,
-        'rp2_step_size': 1e-2,
-        'rp2_num_eot': 1,
-        'rp2_optimizer': 'adam',
-        'rp2_lambda': 0,
-        'rp2_min_conf': 0.25,
-        'rp2_augment_real': False,
-        'input_size': img_size,
-        'attack_mode': ''
-    }
+    # attack_config = {
+    #     'rp2_num_steps': 2000,
+    #     'rp2_step_size': 1e-2,
+    #     'rp2_num_eot': 1,
+    #     'rp2_optimizer': 'adam',
+    #     'rp2_lambda': 0,
+    #     'rp2_min_conf': 0.25,
+    #     'rp2_augment_real': False,
+    #     'input_size': img_size,
+    #     'attack_mode': ''
+    # }
     attack = RP2AttackModule(attack_config, model, None, None, None,
                              rescaling=False, relighting=False, verbose=True)
 
@@ -476,7 +493,7 @@ def run(args,
         targets = torch.nn.functional.pad(targets, (0, 2), "constant", 0)  # effectively zero padding
         
         # DEBUG
-        if batch_i == 500:
+        if batch_i == 50:
             break
 
         # if num_octagon_with_patch >= 100:
@@ -520,7 +537,7 @@ def run(args,
                     # Run attack for each sign
                     if args.per_sign_attack:
                         print('=> Generating adv patch...')
-                        data = [shape, predicted_class, row, *img_data]
+                        data = [predicted_class, row, *img_data]
                         attack_images = [[im[image_i], data, str(filename)]]
                         with torch.enable_grad():
                             # FIXME: generalize 14 for octagon
@@ -529,8 +546,8 @@ def run(args,
 
                     # Transform and apply patch on the image. `im` has range [0, 255]
                     im[image_i] = transform_and_apply_patch(
-                        im[image_i], adv_patch, patch_mask_cpu, patch_loc, shape,
-                        predicted_class, row, img_data, no_transform=no_transform) * 255
+                        im[image_i], adv_patch, patch_mask_cpu, patch_loc,
+                        predicted_class, row, img_data, no_transform=no_transform, device=adv_patch.device) * 255
                     num_patches_applied_to_image += 1
 
                 # set targets[6] to #patches_applied_to_image
@@ -561,7 +578,7 @@ def run(args,
 
                 o_mask = o_mask.cpu()
 
-                # TODO: add comment here
+                # get top left and bottom right points
                 indices = np.where(o_mask[0][0] == 1)
                 x_min, x_max = min(indices[1]), max(indices[1])
                 y_min, y_max = min(indices[0]), max(indices[0])
@@ -992,6 +1009,8 @@ def parse_opt():
         help='do not apply patch to signs using transform. if no-transform==True, patch will face us')
     parser.add_argument('--metrics-confidence-threshold', type=float, default=0.5, help='confidence threshold')
     parser.add_argument('--per-sign-attack', action='store_true', help='generate adv patch for each sign')
+    parser.add_argument('--tgt-csv-filepath', required=True, help='path to csv which contains target points for transform')
+    parser.add_argument('--attack-config-path', help='path to yaml file with attack configs')
 
     opt = parser.parse_args()
     opt.data = check_yaml(opt.data)  # check YAML
