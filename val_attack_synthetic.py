@@ -268,7 +268,7 @@ def run(args,
     random_patch = args.random_patch
     save_exp_metrics = args.save_exp_metrics
     plot_single_images = args.plot_single_images
-    plot_class_examples = args.plot_class_examples
+    plot_class_examples = [int(x) for x in args.plot_class_examples]
     load_patch = args.load_patch
     tgt_csv_filepath = args.tgt_csv_filepath
     attack_config_path = args.attack_config_path
@@ -276,7 +276,7 @@ def run(args,
 
     #TODO: have the location come from the mask directly
     if args.patch_loc:
-        ymin, xmin = tuple([int(x) for x in args.patch_loc])
+        ymin, xmin = tuple()
     
     # TODO: might break
     # obj_size = args.obj_size
@@ -482,10 +482,11 @@ def run(args,
 
     # TODO: generalize to CLASS_NUMBER (e.g, white circle)
     if plot_class_examples:
-        qqq
         shape_to_plot_data = {}
-        for class_name in names:
+        for class_index in plot_class_examples:
+            class_name = names[class_index]
             shape_to_plot_data[class_name] = []
+            
 
     # TODO: remove 'metrics_per_image_df' in the future
     metrics_per_image_df = pd.DataFrame(columns=['filename', 'num_octagons', 'num_patches', 'fn'])
@@ -748,10 +749,9 @@ def run(args,
                 save_one_json(predn, jdict, path, class_map)  # append to COCO-JSON dictionary
             callbacks.run('on_val_image_end', pred, predn, path, names, im[si])
 
-            # if plot_class_examples and ADVERSARIAL_SIGN_CLASS in labels[:, 0]:
-            if plot_class_examples:
-                # num_octagon_labels += sum([1 for x in list(labels[:, 0]) if x == ADVERSARIAL_SIGN_CLASS])
-                for class_name in labels[:, 0]:
+            for class_index in labels[:, 0]:
+                if class_index in plot_class_examples:
+                    class_name = names[class_index.item()]
                     if len(shape_to_plot_data[class_name]) < 50:
                         fn = str(path).split('/')[-1]
                         shape_to_plot_data[class_name].append(
@@ -788,17 +788,18 @@ def run(args,
     metrics_per_label_df.to_csv(f'{project}/{name}/results_per_label.csv', index=False)
 
     if plot_class_examples:
-        for class_name in names:
-            save_dir_octagon = increment_path(save_dir / class_name, exist_ok=exist_ok, mkdir=True)  # increment run
+        for class_index in plot_class_examples:
+            class_name = names[class_index]
+            save_dir_class = increment_path(save_dir / class_name, exist_ok=exist_ok, mkdir=True)  # increment run
             for i in range(len(shape_to_plot_data[class_name])):
                 im, targets, path, out = shape_to_plot_data[class_name][i]
                 # labels
-                f = save_dir_octagon / f'image{i}_labels.jpg'  # labels
+                f = save_dir_class / f'image{i}_labels.jpg'  # labels
                 targets[:, 0] = 0
                 plot_images(im, targets, [path], f, names)
 
                 # predictions
-                f = save_dir_octagon / f'image{i}_pred.jpg'  # labels
+                f = save_dir_class / f'image{i}_pred.jpg'  # labels
                 out[:, 0] = 0
                 plot_images(im, out, [path], f, names)
 

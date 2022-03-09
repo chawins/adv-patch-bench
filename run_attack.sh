@@ -13,7 +13,7 @@
 #     --save-images \
 #     --generate-patch real
 
-CUDA_VISIBLE_DEVICES=1 python -u val_attack_synthetic.py \
+CUDA_VISIBLE_DEVICES=0 python -u val_attack_synthetic.py \
     --imgsz 1280 \
     --padded_imgsz 992,1312 \
     --batch-size 8 \
@@ -30,7 +30,8 @@ CUDA_VISIBLE_DEVICES=1 python -u val_attack_synthetic.py \
     --per-sign-attack \
     --tgt-csv-filepath mapillary_vistas_final_merged.csv \
     --attack-config-path attack_config.yaml \
-    --obj-class 14
+    --obj-class 14 \
+    --plot-class-examples 12 14
 
     # --img-txt-path ./runs/successful_attack_filenames.txt \
     # --run-only-img-txt
