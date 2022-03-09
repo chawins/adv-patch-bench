@@ -23,14 +23,14 @@ CUDA_VISIBLE_DEVICES=1 python -u val_attack_synthetic.py \
     --workers 8 \
     --task train \
     --save-exp-metrics \
-    --plot-octagons \
     --obj-size 128 \
     --metrics-confidence-threshold 0.359 \
     --apply-patch \
     --load-patch ./runs/val/exp/stop_sign_synthetic_generated.pkl \
     --per-sign-attack \
     --tgt-csv-filepath mapillary_vistas_final_merged.csv \
-    --attack-config-path attack_config.yaml
+    --attack-config-path attack_config.yaml \
+    --obj-class 14
 
     # --img-txt-path ./runs/successful_attack_filenames.txt \
     # --run-only-img-txt

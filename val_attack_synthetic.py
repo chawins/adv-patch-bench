@@ -268,10 +268,11 @@ def run(args,
     random_patch = args.random_patch
     save_exp_metrics = args.save_exp_metrics
     plot_single_images = args.plot_single_images
-    plot_octagons = args.plot_octagons
+    plot_class_examples = args.plot_class_examples
     load_patch = args.load_patch
     tgt_csv_filepath = args.tgt_csv_filepath
     attack_config_path = args.attack_config_path
+    ADVERSARIAL_SIGN_CLASS = args.obj_class
 
     #TODO: have the location come from the mask directly
     if args.patch_loc:
@@ -361,8 +362,8 @@ def run(args,
 
     seen = 0
     names = {k: v for k, v in enumerate(model.names if hasattr(model, 'names') else model.module.names)}
-    # nc = 1 if single_cls else int(data['nc'])  # number of classes
     nc = len(names)
+    assert ADVERSARIAL_SIGN_CLASS < nc, 'Obj Class to attack does not exist'
     print('Class names: ', names)
 
     if synthetic:
@@ -480,9 +481,11 @@ def run(args,
         patch_loc = mask_to_box(patch_mask)
 
     # TODO: generalize to CLASS_NUMBER (e.g, white circle)
-    if plot_octagons:
+    if plot_class_examples:
+        qqq
         shape_to_plot_data = {}
-        shape_to_plot_data['octagon'] = []
+        for class_name in names:
+            shape_to_plot_data[class_name] = []
 
     # TODO: remove 'metrics_per_image_df' in the future
     metrics_per_image_df = pd.DataFrame(columns=['filename', 'num_octagons', 'num_patches', 'fn'])
@@ -540,9 +543,8 @@ def run(args,
                         data = [predicted_class, row, *img_data]
                         attack_images = [[im[image_i], data, str(filename)]]
                         with torch.enable_grad():
-                            # FIXME: generalize 14 for octagon
                             adv_patch = attack.transform_and_attack(
-                                attack_images, patch_mask=patch_mask, obj_class=14)[0]
+                                attack_images, patch_mask=patch_mask, obj_class=ADVERSARIAL_SIGN_CLASS)[0]
 
                     # Transform and apply patch on the image. `im` has range [0, 255]
                     im[image_i] = transform_and_apply_patch(
@@ -637,8 +639,7 @@ def run(args,
 
             current_image_metrics = {}
             current_image_metrics['filename'] = filename
-            # FIXME: 14 for octagon
-            current_image_metrics['num_octagons'] = sum([1 for x in labels[:, 0] if x == 14])
+            current_image_metrics['num_octagons'] = sum([1 for x in labels[:, 0] if x == ADVERSARIAL_SIGN_CLASS])
             current_image_metrics['num_patches'] = max(labels[:, 5].tolist() + [0])
 
             if len(pred) == 0:
@@ -646,8 +647,7 @@ def run(args,
                     stats.append((torch.zeros(0, niou, dtype=torch.bool), torch.Tensor(), torch.Tensor(), tcls))
 
                 for lbl_ in labels:
-                    # FIXME: 14 for octagon
-                    if lbl_[0] == 14:
+                    if lbl_[0] == ADVERSARIAL_SIGN_CLASS:
                         lbl_ = lbl_.cpu()
                         current_label_metric = {}
                         current_label_metric['filename'] = filename
@@ -684,8 +684,7 @@ def run(args,
                             y1 = 0.9 * lbl[2] if 0.9 * lbl[2] > 5 else -20
 
                             if prd[0] >= x1 and prd[1] >= y1 and prd[2] <= 1.1 * lbl[3] and prd[3] <= 1.1 * lbl[4]:
-                                # 14 is octagon
-                                if prd[5] == 14:
+                                if prd[5] == ADVERSARIAL_SIGN_CLASS:
                                     predn[pi, 5] = SYNTHETIC_STOP_SIGN_CLASS
                                     pred[pi, 5] = SYNTHETIC_STOP_SIGN_CLASS
 
@@ -711,9 +710,8 @@ def run(args,
             else:
                 correct, matches = torch.zeros(pred.shape[0], niou, dtype=torch.bool), []
 
-            # FIXME: 14 is octagon
             for lbl_ in labels:
-                if lbl_[0] == 14:
+                if lbl_[0] == ADVERSARIAL_SIGN_CLASS:
                     lbl_ = lbl_.cpu()
                     current_label_metric = {}
                     current_label_metric['filename'] = filename
@@ -728,17 +726,15 @@ def run(args,
                         # match on obj_id 
                         match = matches[matches[:, 0] == lbl_[6]]
                         assert len(match) <= 1
-                        # FIXME: 14 for octagon
                         if len(match) > 0:
                             detection_index = int(match[0, 1])
                             current_label_metric['confidence'] = pred.cpu().numpy()[detection_index, 4]
-                            if pred.cpu().numpy()[detection_index, 5] == 14 and pred.cpu().numpy()[detection_index, 4] > metrics_confidence_threshold and correct[detection_index, 0]:
+                            if pred.cpu().numpy()[detection_index, 5] == ADVERSARIAL_SIGN_CLASS and pred.cpu().numpy()[detection_index, 4] > metrics_confidence_threshold and correct[detection_index, 0]:
                                 current_label_metric['correct_prediction'] = 1
-                                # current_label_metric['confidence'] = pred.cpu().numpy()[detection_index, 4]
                     metrics_per_label_df = metrics_per_label_df.append(current_label_metric, ignore_index=True)
                         
-            total_positives = sum([1 for x in tcls if x == 14])         
-            sign_indices = np.logical_and(pred.cpu().numpy()[:, 5] == 14, pred.cpu().numpy()[:, 4] > metrics_confidence_threshold)
+            total_positives = sum([1 for x in tcls if x == ADVERSARIAL_SIGN_CLASS])         
+            sign_indices = np.logical_and(pred.cpu().numpy()[:, 5] == ADVERSARIAL_SIGN_CLASS, pred.cpu().numpy()[:, 4] > metrics_confidence_threshold)
             tp = sum(correct.cpu().numpy()[sign_indices, 0])
             current_image_metrics['fn'] = total_positives - tp
             metrics_per_image_df = metrics_per_image_df.append(current_image_metrics, ignore_index=True)
@@ -752,18 +748,15 @@ def run(args,
                 save_one_json(predn, jdict, path, class_map)  # append to COCO-JSON dictionary
             callbacks.run('on_val_image_end', pred, predn, path, names, im[si])
 
-            # FIXME: 14 is octagon
-            if plot_octagons and 14 in labels[:, 0]:
-                num_octagon_labels += sum([1 for x in list(labels[:, 0]) if x == 14])
-                if len(shape_to_plot_data['octagon']) < 50:
-                    fn = str(path).split('/')[-1]
-
-                    # TODO: remove. only for debugging
-                    # if fn in filename_list and args.run_only_img_txt:
-                    # if fn not in filename_list and args.run_only_img_txt:
-                    shape_to_plot_data['octagon'].append(
-                        [im[si: si + 1], targets[targets[:, 0] == si, :], path,
-                        predictions_for_plotting[predictions_for_plotting[:, 0] == si]])
+            # if plot_class_examples and ADVERSARIAL_SIGN_CLASS in labels[:, 0]:
+            if plot_class_examples:
+                # num_octagon_labels += sum([1 for x in list(labels[:, 0]) if x == ADVERSARIAL_SIGN_CLASS])
+                for class_name in labels[:, 0]:
+                    if len(shape_to_plot_data[class_name]) < 50:
+                        fn = str(path).split('/')[-1]
+                        shape_to_plot_data[class_name].append(
+                            [im[si: si + 1], targets[targets[:, 0] == si, :], path,
+                            predictions_for_plotting[predictions_for_plotting[:, 0] == si]])
 
         # Plot images
         if plots and batch_i < 30:
@@ -793,21 +786,21 @@ def run(args,
 
     metrics_per_image_df.to_csv(f'{project}/{name}/results_per_image.csv', index=False)
     metrics_per_label_df.to_csv(f'{project}/{name}/results_per_label.csv', index=False)
-    # metrics_per_image_df.to_csv('runs/results_per_image.csv', index=False)
 
-    if plot_octagons:
-        save_dir_octagon = increment_path(save_dir / 'octagon', exist_ok=exist_ok, mkdir=True)  # increment run
-        for i in range(len(shape_to_plot_data['octagon'])):
-            im, targets, path, out = shape_to_plot_data['octagon'][i]
-            # labels
-            f = save_dir_octagon / f'image{i}_labels.jpg'  # labels
-            targets[:, 0] = 0
-            plot_images(im, targets, [path], f, names)
+    if plot_class_examples:
+        for class_name in names:
+            save_dir_octagon = increment_path(save_dir / class_name, exist_ok=exist_ok, mkdir=True)  # increment run
+            for i in range(len(shape_to_plot_data[class_name])):
+                im, targets, path, out = shape_to_plot_data[class_name][i]
+                # labels
+                f = save_dir_octagon / f'image{i}_labels.jpg'  # labels
+                targets[:, 0] = 0
+                plot_images(im, targets, [path], f, names)
 
-            # predictions
-            f = save_dir_octagon / f'image{i}_pred.jpg'  # labels
-            out[:, 0] = 0
-            plot_images(im, out, [path], f, names)
+                # predictions
+                f = save_dir_octagon / f'image{i}_pred.jpg'  # labels
+                out[:, 0] = 0
+                plot_images(im, out, [path], f, names)
 
     # Compute metrics
     stats = [np.concatenate(x, 0) for x in zip(*stats)]  # to numpy
@@ -993,8 +986,8 @@ def parse_opt():
     parser.add_argument('--save-exp-metrics', action='store_true', help='save metrics for this experiment to dataframe')
     parser.add_argument('--plot-single-images', action='store_true',
                         help='save single images in a folder instead of batch images in a single plot')
-    parser.add_argument('--plot-octagons', action='store_true',
-                        help='save single images containing octagons in a folder')
+    parser.add_argument('--plot-class-examples', type=str, default='', nargs='*',
+                        help='save single images containing individual classes in different folders.')
     parser.add_argument('--num-bg', type=int, default=16, help='number of backgrounds to generate adversarial patch')
     parser.add_argument('--patch-loc', type=str, default='', nargs='*',
                         help='location to place patch w.r.t. object in tuple (ymin, xmin)')
@@ -1011,6 +1004,7 @@ def parse_opt():
     parser.add_argument('--per-sign-attack', action='store_true', help='generate adv patch for each sign')
     parser.add_argument('--tgt-csv-filepath', required=True, help='path to csv which contains target points for transform')
     parser.add_argument('--attack-config-path', help='path to yaml file with attack configs')
+    parser.add_argument('--obj-class', type=int, default=0, help='class of object to attack')
 
     opt = parser.parse_args()
     opt.data = check_yaml(opt.data)  # check YAML
