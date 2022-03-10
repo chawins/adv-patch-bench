@@ -168,7 +168,7 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
                     # img = F.pad(img, pad, value=114)
                     # w_pad += add_w_pad
                     # h_pad += add_h_pad
-                    data = [shape, predicted_class, row, h0, w0, h_ratio, w_ratio, w_pad, h_pad]
+                    data = [predicted_class, row, h0, w0, h_ratio, w_ratio, w_pad, h_pad]
                     attack_images.append([img, data, str(filename)])
                     break   # This prevents duplicating the background
 

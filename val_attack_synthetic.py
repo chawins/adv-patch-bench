@@ -33,10 +33,9 @@ from PIL import Image
 from tqdm import tqdm
 
 from adv_patch_bench.attacks.rp2 import get_transform, apply_transform
-
-# from adv_patch_bench.attacks.rp2 import RP2AttackModule
-from adv_patch_bench.utils.image import mask_to_box, pad_image, prepare_obj
 from adv_patch_bench.attacks.rp2 import RP2AttackModule
+
+from adv_patch_bench.utils.image import mask_to_box, pad_image, prepare_obj
 from example_transforms import get_sign_canonical
 from yolov5.models.common import DetectMultiBackend
 from yolov5.utils.callbacks import Callbacks
@@ -497,7 +496,7 @@ def run(args,
         targets = torch.nn.functional.pad(targets, (0, 2), "constant", 0)  # effectively zero padding
         
         # DEBUG
-        if batch_i == 50:
+        if batch_i == 100:
             break
 
         # if num_octagon_with_patch >= 100:
@@ -548,9 +547,20 @@ def run(args,
                                 attack_images, patch_mask=patch_mask, obj_class=ADVERSARIAL_SIGN_CLASS)[0]
 
                     # Transform and apply patch on the image. `im` has range [0, 255]
+                    # im[image_i] = transform_and_apply_patch(
+                    #     im[image_i], adv_patch, patch_mask_cpu, patch_loc,
+                    #     predicted_class, row, img_data, no_transform=no_transform, device=adv_patch.device) * 255
+
+
+                    # sign_size_in_pixel = patch_mask.size(-1)
+                    # tf_function, sign_canonical, sign_mask, M, alpha, beta = get_transform(sign_size_in_pixel, predicted_class, row, h0, w0, h_ratio, w_ratio, w_pad, h_pad)
+                    # tf_data = [sign_canonical.unsqueeze(0).to(device), sign_mask.unsqueeze(0).to(device), M.unsqueeze(0).to(device), alpha, beta]
+                    # im[image_i] = apply_transform(im[image_i].unsqueeze(0).to(device), adv_patch, patch_mask, patch_loc, tf_function, tf_data) * 255
+
                     im[image_i] = transform_and_apply_patch(
                         im[image_i], adv_patch, patch_mask_cpu, patch_loc,
                         predicted_class, row, img_data, no_transform=no_transform, device=adv_patch.device) * 255
+                    
                     num_patches_applied_to_image += 1
 
                 # set targets[6] to #patches_applied_to_image
