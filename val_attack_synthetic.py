@@ -32,11 +32,10 @@ from kornia.geometry.transform import (get_perspective_transform, resize,
 from PIL import Image
 from tqdm import tqdm
 
-from adv_patch_bench.attacks.rp2 import get_transform, apply_transform
+from adv_patch_bench.attacks.rp2 import get_transform, apply_transform, transform_and_apply_patch
 from adv_patch_bench.attacks.rp2 import RP2AttackModule
 
 from adv_patch_bench.utils.image import mask_to_box, pad_image, prepare_obj
-from example_transforms import get_sign_canonical
 from yolov5.models.common import DetectMultiBackend
 from yolov5.utils.callbacks import Callbacks
 from yolov5.utils.datasets import create_dataloader
@@ -51,11 +50,8 @@ from yolov5.utils.plots import output_to_target, plot_images, plot_val_study
 from yolov5.utils.torch_utils import select_device, time_sync
 
 
-
 import warnings
 warnings.filterwarnings("ignore")
-
-
 
 
 FILE = Path(__file__).resolve()
@@ -114,121 +110,6 @@ def process_batch(detections, labels, iouv):
         correct[matches[:, 1].long()] = matches[:, 2:3] >= iouv
     return correct, matches
 
-
-# TODO: have this function use 'get_transform' and 'apply_transform' from rp2.py
-def transform_and_apply_patch_v2(image, adv_patch, patch_mask, patch_loc,
-                              predicted_class, row, img_data, no_transform=False, device=None):
-    h0, w0, h_ratio, w_ratio, w_pad, h_pad = img_data
-    sign_size_in_pixel=patch_mask.size(-1)
-    tf_function, sign_canonical, sign_mask, M, alpha, beta = get_transform(sign_size_in_pixel, predicted_class, row, h0, w0, h_ratio, w_ratio, w_pad, h_pad)
-    tf_data = [sign_canonical.unsqueeze(0), sign_mask.unsqueeze(0), M.unsqueeze(0), alpha, beta]
-    adv_img = apply_transform(image.unsqueeze(0), adv_patch, patch_mask, patch_loc, tf_function, tf_data, tf_patch=None, tf_bg=None)
-    return adv_img.squeeze()
-    
-def transform_and_apply_patch(image, adv_patch, patch_mask, patch_loc,
-                              predicted_class, row, img_data, no_transform=False, device=None):
-    if adv_patch.ndim == 4:
-        adv_patch = adv_patch[0]
-    if patch_mask.ndim == 4:
-        patch_mask = patch_mask[0]
-
-    ymin, xmin, height, width = patch_loc
-    h0, w0, h_ratio, w_ratio, w_pad, h_pad = img_data
-    sign_canonical, sign_mask, src = get_sign_canonical(
-        predicted_class, None, None, sign_size_in_pixel=patch_mask.size(-1))
-
-    alpha = row['alpha']
-    beta = row['beta']
-
-    patch_cropped = adv_patch.clone()
-    patch_cropped.clamp_(0, 1).mul_(alpha).add_(beta).clamp_(0, 1)
-    sign_canonical[:-1, ymin:ymin + height, xmin:xmin + width] = patch_cropped
-    sign_canonical[-1, ymin:ymin + height, xmin:xmin + width] = 1
-    sign_canonical = sign_mask * patch_mask * sign_canonical
-
-    src = np.array(src, dtype=np.float32)
-
-    # if annotated, then use those points
-    # TODO: unify `points` and other `tgt` in the csv file so this part can be
-    # simplified into one function
-    if not pd.isna(row['points']):
-        tgt = np.array(literal_eval(row['points']), dtype=np.float32)
-
-        offset_y = min(tgt[:, 1])
-        offset_x = min(tgt[:, 0])
-
-        tgt_shape = (max(tgt[:, 1]) - min(tgt[:, 1]), max(tgt[:, 0]) - min(tgt[:, 0]))
-
-        tgt[:, 1] = (tgt[:, 1] * h_ratio) + h_pad
-        tgt[:, 0] = (tgt[:, 0] * w_ratio) + w_pad
-
-        if no_transform:
-            # Get the scaling factor
-            src_shape = (max(src[:, 0]) - min(src[:, 0]), max(src[:, 1]) - min(src[:, 1]))
-            # you have to flip because the image.shape is (y,x) but your corner points are (x,y)
-            scale = np.divide(tgt_shape, src_shape)
-
-            tgt_untransformed = src.copy()
-            # rescale src
-            tgt_untransformed[:, 1] = tgt_untransformed[:, 1] * scale[1]
-            tgt_untransformed[:, 0] = tgt_untransformed[:, 0] * scale[0]
-            # translate src
-            tgt_untransformed[:, 1] += offset_y
-            tgt_untransformed[:, 0] += offset_x
-            tgt_untransformed[:, 1] = (tgt_untransformed[:, 1] * h_ratio) + h_pad
-            tgt_untransformed[:, 0] = (tgt_untransformed[:, 0] * w_ratio) + w_pad
-            tgt = tgt_untransformed
-    else:
-        tgt = row['tgt'] if pd.isna(row['tgt_polygon']) else row['tgt_polygon']
-        tgt = np.array(literal_eval(tgt), dtype=np.float32)
-
-        tgt_shape = (max(tgt[:, 1]) - min(tgt[:, 1]), max(tgt[:, 0]) - min(tgt[:, 0]))
-
-        offset_x_ratio = row['xmin_ratio']
-        offset_y_ratio = row['ymin_ratio']
-        # Have to correct for the padding when df is saved (TODO: this should be simplified)
-        pad_size = int(max(h0, w0) * 0.25)
-        x_min = offset_x_ratio * (w0 + pad_size * 2) - pad_size
-        y_min = offset_y_ratio * (h0 + pad_size * 2) - pad_size
-        # Order of coordinate in tgt is inverted, i.e., (x, y) instead of (y, x)
-        tgt[:, 1] = (tgt[:, 1] + y_min) * h_ratio + h_pad
-        tgt[:, 0] = (tgt[:, 0] + x_min) * w_ratio + w_pad
-
-        if no_transform:
-            # Get the scaling factor
-            src_shape = (max(src[:, 0]) - min(src[:, 0]), max(src[:, 1]) - min(src[:, 1]))
-            # you have to flip because the image.shape is (y,x) but your corner points are (x,y)
-            scale = np.divide(tgt_shape, src_shape)
-            tgt_untransformed = src.copy()
-            # rescale src
-            tgt_untransformed[:, 1] = tgt_untransformed[:, 1] * scale[1]
-            tgt_untransformed[:, 0] = tgt_untransformed[:, 0] * scale[0]
-            # translate src
-            tgt_untransformed[:, 1] = (tgt_untransformed[:, 1] + y_min) * h_ratio + h_pad
-            tgt_untransformed[:, 0] = (tgt_untransformed[:, 0] + x_min) * w_ratio + w_pad
-            tgt = tgt_untransformed
-
-    if len(src) == 3:
-        M = torch.from_numpy(getAffineTransform(src, tgt)).unsqueeze(0).float()
-        transform_func = warp_affine
-    else:
-        src = torch.from_numpy(src).unsqueeze(0)
-        tgt = torch.from_numpy(tgt).unsqueeze(0)
-        M = get_perspective_transform(src, tgt)
-        transform_func = warp_perspective
-
-    cur_shape = image.shape[1:]
-    warped_patch = transform_func(sign_canonical.unsqueeze(0),
-                                  M, cur_shape,
-                                  mode='bicubic',
-                                  padding_mode='zeros')[0]
-    warped_patch.clamp_(0, 1)
-    alpha_mask = warped_patch[-1].unsqueeze(0)
-
-    image_with_transformed_patch = (1 - alpha_mask) * image / 255 + alpha_mask * warped_patch[:-1]
-    return image_with_transformed_patch
-
-
 @torch.no_grad()
 def run(args,
         data,
@@ -273,10 +154,10 @@ def run(args,
     attack_config_path = args.attack_config_path
     ADVERSARIAL_SIGN_CLASS = args.obj_class
 
-    #TODO: have the location come from the mask directly
+    # TODO: have the location come from the mask directly
     if args.patch_loc:
         ymin, xmin = tuple()
-    
+
     # TODO: might break
     # obj_size = args.obj_size
     no_transform = args.no_transform
@@ -393,7 +274,7 @@ def run(args,
         adv_patch, patch_mask = pickle.load(open(load_patch, 'rb'))
         patch_mask_cpu = patch_mask
         patch_mask = patch_mask.to(device)
-    
+
         patch_height, patch_width = adv_patch.shape[1:]
 
         if load_patch == 'arrow':
@@ -417,16 +298,16 @@ def run(args,
             # obj_size = sign_canonical.shape[1:]
             # print('obj_size: ', obj_size)
 
-            #TODO: might break
+            # TODO: might break
             obj_size = patch_mask.shape[1]
             print(patch_mask.shape)
             import pdb
             pdb.set_trace()
             obj, obj_mask = prepare_obj('./attack_assets/octagon-915.0.png', img_size, (obj_size, obj_size))
-            
-            #TODO: pad patch_mask the same way we pad obj_mask
-            #TODO: have a function which only does the padding. so we can do the padding on both obj_mask and patch_mask with a single function
-            # patch_mask = 
+
+            # TODO: pad patch_mask the same way we pad obj_mask
+            # TODO: have a function which only does the padding. so we can do the padding on both obj_mask and patch_mask with a single function
+            # patch_mask =
 
         else:
             # load csv file containing target points for transform
@@ -437,9 +318,8 @@ def run(args,
             df = df[df['final_shape'] != 'other-0.0-0.0']
             print(df.shape)
             print(df.groupby(by=['final_shape']).count())
-    
-    #TODO: move to args 
-    
+
+    # TODO: move to args
 
     if args.per_sign_attack:
         with open(attack_config_path) as file:
@@ -485,16 +365,16 @@ def run(args,
         for class_index in plot_class_examples:
             class_name = names[class_index]
             shape_to_plot_data[class_name] = []
-            
 
     # TODO: remove 'metrics_per_image_df' in the future
     metrics_per_image_df = pd.DataFrame(columns=['filename', 'num_octagons', 'num_patches', 'fn'])
-    metrics_per_label_df = pd.DataFrame(columns=['filename', 'obj_id', 'label', 'correct_prediction', 'sign_width', 'sign_height', 'confidence'])
+    metrics_per_label_df = pd.DataFrame(
+        columns=['filename', 'obj_id', 'label', 'correct_prediction', 'sign_width', 'sign_height', 'confidence'])
     for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
         # TODO: check if we still need number of patches applied to the image
         # 'targets' shape is # number of labels by 8 (image_id, class, x1, y1, label width, label height, number of patches applied, obj id)
         targets = torch.nn.functional.pad(targets, (0, 2), "constant", 0)  # effectively zero padding
-        
+
         # DEBUG
         if batch_i == 100:
             break
@@ -508,7 +388,8 @@ def run(args,
         # ======================= BEGIN: apply patch ======================== #
         for image_i, path in enumerate(paths):
             # TODO: add comment. make sure it works
-            targets[targets[:, 0] == image_i, 7] = torch.arange(torch.sum(targets[:, 0] == image_i), dtype=targets.dtype)
+            targets[targets[:, 0] == image_i, 7] = torch.arange(
+                torch.sum(targets[:, 0] == image_i), dtype=targets.dtype)
             if apply_patch and not synthetic:
                 filename = path.split('/')[-1]
                 img_df = df[df['filename_y'] == filename]
@@ -529,7 +410,7 @@ def run(args,
                     (h0, w0), ((h_ratio, w_ratio), (w_pad, h_pad)) = shapes[image_i]
                     img_data = (h0, w0, h_ratio, w_ratio, w_pad, h_pad)
                     predicted_class = row['final_shape']
-                    #TODO: no need to use shape. when we pass predicted class to a function, we can get shape
+                    # TODO: no need to use shape. when we pass predicted class to a function, we can get shape
                     shape = predicted_class.split('-')[0]
 
                     # FIXME: only apply patch to octagons
@@ -546,26 +427,35 @@ def run(args,
                             adv_patch = attack.transform_and_attack(
                                 attack_images, patch_mask=patch_mask, obj_class=ADVERSARIAL_SIGN_CLASS)[0]
 
-                    # Transform and apply patch on the image. `im` has range [0, 255]
+                    # # Transform and apply patch on the image. `im` has range [0, 255]
                     # im[image_i] = transform_and_apply_patch(
-                    #     im[image_i], adv_patch, patch_mask_cpu, patch_loc,
+                    #     im[image_i].to(device), adv_patch, patch_mask, patch_loc,
+                    #     predicted_class, row, img_data, no_transform=no_transform, device=device) * 255
+
+                    sign_size_in_pixel = patch_mask.size(-1)
+                    tf_function, sign_canonical, sign_mask, M, alpha, beta = get_transform(
+                        sign_size_in_pixel, predicted_class, row, h0, w0, h_ratio, w_ratio, w_pad, h_pad)
+                    tf_data = [
+                        sign_canonical.unsqueeze(0).to(device),
+                        sign_mask.unsqueeze(0).to(device),
+                        M.unsqueeze(0).to(device),
+                        alpha, beta]
+                    im[image_i] = apply_transform(im[image_i].unsqueeze(0).to(device), adv_patch.clone(),
+                                                  patch_mask, patch_loc, tf_function, tf_data) * 255
+
+                    # im[image_i] = transform_and_apply_patch(
+                    #     im[image_i], adv_patch.clone(), patch_mask_cpu, patch_loc,
                     #     predicted_class, row, img_data, no_transform=no_transform, device=adv_patch.device) * 255
 
+                    # print((out1 - out2.cuda()).abs().max())
+                    # import pdb
+                    # pdb.set_trace()
 
-                    # sign_size_in_pixel = patch_mask.size(-1)
-                    # tf_function, sign_canonical, sign_mask, M, alpha, beta = get_transform(sign_size_in_pixel, predicted_class, row, h0, w0, h_ratio, w_ratio, w_pad, h_pad)
-                    # tf_data = [sign_canonical.unsqueeze(0).to(device), sign_mask.unsqueeze(0).to(device), M.unsqueeze(0).to(device), alpha, beta]
-                    # im[image_i] = apply_transform(im[image_i].unsqueeze(0).to(device), adv_patch, patch_mask, patch_loc, tf_function, tf_data) * 255
-
-                    im[image_i] = transform_and_apply_patch(
-                        im[image_i], adv_patch, patch_mask_cpu, patch_loc,
-                        predicted_class, row, img_data, no_transform=no_transform, device=adv_patch.device) * 255
-                    
                     num_patches_applied_to_image += 1
 
                 # set targets[6] to #patches_applied_to_image
                 targets[targets[:, 0] == image_i, 6] = num_patches_applied_to_image
-                
+
             elif synthetic:
                 orig_shape = im[image_i].shape[1:]
                 if apply_patch:
@@ -641,7 +531,7 @@ def run(args,
 
         for si, pred in enumerate(out):
             labels = targets[targets[:, 0] == si, 1:]
-            
+
             nl = len(labels)
             tcls = labels[:, 0].tolist() if nl else []  # target class
             path, shape = Path(paths[si]), shapes[si][0]
@@ -663,13 +553,14 @@ def run(args,
                         current_label_metric = {}
                         current_label_metric['filename'] = filename
                         current_label_metric['obj_id'] = lbl_[6].item()
+                        current_label_metric['num_patches_applied_to_image'] = lbl_[5].item()
                         current_label_metric['label'] = lbl_[0].item()
                         current_label_metric['correct_prediction'] = 0
                         current_label_metric['sign_width'] = lbl_[3].item()
                         current_label_metric['sign_height'] = lbl_[4].item()
                         current_label_metric['confidence'] = None
                         metrics_per_label_df = metrics_per_label_df.append(current_label_metric, ignore_index=True)
-                        
+
                 continue
 
             # Predictions
@@ -727,25 +618,29 @@ def run(args,
                     current_label_metric = {}
                     current_label_metric['filename'] = filename
                     current_label_metric['obj_id'] = lbl_[6].item()
+                    current_label_metric['num_patches_applied_to_image'] = lbl_[5].item()
                     current_label_metric['label'] = lbl_[0].item()
                     current_label_metric['correct_prediction'] = 0
                     current_label_metric['sign_width'] = lbl_[3].item()
                     current_label_metric['sign_height'] = lbl_[4].item()
                     current_label_metric['confidence'] = None
-                    
+
                     if len(matches) > 0:
-                        # match on obj_id 
+                        # match on obj_id
                         match = matches[matches[:, 0] == lbl_[6]]
                         assert len(match) <= 1
                         if len(match) > 0:
                             detection_index = int(match[0, 1])
                             current_label_metric['confidence'] = pred.cpu().numpy()[detection_index, 4]
-                            if pred.cpu().numpy()[detection_index, 5] == ADVERSARIAL_SIGN_CLASS and pred.cpu().numpy()[detection_index, 4] > metrics_confidence_threshold and correct[detection_index, 0]:
+                            if pred.cpu().numpy()[detection_index, 5] == ADVERSARIAL_SIGN_CLASS and pred.cpu().numpy()[
+                                    detection_index, 4] > metrics_confidence_threshold and correct[detection_index, 0]:
                                 current_label_metric['correct_prediction'] = 1
                     metrics_per_label_df = metrics_per_label_df.append(current_label_metric, ignore_index=True)
-                        
-            total_positives = sum([1 for x in tcls if x == ADVERSARIAL_SIGN_CLASS])         
-            sign_indices = np.logical_and(pred.cpu().numpy()[:, 5] == ADVERSARIAL_SIGN_CLASS, pred.cpu().numpy()[:, 4] > metrics_confidence_threshold)
+
+            total_positives = sum([1 for x in tcls if x == ADVERSARIAL_SIGN_CLASS])
+            sign_indices = np.logical_and(
+                pred.cpu().numpy()[:, 5] == ADVERSARIAL_SIGN_CLASS, pred.cpu().numpy()[:, 4] >
+                metrics_confidence_threshold)
             tp = sum(correct.cpu().numpy()[sign_indices, 0])
             current_image_metrics['fn'] = total_positives - tp
             metrics_per_image_df = metrics_per_image_df.append(current_image_metrics, ignore_index=True)
@@ -766,7 +661,7 @@ def run(args,
                         fn = str(path).split('/')[-1]
                         shape_to_plot_data[class_name].append(
                             [im[si: si + 1], targets[targets[:, 0] == si, :], path,
-                            predictions_for_plotting[predictions_for_plotting[:, 0] == si]])
+                             predictions_for_plotting[predictions_for_plotting[:, 0] == si]])
 
         # Plot images
         if plots and batch_i < 30:
@@ -1013,7 +908,8 @@ def parse_opt():
         help='do not apply patch to signs using transform. if no-transform==True, patch will face us')
     parser.add_argument('--metrics-confidence-threshold', type=float, default=0.5, help='confidence threshold')
     parser.add_argument('--per-sign-attack', action='store_true', help='generate adv patch for each sign')
-    parser.add_argument('--tgt-csv-filepath', required=True, help='path to csv which contains target points for transform')
+    parser.add_argument('--tgt-csv-filepath', required=True,
+                        help='path to csv which contains target points for transform')
     parser.add_argument('--attack-config-path', help='path to yaml file with attack configs')
     parser.add_argument('--obj-class', type=int, default=0, help='class of object to attack')
 

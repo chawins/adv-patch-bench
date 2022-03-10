@@ -1,5 +1,4 @@
 import time
-from ast import literal_eval
 from unittest.mock import patch
 
 import numpy as np
@@ -8,7 +7,6 @@ import torch
 import torch.optim as optim
 import torchvision
 from cv2 import getAffineTransform
-from example_transforms import get_sign_canonical
 from kornia import augmentation as K
 from kornia.constants import Resample
 from kornia.geometry.transform import (get_perspective_transform, warp_affine,
@@ -20,8 +18,9 @@ from yolov5.utils.plots import output_to_target, plot_images
 from ..utils.image import letterbox, mask_to_box
 from .base_detector import DetectorAttackModule
 
-EPS = 1e-6
+from adv_patch_bench.transforms.transforms import get_transform, apply_transform, transform_and_apply_patch
 
+EPS = 1e-6
 
 class RP2AttackModule(DetectorAttackModule):
 
@@ -268,6 +267,7 @@ class RP2AttackModule(DetectorAttackModule):
         # i.e., warp_perspetive. Have to fix this for triangles
         tf_function = get_transform(sign_size_in_pixel, *objs[0][1])[0]
         tf_data_temp = [get_transform(sign_size_in_pixel, *obj[1])[1:] for obj in objs]
+        # tf_data contains [sign_canonical, sign_mask, M, alpha, beta]
         tf_data = []
         for i in range(5):
             data_i = []
@@ -314,14 +314,12 @@ class RP2AttackModule(DetectorAttackModule):
                 curr_tf_data = [data[bg_idx] for data in tf_data]
                 delta = delta.repeat(self.num_eot, 1, 1, 1)
 
-                # adv_img = []
-                # for idx in bg_idx:
-                #     predicted_class, row, img_data = objs[idx][1][0], objs[idx][1][1], objs[idx][1][2:]
-                #     adv_img.append(transform_and_apply_patch(backgrounds[idx], delta, patch_mask, patch_loc, predicted_class, row, img_data, device=device))
-                # adv_img = torch.cat(adv_img).unsqueeze(0)
-                
+                # adv_img = transform_and_apply_patch(
+                #     backgrounds[bg_idx].clone(), delta.clone(), patch_mask, patch_loc,
+                #     objs[0][1][0], objs[0][1][1], objs[0][1][2:], device=device)
+
                 adv_img = apply_transform(
-                    backgrounds[bg_idx], delta, patch_mask, patch_loc,
+                    backgrounds[bg_idx].clone(), delta.clone(), patch_mask, patch_loc,
                     tf_function, curr_tf_data, **self.real_transform)
 
                 # adv_img = resize_transform(adv_img)
@@ -410,239 +408,3 @@ class RP2AttackModule(DetectorAttackModule):
         x = x * b + a
         return x
 
-
-def get_transform(sign_size_in_pixel, predicted_class, row, h0, w0,
-                  h_ratio, w_ratio, w_pad, h_pad, no_transform=False):
-    # TODO: This should directly come from patch mask
-    sign_canonical, sign_mask, src = get_sign_canonical(
-        predicted_class, None, None, sign_size_in_pixel=sign_size_in_pixel)
-    alpha = torch.tensor(row['alpha'])
-    beta = torch.tensor(row['beta'])
-
-    # # if annotated, then use those points
-    # if not pd.isna(row['points']):
-    #     tgt = np.array(literal_eval(row['points']), dtype=np.float32)
-    #     tgt[:, 1] = (tgt[:, 1] * h_ratio) + h_pad
-    #     tgt[:, 0] = (tgt[:, 0] * w_ratio) + w_pad
-    # else:
-    #     tgt = row['tgt'] if pd.isna(row['tgt_polygon']) else row['tgt_polygon']
-    #     tgt = np.array(literal_eval(tgt), dtype=np.float32)
-    #     offset_x_ratio = row['xmin_ratio']
-    #     offset_y_ratio = row['ymin_ratio']
-    #     # Have to correct for the padding when df is saved (TODO: this should be simplified)
-    #     pad_size = int(max(h0, w0) * 0.25)
-    #     x_min = offset_x_ratio * (w0 + pad_size * 2) - pad_size
-    #     y_min = offset_y_ratio * (h0 + pad_size * 2) - pad_size
-    #     # Order of coordinate in tgt is inverted, i.e., (x, y) instead of (y, x)
-    #     tgt[:, 1] = (tgt[:, 1] + y_min) * h_ratio + h_pad
-    #     tgt[:, 0] = (tgt[:, 0] + x_min) * w_ratio + w_pad
-
-    # src = np.array(src, dtype=np.float32)
-    # if len(src) == 3:
-    #     M = torch.from_numpy(getAffineTransform(src, tgt)).unsqueeze(0).float()
-    #     transform_func = warp_affine
-    # else:
-    #     src = torch.from_numpy(src).unsqueeze(0)
-    #     tgt = torch.from_numpy(tgt).unsqueeze(0)
-    #     M = get_perspective_transform(src, tgt)
-    #     transform_func = warp_perspective
-
-    src = np.array(src, dtype=np.float32)
-    if not pd.isna(row['points']):
-        tgt = np.array(literal_eval(row['points']), dtype=np.float32)
-
-        offset_y = min(tgt[:, 1])
-        offset_x = min(tgt[:, 0])
-
-        tgt_shape = (max(tgt[:, 1]) - min(tgt[:, 1]), max(tgt[:, 0]) - min(tgt[:, 0]))
-
-        tgt[:, 1] = (tgt[:, 1] * h_ratio) + h_pad
-        tgt[:, 0] = (tgt[:, 0] * w_ratio) + w_pad
-
-        if no_transform:
-            # Get the scaling factor
-            src_shape = (max(src[:, 0]) - min(src[:, 0]), max(src[:, 1]) - min(src[:, 1]))
-            # you have to flip because the image.shape is (y,x) but your corner points are (x,y)
-            scale = np.divide(tgt_shape, src_shape)
-
-            tgt_untransformed = src.copy()
-            # rescale src
-            tgt_untransformed[:, 1] = tgt_untransformed[:, 1] * scale[1]
-            tgt_untransformed[:, 0] = tgt_untransformed[:, 0] * scale[0]
-            # translate src
-            tgt_untransformed[:, 1] += offset_y
-            tgt_untransformed[:, 0] += offset_x
-            tgt_untransformed[:, 1] = (tgt_untransformed[:, 1] * h_ratio) + h_pad
-            tgt_untransformed[:, 0] = (tgt_untransformed[:, 0] * w_ratio) + w_pad
-            tgt = tgt_untransformed
-    else:
-        tgt = row['tgt'] if pd.isna(row['tgt_polygon']) else row['tgt_polygon']
-        tgt = np.array(literal_eval(tgt), dtype=np.float32)
-
-        tgt_shape = (max(tgt[:, 1]) - min(tgt[:, 1]), max(tgt[:, 0]) - min(tgt[:, 0]))
-
-        offset_x_ratio = row['xmin_ratio']
-        offset_y_ratio = row['ymin_ratio']
-        # Have to correct for the padding when df is saved (TODO: this should be simplified)
-        pad_size = int(max(h0, w0) * 0.25)
-        x_min = offset_x_ratio * (w0 + pad_size * 2) - pad_size
-        y_min = offset_y_ratio * (h0 + pad_size * 2) - pad_size
-        # Order of coordinate in tgt is inverted, i.e., (x, y) instead of (y, x)
-        tgt[:, 1] = (tgt[:, 1] + y_min) * h_ratio + h_pad
-        tgt[:, 0] = (tgt[:, 0] + x_min) * w_ratio + w_pad
-
-        if no_transform:
-            # Get the scaling factor
-            src_shape = (max(src[:, 0]) - min(src[:, 0]), max(src[:, 1]) - min(src[:, 1]))
-            # you have to flip because the image.shape is (y,x) but your corner points are (x,y)
-            scale = np.divide(tgt_shape, src_shape)
-            tgt_untransformed = src.copy()
-            # rescale src
-            tgt_untransformed[:, 1] = tgt_untransformed[:, 1] * scale[1]
-            tgt_untransformed[:, 0] = tgt_untransformed[:, 0] * scale[0]
-            # translate src
-            tgt_untransformed[:, 1] = (tgt_untransformed[:, 1] + y_min) * h_ratio + h_pad
-            tgt_untransformed[:, 0] = (tgt_untransformed[:, 0] + x_min) * w_ratio + w_pad
-            tgt = tgt_untransformed
-
-    if len(src) == 3:
-        M = torch.from_numpy(getAffineTransform(src, tgt)).unsqueeze(0).float()
-        transform_func = warp_affine
-    else:
-        src = torch.from_numpy(src).unsqueeze(0)
-        tgt = torch.from_numpy(tgt).unsqueeze(0)
-        M = get_perspective_transform(src, tgt)
-        transform_func = warp_perspective
-
-    return transform_func, sign_canonical, sign_mask, M.squeeze(), alpha, beta
-
-
-def apply_transform(image, adv_patch, patch_mask, patch_loc, transform_func, tf_data,
-                    tf_patch=None, tf_bg=None):
-    ymin, xmin, height, width = patch_loc
-    sign_canonical, sign_mask, M, alpha, beta = tf_data
-    adv_patch.clamp_(0, 1).mul_(alpha).add_(beta).clamp_(0, 1)
-    sign_canonical[:, :-1, ymin:ymin + height, xmin:xmin + width] = adv_patch
-    sign_canonical[:, -1, ymin:ymin + height, xmin:xmin + width] = 1
-    sign_canonical = sign_mask * patch_mask * sign_canonical
-    # Apply augmentation on the patch
-    if tf_patch is not None:
-        sign_canonical = tf_patch(sign_canonical)
-
-    warped_patch = transform_func(sign_canonical,
-                                  M, image.shape[2:],
-                                  mode='bilinear',  # TODO: try others?
-                                #   mode='bicubic',
-                                  padding_mode='zeros')
-    warped_patch.clamp_(0, 1)
-    alpha_mask = warped_patch[:, -1].unsqueeze(1)
-    final_img = (1 - alpha_mask) * image / 255 + alpha_mask * warped_patch[:, :-1]
-    # Apply augmentation on the entire image
-    if tf_bg is not None:
-        final_img = tf_bg(final_img)
-    return final_img
-
-def transform_and_apply_patch(image, adv_patch, patch_mask, patch_loc,
-                              predicted_class, row, img_data, no_transform=False, device=None):
-    if adv_patch.ndim == 4:
-        adv_patch = adv_patch[0]
-    if patch_mask.ndim == 4:
-        patch_mask = patch_mask[0]
-
-    ymin, xmin, height, width = patch_loc
-    h0, w0, h_ratio, w_ratio, w_pad, h_pad = img_data
-    sign_canonical, sign_mask, src = get_sign_canonical(
-        predicted_class, None, None, sign_size_in_pixel=patch_mask.size(-1))
-    sign_canonical = sign_canonical.to(device)
-    sign_mask = sign_mask.to(device)
-    alpha = row['alpha']
-    beta = row['beta']
-
-    patch_cropped = adv_patch.clone()
-    patch_cropped.clamp_(0, 1).mul_(alpha).add_(beta).clamp_(0, 1)
-    sign_canonical[:-1, ymin:ymin + height, xmin:xmin + width] = patch_cropped
-    sign_canonical[-1, ymin:ymin + height, xmin:xmin + width] = 1
-    sign_canonical = sign_mask * patch_mask * sign_canonical
-
-    src = np.array(src, dtype=np.float32)
-
-    # if annotated, then use those points
-    # TODO: unify `points` and other `tgt` in the csv file so this part can be
-    # simplified into one function
-    if not pd.isna(row['points']):
-        tgt = np.array(literal_eval(row['points']), dtype=np.float32)
-
-        offset_y = min(tgt[:, 1])
-        offset_x = min(tgt[:, 0])
-
-        tgt_shape = (max(tgt[:, 1]) - min(tgt[:, 1]), max(tgt[:, 0]) - min(tgt[:, 0]))
-
-        tgt[:, 1] = (tgt[:, 1] * h_ratio) + h_pad
-        tgt[:, 0] = (tgt[:, 0] * w_ratio) + w_pad
-
-        if no_transform:
-            # Get the scaling factor
-            src_shape = (max(src[:, 0]) - min(src[:, 0]), max(src[:, 1]) - min(src[:, 1]))
-            # you have to flip because the image.shape is (y,x) but your corner points are (x,y)
-            scale = np.divide(tgt_shape, src_shape)
-
-            tgt_untransformed = src.copy()
-            # rescale src
-            tgt_untransformed[:, 1] = tgt_untransformed[:, 1] * scale[1]
-            tgt_untransformed[:, 0] = tgt_untransformed[:, 0] * scale[0]
-            # translate src
-            tgt_untransformed[:, 1] += offset_y
-            tgt_untransformed[:, 0] += offset_x
-            tgt_untransformed[:, 1] = (tgt_untransformed[:, 1] * h_ratio) + h_pad
-            tgt_untransformed[:, 0] = (tgt_untransformed[:, 0] * w_ratio) + w_pad
-            tgt = tgt_untransformed
-    else:
-        tgt = row['tgt'] if pd.isna(row['tgt_polygon']) else row['tgt_polygon']
-        tgt = np.array(literal_eval(tgt), dtype=np.float32)
-
-        tgt_shape = (max(tgt[:, 1]) - min(tgt[:, 1]), max(tgt[:, 0]) - min(tgt[:, 0]))
-
-        offset_x_ratio = row['xmin_ratio']
-        offset_y_ratio = row['ymin_ratio']
-        # Have to correct for the padding when df is saved (TODO: this should be simplified)
-        pad_size = int(max(h0, w0) * 0.25)
-        x_min = offset_x_ratio * (w0 + pad_size * 2) - pad_size
-        y_min = offset_y_ratio * (h0 + pad_size * 2) - pad_size
-        # Order of coordinate in tgt is inverted, i.e., (x, y) instead of (y, x)
-        tgt[:, 1] = (tgt[:, 1] + y_min) * h_ratio + h_pad
-        tgt[:, 0] = (tgt[:, 0] + x_min) * w_ratio + w_pad
-
-        if no_transform:
-            # Get the scaling factor
-            src_shape = (max(src[:, 0]) - min(src[:, 0]), max(src[:, 1]) - min(src[:, 1]))
-            # you have to flip because the image.shape is (y,x) but your corner points are (x,y)
-            scale = np.divide(tgt_shape, src_shape)
-            tgt_untransformed = src.copy()
-            # rescale src
-            tgt_untransformed[:, 1] = tgt_untransformed[:, 1] * scale[1]
-            tgt_untransformed[:, 0] = tgt_untransformed[:, 0] * scale[0]
-            # translate src
-            tgt_untransformed[:, 1] = (tgt_untransformed[:, 1] + y_min) * h_ratio + h_pad
-            tgt_untransformed[:, 0] = (tgt_untransformed[:, 0] + x_min) * w_ratio + w_pad
-            tgt = tgt_untransformed
-
-    if len(src) == 3:
-        M = torch.from_numpy(getAffineTransform(src, tgt)).unsqueeze(0).float()
-        transform_func = warp_affine
-    else:
-        src = torch.from_numpy(src).unsqueeze(0)
-        tgt = torch.from_numpy(tgt).unsqueeze(0)
-        M = get_perspective_transform(src, tgt)
-        transform_func = warp_perspective
-
-    cur_shape = image.shape[1:]
-
-    warped_patch = transform_func(sign_canonical.unsqueeze(0),
-                                  M.to(device), cur_shape,
-                                  mode='bicubic',
-                                  padding_mode='zeros')[0]
-    warped_patch.clamp_(0, 1)
-    alpha_mask = warped_patch[-1].unsqueeze(0)
-
-    image_with_transformed_patch = (1 - alpha_mask) * image / 255 + alpha_mask * warped_patch[:-1]
-    return image_with_transformed_patch

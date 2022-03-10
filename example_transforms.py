@@ -17,6 +17,7 @@ from kornia.geometry.transform import (get_perspective_transform, resize,
 from PIL import Image
 from torchvision.utils import save_image
 from tqdm.auto import tqdm
+from adv_patch_bench.transforms.transforms import get_sign_canonical
 
 from adv_patch_bench.dataloaders import ImageOnlyFolder
 from adv_patch_bench.models import build_classifier
@@ -105,29 +106,6 @@ def get_args_parser():
     parser.add_argument('--eps', default=1e-8, type=float)
     parser.add_argument('--resume', default='', type=str, help='path to latest checkpoint')
     return parser
-
-
-def get_sign_canonical(predicted_class, patch_size_in_pixel,
-                       patch_size_in_mm, sign_size_in_pixel=None):
-    shape = predicted_class.split('-')[0]
-    sign_width_in_mm = float(predicted_class.split('-')[1])
-    if len(predicted_class.split('-')) == 3:
-        sign_height_in_mm = float(predicted_class.split('-')[2])
-        hw_ratio = sign_height_in_mm / sign_width_in_mm
-    else:
-        hw_ratio = 1
-    if sign_size_in_pixel is None:
-        if len(predicted_class.split('-')) == 3:
-            sign_size_in_mm = max(sign_width_in_mm, sign_height_in_mm)
-        else:
-            sign_size_in_mm = float(sign_width_in_mm)
-        pixel_mm_ratio = patch_size_in_pixel / patch_size_in_mm
-        sign_size_in_pixel = round(sign_size_in_mm * pixel_mm_ratio)
-    sign_canonical = torch.zeros((4, sign_size_in_pixel, sign_size_in_pixel))
-    sign_mask, src = gen_sign_mask(shape, sign_size_in_pixel, ratio=hw_ratio)
-    sign_mask = torch.from_numpy(sign_mask).float()[None, :, :]
-    return sign_canonical, sign_mask, src
-
 
 def draw_vertices(traffic_sign, points, color=[0, 255, 0]):
     size = traffic_sign.size(-1)
