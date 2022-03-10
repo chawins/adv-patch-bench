@@ -87,15 +87,15 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
 
     print(f'=> Initializing attack...')
     attack_config = {
-        'rp2_num_steps': 2000,
+        'rp2_num_steps': 1000,
         'rp2_step_size': 1e-2,
-        'rp2_num_eot': 5,
+        'rp2_num_eot': 1,
         'rp2_optimizer': 'adam',
         'rp2_lambda': 0,
         'rp2_min_conf': 0.25,
-        'rp2_augment_real': True,
+        'rp2_augment_real': False,
         'input_size': img_size,
-        'attack_mode': 'pgd'
+        'attack_mode': 'var_change'
     }
     # TODO: Allow data parallel?
     attack = RP2AttackModule(attack_config, model, None, None, None,

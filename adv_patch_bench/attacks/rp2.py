@@ -268,6 +268,7 @@ class RP2AttackModule(DetectorAttackModule):
         # i.e., warp_perspetive. Have to fix this for triangles
         tf_function = get_transform(sign_size_in_pixel, *objs[0][1])[0]
         tf_data_temp = [get_transform(sign_size_in_pixel, *obj[1])[1:] for obj in objs]
+        # tf_data contains [sign_canonical, sign_mask, M, alpha, beta]
         tf_data = []
         for i in range(5):
             data_i = []
@@ -319,10 +320,17 @@ class RP2AttackModule(DetectorAttackModule):
                 #     predicted_class, row, img_data = objs[idx][1][0], objs[idx][1][1], objs[idx][1][2:]
                 #     adv_img.append(transform_and_apply_patch(backgrounds[idx], delta, patch_mask, patch_loc, predicted_class, row, img_data, device=device))
                 # adv_img = torch.cat(adv_img).unsqueeze(0)
-                
+                adv_img2 = transform_and_apply_patch(
+                    backgrounds[bg_idx].clone(), delta.clone(), patch_mask, patch_loc,
+                    objs[0][1][0], objs[0][1][1], objs[0][1][2:], device=device)
+
                 adv_img = apply_transform(
-                    backgrounds[bg_idx], delta, patch_mask, patch_loc,
+                    backgrounds[bg_idx].clone(), delta.clone(), patch_mask, patch_loc,
                     tf_function, curr_tf_data, **self.real_transform)
+
+                print((adv_img2 - adv_img).abs().max())
+                import pdb
+                pdb.set_trace()
 
                 # adv_img = resize_transform(adv_img)
                 # TODO: check size of adv_img
@@ -532,7 +540,7 @@ def apply_transform(image, adv_patch, patch_mask, patch_loc, transform_func, tf_
     warped_patch = transform_func(sign_canonical,
                                   M, image.shape[2:],
                                   mode='bilinear',  # TODO: try others?
-                                #   mode='bicubic',
+                                  #   mode='bicubic',
                                   padding_mode='zeros')
     warped_patch.clamp_(0, 1)
     alpha_mask = warped_patch[:, -1].unsqueeze(1)
@@ -541,6 +549,7 @@ def apply_transform(image, adv_patch, patch_mask, patch_loc, transform_func, tf_
     if tf_bg is not None:
         final_img = tf_bg(final_img)
     return final_img
+
 
 def transform_and_apply_patch(image, adv_patch, patch_mask, patch_loc,
                               predicted_class, row, img_data, no_transform=False, device=None):
@@ -635,11 +644,11 @@ def transform_and_apply_patch(image, adv_patch, patch_mask, patch_loc,
         M = get_perspective_transform(src, tgt)
         transform_func = warp_perspective
 
-    cur_shape = image.shape[1:]
+    cur_shape = image.shape[-2:]
 
     warped_patch = transform_func(sign_canonical.unsqueeze(0),
                                   M.to(device), cur_shape,
-                                  mode='bicubic',
+                                  mode='bilinear',
                                   padding_mode='zeros')[0]
     warped_patch.clamp_(0, 1)
     alpha_mask = warped_patch[-1].unsqueeze(0)
