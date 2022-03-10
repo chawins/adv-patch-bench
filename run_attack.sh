@@ -8,10 +8,11 @@
 #     --obj-class 14 \
 #     --obj-size 128 \
 #     --obj-path attack_assets/octagon-915.0.png \
-#     --num-bg 20 \
+#     --num-bg 1 \
 #     --bg-dir /data/shared/mtsd_v2_fully_annotated/train \
 #     --save-images \
-#     --generate-patch real
+#     --generate-patch real \
+#     --attack-config-path attack_config.yaml
 
 CUDA_VISIBLE_DEVICES=0 python -u val_attack_synthetic.py \
     --imgsz 1280 \

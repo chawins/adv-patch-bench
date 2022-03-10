@@ -5,6 +5,7 @@ Generate adversarial patch
 import argparse
 import os
 import pickle
+import yaml
 import sys
 from ast import literal_eval
 from os.path import join
@@ -55,7 +56,7 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
                        img_size=(736, 1312), obj_class=0, obj_size=None,
                        bg_dir='./', num_bg=16, save_images=False, save_dir='./',
                        generate_patch='synthetic', rescaling=False, relighting=False,
-                       csv_path='mapillary.csv', dataloader=None):
+                       csv_path='mapillary.csv', dataloader=None, attack_config_path=None):
     """Generate adversarial patch
 
     Args:
@@ -86,17 +87,10 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
         backgrounds[i] = T.resize(bg, img_size, antialias=True)
 
     print(f'=> Initializing attack...')
-    attack_config = {
-        'rp2_num_steps': 2000,
-        'rp2_step_size': 1e-2,
-        'rp2_num_eot': 5,
-        'rp2_optimizer': 'adam',
-        'rp2_lambda': 0,
-        'rp2_min_conf': 0.25,
-        'rp2_augment_real': True,
-        'input_size': img_size,
-        'attack_mode': 'pgd'
-    }
+    with open(attack_config_path) as file:
+        attack_config = yaml.load(file, Loader=yaml.FullLoader)
+        attack_config['input_size'] = img_size
+
     # TODO: Allow data parallel?
     attack = RP2AttackModule(attack_config, model, None, None, None,
                              rescaling=rescaling, relighting=relighting, verbose=True)
@@ -229,6 +223,7 @@ def main(
     relighting=False,
     csv_path='',
     data=None,
+    attack_config_path=None
 ):
 
     torch.manual_seed(seed)
@@ -285,7 +280,8 @@ def main(
         model, obj_numpy, patch_mask, device=device, img_size=img_size,
         obj_class=obj_class, obj_size=obj_size, bg_dir=bg_dir, num_bg=num_bg,
         save_images=save_images, save_dir=save_dir, generate_patch=generate_patch,
-        rescaling=rescaling, relighting=relighting, csv_path=csv_path, dataloader=dataloader)
+        rescaling=rescaling, relighting=relighting, csv_path=csv_path, dataloader=dataloader, 
+        attack_config_path=attack_config_path)
 
     # Save adv patch
     patch_path = join(save_dir, f'{patch_name}.pkl')
@@ -337,6 +333,7 @@ if __name__ == "__main__":
     parser.add_argument('--csv-path', type=str, default='',
                         help=('path to csv file with the annotated transform '
                               'data (required if --generate-patch real)'))
+    parser.add_argument('--attack-config-path', help='path to yaml file with attack configs')
     opt = parser.parse_args()
     print(opt)
 
