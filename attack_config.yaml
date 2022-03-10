@@ -1,4 +1,4 @@
-rp2_num_steps: 1000
+rp2_num_steps: 2000
 rp2_step_size: 0.01
 rp2_num_eot: 1
 rp2_optimizer: 'adam'
