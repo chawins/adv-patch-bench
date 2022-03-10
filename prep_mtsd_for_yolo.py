@@ -6,7 +6,7 @@ from os.path import expanduser, join
 import pandas as pd
 from tqdm import tqdm
 
-from .hparams import TS_COLOR_DICT, TS_COLOR_OFFSET_DICT
+from hparams import TS_COLOR_DICT, TS_COLOR_OFFSET_DICT
 
 
 def readlines(path):
@@ -15,10 +15,8 @@ def readlines(path):
     return [line.strip() for line in lines]
 
 
-path = '/data/shared/mtsd_v2_fully_annotated/'
-csv_path = '/data/shared/mtsd_v2_fully_annotated/traffic_sign_dimension_v6.csv'
-# path = expanduser('~/data/mtsd_v2_fully_annotated/')
-# csv_path = expanduser('~/adv-patch-bench/traffic_sign_dimension_v6.csv')
+path = expanduser('~/data/mtsd_v2_fully_annotated/')
+csv_path = expanduser('~/adv-patch-bench/traffic_sign_dimension_v6.csv')
 anno_path = expanduser(join(path, 'annotations'))
 label_path = expanduser(join(path, 'labels'))
 data = pd.read_csv(csv_path)

@@ -350,14 +350,13 @@ def run(args,
         targets = torch.nn.functional.pad(targets, (0, 2), "constant", 0)  # effectively zero padding
 
         # DEBUG
-        if batch_i == 100:
-            break
-
+        # if batch_i == 10:
+        #     break
         # if num_octagon_with_patch >= 100:
         #     break
 
-        # if num_apply_imgs >= len(filename_list) and args.run_only_img_txt:
-            # break
+        if num_apply_imgs >= len(filename_list) and args.run_only_img_txt:
+            break
 
         # ======================= BEGIN: apply patch ======================== #
         for image_i, path in enumerate(paths):

@@ -255,7 +255,7 @@ def main(
     mid_height = obj_size[0] // 2 + 40
     # mid_height = obj_size[0] // 2
     mid_width = obj_size[1] // 2
-    patch_size = 15
+    patch_size = 10
     h = int(patch_size / 36 / 2 * obj_size[0])
     w = int(patch_size / 36 / 2 * obj_size[1])
     patch_mask[:, mid_height - h:mid_height + h, mid_width - w:mid_width + w] = 1

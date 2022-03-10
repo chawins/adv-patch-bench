@@ -26,8 +26,8 @@ from torch.utils.data import DataLoader, Dataset, dataloader, distributed
 from tqdm import tqdm
 
 from yolov5.utils.augmentations import Albumentations, augment_hsv, copy_paste, letterbox, mixup, random_perspective
-from yolov5.utils.general import (LOGGER, check_dataset, check_requirements, check_yaml,
-                                  clean_str, segments2boxes, xyn2xy, xywh2xyxy, xywhn2xyxy, xyxy2xywhn)
+from yolov5.utils.general import (LOGGER, check_dataset, check_requirements, check_yaml, clean_str, segments2boxes,
+                                  xyn2xy, xywh2xyxy, xywhn2xyxy, xyxy2xywhn)
 from yolov5.utils.torch_utils import torch_distributed_zero_first
 
 # Parameters
@@ -472,6 +472,8 @@ class LoadImagesAndLabels(Dataset):
             ar = ar[irect]
 
             # Set training image shapes
+            # EDIT: make sure that all images are padded to the same size
+            # without changing the aspect ratio
             # shapes = [[1, 1]] * nb
             shapes = [[0.75, 1]] * nb
             # for i in range(nb):
