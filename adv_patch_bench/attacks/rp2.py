@@ -320,17 +320,13 @@ class RP2AttackModule(DetectorAttackModule):
                 #     predicted_class, row, img_data = objs[idx][1][0], objs[idx][1][1], objs[idx][1][2:]
                 #     adv_img.append(transform_and_apply_patch(backgrounds[idx], delta, patch_mask, patch_loc, predicted_class, row, img_data, device=device))
                 # adv_img = torch.cat(adv_img).unsqueeze(0)
-                adv_img2 = transform_and_apply_patch(
-                    backgrounds[bg_idx].clone(), delta.clone(), patch_mask, patch_loc,
-                    objs[0][1][0], objs[0][1][1], objs[0][1][2:], device=device)
+                # adv_img = transform_and_apply_patch(
+                #     backgrounds[bg_idx].clone(), delta.clone(), patch_mask, patch_loc,
+                #     objs[0][1][0], objs[0][1][1], objs[0][1][2:], device=device)
 
                 adv_img = apply_transform(
                     backgrounds[bg_idx].clone(), delta.clone(), patch_mask, patch_loc,
                     tf_function, curr_tf_data, **self.real_transform)
-
-                print((adv_img2 - adv_img).abs().max())
-                import pdb
-                pdb.set_trace()
 
                 # adv_img = resize_transform(adv_img)
                 # TODO: check size of adv_img
