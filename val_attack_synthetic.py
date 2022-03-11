@@ -319,29 +319,20 @@ def run(args,
             print(df.shape)
             print(df.groupby(by=['final_shape']).count())
 
-    # TODO: move to args
-
-    if args.per_sign_attack:
-        with open(attack_config_path) as file:
-            attack_config = yaml.load(file, Loader=yaml.FullLoader)
-            attack_config['input_size'] = img_size
-    else:
-        raise Exception('Config file not provided for targeted attacks')
     # Initialize attack
-    # attack_config = {
-    #     'rp2_num_steps': 2000,
-    #     'rp2_step_size': 1e-2,
-    #     'rp2_num_eot': 1,
-    #     'rp2_optimizer': 'adam',
-    #     'rp2_lambda': 0,
-    #     'rp2_min_conf': 0.25,
-    #     'rp2_augment_real': False,
-    #     'input_size': img_size,
-    #     'attack_mode': ''
-    # }
-    attack = RP2AttackModule(attack_config, model, None, None, None,
-                             rescaling=False, relighting=False, verbose=True)
+    if args.per_sign_attack:
+        try:
+            with open(attack_config_path) as file:
+                attack_config = yaml.load(file, Loader=yaml.FullLoader)
+                attack_config['input_size'] = img_size
 
+            attack = RP2AttackModule(attack_config, model, None, None, None,
+                             rescaling=False, relighting=False, verbose=True)
+        except:
+            raise Exception('Config file not provided for targeted attacks')
+    
+
+    
     # ======================================================================= #
     #                          BEGIN: Main eval loop                          #
     # ======================================================================= #
@@ -376,8 +367,8 @@ def run(args,
         targets = torch.nn.functional.pad(targets, (0, 2), "constant", 0)  # effectively zero padding
 
         # DEBUG
-        if batch_i == 100:
-            break
+        # if batch_i == 100:
+        #     break
 
         # if num_octagon_with_patch >= 100:
         #     break
@@ -790,6 +781,12 @@ def run(args,
         current_exp_metrics['apply_patch'] = apply_patch
         current_exp_metrics['random_patch'] = random_patch
 
+        if args.per_sign_attack:
+            metrics_df_column_names.append('no_transform')
+            current_exp_metrics['no_transform'] = attack_config['no_transform']
+            metrics_df_column_names.append('no_relighting')
+            current_exp_metrics['no_relighting'] = attack_config['no_relighting']
+
         try:
             metrics_df_column_names.append('generate_patch')
             metrics_df_column_names.append('rescaling')
@@ -803,6 +800,7 @@ def run(args,
                 current_exp_metrics['generate_patch'] = patch_metadata['generate_patch']
                 current_exp_metrics['rescaling'] = patch_metadata['rescaling']
                 current_exp_metrics['relighting'] = patch_metadata['relighting']
+                
         except:
             pass
 

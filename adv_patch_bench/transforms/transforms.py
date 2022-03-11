@@ -205,10 +205,13 @@ def get_transform(sign_size_in_pixel, predicted_class, row, h0, w0,
 
 
 def apply_transform(image, adv_patch, patch_mask, patch_loc, transform_func, tf_data,
-                    tf_patch=None, tf_bg=None):
+                    tf_patch=None, tf_bg=None, no_relighting=False):
     ymin, xmin, height, width = patch_loc
     sign_canonical, sign_mask, M, alpha, beta = tf_data
-    adv_patch.clamp_(0, 1).mul_(alpha).add_(beta).clamp_(0, 1)
+    if no_relighting:
+        adv_patch.clamp_(0, 1).mul_(1).add_(0).clamp_(0, 1)
+    else:
+        adv_patch.clamp_(0, 1).mul_(alpha).add_(beta).clamp_(0, 1)
     sign_canonical[:, :-1, ymin:ymin + height, xmin:xmin + width] = adv_patch
     sign_canonical[:, -1, ymin:ymin + height, xmin:xmin + width] = 1
     sign_canonical = sign_mask * patch_mask * sign_canonical
@@ -218,8 +221,8 @@ def apply_transform(image, adv_patch, patch_mask, patch_loc, transform_func, tf_
 
     warped_patch = transform_func(sign_canonical,
                                   M, image.shape[2:],
-                                  mode='bicubic',
-                                #   mode='bilinear',  # TODO: try others?
+                                #   mode='bicubic',
+                                  mode='bilinear',  # TODO: try others?
                                   padding_mode='zeros')
     warped_patch.clamp_(0, 1)
     alpha_mask = warped_patch[:, -1].unsqueeze(1)

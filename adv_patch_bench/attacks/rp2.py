@@ -36,6 +36,8 @@ class RP2AttackModule(DetectorAttackModule):
         self.min_conf = attack_config['rp2_min_conf']
         self.input_size = attack_config['input_size']
         self.attack_mode = attack_config['attack_mode']
+        self.no_transform = attack_config['no_transform']
+        self.no_relighting = attack_config['no_relighting']
 
         self.num_restarts = 1
         self.rescaling = rescaling
@@ -265,8 +267,8 @@ class RP2AttackModule(DetectorAttackModule):
         sign_size_in_pixel = patch_mask.size(-1)
         # TODO: Assume that every signs use the same transform function
         # i.e., warp_perspetive. Have to fix this for triangles
-        tf_function = get_transform(sign_size_in_pixel, *objs[0][1])[0]
-        tf_data_temp = [get_transform(sign_size_in_pixel, *obj[1])[1:] for obj in objs]
+        tf_function = get_transform(sign_size_in_pixel, *objs[0][1], no_transform=self.no_transform)[0]
+        tf_data_temp = [get_transform(sign_size_in_pixel, *obj[1], no_transform=self.no_transform)[1:] for obj in objs]
         # tf_data contains [sign_canonical, sign_mask, M, alpha, beta]
         tf_data = []
         for i in range(5):
@@ -320,7 +322,7 @@ class RP2AttackModule(DetectorAttackModule):
 
                 adv_img = apply_transform(
                     backgrounds[bg_idx].clone(), delta.clone(), patch_mask, patch_loc,
-                    tf_function, curr_tf_data, **self.real_transform)
+                    tf_function, curr_tf_data, **self.real_transform, no_relighting=self.no_relighting)
 
                 # adv_img = resize_transform(adv_img)
                 # TODO: check size of adv_img

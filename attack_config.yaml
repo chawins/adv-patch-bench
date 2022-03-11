@@ -6,3 +6,5 @@ rp2_lambda: 0
 rp2_min_conf: 0.25
 rp2_augment_real: False
 attack_mode: ''
+no_transform: False
+no_relighting: False
