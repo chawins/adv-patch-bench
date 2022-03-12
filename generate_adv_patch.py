@@ -154,14 +154,6 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
                         continue
                     # Pad to make sure all images are of same size
                     img = im[image_i]
-                    # TODO: no longer need to pad since we fix the size
-                    # assert img_size[0] >= img.size(1) and img_size[1] >= img.size(2)
-                    # add_h_pad = (img_size[0] - img.size(1)) // 2
-                    # add_w_pad = (img_size[1] - img.size(2)) // 2
-                    # pad = (add_w_pad, add_w_pad, add_h_pad, add_h_pad)
-                    # img = F.pad(img, pad, value=114)
-                    # w_pad += add_w_pad
-                    # h_pad += add_h_pad
                     data = [predicted_class, row, h0, w0, h_ratio, w_ratio, w_pad, h_pad]
                     attack_images.append([img, data, str(filename)])
                     break   # This prevents duplicating the background
@@ -263,7 +255,7 @@ def main(
     mid_height = obj_size[0] // 2 + 40
     # mid_height = obj_size[0] // 2
     mid_width = obj_size[1] // 2
-    patch_size = 15
+    patch_size = 10
     h = int(patch_size / 36 / 2 * obj_size[0])
     w = int(patch_size / 36 / 2 * obj_size[1])
     patch_mask[:, mid_height - h:mid_height + h, mid_width - w:mid_width + w] = 1
@@ -280,7 +272,7 @@ def main(
         model, obj_numpy, patch_mask, device=device, img_size=img_size,
         obj_class=obj_class, obj_size=obj_size, bg_dir=bg_dir, num_bg=num_bg,
         save_images=save_images, save_dir=save_dir, generate_patch=generate_patch,
-        rescaling=rescaling, relighting=relighting, csv_path=csv_path, dataloader=dataloader, 
+        rescaling=rescaling, relighting=relighting, csv_path=csv_path, dataloader=dataloader,
         attack_config_path=attack_config_path)
 
     # Save adv patch

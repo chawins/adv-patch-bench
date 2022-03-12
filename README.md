@@ -31,19 +31,19 @@ export PYTHONPATH="${PYTHONPATH}:/home/chawin/adv-patch-bench/datasets/panoptic_
 - MTSD: [link](https://www.mapillary.com/dataset/trafficsign)
 - Have not found a way to automatically download the dataset.
 
-Get data ready to train YOLOv5.
+Get MTSD data ready to train YOLOv5.
 
 ```bash
+# Place the downloaded and extracted `mtsd_v2_fully_annotated` in ~/data/
 python prep_mtsd_for_yolo.py
-cd data/mtsd
+cd ~/data/mtsd_v2_fully_annotated
 mkdir images && cd images
 ln -s ../train/ train
 ln -s ../test/ test
 ln -s ../val/ val
-
-# ... go to yolov5 dir
-sh run.sh
 ```
+
+TODO: Get Mapillary data ready for testing and the benchmark.
 
 ## YOLOv5
 
@@ -68,11 +68,14 @@ cd ~/data/yolo_data/images/test
 ln -s ~/data/mapillary_vistas/training/images/* .
 
 cd ~/data/yolo_data/labels/train
-ln -s ~/data/mtsd_v2_fully_annotated/labels_v2/train/* .
+ln -s ~/data/mtsd_v2_fully_annotated/labels/train/* .
 cd ~/data/yolo_data/labels/val
-ln -s ~/data/mtsd_v2_fully_annotated/labels_v2/val/* .
+ln -s ~/data/mtsd_v2_fully_annotated/labels/val/* .
 cd ~/data/yolo_data/labels/test
-ln -s ~/data/mapillary_vistas/training/labels_v2/* .
+ln -s ~/data/mapillary_vistas/training/labels/* .
+
+# Change data path in mtsd.yml in adv-patch-bench/yolov5/data/ to the absolute
+# path to yolo_data
 ```
 
 ### Training

@@ -22,6 +22,7 @@ from adv_patch_bench.transforms.transforms import get_transform, apply_transform
 
 EPS = 1e-6
 
+
 class RP2AttackModule(DetectorAttackModule):
 
     def __init__(self, attack_config, core_model, loss_fn, norm, eps,
@@ -253,7 +254,6 @@ class RP2AttackModule(DetectorAttackModule):
         device = patch_mask.device
         mode = self.core_model.training
         self.core_model.eval()
-        # resize_transform = torchvision.transforms.Resize(size=self.input_size)
         ymin, xmin, height, width = mask_to_box(patch_mask)
         patch_loc = (ymin, xmin, height, width)
 
@@ -315,11 +315,6 @@ class RP2AttackModule(DetectorAttackModule):
 
                 curr_tf_data = [data[bg_idx] for data in tf_data]
                 delta = delta.repeat(self.num_eot, 1, 1, 1)
-
-                # adv_img = transform_and_apply_patch(
-                #     backgrounds[bg_idx].clone(), delta.clone(), patch_mask, patch_loc,
-                #     objs[0][1][0], objs[0][1][1], objs[0][1][2:], device=device)
-
                 adv_img = apply_transform(
                     backgrounds[bg_idx].clone(), delta.clone(), patch_mask, patch_loc,
                     tf_function, curr_tf_data, **self.real_transform, no_relighting=self.no_relighting)
@@ -372,15 +367,15 @@ class RP2AttackModule(DetectorAttackModule):
                     print(f'step: {step:4d}   loss: {ema_loss:.4f}   time: {time.time() - start_time:.2f}s')
                     start_time = time.time()
                     # DEBUG
-                    import os
-                    for idx in range(self.num_eot):
-                        if not os.path.exists(f'tmp/{idx}/test_adv_img_{step}.png'):
-                            os.makedirs(f'tmp/{idx}/', exist_ok=True)
-                        torchvision.utils.save_image(adv_img[idx], f'tmp/{idx}/test_adv_img_{step}.png')
+                    # import os
+                    # for idx in range(self.num_eot):
+                    #     if not os.path.exists(f'tmp/{idx}/test_adv_img_{step}.png'):
+                    #         os.makedirs(f'tmp/{idx}/', exist_ok=True)
+                    #     torchvision.utils.save_image(adv_img[idx], f'tmp/{idx}/test_adv_img_{step}.png')
 
         # DEBUG
-        outt = non_max_suppression(out.detach(), conf_thres=0.25, iou_thres=0.45)
-        plot_images(adv_img.detach(), output_to_target(outt))
+        # outt = non_max_suppression(out.detach(), conf_thres=0.25, iou_thres=0.45)
+        # plot_images(adv_img.detach(), output_to_target(outt))
 
         # Return worst-case perturbed input logits
         self.core_model.train(mode)
@@ -409,4 +404,3 @@ class RP2AttackModule(DetectorAttackModule):
         b = (max_ - min_) / 2
         x = x * b + a
         return x
-
