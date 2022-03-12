@@ -237,10 +237,7 @@ def main(
     # etc. in a square). Patch and patch mask are defined with respect to this
     # object tensor, and they should all have the same width and height.
     obj_numpy = np.array(Image.open(obj_path).convert('RGBA')) / 255
-
-    # TODO: FIXED?
     h_w_ratio = obj_numpy.shape[0] / obj_numpy.shape[1]
-    # h_w_ratio = img_size[0] / img_size[1]
 
     if obj_size == -1:
         obj_size = int(min(img_size) * 0.1)

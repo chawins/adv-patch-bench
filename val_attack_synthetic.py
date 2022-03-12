@@ -20,6 +20,7 @@ from threading import Thread
 import numpy as np
 import pandas as pd
 import torch
+import torchvision.transforms.functional as T
 import torchvision
 import yaml
 from kornia import augmentation as K
@@ -29,7 +30,7 @@ from tqdm import tqdm
 
 from adv_patch_bench.attacks.rp2 import (RP2AttackModule,
                                          transform_and_apply_patch)
-from adv_patch_bench.utils.image import mask_to_box, pad_image, prepare_obj
+from adv_patch_bench.utils.image import mask_to_box, prepare_obj, pad_and_center 
 from yolov5.models.common import DetectMultiBackend
 from yolov5.utils.callbacks import Callbacks
 from yolov5.utils.datasets import create_dataloader
@@ -260,7 +261,6 @@ def run(args,
     if apply_patch:
         # Load patch from a pickle file if specified
         adv_patch, patch_mask = pickle.load(open(load_patch, 'rb'))
-        patch_mask_cpu = patch_mask
         patch_mask = patch_mask.to(device)
         patch_height, patch_width = adv_patch.shape[1:]
 
@@ -273,28 +273,26 @@ def run(args,
             adv_patch = torch.rand(3, patch_height, patch_width)
 
         if synthetic:
-            # TODO: Save patch mask for synthetic sign too
             img_height, img_width = img_size
             obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True)
             mask_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, resample=Resample.NEAREST)
-            # resize_transform = torchvision.transforms.Resize(size=img_size)
             # TODO: add as arg
             # sign_canonical, sign_mask, src = get_sign_canonical(
             #     'octagon', 'octagon-915.0', patch_width, patch_size_in_mm, sign_size_in_pixel=obj_size)
             # obj_size = sign_canonical.shape[1:]
             # print('obj_size: ', obj_size)
 
-            # TODO: might break
             obj_size = patch_mask.shape[1]
-            print(patch_mask.shape)
-            import pdb
-            pdb.set_trace()
             obj, obj_mask = prepare_obj('./attack_assets/octagon-915.0.png', img_size, (obj_size, obj_size))
 
-            # TODO: pad patch_mask the same way we pad obj_mask
-            # TODO: have a function which only does the padding. so we can do the padding on both obj_mask and patch_mask with a single function
-            # patch_mask =
-
+            _, patch_mask = pad_and_center(None, patch_mask, img_size, (obj_size, obj_size))
+            patch_loc = mask_to_box(patch_mask)
+            
+            # left, top, right and bottom
+            pad_size = [patch_loc[1], patch_loc[0], img_size[1] - patch_loc[1] - patch_loc[3], img_size[0] - patch_loc[0] - patch_loc[2]]  # left/right, top/bottom
+            adv_patch = T.pad(adv_patch, pad_size)
+            
+            
         else:
             # load csv file containing target points for transform
             df = pd.read_csv(tgt_csv_filepath)
@@ -304,6 +302,10 @@ def run(args,
             df = df[df['final_shape'] != 'other-0.0-0.0']
             print(df.shape)
             print(df.groupby(by=['final_shape']).count())
+
+    patch_mask = patch_mask.to(device)
+    adv_patch = adv_patch.to(device)
+    obj = obj.to(device)
 
     # Initialize attack
     if args.per_sign_attack:
@@ -336,7 +338,6 @@ def run(args,
     if apply_patch:
         patch_loc = mask_to_box(patch_mask)
 
-    # TODO: generalize to CLASS_NUMBER (e.g, white circle)
     if plot_class_examples:
         shape_to_plot_data = {}
         for class_index in plot_class_examples:
@@ -348,24 +349,21 @@ def run(args,
     metrics_per_label_df = pd.DataFrame(
         columns=['filename', 'obj_id', 'label', 'correct_prediction', 'sign_width', 'sign_height', 'confidence'])
     for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
-        # TODO: check if we still need number of patches applied to the image
         # 'targets' shape is # number of labels by 8 (image_id, class, x1, y1, label width, label height, number of patches applied, obj id)
         targets = torch.nn.functional.pad(targets, (0, 2), "constant", 0)  # effectively zero padding
 
         # DEBUG
         # if batch_i == 10:
         #     break
-        # if num_octagon_with_patch >= 100:
-        #     break
 
         if num_apply_imgs >= len(filename_list) and args.run_only_img_txt:
             break
-
         # ======================= BEGIN: apply patch ======================== #
         for image_i, path in enumerate(paths):
-            # TODO: add comment. make sure it works
+            # assign each label in the image an object id
             targets[targets[:, 0] == image_i, 7] = torch.arange(
                 torch.sum(targets[:, 0] == image_i), dtype=targets.dtype)
+                
             if apply_patch and not synthetic:
                 filename = path.split('/')[-1]
                 img_df = df[df['filename_y'] == filename]
@@ -420,32 +418,19 @@ def run(args,
                 targets[targets[:, 0] == image_i, 6] = num_patches_applied_to_image
 
             elif synthetic:
-                orig_shape = im[image_i].shape[1:]
                 if apply_patch:
                     adv_obj = patch_mask * adv_patch + (1 - patch_mask) * obj
-
-                    # adv_obj = (1 - patch_mask) * obj
-                    # # TODO: might break
-                    # ymin_, xmin_, _, _ = patch_loc
-                    # adv_obj[:, ymin_:ymin_ + patch_height, xmin_:xmin_ + patch_width] = adv_patch
                 else:
                     adv_obj = obj
 
                 adv_obj, tf_params = obj_transforms(adv_obj)
                 adv_obj.clamp_(0, 1)
-                # TODO: clean this part
-                # TODO might break. if it breaks, try using unsqueeze instead of expand
                 obj_mask = obj_mask.cuda()
-                # obj_mask_dup = obj_mask.expand(1, -1, -1, -1)
-
                 tf_params = tf_params.cuda()
-                o_mask = mask_transforms.apply_transform(obj_mask, None, transform=tf_params)
-                # o_mask = mask_transforms.apply_transform(obj_mask_dup, None, transform=tf_params)
-
-                o_mask = o_mask.cpu()
+                o_mask = mask_transforms.apply_transform(obj_mask.unsqueeze(0), None, transform=tf_params)
 
                 # get top left and bottom right points
-                indices = np.where(o_mask[0][0] == 1)
+                indices = np.where(o_mask.cpu()[0][0] == 1)
                 x_min, x_max = min(indices[1]), max(indices[1])
                 y_min, y_max = min(indices[0]), max(indices[0])
 
@@ -456,11 +441,12 @@ def run(args,
                     (y_min + y_max) / (2 * img_height),
                     (x_max - x_min) / img_width,
                     (y_max - y_min) / img_height,
-                    int(apply_patch)
+                    int(apply_patch),
+                    -1
                 ]
                 targets = torch.cat((targets, torch.unsqueeze(torch.tensor(label), 0)))
 
-                adv_img = o_mask * adv_obj + (1 - o_mask) * im[image_i] / 255
+                adv_img = o_mask * adv_obj + (1 - o_mask) * im[image_i].to(device) / 255
                 im[image_i] = adv_img.squeeze() * 255
 
         t1 = time_sync()
