@@ -1,4 +1,4 @@
-# CUDA_VISIBLE_DEVICES=1 python -u generate_adv_patch.py \
+# CUDA_VISIBLE_DEVICES=0 python -u generate_adv_patch.py \
 #     --seed 0 \
 #     --data mapillary_vistas.yaml \
 #     --weights /data/shared/adv-patch-bench/yolov5/runs/train/exp3/weights/best.pt \
@@ -14,8 +14,8 @@
 #     --attack-config-path attack_config.yaml \
 #     --imgsz 2560 \
 #     --padded_imgsz 1952,2592 \
-    # --imgsz 1280 \
-    # --padded_imgsz 992,1312
+#     --imgsz 1280 \
+#     --padded_imgsz 992,1312
 
 # CUDA_VISIBLE_DEVICES=1 python -u val_attack_synthetic.py \
 #     --imgsz 1280 \
@@ -53,27 +53,56 @@
 #     --obj-class 14 \
 #     --plot-class-examples 14
 
-CUDA_VISIBLE_DEVICES=0 python -u val_attack_synthetic.py \
-    --imgsz 1280 \
-    --padded_imgsz 992,1312 \
-    --batch-size 8 \
-    --data mapillary_vistas.yaml \
-    --weights /data/shared/adv-patch-bench/yolov5/runs/train/exp2/weights/best.pt \
-    --exist-ok \
-    --workers 8 \
-    --task train \
-    --save-exp-metrics \
-    --obj-size 128 \
-    --metrics-confidence-threshold 0.359 \
-    --apply-patch \
-    --load-patch ./runs/val/exp/stop_sign_transform.pkl \
-    --synthetic \
-    --tgt-csv-filepath mapillary_vistas_final_merged.csv \
-    --attack-config-path attack_config.yaml \
-    --obj-class 14 \
-    --plot-class-examples 14 \
-    --interp bicubic
+# CUDA_VISIBLE_DEVICES=0 python -u val_attack_synthetic.py \
+#     --imgsz 1280 \
+#     --padded_imgsz 992,1312 \
+#     --batch-size 8 \
+#     --data mapillary_vistas.yaml \
+#     --weights /data/shared/adv-patch-bench/yolov5/runs/train/exp2/weights/best.pt \
+#     --exist-ok \
+#     --workers 8 \
+#     --task train \
+#     --save-exp-metrics \
+#     --obj-size 128 \
+#     --metrics-confidence-threshold 0.359 \
+#     --apply-patch \
+#     --load-patch ./runs/val/exp/stop_sign_transform.pkl \
+#     --synthetic \
+#     --tgt-csv-filepath mapillary_vistas_final_merged.csv \
+#     --attack-config-path attack_config.yaml \
+#     --obj-class 14 \
+#     --plot-class-examples 14 \
+#     --interp bicubic
     
+
+
+
+
+
+
+
+
+
+
+
+
+
+# CUDA_VISIBLE_DEVICES=0 python -u val_attack_synthetic.py \
+#     --imgsz 1280 \
+#     --padded_imgsz 992,1312 \
+#     --batch-size 8 \
+#     --data mapillary_vistas.yaml \
+#     --weights /data/shared/adv-patch-bench/yolov5/runs/train/exp2/weights/best.pt \
+#     --exist-ok \
+#     --workers 8 \
+#     --task train \
+#     --save-exp-metrics \
+#     --obj-size 128 \
+#     --metrics-confidence-threshold 0.359 \
+#     --tgt-csv-filepath mapillary_vistas_final_merged.csv \
+#     --obj-class 14 \
+#     --plot-class-examples 14 
+
 # CUDA_VISIBLE_DEVICES=0 python -u val_attack_synthetic.py \
 #     --imgsz 1280 \
 #     --padded_imgsz 992,1312 \
@@ -94,6 +123,14 @@ CUDA_VISIBLE_DEVICES=0 python -u val_attack_synthetic.py \
 #     --obj-class 14 \
 #     --plot-class-examples 14 \
 #     --interp bicubic
+    
+
+
+
+
+
+
+
 
 
 #     --apply-patch \
@@ -174,11 +211,12 @@ CUDA_VISIBLE_DEVICES=0 python -u val_attack_synthetic.py \
     # --img-txt-path ./runs/successful_attack_filenames.txt \
     # --run-only-img-txt
     
+## Generate patch on real dataset
 # CUDA_VISIBLE_DEVICES=1 python -u generate_adv_patch.py \
 #     --seed 0 \
 #     --data mapillary_vistas.yaml \
 #     --weights /data/shared/adv-patch-bench/yolov5/runs/train/exp2/weights/best.pt \
-#     --patch-name stop_sign_synthetic_generated \
+#     --patch-name stop_sign \
 #     --csv-path mapillary_vistas_final_merged.csv \
 #     --imgsz 1280 \
 #     --padded_imgsz 992,1312 \
@@ -188,7 +226,67 @@ CUDA_VISIBLE_DEVICES=0 python -u val_attack_synthetic.py \
 #     --num-bg 1 \
 #     --bg-dir /data/shared/mtsd_v2_fully_annotated/train \
 #     --save-images \
-#     --generate-patch real
+#     --generate-patch real \
+#     --attack-config-path attack_config.yaml
+
+## Test patch on real dataset
+# CUDA_VISIBLE_DEVICES=0 python -u val_attack_synthetic.py \
+#     --imgsz 1280 \
+#     --padded_imgsz 992,1312 \
+#     --batch-size 8 \
+#     --data mapillary_vistas.yaml \
+#     --weights /data/shared/adv-patch-bench/yolov5/runs/train/exp2/weights/best.pt \
+#     --exist-ok \
+#     --workers 8 \
+#     --task train \
+#     --save-exp-metrics \
+#     --obj-size 128 \
+#     --metrics-confidence-threshold 0.359 \
+#     --apply-patch \
+#     --load-patch ./runs/val/exp5/stop_sign_synthetic_generated.pkl \
+#     --tgt-csv-filepath mapillary_vistas_final_merged.csv \
+#     --obj-class 14 \
+#     --plot-class-examples 14 \
+#     --interp bicubic
+
+## Test patch on real dataset
+CUDA_VISIBLE_DEVICES=0 python -u val_attack_synthetic.py \
+    --imgsz 1280 \
+    --padded_imgsz 992,1312 \
+    --batch-size 8 \
+    --data mapillary_vistas.yaml \
+    --weights /data/shared/adv-patch-bench/yolov5/runs/train/exp2/weights/best.pt \
+    --exist-ok \
+    --workers 8 \
+    --task train \
+    --save-exp-metrics \
+    --obj-size 128 \
+    --metrics-confidence-threshold 0.359 \
+    --apply-patch \
+    --load-patch ./runs/val/exp2/stop_sign_synthetic_generated.pkl \
+    --tgt-csv-filepath mapillary_vistas_final_merged.csv \
+    --obj-class 14 \
+    --plot-class-examples 14 \
+    --interp bicubic \
+    --obj-path ./attack_assets/octagon-915.0.png \
+    --synthetic
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
 
 # CUDA_VISIBLE_DEVICES=1 python -u val_attack_synthetic.py \
 #     --imgsz 1280 \

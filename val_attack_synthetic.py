@@ -147,9 +147,8 @@ def run(args,
     tgt_csv_filepath = args.tgt_csv_filepath
     attack_config_path = args.attack_config_path
     adv_sign_class = args.obj_class
+    obj_path = args.obj_path
 
-    # TODO: might break
-    # obj_size = args.obj_size
     no_transform = args.no_transform
     metrics_confidence_threshold = args.metrics_confidence_threshold
     img_size = tuple([int(x) for x in args.padded_imgsz.split(',')])
@@ -276,14 +275,9 @@ def run(args,
             img_height, img_width = img_size
             obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True)
             mask_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, resample=Resample.NEAREST)
-            # TODO: add as arg
-            # sign_canonical, sign_mask, src = get_sign_canonical(
-            #     'octagon', 'octagon-915.0', patch_width, patch_size_in_mm, sign_size_in_pixel=obj_size)
-            # obj_size = sign_canonical.shape[1:]
-            # print('obj_size: ', obj_size)
 
             obj_size = patch_mask.shape[1]
-            obj, obj_mask = prepare_obj('./attack_assets/octagon-915.0.png', img_size, (obj_size, obj_size))
+            obj, obj_mask = prepare_obj(obj_path, img_size, (obj_size, obj_size))
 
             _, patch_mask = pad_and_center(None, patch_mask, img_size, (obj_size, obj_size))
             patch_loc = mask_to_box(patch_mask)
@@ -291,7 +285,10 @@ def run(args,
             # left, top, right and bottom
             pad_size = [patch_loc[1], patch_loc[0], img_size[1] - patch_loc[1] - patch_loc[3], img_size[0] - patch_loc[0] - patch_loc[2]]  # left/right, top/bottom
             adv_patch = T.pad(adv_patch, pad_size)
-            
+
+            patch_mask = patch_mask.to(device)
+            adv_patch = adv_patch.to(device)
+            obj = obj.to(device)
             
         else:
             # load csv file containing target points for transform
@@ -303,9 +300,7 @@ def run(args,
             print(df.shape)
             print(df.groupby(by=['final_shape']).count())
 
-    patch_mask = patch_mask.to(device)
-    adv_patch = adv_patch.to(device)
-    obj = obj.to(device)
+    
 
     # Initialize attack
     if args.per_sign_attack:
@@ -324,10 +319,7 @@ def run(args,
     # ======================================================================= #
     #                          BEGIN: Main eval loop                          #
     # ======================================================================= #
-    num_errors = 0
-    num_detected = 0
-    num_octagon_labels = 0
-    num_octagon_with_patch = 0
+    total_num_patches = 0
     num_apply_imgs = 0
 
     filename_list = []
@@ -345,7 +337,7 @@ def run(args,
             shape_to_plot_data[class_name] = []
 
     # TODO: remove 'metrics_per_image_df' in the future
-    metrics_per_image_df = pd.DataFrame(columns=['filename', 'num_octagons', 'num_patches', 'fn'])
+    metrics_per_image_df = pd.DataFrame(columns=['filename', 'num_targeted_sign_class', 'num_patches', 'fn'])
     metrics_per_label_df = pd.DataFrame(
         columns=['filename', 'obj_id', 'label', 'correct_prediction', 'sign_width', 'sign_height', 'confidence'])
     for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
@@ -353,7 +345,7 @@ def run(args,
         targets = torch.nn.functional.pad(targets, (0, 2), "constant", 0)  # effectively zero padding
 
         # DEBUG
-        # if batch_i == 10:
+        # if batch_i == 100:
         #     break
 
         if num_apply_imgs >= len(filename_list) and args.run_only_img_txt:
@@ -384,14 +376,12 @@ def run(args,
                     (h0, w0), ((h_ratio, w_ratio), (w_pad, h_pad)) = shapes[image_i]
                     img_data = (h0, w0, h_ratio, w_ratio, w_pad, h_pad)
                     predicted_class = row['final_shape']
-
-                    # FIXME: only apply patch to octagons
-                    # TODO: no need to use shape. when we pass predicted class to a function, we can get shape
+                                        
                     shape = predicted_class.split('-')[0]
-                    if shape != 'octagon':
+                    if shape != names[adv_sign_class]:
                         continue
-                    num_octagon_with_patch += shape == 'octagon'
-
+                    total_num_patches += 1
+                    
                     # Run attack for each sign
                     if args.per_sign_attack:
                         print('=> Generating adv patch...')
@@ -404,15 +394,10 @@ def run(args,
 
                     # # Transform and apply patch on the image. `im` has range [0, 255]
                     im[image_i] = transform_and_apply_patch(
-                        im[image_i].to(device), adv_patch, patch_mask, patch_loc,
+                        im[image_i].to(device), adv_patch.to(device), patch_mask, patch_loc,
                         predicted_class, row, img_data, no_transform=no_transform,
                         interp=args.interp) * 255
                     num_patches_applied_to_image += 1
-
-                    # DEBUG
-                    # torchvision.utils.save_image(im[image_i] / 255, 'temp.png')
-                    # import pdb
-                    # pdb.set_trace()
 
                 # set targets[6] to #patches_applied_to_image
                 targets[targets[:, 0] == image_i, 6] = num_patches_applied_to_image
@@ -489,7 +474,7 @@ def run(args,
 
             current_image_metrics = {}
             current_image_metrics['filename'] = filename
-            current_image_metrics['num_octagons'] = sum([1 for x in labels[:, 0] if x == adv_sign_class])
+            current_image_metrics['num_targeted_sign_class'] = sum([1 for x in labels[:, 0] if x == adv_sign_class])
             current_image_metrics['num_patches'] = max(labels[:, 5].tolist() + [0])
 
             if len(pred) == 0:
@@ -541,11 +526,6 @@ def run(args,
 
                                     # if prd[4] > 0.25:
                                     num_labels_changed += 1
-
-                if num_labels_changed > 1:
-                    num_errors += 1
-                if num_labels_changed == 1:
-                    num_detected += 1
 
             scale_coords(im[si].shape[1:], predn[:, :4], shape, shapes[si][1])  # native-space pred
 
@@ -692,8 +672,6 @@ def run(args,
     # if (verbose or (nc < 50 and not training)) and nc > 1 and len(stats):
     print('[INFO] results per class')
     for i, c in enumerate(ap_class):
-        # metrics_df_column_names.append(f'num_images_{names[c]}')
-        # current_exp_metrics[f'num_images_{names[c]}'] = seen
         metrics_df_column_names.append(f'num_targets_{names[c]}')
         current_exp_metrics[f'num_targets_{names[c]}'] = nt[c]
         metrics_df_column_names.append(f'precision_{names[c]}')
@@ -713,20 +691,11 @@ def run(args,
 
         LOGGER.info(pf % (names[c], seen, nt[c], p[i], r[i], ap50[i], ap[i]))
 
-    print('num octagon labels', num_octagon_labels)
-    print('num octagon with patch', num_octagon_with_patch)
-
-    metrics_df_column_names.append('num_errors')
-    current_exp_metrics['num_errors'] = num_errors
-    metrics_df_column_names.append('proportion_of_errors')
-    current_exp_metrics['proportion_of_errors'] = num_errors/seen
     metrics_df_column_names.append('dataset')
     current_exp_metrics['dataset'] = DATASET_NAME
 
-    metrics_df_column_names.append('num_octagon_labels')
-    current_exp_metrics['num_octagon_labels'] = num_octagon_labels
-    metrics_df_column_names.append('num_octagon_with_patch')
-    current_exp_metrics['num_octagon_with_patch'] = num_octagon_with_patch
+    metrics_df_column_names.append('total_num_patches')
+    current_exp_metrics['total_num_patches'] = total_num_patches
 
     if save_exp_metrics:
         try:
@@ -870,6 +839,8 @@ def parse_opt():
     parser.add_argument('--obj-class', type=int, default=0, help='class of object to attack')
     parser.add_argument('--interp', type=str, default='bilinear',
                         help='interpolation method (nearest, bilinear, bicubic)')
+    parser.add_argument('--obj-path', type=str, default='',
+                        help='path to an image of a synthetic stop sign')
 
     opt = parser.parse_args()
     opt.data = check_yaml(opt.data)  # check YAML

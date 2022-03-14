@@ -86,6 +86,9 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
         bg = torchvision.io.read_image(join(bg_dir, all_bgs[index])) / 255
         backgrounds[i] = T.resize(bg, img_size, antialias=True)
 
+    # getting object classes names
+    names = {k: v for k, v in enumerate(model.names if hasattr(model, 'names') else model.module.names)}
+
     print(f'=> Initializing attack...')
     with open(attack_config_path) as file:
         attack_config = yaml.load(file, Loader=yaml.FullLoader)
@@ -138,6 +141,7 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
         for batch_i, (im, targets, paths, shapes) in enumerate(dataloader):
             for image_i, path in enumerate(paths):
                 filename = path.split('/')[-1]
+                
                 img_df = df[df['filename_y'] == filename]
                 if len(img_df) == 0:
                     continue
@@ -145,13 +149,11 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
                     (h0, w0), ((h_ratio, w_ratio), (w_pad, h_pad)) = shapes[image_i]
                     predicted_class = row['final_shape']
                     shape = predicted_class.split('-')[0]
-                    # Filter out signs that are not form `obj_class`
-                    # TODO: Add color to csv
-                    # shape_color_classes = f'{predicted_class}-{row["color"]}'
-                    # if obj_class != TS_COLOR_LABEL_DICT[shape_color_classes]:
-                    #     continue
-                    if shape != 'octagon':
+
+                    # Filter out images that do not have the obj_class
+                    if shape != names[obj_class]:
                         continue
+
                     # Pad to make sure all images are of same size
                     img = im[image_i]
                     data = [predicted_class, row, h0, w0, h_ratio, w_ratio, w_pad, h_pad]
@@ -250,7 +252,6 @@ def main(
     # TODO: Move this to a separate script for generating patch size/location
     # Example: 10x10-inch patch in the middle of 36x36-inch sign
     mid_height = obj_size[0] // 2 + 40
-    # mid_height = obj_size[0] // 2
     mid_width = obj_size[1] // 2
     patch_size = 10
     h = int(patch_size / 36 / 2 * obj_size[0])
