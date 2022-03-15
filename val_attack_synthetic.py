@@ -20,17 +20,18 @@ from threading import Thread
 import numpy as np
 import pandas as pd
 import torch
-import torchvision.transforms.functional as T
 import torchvision
+import torchvision.transforms.functional as T
 import yaml
 from kornia import augmentation as K
 from kornia.constants import Resample
 from kornia.geometry.transform import resize
 from tqdm import tqdm
 
-from adv_patch_bench.attacks.rp2 import (RP2AttackModule,
-                                         transform_and_apply_patch)
-from adv_patch_bench.utils.image import mask_to_box, prepare_obj, pad_and_center 
+from adv_patch_bench.attacks.rp2 import RP2AttackModule
+from adv_patch_bench.transforms import transform_and_apply_patch
+from adv_patch_bench.utils.image import (mask_to_box, pad_and_center,
+                                         prepare_obj)
 from yolov5.models.common import DetectMultiBackend
 from yolov5.utils.callbacks import Callbacks
 from yolov5.utils.datasets import create_dataloader
@@ -136,18 +137,18 @@ def run(args,
         **kwargs,
         ):
 
-    # load args
-    apply_patch = args.apply_patch
-    synthetic = args.synthetic
-    random_patch = args.random_patch
+    # Load our new args
+    attack_type = args.attack_type
+    use_attack = args.attack_type != 'none'
+    synthetic_eval = args.synthetic_eval
     save_exp_metrics = args.save_exp_metrics
     plot_single_images = args.plot_single_images
     plot_class_examples = [int(x) for x in args.plot_class_examples]
-    load_patch = args.load_patch
+    adv_patch_path = args.adv_patch_path
     tgt_csv_filepath = args.tgt_csv_filepath
     attack_config_path = args.attack_config_path
     adv_sign_class = args.obj_class
-    obj_path = args.obj_path
+    syn_obj_path = args.syn_obj_path
 
     no_transform = args.no_transform
     metrics_confidence_threshold = args.metrics_confidence_threshold
@@ -164,19 +165,17 @@ def run(args,
         metrics_df['apply_patch'] = metrics_df['apply_patch'].astype(float).astype(bool)
         metrics_df['random_patch'] = metrics_df['random_patch'].astype(float).astype(bool)
         metrics_df_grouped = metrics_df.groupby(by=['dataset', 'apply_patch', 'random_patch']).count().reset_index()
-        metrics_df_grouped = metrics_df_grouped[(metrics_df_grouped['dataset'] == DATASET_NAME) & (
-            metrics_df_grouped['apply_patch'] == apply_patch) & (metrics_df_grouped['random_patch'] == random_patch)]['name']
+        metrics_df_grouped = metrics_df_grouped[
+            (metrics_df_grouped['dataset'] == DATASET_NAME) &
+            (metrics_df_grouped['apply_patch'] == use_attack) &
+            (metrics_df_grouped['random_patch'] == (attack_type == 'random'))]['name']
         exp_number = 0 if not len(metrics_df_grouped) else metrics_df_grouped.item()
     except FileNotFoundError:
         exp_number = 0
 
-    if apply_patch:
-        if random_patch:
-            name += f'_{DATASET_NAME}_random_patch_{exp_number}'
-        else:
-            name += f'_{DATASET_NAME}_rp2_patch_{exp_number}'
-    else:
-        name += f'_{DATASET_NAME}_no_patch_{exp_number}'
+    # Set folder and experiment name
+    name += f'_{DATASET_NAME}_{attack_type}_{exp_number}'
+    print(f'=> Experiment name: {name}')
 
     # Initialize/load model and set device
     training = model is not None
@@ -235,11 +234,6 @@ def run(args,
     assert adv_sign_class < nc, 'Obj Class to attack does not exist'
     print('Class names: ', names)
 
-    if synthetic:
-        syn_sign_class = len(names)
-        names[syn_sign_class] = 'synthetic_stop_sign'
-        nc += 1
-
     confusion_matrix = ConfusionMatrix(nc=nc)
 
     class_map = coco80_to_coco91_class() if is_coco else list(range(1000))
@@ -250,46 +244,59 @@ def run(args,
     pbar = tqdm(dataloader, desc=s, bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')  # progress bar
 
     # DEBUG
-    # if apply_patch:
+    # if use_attack:
     #     demo_patch = torchvision.io.read_image('demo.png').float()[:3, :, :] / 255
     #     # demo_patch = resize(adv_patch_cropped, (32, 32))
     #     demo_patch = resize(demo_patch, (32, 32))
     #     f = os.path.join(save_dir, 'adversarial_patch.png')
     #     torchvision.utils.save_image(demo_patch, f)
 
-    if apply_patch:
+    if synthetic_eval:
+        # Testing with synthetic signs
+        syn_sign_class = len(names)
+        names[syn_sign_class] = 'synthetic'
+        nc += 1
+        # Set up random transforms for synthetic sign
+        img_height, img_width = img_size
+        obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True)
+        mask_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, resample=Resample.NEAREST)
+        # Load synthetic object/sign from file
+        obj_size = patch_mask.shape[1]
+        obj, obj_mask = prepare_obj(syn_obj_path, img_size, (obj_size, obj_size))
+        obj_mask = obj_mask.to(device).unsqueeze(0)
+
+    if use_attack:
         # Load patch from a pickle file if specified
-        adv_patch, patch_mask = pickle.load(open(load_patch, 'rb'))
+        # TODO: make script to generate dummy patch
+        adv_patch, patch_mask = pickle.load(open(adv_patch_path, 'rb'))
         patch_mask = patch_mask.to(device)
         patch_height, patch_width = adv_patch.shape[1:]
+        patch_loc = mask_to_box(patch_mask)
 
-        if load_patch == 'arrow':
-            # Load 'arrow on checkboard' patch if specified
+        if attack_type == 'debug':
+            # Load 'arrow on checkboard' patch if specified (for debug)
             adv_patch = torchvision.io.read_image('demo.png').float()[:3, :, :] / 255
             adv_patch = resize(adv_patch, (patch_height, patch_width))
-        elif random_patch:
-            # Random patch
+        elif attack_type == 'random':
+            # Patch with uniformly random pixels
             adv_patch = torch.rand(3, patch_height, patch_width)
 
-        if synthetic:
-            img_height, img_width = img_size
-            obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True)
-            mask_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, resample=Resample.NEAREST)
-
-            obj_size = patch_mask.shape[1]
-            obj, obj_mask = prepare_obj(obj_path, img_size, (obj_size, obj_size))
-
+        if synthetic_eval:
+            # Adv patch and mask have to be made compatible with random
+            # transformation for synthetic signs
             _, patch_mask = pad_and_center(None, patch_mask, img_size, (obj_size, obj_size))
             patch_loc = mask_to_box(patch_mask)
-            
-            # left, top, right and bottom
-            pad_size = [patch_loc[1], patch_loc[0], img_size[1] - patch_loc[1] - patch_loc[3], img_size[0] - patch_loc[0] - patch_loc[2]]  # left/right, top/bottom
+            # Pad adv patch
+            pad_size = [
+                patch_loc[1],  # left
+                patch_loc[0],  # right
+                img_size[1] - patch_loc[1] - patch_loc[3],  # top
+                img_size[0] - patch_loc[0] - patch_loc[2],  # bottom
+            ]
             adv_patch = T.pad(adv_patch, pad_size)
-
             patch_mask = patch_mask.to(device)
             adv_patch = adv_patch.to(device)
             obj = obj.to(device)
-            
         else:
             # load csv file containing target points for transform
             df = pd.read_csv(tgt_csv_filepath)
@@ -300,35 +307,30 @@ def run(args,
             print(df.shape)
             print(df.groupby(by=['final_shape']).count())
 
-    
-
     # Initialize attack
-    if args.per_sign_attack:
+    if attack_type == 'per-sign':
         try:
             with open(attack_config_path) as file:
                 attack_config = yaml.load(file, Loader=yaml.FullLoader)
                 attack_config['input_size'] = img_size
 
             attack = RP2AttackModule(attack_config, model, None, None, None,
-                             rescaling=False, relighting=False, verbose=True)
+                                     rescaling=False, relighting=False,
+                                     interp=args.interp, verbose=verbose)
         except:
             raise Exception('Config file not provided for targeted attacks')
-    
 
-    
     # ======================================================================= #
     #                          BEGIN: Main eval loop                          #
     # ======================================================================= #
     total_num_patches = 0
     num_apply_imgs = 0
 
+    # Loading file names from the specified text file
     filename_list = []
     if args.img_txt_path != '':
         with open(args.img_txt_path, 'r') as f:
             filename_list = f.read().splitlines()
-
-    if apply_patch:
-        patch_loc = mask_to_box(patch_mask)
 
     if plot_class_examples:
         shape_to_plot_data = {}
@@ -345,8 +347,8 @@ def run(args,
         targets = torch.nn.functional.pad(targets, (0, 2), "constant", 0)  # effectively zero padding
 
         # DEBUG
-        # if batch_i == 100:
-        #     break
+        if args.debug and batch_i == 20:
+            break
 
         if num_apply_imgs >= len(filename_list) and args.run_only_img_txt:
             break
@@ -355,8 +357,8 @@ def run(args,
             # assign each label in the image an object id
             targets[targets[:, 0] == image_i, 7] = torch.arange(
                 torch.sum(targets[:, 0] == image_i), dtype=targets.dtype)
-                
-            if apply_patch and not synthetic:
+
+            if use_attack and not synthetic_eval:
                 filename = path.split('/')[-1]
                 img_df = df[df['filename_y'] == filename]
                 if len(img_df) == 0:
@@ -376,14 +378,14 @@ def run(args,
                     (h0, w0), ((h_ratio, w_ratio), (w_pad, h_pad)) = shapes[image_i]
                     img_data = (h0, w0, h_ratio, w_ratio, w_pad, h_pad)
                     predicted_class = row['final_shape']
-                                        
+
                     shape = predicted_class.split('-')[0]
                     if shape != names[adv_sign_class]:
                         continue
                     total_num_patches += 1
-                    
+
                     # Run attack for each sign
-                    if args.per_sign_attack:
+                    if attack_type == 'per-sign':
                         print('=> Generating adv patch...')
                         data = [predicted_class, row, *img_data]
                         attack_images = [[im[image_i], data, str(filename)]]
@@ -402,23 +404,25 @@ def run(args,
                 # set targets[6] to #patches_applied_to_image
                 targets[targets[:, 0] == image_i, 6] = num_patches_applied_to_image
 
-            elif synthetic:
-                if apply_patch:
+            elif synthetic_eval:
+                if use_attack:
                     adv_obj = patch_mask * adv_patch + (1 - patch_mask) * obj
                 else:
                     adv_obj = obj
 
                 adv_obj, tf_params = obj_transforms(adv_obj)
                 adv_obj.clamp_(0, 1)
-                obj_mask = obj_mask.cuda()
-                tf_params = tf_params.cuda()
-                o_mask = mask_transforms.apply_transform(obj_mask.unsqueeze(0), None, transform=tf_params)
+                o_mask = mask_transforms.apply_transform(
+                    obj_mask, None, transform=tf_params.to(device))
 
                 # get top left and bottom right points
+                # TODO: can we use mask_to_box here?
                 indices = np.where(o_mask.cpu()[0][0] == 1)
                 x_min, x_max = min(indices[1]), max(indices[1])
                 y_min, y_max = min(indices[0]), max(indices[0])
 
+                # Since we paste a new synthetic sign on image, we have to add
+                # in a new synthetic label/target to compute the metrics
                 label = [
                     image_i,
                     syn_sign_class,
@@ -426,10 +430,10 @@ def run(args,
                     (y_min + y_max) / (2 * img_height),
                     (x_max - x_min) / img_width,
                     (y_max - y_min) / img_height,
-                    int(apply_patch),
+                    int(use_attack),
                     -1
                 ]
-                targets = torch.cat((targets, torch.unsqueeze(torch.tensor(label), 0)))
+                targets = torch.cat((targets, torch.tensor(label).unsqueeze(0)))
 
                 adv_img = o_mask * adv_obj + (1 - o_mask) * im[image_i].to(device) / 255
                 im[image_i] = adv_img.squeeze() * 255
@@ -511,7 +515,7 @@ def run(args,
 
             num_labels_changed = 0
 
-            if synthetic:
+            if synthetic_eval:
                 for lbl in tbox:
                     if lbl[0] == syn_sign_class:
                         for pi, prd in enumerate(predn):
@@ -541,6 +545,7 @@ def run(args,
             else:
                 correct, matches = torch.zeros(pred.shape[0], niou, dtype=torch.bool), []
 
+            # Collecting results
             for lbl_ in labels:
                 if lbl_[0] == adv_sign_class:
                     lbl_ = lbl_.cpu()
@@ -705,10 +710,10 @@ def run(args,
             metrics_df = pd.DataFrame()
 
         current_exp_metrics['name'] = name
-        current_exp_metrics['apply_patch'] = apply_patch
-        current_exp_metrics['random_patch'] = random_patch
+        current_exp_metrics['apply_patch'] = use_attack
+        current_exp_metrics['random_patch'] = attack_type == 'random'
 
-        if args.per_sign_attack:
+        if attack_type == 'per-sign':
             metrics_df_column_names.append('no_transform')
             current_exp_metrics['no_transform'] = attack_config['no_transform']
             metrics_df_column_names.append('no_relighting')
@@ -718,8 +723,8 @@ def run(args,
             metrics_df_column_names.append('generate_patch')
             metrics_df_column_names.append('rescaling')
             metrics_df_column_names.append('relighting')
-            if load_patch:
-                patch_metadata_folder = '/'.join(load_patch.split('/')[:-1])
+            if adv_patch_path:
+                patch_metadata_folder = '/'.join(adv_patch_path.split('/')[:-1])
                 patch_metadata_path = os.path.join(patch_metadata_folder, 'patch_metadata.pkl')
                 print(patch_metadata_path)
                 with open(patch_metadata_path, 'rb') as f:
@@ -727,7 +732,6 @@ def run(args,
                 current_exp_metrics['generate_patch'] = patch_metadata['generate_patch']
                 current_exp_metrics['rescaling'] = patch_metadata['rescaling']
                 current_exp_metrics['relighting'] = patch_metadata['relighting']
-                
         except:
             pass
 
@@ -785,6 +789,7 @@ def run(args,
 
 def parse_opt():
     parser = argparse.ArgumentParser()
+    # =========================== Model arguments =========================== #
     parser.add_argument('--data', type=str, default=ROOT / 'data/coco128.yaml', help='dataset.yaml path')
     parser.add_argument('--weights', nargs='+', type=str, default=ROOT / 'yolov5s.pt', help='model.pt path(s)')
     parser.add_argument('--batch-size', type=int, default=32, help='batch size')
@@ -806,47 +811,57 @@ def parse_opt():
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
     parser.add_argument('--half', action='store_true', help='use FP16 half-precision inference')
     parser.add_argument('--dnn', action='store_true', help='use OpenCV DNN for ONNX inference')
-    # Our attack and evaluate options
+    # ========================== Our misc arguments ========================= #
     parser.add_argument('--seed', type=int, default=0, help='set random seed')
-    parser.add_argument('--padded_imgsz', type=str, default='736,1312',
-                        help='final image size including padding (height,width); comma-separated')
-    parser.add_argument('--apply-patch', action='store_true', help='add adversarial patch to traffic signs if true')
-    parser.add_argument('--synthetic', action='store_true', help='add adversarial patch to traffic signs if true')
-    parser.add_argument('--random-patch', action='store_true', help='adversarial patch is random')
-    parser.add_argument('--load-patch', type=str, default='', help='path to adv patch to load')
+    parser.add_argument('--padded_imgsz', type=str, default='992,1312',
+                        help='final image size including padding (height,width). Default: 992,1312')
+    parser.add_argument('--interp', type=str, default='bilinear',
+                        help='interpolation method (nearest, bilinear, bicubic)')
+    parser.add_argument('--synthetic-eval', action='store_true',
+                        help='evaluate with pasted synthetic signs')
+    parser.add_argument('--debug', action='store_true')
+    # =========================== Attack arguments ========================== #
+    # General
+    parser.add_argument('--attack-type', type=str, required=True,
+                        help='which attack evaluation to run (none, load, synthetic, per-sign, random, debug)')
+    parser.add_argument('--adv-patch-path', type=str, default='',
+                        help='path to adv patch and mask to load')
+    parser.add_argument('--obj-class', type=int, default=0, help='class of object to attack')
+    parser.add_argument('--tgt-csv-filepath', required=True,
+                        help='path to csv which contains target points for transform')
+    parser.add_argument('--attack-config-path',
+                        help='path to yaml file with attack configs (used when attack_type is per-sign)')
+    parser.add_argument('--syn-obj-path', type=str, default='',
+                        help='path to an image of a synthetic sign (used when attack_type is synthetic')
+    parser.add_argument('--img-txt-path', type=str, default='',
+                        help='path to a text file containing image filenames')
+    parser.add_argument('--run-only-img-txt', action='store_true',
+                        help='run evaluation on images listed in img-txt-path. Otherwise, exclude these images.')
+    parser.add_argument('--no-transform', action='store_true',
+                        help=('If True, do not apply patch to signs using '
+                              '3D-transform. Patch will directly face camera.'))
+    # ============================== Plot / log ============================= #
     parser.add_argument('--save-exp-metrics', action='store_true', help='save metrics for this experiment to dataframe')
     parser.add_argument('--plot-single-images', action='store_true',
                         help='save single images in a folder instead of batch images in a single plot')
     parser.add_argument('--plot-class-examples', type=str, default='', nargs='*',
                         help='save single images containing individual classes in different folders.')
-    parser.add_argument('--num-bg', type=int, default=16, help='number of backgrounds to generate adversarial patch')
-    parser.add_argument('--patch-loc', type=str, default='', nargs='*',
-                        help='location to place patch w.r.t. object in tuple (ymin, xmin)')
-    # parser.add_argument('--patch-size-mm', type=float, default=250, help='patch width in millimeter')
-    parser.add_argument('--obj-size', type=int, default=128, help='width of the object in pixels')
-    parser.add_argument('--img-txt-path', type=str, default='',
-                        help='path to a text file containing image filenames')
-    parser.add_argument('--run-only-img-txt', action='store_true',
-                        help='run evaluation on images listed in img-txt-path. Otherwise, exclude these images.')
-    parser.add_argument(
-        '--no-transform', action='store_true',
-        help='do not apply patch to signs using transform. if no-transform==True, patch will face us')
     parser.add_argument('--metrics-confidence-threshold', type=float, default=0.5, help='confidence threshold')
-    parser.add_argument('--per-sign-attack', action='store_true', help='generate adv patch for each sign')
-    parser.add_argument('--tgt-csv-filepath', required=True,
-                        help='path to csv which contains target points for transform')
-    parser.add_argument('--attack-config-path', help='path to yaml file with attack configs')
-    parser.add_argument('--obj-class', type=int, default=0, help='class of object to attack')
-    parser.add_argument('--interp', type=str, default='bilinear',
-                        help='interpolation method (nearest, bilinear, bicubic)')
-    parser.add_argument('--obj-path', type=str, default='',
-                        help='path to an image of a synthetic stop sign')
+
+    # TODO: remove when no bug
+    # parser.add_argument('--num-bg', type=int, default=16, help='number of backgrounds to generate adversarial patch')
+    # parser.add_argument('--patch-loc', type=str, default='', nargs='*',
+    #                     help='location to place patch w.r.t. object in tuple (ymin, xmin)')
+    # parser.add_argument('--obj-size', type=int, default=128, help='width of the object in pixels')
 
     opt = parser.parse_args()
     opt.data = check_yaml(opt.data)  # check YAML
     opt.save_json |= opt.data.endswith('coco.yaml')
     opt.save_txt |= opt.save_hybrid
     print_args(FILE.stem, opt)
+
+    if opt.synthetic_eval and opt.attack_type == 'per-sign':
+        raise NotImplementedError('Synthetic evaluation with per-sign attack is not implemented.')
 
     return opt
 

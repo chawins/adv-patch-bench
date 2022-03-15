@@ -1,24 +1,16 @@
 import time
-from unittest.mock import patch
 
 import numpy as np
-import pandas as pd
 import torch
 import torch.optim as optim
-import torchvision
-from cv2 import getAffineTransform
+from adv_patch_bench.transforms import apply_transform, get_transform
 from kornia import augmentation as K
 from kornia.constants import Resample
-from kornia.geometry.transform import (get_perspective_transform, warp_affine,
-                                       warp_perspective)
-# from val_attack_synthetic import transform_and_apply_patch
 from yolov5.utils.general import non_max_suppression
 from yolov5.utils.plots import output_to_target, plot_images
 
 from ..utils.image import letterbox, mask_to_box
 from .base_detector import DetectorAttackModule
-
-from adv_patch_bench.transforms.transforms import get_transform, apply_transform, transform_and_apply_patch
 
 EPS = 1e-6
 
@@ -26,7 +18,8 @@ EPS = 1e-6
 class RP2AttackModule(DetectorAttackModule):
 
     def __init__(self, attack_config, core_model, loss_fn, norm, eps,
-                 rescaling=False, relighting=False, verbose=False, **kwargs):
+                 rescaling=False, relighting=False, verbose=False,
+                 interp=None, **kwargs):
         super(RP2AttackModule, self).__init__(
             attack_config, core_model, loss_fn, norm, eps, **kwargs)
         self.num_steps = attack_config['rp2_num_steps']
@@ -37,14 +30,17 @@ class RP2AttackModule(DetectorAttackModule):
         self.min_conf = attack_config['rp2_min_conf']
         self.input_size = attack_config['input_size']
         self.attack_mode = attack_config['attack_mode']
+
+        # TODO: rename a lot of these to be less confusing
         self.no_transform = attack_config['no_transform']
         self.no_relighting = attack_config['no_relighting']
-
-        self.num_restarts = 1
         self.rescaling = rescaling
         self.relighting = relighting
-        self.verbose = verbose
         self.augment_real = attack_config['rp2_augment_real']
+        self.interp = attack_config['interp'] if interp is None else interp
+
+        self.num_restarts = 1
+        self.verbose = verbose
 
         self.bg_transforms = K.RandomResizedCrop(self.input_size, scale=(0.25, 1), p=1.0)
         # self.obj_transforms = K.container.AugmentationSequential(
@@ -317,7 +313,8 @@ class RP2AttackModule(DetectorAttackModule):
                 delta = delta.repeat(self.num_eot, 1, 1, 1)
                 adv_img = apply_transform(
                     backgrounds[bg_idx].clone(), delta.clone(), patch_mask, patch_loc,
-                    tf_function, curr_tf_data, **self.real_transform, no_relighting=self.no_relighting)
+                    tf_function, curr_tf_data, interp=self.interp,
+                    **self.real_transform, no_relighting=self.no_relighting)
 
                 # adv_img = resize_transform(adv_img)
                 # TODO: check size of adv_img

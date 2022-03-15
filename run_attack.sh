@@ -1,3 +1,4 @@
+#!/bin/bash
 # CUDA_VISIBLE_DEVICES=0 python -u generate_adv_patch.py \
 #     --seed 0 \
 #     --data mapillary_vistas.yaml \
@@ -201,13 +202,6 @@
 #     --obj-class 14 \
 #     --plot-class-examples 14
 
-
-
-
-
-
-
-
     # --img-txt-path ./runs/successful_attack_filenames.txt \
     # --run-only-img-txt
     
@@ -270,23 +264,6 @@ CUDA_VISIBLE_DEVICES=0 python -u val_attack_synthetic.py \
     --interp bicubic \
     --obj-path ./attack_assets/octagon-915.0.png \
     --synthetic
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    
 
 # CUDA_VISIBLE_DEVICES=1 python -u val_attack_synthetic.py \
 #     --imgsz 1280 \

@@ -141,7 +141,7 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
         for batch_i, (im, targets, paths, shapes) in enumerate(dataloader):
             for image_i, path in enumerate(paths):
                 filename = path.split('/')[-1]
-                
+
                 img_df = df[df['filename_y'] == filename]
                 if len(img_df) == 0:
                     continue
@@ -251,9 +251,12 @@ def main(
     patch_mask = torch.zeros((1, ) + obj_size)
     # TODO: Move this to a separate script for generating patch size/location
     # Example: 10x10-inch patch in the middle of 36x36-inch sign
-    mid_height = obj_size[0] // 2 + 40
+    # mid_height = obj_size[0] // 2 + 40
+    # mid_width = obj_size[1] // 2
+    # patch_size = 10
+    mid_height = obj_size[0] // 2 + 35
     mid_width = obj_size[1] // 2
-    patch_size = 10
+    patch_size = 20
     h = int(patch_size / 36 / 2 * obj_size[0])
     w = int(patch_size / 36 / 2 * obj_size[1])
     patch_mask[:, mid_height - h:mid_height + h, mid_width - w:mid_width + w] = 1

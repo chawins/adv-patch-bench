@@ -157,7 +157,7 @@ def prepare_obj(obj_path, img_size, obj_size):
     # import torchvision
     # torchvision.utils.save_image(obj_mask, 'test______.png')
     # qqq
-    
+
     # Resize and put object in the middle of zero background
     # pad_size = [(img_size[1] - obj_size[1]) // 2, (img_size[0] - obj_size[0]) // 2]  # left/right, top/bottom
     # obj = T.resize(obj, obj_size, antialias=True)
@@ -166,15 +166,16 @@ def prepare_obj(obj_path, img_size, obj_size):
     # obj_mask = T.pad(obj_mask, pad_size)
     return obj, obj_mask
 
+
 def pad_and_center(obj, obj_mask, img_size, obj_size):
     # Resize and put object in the middle of zero background
-    pad_size = [(img_size[1] - obj_size[1]) // 2, (img_size[0] - obj_size[0]) // 2]  # left/right, top/bottom
+    pad_size = [
+        (img_size[1] - obj_size[1]) // 2,  # left/right
+        (img_size[0] - obj_size[0]) // 2,  # top/bottom
+    ]
     if obj is not None:
         obj = T.resize(obj, obj_size, antialias=True)
         obj = T.pad(obj, pad_size)
     obj_mask = T.resize(obj_mask, obj_size, interpolation=T.InterpolationMode.NEAREST)
     obj_mask = T.pad(obj_mask, pad_size)
     return obj, obj_mask
-
-
-
