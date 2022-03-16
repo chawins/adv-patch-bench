@@ -1,9 +1,12 @@
 #!/bin/bash
+PATCH_NAME=14_synthetic_10x10
+EXP=10
+
 # CUDA_VISIBLE_DEVICES=0 python -u generate_adv_patch.py \
 #     --seed 0 \
 #     --data mapillary_vistas.yaml \
 #     --weights /data/shared/adv-patch-bench/yolov5/runs/train/exp3/weights/best.pt \
-#     --patch-name 14_synthetic \
+#     --patch-name $PATCH_NAME \
 #     --csv-path mapillary_vistas_final_merged.csv \
 #     --obj-class 14 \
 #     --obj-size 128 \
@@ -29,10 +32,10 @@ CUDA_VISIBLE_DEVICES=0 python -u val_attack_synthetic.py \
     --interp bicubic \
     --attack-type load \
     --metrics-confidence-threshold 0.359 \
-    --adv-patch-path ./runs/val/exp10/14_synthetic_10x10.pkl \
+    --adv-patch-path ./runs/val/exp$EXP/$PATCH_NAME.pkl \
     --tgt-csv-filepath mapillary_vistas_final_merged.csv \
     --attack-config-path attack_config.yaml \
     --obj-class 14 \
-    --plot-class-examples 14
-    --name 14_synthetic_10x10
+    --plot-class-examples 14 \
+    --name $PATCH_NAME
     # --adv-patch-path ./runs/val/exp2/stop_sign_10x10.pkl \
