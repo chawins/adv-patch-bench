@@ -261,7 +261,7 @@ def run(args,
         img_height, img_width = img_size
         obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True)
         mask_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, resample=Resample.NEAREST)
-        
+
         # Load synthetic object/sign from file
         adv_patch, patch_mask = pickle.load(open(adv_patch_path, 'rb'))
         patch_mask = patch_mask.to(device)
@@ -269,7 +269,7 @@ def run(args,
         obj, obj_mask = prepare_obj(syn_obj_path, img_size, (obj_size, obj_size))
         obj = obj.to(device)
         obj_mask = obj_mask.to(device).unsqueeze(0)
-    
+
     if use_attack:
         # Load patch from a pickle file if specified
         # TODO: make script to generate dummy patch
@@ -366,7 +366,7 @@ def run(args,
 
             if use_attack and not synthetic_eval:
                 filename = path.split('/')[-1]
-                img_df = df[df['filename_y'] == filename]                
+                img_df = df[df['filename_y'] == filename]
 
                 if len(img_df) == 0:
                     continue
@@ -638,7 +638,6 @@ def run(args,
     metrics_per_image_df.to_csv(f'{project}/{name}/results_per_image.csv', index=False)
     metrics_per_label_df.to_csv(f'{project}/{name}/results_per_label.csv', index=False)
 
-    
     if plot_class_examples:
         for class_index in plot_class_examples:
             class_name = names[class_index]
@@ -688,7 +687,7 @@ def run(args,
 
     # Print results per class
     # if (verbose or (nc < 50 and not training)) and nc > 1 and len(stats):
-    print('[INFO] results per class')    
+    print('[INFO] results per class')
     for i, c in enumerate(ap_class):
         metrics_df_column_names.append(f'num_targets_{names[c]}')
         current_exp_metrics[f'num_targets_{names[c]}'] = nt[c]
@@ -835,7 +834,7 @@ def parse_opt():
     # =========================== Attack arguments ========================== #
     # General
     parser.add_argument('--attack-type', type=str, required=True,
-                        help='which attack evaluation to run (none, load, synthetic, per-sign, random, debug)')
+                        help='which attack evaluation to run (none, load, per-sign, random, debug)')
     parser.add_argument('--adv-patch-path', type=str, default='',
                         help='path to adv patch and mask to load')
     parser.add_argument('--obj-class', type=int, default=0, help='class of object to attack')
@@ -844,7 +843,7 @@ def parse_opt():
     parser.add_argument('--attack-config-path',
                         help='path to yaml file with attack configs (used when attack_type is per-sign)')
     parser.add_argument('--syn-obj-path', type=str, default='',
-                        help='path to an image of a synthetic sign (used when attack_type is synthetic')
+                        help='path to an image of a synthetic sign (used when synthetic_eval is True')
     parser.add_argument('--img-txt-path', type=str, default='',
                         help='path to a text file containing image filenames')
     parser.add_argument('--run-only-img-txt', action='store_true',
