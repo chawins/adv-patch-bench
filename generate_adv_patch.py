@@ -59,7 +59,7 @@ def load_yolov5(weights, device, imgsz, img_size, data, dnn, half):
 def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
                        img_size=(992, 1312), obj_class=0, obj_size=None,
                        bg_dir='./', num_bg=16, save_images=False, save_dir='./',
-                       generate_patch='synthetic', rescaling=False, relighting=False,
+                       generate_patch='synthetic', rescaling=False,
                        csv_path='mapillary.csv', dataloader=None, attack_config_path=None):
     """Generate adversarial patch
 
@@ -101,7 +101,7 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
 
     # TODO: Allow data parallel?
     attack = RP2AttackModule(attack_config, model, None, None, None,
-                             rescaling=rescaling, relighting=relighting, verbose=True)
+                             rescaling=rescaling, verbose=True)
 
     # Generate an adversarial patch
     if generate_patch == 'synthetic':
@@ -218,7 +218,6 @@ def main(
     seed=0,
     generate_patch='synthetic',
     rescaling=False,
-    relighting=False,
     csv_path='',
     data=None,
     attack_config_path=None
@@ -280,7 +279,7 @@ def main(
         model, obj_numpy, patch_mask, device=device, img_size=img_size,
         obj_class=obj_class, obj_size=obj_size, bg_dir=bg_dir, num_bg=num_bg,
         save_images=save_images, save_dir=save_dir, generate_patch=generate_patch,
-        rescaling=rescaling, relighting=relighting, csv_path=csv_path, dataloader=dataloader,
+        rescaling=rescaling, csv_path=csv_path, dataloader=dataloader,
         attack_config_path=attack_config_path)
 
     # Save adv patch
@@ -291,7 +290,6 @@ def main(
     patch_metadata = {
         'generate_patch': generate_patch,
         'rescaling': rescaling,
-        'relighting': relighting
     }
     patch_metadata_path = join(save_dir, 'patch_metadata.pkl')
     print(f'Saving the generated adv patch metadata to {patch_metadata_path}...')
@@ -327,8 +325,6 @@ if __name__ == "__main__":
     parser.add_argument('--rescaling', action='store_true',
                         help=('randomly rescale synthetic sign size during patch generations'
                               '(use with --generate-patch synthetic)'))
-    parser.add_argument('--relighting', action='store_true',
-                        help='apply color jitter to patch during attack')
     parser.add_argument('--csv-path', type=str, default='',
                         help=('path to csv file with the annotated transform '
                               'data (required if --generate-patch real)'))

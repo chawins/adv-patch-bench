@@ -19,7 +19,7 @@ EPS = 1e-6
 class RP2AttackModule(DetectorAttackModule):
 
     def __init__(self, attack_config, core_model, loss_fn, norm, eps,
-                 rescaling=False, relighting=False, verbose=False,
+                 rescaling=False, verbose=False,
                  interp=None, **kwargs):
         super(RP2AttackModule, self).__init__(
             attack_config, core_model, loss_fn, norm, eps, **kwargs)
@@ -36,7 +36,7 @@ class RP2AttackModule(DetectorAttackModule):
         self.no_transform = attack_config['no_transform']
         self.no_relighting = attack_config['no_relighting']
         self.rescaling = rescaling
-        self.relighting = relighting
+        # self.relighting = relighting
         self.augment_real = attack_config['rp2_augment_real']
         self.interp = attack_config['interp'] if interp is None else interp
 
@@ -81,7 +81,6 @@ class RP2AttackModule(DetectorAttackModule):
         Returns:
             torch.Tensor: Adversarial patch with shape [C, H, W]
         """
-
         mode = self.core_model.training
         self.core_model.eval()
         device = obj.device
@@ -161,37 +160,20 @@ class RP2AttackModule(DetectorAttackModule):
                 #     import pdb
                 #     pdb.set_trace()
 
-                # Compute logits, loss, gradients
-                out, _ = self.core_model(adv_img, val=True)
-                conf = out[:, :, 4:5] * out[:, :, 5:]
-                conf, labels = conf.max(-1)
-                if obj_class is not None:
-                    loss = 0
-                    for c, l in zip(conf, labels):
-                        c_l = c[l == obj_class]
-                        if c_l.size(0) > 0:
-                            # Select prediction from box with max confidence and ignore
-                            # ones with already low confidence
-                            loss += c_l.max().clamp_min(self.min_conf)
-                    loss /= self.num_eot
-                else:
-                    loss = conf.max(1)[0].clamp_min(self.min_conf).mean()
-
-                loss /= self.num_eot
                 tv = ((delta[:, :, :-1, :] - delta[:, :, 1:, :]).abs().mean() +
                       (delta[:, :, :, :-1] - delta[:, :, :, 1:]).abs().mean())
                 # loss = out[:, :, 4].mean() + self.lmbda * tv
                 loss += self.lmbda * tv
-                loss.backward(retain_graph=True)
-                opt.step()
-                # lr_schedule.step(loss)
+                 loss.backward(retain_graph=True)
+                  opt.step()
 
-                if ema_loss is None:
-                    ema_loss = loss.item()
-                else:
-                    ema_loss = ema_const * ema_loss + (1 - ema_const) * loss.item()
-                if step % 100 == 0 and self.verbose:
-                    print(f'step: {step}   loss: {ema_loss:.6f}')
+                   if ema_loss is None:
+                        ema_loss = loss.item()
+                    else:
+                        ema_loss = ema_const * ema_loss + (1 - ema_const) * loss.item()
+
+                    if step % 100 == 0 and self.verbose:
+                        print(f'step: {step}   loss: {ema_loss:.6f}')
 
             # if self.num_restarts == 1:
             #     x_adv_worst = x_adv

@@ -325,7 +325,7 @@ def add_singleton_dim(x, total_dim):
 
 def transform_and_apply_patch(image, adv_patch, patch_mask, patch_loc,
                               predicted_class, row, img_data,
-                              no_transform=False, interp='bilinear'):
+                              no_transform=False, no_relighting=False, interp='bilinear'):
 
     # Does not support batch mode. Add singleton dims to 4D if needed.
     image = add_singleton_dim(image, 4)
@@ -343,7 +343,7 @@ def transform_and_apply_patch(image, adv_patch, patch_mask, patch_loc,
     tf_data = (sign_canonical, sign_mask, M, alpha.to(device), beta.to(device))
 
     img = apply_transform(image, adv_patch, patch_mask, patch_loc,
-                          transform_func, tf_data, interp=interp)
+                          transform_func, tf_data, interp=interp, no_relighting=no_relighting)
     return img
 
 # def transform_and_apply_patch(image, adv_patch, patch_mask, patch_loc,
