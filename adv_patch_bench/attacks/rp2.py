@@ -19,8 +19,8 @@ EPS = 1e-6
 class RP2AttackModule(DetectorAttackModule):
 
     def __init__(self, attack_config, core_model, loss_fn, norm, eps,
-                 rescaling=False, verbose=False,
-                 interp=None, **kwargs):
+                 rescaling=False, relighting=False, verbose=False, interp=None,
+                 **kwargs):
         super(RP2AttackModule, self).__init__(
             attack_config, core_model, loss_fn, norm, eps, **kwargs)
         self.num_steps = attack_config['rp2_num_steps']
@@ -36,7 +36,7 @@ class RP2AttackModule(DetectorAttackModule):
         self.no_transform = attack_config['no_transform']
         self.no_relighting = attack_config['no_relighting']
         self.rescaling = rescaling
-        # self.relighting = relighting
+        self.relighting = relighting
         self.augment_real = attack_config['rp2_augment_real']
         self.interp = attack_config['interp'] if interp is None else interp
 
@@ -62,6 +62,36 @@ class RP2AttackModule(DetectorAttackModule):
             self.real_transform['tf_patch'] = K.RandomAffine(
                 15, translate=(0.1, 0.1), scale=(0.9, 1.1), p=1.0, resample=Resample.BILINEAR)
             self.real_transform['tf_bg'] = self.bg_transforms
+
+    def _setup_opt(self, z_delta):
+        # Set up optimizer
+        if self.optimizer == 'sgd':
+            opt = optim.SGD([z_delta], lr=self.step_size, momentum=0.999)
+        elif self.optimizer == 'adam':
+            opt = optim.Adam([z_delta], lr=self.step_size)
+        elif self.optimizer == 'rmsprop':
+            opt = optim.RMSprop([z_delta], lr=self.step_size)
+        else:
+            raise NotImplementedError('Given optimizer not implemented.')
+        return opt
+
+    def compute_loss(self, adv_img, obj_class):
+        # Compute logits, loss, gradients
+        out, _ = self.core_model(adv_img, val=True)
+        conf = out[:, :, 4:5] * out[:, :, 5:]
+        conf, labels = conf.max(-1)
+        if obj_class is not None:
+            loss = 0
+            for c, l in zip(conf, labels):
+                c_l = c[l == obj_class]
+                if c_l.size(0) > 0:
+                    # Select prediction from box with max confidence and ignore
+                    # ones with already low confidence
+                    loss += c_l.max().clamp_min(self.min_conf)
+            loss /= self.num_eot
+        else:
+            loss = conf.max(1)[0].clamp_min(self.min_conf).mean()
+        return loss
 
     def attack(self,
                obj: torch.Tensor,
@@ -100,18 +130,11 @@ class RP2AttackModule(DetectorAttackModule):
             z_delta = torch.zeros((1, 3, height, width), device=device, dtype=dtype)
             z_delta.uniform_(-10, 10)
 
-            # Set up optimizer
-            if self.optimizer == 'sgd':
-                opt = optim.SGD([z_delta], lr=self.step_size, momentum=0.999)
-            elif self.optimizer == 'adam':
-                opt = optim.Adam([z_delta], lr=self.step_size)
-            elif self.optimizer == 'rmsprop':
-                opt = optim.RMSprop([z_delta], lr=self.step_size)
-            else:
-                raise NotImplementedError('Given optimizer not implemented.')
+            opt = self._setup_opt(z_delta)
             lr_schedule = optim.lr_scheduler.ReduceLROnPlateau(
                 opt, factor=0.2, patience=int(self.num_steps / 10),
                 threshold=1e-9, min_lr=self.step_size * 1e-6, verbose=True)
+            start_time = time.time()
 
             # Run PGD on inputs for specified number of steps
             for step in range(self.num_steps):
@@ -160,20 +183,22 @@ class RP2AttackModule(DetectorAttackModule):
                 #     import pdb
                 #     pdb.set_trace()
 
+                loss = self.compute_loss(adv_img, obj_class)
                 tv = ((delta[:, :, :-1, :] - delta[:, :, 1:, :]).abs().mean() +
                       (delta[:, :, :, :-1] - delta[:, :, :, 1:]).abs().mean())
                 # loss = out[:, :, 4].mean() + self.lmbda * tv
                 loss += self.lmbda * tv
-                 loss.backward(retain_graph=True)
-                  opt.step()
+                loss.backward(retain_graph=True)
+                opt.step()
 
-                   if ema_loss is None:
-                        ema_loss = loss.item()
-                    else:
-                        ema_loss = ema_const * ema_loss + (1 - ema_const) * loss.item()
+                if ema_loss is None:
+                    ema_loss = loss.item()
+                else:
+                    ema_loss = ema_const * ema_loss + (1 - ema_const) * loss.item()
 
-                    if step % 100 == 0 and self.verbose:
-                        print(f'step: {step}   loss: {ema_loss:.6f}')
+                if step % 100 == 0 and self.verbose:
+                    print(f'step: {step}   loss: {ema_loss:.6f}   time: {time.time() - start_time:.2f}s')
+                    start_time = time.time()
 
             # if self.num_restarts == 1:
             #     x_adv_worst = x_adv
@@ -236,17 +261,10 @@ class RP2AttackModule(DetectorAttackModule):
         for _ in range(self.num_restarts):
             # Initialize adversarial perturbation
             z_delta = torch.zeros((1, 3, height, width), device=device, dtype=torch.float32)
-            z_delta.uniform_(0, 1)
+            z_delta.uniform_(-10, 10)
 
             # Set up optimizer
-            if self.optimizer == 'sgd':
-                opt = optim.SGD([z_delta], lr=self.step_size, momentum=0.9)
-            elif self.optimizer == 'adam':
-                opt = optim.Adam([z_delta], lr=self.step_size)
-            elif self.optimizer == 'rmsprop':
-                opt = optim.RMSprop([z_delta], lr=self.step_size)
-            else:
-                raise NotImplementedError('Given optimizer not implemented.')
+            opt = self._setup_opt(z_delta)
             start_time = time.time()
 
             # Run PGD on inputs for specified number of steps
@@ -277,22 +295,7 @@ class RP2AttackModule(DetectorAttackModule):
                 # import pdb
                 # pdb.set_trace()
 
-                # Compute logits, loss, gradients
-                out, _ = self.core_model(adv_img, val=True)
-                conf = out[:, :, 4:5] * out[:, :, 5:]
-                conf, labels = conf.max(-1)
-                if obj_class is not None:
-                    loss = 0
-                    for c, l in zip(conf, labels):
-                        c_l = c[l == obj_class]
-                        if c_l.size(0) > 0:
-                            # Select prediction from box with max confidence and ignore
-                            # ones with already low confidence
-                            loss += c_l.max().clamp_min(self.min_conf)
-                    loss /= self.num_eot
-                else:
-                    loss = conf.max(1)[0].clamp_min(self.min_conf).mean()
-
+                loss = self.compute_loss(adv_img, obj_class)
                 tv = ((delta[:, :, :-1, :] - delta[:, :, 1:, :]).abs().mean() +
                       (delta[:, :, :, :-1] - delta[:, :, :, 1:]).abs().mean())
                 # loss = out[:, :, 4].mean() + self.lmbda * tv
