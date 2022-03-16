@@ -1,8 +1,10 @@
 #!/bin/bash
 PATCH_NAME=14_synthetic_10x10_ld1e-2
 EXP=11
+GPU=1
 
-CUDA_VISIBLE_DEVICES=0 python -u generate_adv_patch.py \
+CUDA_VISIBLE_DEVICES=$GPU python -u generate_adv_patch.py \
+    --device $GPU \
     --seed 0 \
     --data mapillary_vistas.yaml \
     --weights /data/shared/adv-patch-bench/yolov5/runs/train/exp3/weights/best.pt \
@@ -19,7 +21,7 @@ CUDA_VISIBLE_DEVICES=0 python -u generate_adv_patch.py \
     --imgsz 2560 \
     --padded_imgsz 1952,2592
 
-CUDA_VISIBLE_DEVICES=1 python -u val_attack_synthetic.py \
+CUDA_VISIBLE_DEVICES=$GPU python -u val_attack_synthetic.py \
     --imgsz 2560 \
     --padded_imgsz 1952,2592 \
     --batch-size 2 \

@@ -197,6 +197,7 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
 
 
 def main(
+    device='',
     batch_size=32,  # batch size
     weights=None,  # model.pt path(s)
     imgsz=1280,  # image width
@@ -222,10 +223,7 @@ def main(
     data=None,
     attack_config_path=None
 ):
-
-    device = 'cuda:0'
     cudnn.benchmark = True
-
     torch.manual_seed(seed)
     np.random.seed(seed)
     img_size = tuple([int(i) for i in padded_imgsz.split(',')])
@@ -298,6 +296,7 @@ def main(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument('--device', type=str, default='0', help='set device, e.g., "0,1,3"')
     parser.add_argument('--data', type=str, default=ROOT / 'data/coco128.yaml', help='dataset.yaml path')
     parser.add_argument('--weights', nargs='+', type=str, default=ROOT / 'yolov5s.pt', help='model.pt path(s)')
     parser.add_argument('--batch-size', type=int, default=32, help='batch size')
