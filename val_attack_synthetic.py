@@ -151,6 +151,7 @@ def run(args,
     syn_obj_path = args.syn_obj_path
 
     no_transform = args.no_transform
+    no_relighting = args.no_relighting
     metrics_confidence_threshold = args.metrics_confidence_threshold
     img_size = tuple([int(x) for x in args.padded_imgsz.split(',')])
 
@@ -260,11 +261,15 @@ def run(args,
         img_height, img_width = img_size
         obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True)
         mask_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, resample=Resample.NEAREST)
+        
         # Load synthetic object/sign from file
+        adv_patch, patch_mask = pickle.load(open(adv_patch_path, 'rb'))
+        patch_mask = patch_mask.to(device)
         obj_size = patch_mask.shape[1]
         obj, obj_mask = prepare_obj(syn_obj_path, img_size, (obj_size, obj_size))
+        obj = obj.to(device)
         obj_mask = obj_mask.to(device).unsqueeze(0)
-
+    
     if use_attack:
         # Load patch from a pickle file if specified
         # TODO: make script to generate dummy patch
@@ -342,6 +347,7 @@ def run(args,
     metrics_per_image_df = pd.DataFrame(columns=['filename', 'num_targeted_sign_class', 'num_patches', 'fn'])
     metrics_per_label_df = pd.DataFrame(
         columns=['filename', 'obj_id', 'label', 'correct_prediction', 'sign_width', 'sign_height', 'confidence'])
+
     for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
         # 'targets' shape is # number of labels by 8 (image_id, class, x1, y1, label width, label height, number of patches applied, obj id)
         targets = torch.nn.functional.pad(targets, (0, 2), "constant", 0)  # effectively zero padding
@@ -360,7 +366,8 @@ def run(args,
 
             if use_attack and not synthetic_eval:
                 filename = path.split('/')[-1]
-                img_df = df[df['filename_y'] == filename]
+                img_df = df[df['filename_y'] == filename]                
+
                 if len(img_df) == 0:
                     continue
 
@@ -397,7 +404,7 @@ def run(args,
                     # # Transform and apply patch on the image. `im` has range [0, 255]
                     im[image_i] = transform_and_apply_patch(
                         im[image_i].to(device), adv_patch.to(device), patch_mask, patch_loc,
-                        predicted_class, row, img_data, no_transform=no_transform,
+                        predicted_class, row, img_data, no_transform=no_transform, no_relighting=no_relighting,
                         interp=args.interp) * 255
                     num_patches_applied_to_image += 1
 
@@ -593,9 +600,14 @@ def run(args,
                     class_name = names[class_index.item()]
                     if len(shape_to_plot_data[class_name]) < 50:
                         fn = str(path).split('/')[-1]
+
+                        # # TODO: remove
+                        # if fn != '9LmBGfnVqmfiJjenXkHgaw.jpg':
+                        #     continue
                         shape_to_plot_data[class_name].append(
                             [im[si: si + 1], targets[targets[:, 0] == si, :], path,
                              predictions_for_plotting[predictions_for_plotting[:, 0] == si]])
+                        break
 
         # Plot images
         if plots and batch_i < 30:
@@ -607,13 +619,13 @@ def run(args,
                     f = save_dir_single_plots / f'val_batch{batch_i}_image{i}_labels.jpg'  # labels
                     ti = targets[targets[:, 0] == i]
                     ti[:, 0] = 0
-                    plot_images(im[i:i+1], ti, paths[i:i+1], f, names)
+                    plot_images(im[i:i+1], ti, paths[i:i+1], f, names, labels=True)
 
                     # predictions
                     f = save_dir_single_plots / f'val_batch{batch_i}_image{i}_pred.jpg'  # labels
                     ti = predictions_for_plotting[predictions_for_plotting[:, 0] == i]
                     ti[:, 0] = 0
-                    plot_images(im[i:i+1], ti, paths[i:i+1], f, names)
+                    plot_images(im[i:i+1], ti, paths[i:i+1], f, names, labels=False)
             f = save_dir / f'val_batch{batch_i}_labels.jpg'  # labels
             Thread(target=plot_images, args=(im, targets, paths, f, names), daemon=True).start()
             f = save_dir / f'val_batch{batch_i}_pred.jpg'  # predictions
@@ -626,6 +638,7 @@ def run(args,
     metrics_per_image_df.to_csv(f'{project}/{name}/results_per_image.csv', index=False)
     metrics_per_label_df.to_csv(f'{project}/{name}/results_per_label.csv', index=False)
 
+    
     if plot_class_examples:
         for class_index in plot_class_examples:
             class_name = names[class_index]
@@ -635,12 +648,12 @@ def run(args,
                 # labels
                 f = save_dir_class / f'image{i}_labels.jpg'  # labels
                 targets[:, 0] = 0
-                plot_images(im, targets, [path], f, names)
+                plot_images(im, targets, [path], f, names, labels=True)
 
                 # predictions
                 f = save_dir_class / f'image{i}_pred.jpg'  # labels
                 out[:, 0] = 0
-                plot_images(im, out, [path], f, names)
+                plot_images(im, out, [path], f, names, labels=False)
 
     # Compute metrics
     stats = [np.concatenate(x, 0) for x in zip(*stats)]  # to numpy
@@ -675,7 +688,7 @@ def run(args,
 
     # Print results per class
     # if (verbose or (nc < 50 and not training)) and nc > 1 and len(stats):
-    print('[INFO] results per class')
+    print('[INFO] results per class')    
     for i, c in enumerate(ap_class):
         metrics_df_column_names.append(f'num_targets_{names[c]}')
         current_exp_metrics[f'num_targets_{names[c]}'] = nt[c]
@@ -695,7 +708,6 @@ def run(args,
         current_exp_metrics[f'ap_50_95_{names[c]}'] = ap[i]
 
         LOGGER.info(pf % (names[c], seen, nt[c], p[i], r[i], ap50[i], ap[i]))
-
     metrics_df_column_names.append('dataset')
     current_exp_metrics['dataset'] = DATASET_NAME
 
@@ -840,6 +852,9 @@ def parse_opt():
     parser.add_argument('--no-transform', action='store_true',
                         help=('If True, do not apply patch to signs using '
                               '3D-transform. Patch will directly face camera.'))
+    parser.add_argument('--no-relighting', action='store_true',
+                        help=('If True, do not apply relighting transform to patch'))
+
     # ============================== Plot / log ============================= #
     parser.add_argument('--save-exp-metrics', action='store_true', help='save metrics for this experiment to dataframe')
     parser.add_argument('--plot-single-images', action='store_true',

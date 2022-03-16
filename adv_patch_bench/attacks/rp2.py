@@ -18,7 +18,7 @@ EPS = 1e-6
 class RP2AttackModule(DetectorAttackModule):
 
     def __init__(self, attack_config, core_model, loss_fn, norm, eps,
-                 rescaling=False, relighting=False, verbose=False,
+                 rescaling=False, verbose=False,
                  interp=None, **kwargs):
         super(RP2AttackModule, self).__init__(
             attack_config, core_model, loss_fn, norm, eps, **kwargs)
@@ -35,7 +35,7 @@ class RP2AttackModule(DetectorAttackModule):
         self.no_transform = attack_config['no_transform']
         self.no_relighting = attack_config['no_relighting']
         self.rescaling = rescaling
-        self.relighting = relighting
+        # self.relighting = relighting
         self.augment_real = attack_config['rp2_augment_real']
         self.interp = attack_config['interp'] if interp is None else interp
 
@@ -79,7 +79,6 @@ class RP2AttackModule(DetectorAttackModule):
         Returns:
             torch.Tensor: Adversarial patch with shape [C, H, W]
         """
-
         mode = self.core_model.training
         self.core_model.eval()
         device = obj.device
@@ -124,16 +123,8 @@ class RP2AttackModule(DetectorAttackModule):
                     bgs = backgrounds[bg_idx]
                     bgs = self.bg_transforms(bgs)
 
-                    # indices = np.where(obj_mask.cpu()[0] > 0)
-                    # x_min, x_max = min(indices[1]), max(indices[1])
-                    # y_min, y_max = min(indices[0]), max(indices[0])
-                    # synthetic_sign_height = y_max - y_min
-                    # synthetic_sign_width = x_max - x_min
-                    # synthetic_sign_size = x_max - x_min
                     synthetic_sign_size = obj_size[0]
-                    # print(synthetic_sign_size)
 
-                    # old_ratio = synthetic_sign_size/960
                     if self.rescaling:
                         old_ratio = synthetic_sign_size/self.input_size[0]
                         prob_array = [0.38879158, 0.26970227, 0.16462349, 0.07530647, 0.04378284,
@@ -160,7 +151,7 @@ class RP2AttackModule(DetectorAttackModule):
                     adv_obj = patch_mask * patch_full + (1 - patch_mask) * obj
 
                     adv_obj = adv_obj.expand(self.num_eot, -1, -1, -1)
-                    if self.relighting:
+                    if not self.no_relighting:
                         adv_obj = self.jitter_transform(adv_obj)
                     adv_obj, tf_params = self.obj_transforms(adv_obj)
                     adv_obj = adv_obj.clamp(0, 1)
@@ -172,7 +163,7 @@ class RP2AttackModule(DetectorAttackModule):
                     adv_img = letterbox(adv_img, new_shape=self.input_size[1])[0]
 
                     # if step % 100 == 0:
-                    #     torchvision.utils.save_image(adv_img[0], f'tmp/synthetic/test_synthetic_adv_img_{step}.png')
+                    #     torchvision.utils.save_image(adv_img[0], f'tmp/test_synthetic_adv_img_{step}.png')
 
                     # Compute logits, loss, gradients
                     out, _ = self.core_model(adv_img, val=True)
@@ -190,37 +181,20 @@ class RP2AttackModule(DetectorAttackModule):
                     else:
                         loss = conf.max(1)[0].clamp_min(self.min_conf).mean()
 
-                # Compute logits, loss, gradients
-                out, _ = self.core_model(adv_img, val=True)
-                conf = out[:, :, 4:5] * out[:, :, 5:]
-                conf, labels = conf.max(-1)
-                if obj_class is not None:
-                    loss = 0
-                    for c, l in zip(conf, labels):
-                        c_l = c[l == obj_class]
-                        if c_l.size(0) > 0:
-                            # Select prediction from box with max confidence and ignore
-                            # ones with already low confidence
-                            loss += c_l.max().clamp_min(self.min_conf)
-                    loss /= self.num_eot
-                else:
-                    loss = conf.max(1)[0].clamp_min(self.min_conf).mean()
+                    tv = ((delta[:, :, :-1, :] - delta[:, :, 1:, :]).abs().mean() +
+                        (delta[:, :, :, :-1] - delta[:, :, :, 1:]).abs().mean())
+                    # loss = out[:, :, 4].mean() + self.lmbda * tv
+                    loss += self.lmbda * tv
+                    loss.backward(retain_graph=True)
+                    opt.step()
 
-                loss /= self.num_eot
-                tv = ((delta[:, :, :-1, :] - delta[:, :, 1:, :]).abs().mean() +
-                      (delta[:, :, :, :-1] - delta[:, :, :, 1:]).abs().mean())
-                # loss = out[:, :, 4].mean() + self.lmbda * tv
-                loss += self.lmbda * tv
-                loss.backward(retain_graph=True)
-                opt.step()
-                # lr_schedule.step(loss)
+                    if ema_loss is None:
+                        ema_loss = loss.item()
+                    else:
+                        ema_loss = ema_const * ema_loss + (1 - ema_const) * loss.item()
 
-                if ema_loss is None:
-                    ema_loss = loss.item()
-                else:
-                    ema_loss = ema_const * ema_loss + (1 - ema_const) * loss.item()
-                if step % 100 == 0 and self.verbose:
-                    print(f'step: {step}   loss: {ema_loss:.6f}')
+                    if step % 100 == 0 and self.verbose:
+                        print(f'step: {step}   loss: {ema_loss:.6f}')
 
                 # if self.num_restarts == 1:
                 #     x_adv_worst = x_adv
