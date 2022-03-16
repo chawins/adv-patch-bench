@@ -3,6 +3,7 @@ import time
 import numpy as np
 import torch
 import torch.optim as optim
+import torchvision
 from adv_patch_bench.transforms import apply_transform, get_transform
 from kornia import augmentation as K
 from kornia.constants import Resample
@@ -42,7 +43,8 @@ class RP2AttackModule(DetectorAttackModule):
         self.num_restarts = 1
         self.verbose = verbose
 
-        self.bg_transforms = K.RandomResizedCrop(self.input_size, scale=(0.25, 1), p=1.0)
+        bg_size = (self.input_size[0] - 32, self.input_size[1] - 32)
+        self.bg_transforms = K.RandomResizedCrop(bg_size, scale=(0.8, 1), p=1.0)
         # self.obj_transforms = K.container.AugmentationSequential(
         #     K.RandomAffine(30, translate=(0.5, 0.5)),      # Only translate and rotate as in Eykholt et al.
         #     # RandomAffine(30, translate=(0.5, 0.5), scale=(0.25, 4), shear=(0.1, 0.1), p=1.0),
@@ -91,7 +93,6 @@ class RP2AttackModule(DetectorAttackModule):
 
         # TODO: Initialize worst-case inputs, use moving average
         # x_adv_worst = x.clone().detach()
-        # worst_losses =
         ema_const = 0.99
         ema_loss = None
 
@@ -114,81 +115,51 @@ class RP2AttackModule(DetectorAttackModule):
                 threshold=1e-9, min_lr=self.step_size * 1e-6, verbose=True)
 
             # Run PGD on inputs for specified number of steps
-            with torch.autograd.set_detect_anomaly(True):
-                for step in range(self.num_steps):
-                    z_delta.requires_grad_()
-                    delta = self._to_model_space(z_delta, 0, 1)
+            for step in range(self.num_steps):
+                z_delta.requires_grad_()
+                delta = self._to_model_space(z_delta, 0, 1)
 
-                    # Randomly select background and apply transforms (crop and scale)
-                    bg_idx = torch.randint(0, len(backgrounds), size=(self.num_eot, ))
-                    bgs = backgrounds[bg_idx]
-                    bgs = self.bg_transforms(bgs)
+                # Randomly select background and apply transforms (crop and scale)
+                bg_idx = torch.randint(0, len(backgrounds), size=(self.num_eot, ))
+                bgs = backgrounds[bg_idx]
+                bgs = self.bg_transforms(bgs)
+                # Patch image the same way as YOLO
+                bgs = letterbox(bgs, new_shape=self.input_size)[0]
+                synthetic_sign_size = obj_size[0]
 
-                    # indices = np.where(obj_mask.cpu()[0] > 0)
-                    # x_min, x_max = min(indices[1]), max(indices[1])
-                    # y_min, y_max = min(indices[0]), max(indices[0])
-                    # synthetic_sign_height = y_max - y_min
-                    # synthetic_sign_width = x_max - x_min
-                    # synthetic_sign_size = x_max - x_min
-                    synthetic_sign_size = obj_size[0]
-                    # print(synthetic_sign_size)
+                if self.rescaling:
+                    # TODO: clean this and generalize this to other signs?
+                    old_ratio = synthetic_sign_size / self.input_size[0]
+                    prob_array = [0.38879158, 0.26970227, 0.16462349, 0.07530647, 0.04378284,
+                                  0.03327496, 0.01050788, 0.00700525, 0.00350263, 0.00350263]
+                    new_possible_ratios = [0.05340427, 0.11785139, 0.18229851, 0.24674563,
+                                           0.31119275, 0.3756399, 0.440087, 0.5045341, 0.56898123, 0.6334284, 0.6978755]
+                    index_array = np.arange(0, len(new_possible_ratios) - 1)
+                    sampled_index = np.random.choice(index_array, None, p=prob_array)
+                    low_bin_edge, high_bin_edge = new_possible_ratios[sampled_index], new_possible_ratios[sampled_index+1]
+                    self.obj_transforms = K.RandomAffine(
+                        30, translate=(0.45, 0.45),
+                        p=1.0, return_transform=True, scale=(low_bin_edge / old_ratio, high_bin_edge / old_ratio))
 
-                    # old_ratio = synthetic_sign_size/960
-                    if self.rescaling:
-                        old_ratio = synthetic_sign_size/self.input_size[0]
-                        prob_array = [0.38879158, 0.26970227, 0.16462349, 0.07530647, 0.04378284,
-                                      0.03327496, 0.01050788, 0.00700525, 0.00350263, 0.00350263]
-                        new_possible_ratios = [0.05340427, 0.11785139, 0.18229851, 0.24674563,
-                                               0.31119275, 0.3756399, 0.440087, 0.5045341, 0.56898123, 0.6334284, 0.6978755]
-                        index_array = np.arange(0, len(new_possible_ratios)-1)
-                        sampled_index = np.random.choice(index_array, None, p=prob_array)
-                        low_bin_edge, high_bin_edge = new_possible_ratios[sampled_index], new_possible_ratios[sampled_index+1]
-                        self.obj_transforms = K.RandomAffine(
-                            30, translate=(0.45, 0.45),
-                            p=1.0, return_transform=True, scale=(low_bin_edge / old_ratio, high_bin_edge / old_ratio))
-                    else:
-                        self.obj_transforms = K.RandomAffine(
-                            30, translate=(0.45, 0.45),
-                            p=1.0, return_transform=True, scale=None)
+                # Apply random transformations
+                patch_full[:, ymin:ymin + height, xmin:xmin + width] = delta
+                adv_obj = patch_mask * patch_full + (1 - patch_mask) * obj
 
-                    # print((low_bin_edge/old_ratio, high_bin_edge/old_ratio))
-                    # new_size = (int(self.input_size[0] * new_synthetic_sign_ratio / old_ratio), int(self.input_size[1] * new_synthetic_sign_ratio / old_ratio))
-                    # self.resize_transforms = T.Resize(size=new_size)
+                adv_obj = adv_obj.expand(self.num_eot, -1, -1, -1)
+                if self.relighting:
+                    adv_obj = self.jitter_transform(adv_obj)
+                adv_obj, tf_params = self.obj_transforms(adv_obj)
+                adv_obj = adv_obj.clamp(0, 1)
 
-                    # Apply random transformations
-                    patch_full[:, ymin:ymin + height, xmin:xmin + width] = delta
-                    adv_obj = patch_mask * patch_full + (1 - patch_mask) * obj
+                o_mask = self.mask_transforms.apply_transform(
+                    obj_mask_dup, None, transform=tf_params)
+                adv_img = o_mask * adv_obj + (1 - o_mask) * bgs
 
-                    adv_obj = adv_obj.expand(self.num_eot, -1, -1, -1)
-                    if self.relighting:
-                        adv_obj = self.jitter_transform(adv_obj)
-                    adv_obj, tf_params = self.obj_transforms(adv_obj)
-                    adv_obj = adv_obj.clamp(0, 1)
-
-                    o_mask = self.mask_transforms.apply_transform(
-                        obj_mask_dup, None, transform=tf_params)
-                    adv_img = o_mask * adv_obj + (1 - o_mask) * bgs
-                    # Patch image the same way as YOLO
-                    adv_img = letterbox(adv_img, new_shape=self.input_size[1])[0]
-
-                    # if step % 100 == 0:
-                    #     torchvision.utils.save_image(adv_img[0], f'tmp/synthetic/test_synthetic_adv_img_{step}.png')
-
-                    # Compute logits, loss, gradients
-                    out, _ = self.core_model(adv_img, val=True)
-                    conf = out[:, :, 4:5] * out[:, :, 5:]
-                    conf, labels = conf.max(-1)
-                    if obj_class is not None:
-                        loss = 0
-                        for c, l in zip(conf, labels):
-                            c_l = c[l == obj_class]
-                            if c_l.size(0) > 0:
-                                # Select prediction from box with max confidence and ignore
-                                # ones with already low confidence
-                                loss += c_l.max().clamp_min(self.min_conf)
-                        loss /= self.num_eot
-                    else:
-                        loss = conf.max(1)[0].clamp_min(self.min_conf).mean()
+                # DEBUG
+                # if step % 100 == 0:
+                #     torchvision.utils.save_image(adv_img[0], f'gen_synthetic_adv_{step}.png')
+                #     import pdb
+                #     pdb.set_trace()
 
                 # Compute logits, loss, gradients
                 out, _ = self.core_model(adv_img, val=True)
@@ -222,14 +193,14 @@ class RP2AttackModule(DetectorAttackModule):
                 if step % 100 == 0 and self.verbose:
                     print(f'step: {step}   loss: {ema_loss:.6f}')
 
-                # if self.num_restarts == 1:
-                #     x_adv_worst = x_adv
-                # else:
-                #     # Update worst-case inputs with itemized final losses
-                #     fin_losses = self.loss_fn(self.core_model(x_adv), y).reshape(worst_losses.shape)
-                #     up_mask = (fin_losses >= worst_losses).float()
-                #     x_adv_worst = x_adv * up_mask + x_adv_worst * (1 - up_mask)
-                #     worst_losses = fin_losses * up_mask + worst_losses * (1 - up_mask)
+            # if self.num_restarts == 1:
+            #     x_adv_worst = x_adv
+            # else:
+            #     # Update worst-case inputs with itemized final losses
+            #     fin_losses = self.loss_fn(self.core_model(x_adv), y).reshape(worst_losses.shape)
+            #     up_mask = (fin_losses >= worst_losses).float()
+            #     x_adv_worst = x_adv * up_mask + x_adv_worst * (1 - up_mask)
+            #     worst_losses = fin_losses * up_mask + worst_losses * (1 - up_mask)
 
         # DEBUG
         # outt = non_max_suppression(out.detach(), conf_thres=0.25, iou_thres=0.6)

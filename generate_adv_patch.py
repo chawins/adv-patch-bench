@@ -5,7 +5,6 @@ Generate adversarial patch
 import argparse
 import os
 import pickle
-import yaml
 import sys
 from ast import literal_eval
 from os.path import join
@@ -14,9 +13,12 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import torch
+import torch.backends.cudnn as cudnn
 import torchvision
 import torchvision.transforms.functional as T
+import yaml
 from PIL import Image
+from torch.nn import DataParallel
 
 from adv_patch_bench.attacks.rp2 import RP2AttackModule
 from hparams import TS_COLOR_LABEL_DICT
@@ -49,11 +51,13 @@ def load_yolov5(weights, device, imgsz, img_size, data, dnn, half):
     data = check_yaml(data)  # check YAML
     data = check_dataset(data)
     imgsz = check_img_size(imgsz, s=stride)
+    # TODO: try to get dataparallel working
+    # model = DataParallel(model, device_ids=[0, 1]).to('cuda')
     return model, data
 
 
 def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
-                       img_size=(736, 1312), obj_class=0, obj_size=None,
+                       img_size=(992, 1312), obj_class=0, obj_size=None,
                        bg_dir='./', num_bg=16, save_images=False, save_dir='./',
                        generate_patch='synthetic', rescaling=False, relighting=False,
                        csv_path='mapillary.csv', dataloader=None, attack_config_path=None):
@@ -81,10 +85,11 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
     print(f'There are {len(all_bgs)} background images in {bg_dir}.')
     idx = np.arange(len(all_bgs))
     np.random.shuffle(idx)
-    backgrounds = torch.zeros((num_bg, 3) + img_size, )
+    bg_size = (img_size[0] - 32, img_size[1] - 32)
+    backgrounds = torch.zeros((num_bg, 3) + bg_size, )
     for i, index in enumerate(idx[:num_bg]):
         bg = torchvision.io.read_image(join(bg_dir, all_bgs[index])) / 255
-        backgrounds[i] = T.resize(bg, img_size, antialias=True)
+        backgrounds[i] = T.resize(bg, bg_size, antialias=True)
 
     # getting object classes names
     names = {k: v for k, v in enumerate(model.names if hasattr(model, 'names') else model.module.names)}
@@ -193,7 +198,6 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
 
 def main(
     batch_size=32,  # batch size
-    device='',  # cuda device, i.e. 0 or 0,1,2,3 or cpu
     weights=None,  # model.pt path(s)
     imgsz=1280,  # image width
     padded_imgsz='992,1312',
@@ -219,6 +223,9 @@ def main(
     data=None,
     attack_config_path=None
 ):
+
+    device = 'cuda:0'
+    cudnn.benchmark = True
 
     torch.manual_seed(seed)
     np.random.seed(seed)
@@ -251,12 +258,12 @@ def main(
     patch_mask = torch.zeros((1, ) + obj_size)
     # TODO: Move this to a separate script for generating patch size/location
     # Example: 10x10-inch patch in the middle of 36x36-inch sign
-    # mid_height = obj_size[0] // 2 + 40
-    # mid_width = obj_size[1] // 2
-    # patch_size = 10
-    mid_height = obj_size[0] // 2 + 35
+    mid_height = obj_size[0] // 2 + 40
     mid_width = obj_size[1] // 2
-    patch_size = 20
+    patch_size = 10
+    # mid_height = obj_size[0] // 2 + 35
+    # mid_width = obj_size[1] // 2
+    # patch_size = 20
     h = int(patch_size / 36 / 2 * obj_size[0])
     w = int(patch_size / 36 / 2 * obj_size[1])
     patch_mask[:, mid_height - h:mid_height + h, mid_width - w:mid_width + w] = 1
@@ -297,7 +304,6 @@ if __name__ == "__main__":
     parser.add_argument('--weights', nargs='+', type=str, default=ROOT / 'yolov5s.pt', help='model.pt path(s)')
     parser.add_argument('--batch-size', type=int, default=32, help='batch size')
     parser.add_argument('--imgsz', type=int, default=1280, help='inference size (width)')
-    parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     parser.add_argument('--save-txt', action='store_true', help='save results to *.txt')
     parser.add_argument('--project', default=ROOT / 'runs/val', help='save to project/name')
     parser.add_argument('--name', default='exp', help='save to project/name')
