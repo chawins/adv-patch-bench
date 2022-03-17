@@ -19,7 +19,7 @@ EPS = 1e-6
 class RP2AttackModule(DetectorAttackModule):
 
     def __init__(self, attack_config, core_model, loss_fn, norm, eps,
-                 rescaling=False, relighting=False, verbose=False, interp=None,
+                 rescaling=False, verbose=False, interp=None,
                  **kwargs):
         super(RP2AttackModule, self).__init__(
             attack_config, core_model, loss_fn, norm, eps, **kwargs)
@@ -34,9 +34,8 @@ class RP2AttackModule(DetectorAttackModule):
 
         # TODO: rename a lot of these to be less confusing
         self.no_transform = attack_config['no_transform']
-        self.no_relighting = attack_config['no_relighting']
+        self.relighting = attack_config['relighting']
         self.rescaling = rescaling
-        self.relighting = relighting
         self.augment_real = attack_config['rp2_augment_real']
         self.interp = attack_config['interp'] if interp is None else interp
 
@@ -122,7 +121,8 @@ class RP2AttackModule(DetectorAttackModule):
 
         # TODO: Initialize worst-case inputs, use moving average
         # x_adv_worst = x.clone().detach()
-        ema_const = 0.99
+        # ema_const = 0.99
+        ema_const = 0
         ema_loss = None
 
         for _ in range(self.num_restarts):
@@ -285,7 +285,7 @@ class RP2AttackModule(DetectorAttackModule):
                 adv_img = apply_transform(
                     backgrounds[bg_idx].clone(), delta.clone(), patch_mask, patch_loc,
                     tf_function, curr_tf_data, interp=self.interp,
-                    **self.real_transform, no_relighting=self.no_relighting)
+                    **self.real_transform, relighting=self.relighting)
 
                 # adv_img = resize_transform(adv_img)
                 # TODO: check size of adv_img
