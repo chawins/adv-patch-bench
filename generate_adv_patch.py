@@ -248,22 +248,32 @@ def main(
     if obj_size == -1:
         obj_size = int(min(img_size) * 0.1)
     if isinstance(obj_size, int):
-        obj_size = (int(obj_size * h_w_ratio), obj_size)
+        obj_size = (round(obj_size * h_w_ratio), obj_size)
 
     print('obj size', obj_size)
     # Define patch location and size
     patch_mask = torch.zeros((1, ) + obj_size)
     # TODO: Move this to a separate script for generating patch size/location
     # Example: 10x10-inch patch in the middle of 36x36-inch sign
-    mid_height = obj_size[0] // 2 + 40
+    # (1) 1 square
+    mid_height = obj_size[0] // 2 + round(40 / 128 * obj_size[0])
     mid_width = obj_size[1] // 2
     patch_size = 10
     # mid_height = obj_size[0] // 2 + 35
     # mid_width = obj_size[1] // 2
     # patch_size = 20
-    h = int(patch_size / 36 / 2 * obj_size[0])
-    w = int(patch_size / 36 / 2 * obj_size[1])
+    h = round(patch_size / 36 / 2 * obj_size[0])
+    w = round(patch_size / 36 / 2 * obj_size[1])
     patch_mask[:, mid_height - h:mid_height + h, mid_width - w:mid_width + w] = 1
+    # (2) 2 rectangles
+    # patch_width = 20
+    # patch_height = 6
+    # h = round(patch_height / 36 / 2 * obj_size[0])
+    # w = round(patch_width / 36 / 2 * obj_size[1])
+    # offset_h = round(28 / 128 * obj_size[0])
+    # offset_w = obj_size[1] // 2
+    # patch_mask[:, offset_h - h:offset_h + h, offset_w - w:offset_w + w] = 1
+    # patch_mask[:, obj_size[0] - offset_h - h:obj_size[0] - offset_h + h, offset_w - w:offset_w + w] = 1
 
     dataloader = None
     if generate_patch == 'real':
