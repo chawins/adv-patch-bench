@@ -151,7 +151,7 @@ def run(args,
     syn_obj_path = args.syn_obj_path
 
     no_transform = args.no_transform
-    no_relighting = args.no_relighting
+    relighting = not args.no_relighting
     metrics_confidence_threshold = args.metrics_confidence_threshold
     img_size = tuple([int(x) for x in args.padded_imgsz.split(',')])
 
@@ -320,8 +320,7 @@ def run(args,
                 attack_config['input_size'] = img_size
 
             attack = RP2AttackModule(attack_config, model, None, None, None,
-                                     rescaling=False, relighting=False,
-                                     interp=args.interp, verbose=verbose)
+                                     rescaling=False, interp=args.interp, verbose=verbose)
         except:
             raise Exception('Config file not provided for targeted attacks')
 
@@ -404,7 +403,7 @@ def run(args,
                     # # Transform and apply patch on the image. `im` has range [0, 255]
                     im[image_i] = transform_and_apply_patch(
                         im[image_i].to(device), adv_patch.to(device), patch_mask, patch_loc,
-                        predicted_class, row, img_data, no_transform=no_transform, no_relighting=no_relighting,
+                        predicted_class, row, img_data, no_transform=no_transform, relighting=relighting,
                         interp=args.interp) * 255
                     num_patches_applied_to_image += 1
 
@@ -727,8 +726,8 @@ def run(args,
         if attack_type == 'per-sign':
             metrics_df_column_names.append('no_transform')
             current_exp_metrics['no_transform'] = attack_config['no_transform']
-            metrics_df_column_names.append('no_relighting')
-            current_exp_metrics['no_relighting'] = attack_config['no_relighting']
+            metrics_df_column_names.append('relighting')
+            current_exp_metrics['relighting'] = attack_config['relighting']
 
         try:
             metrics_df_column_names.append('generate_patch')

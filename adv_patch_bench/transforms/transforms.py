@@ -270,7 +270,7 @@ def apply_transform(
     tf_patch: Any = None,
     tf_bg: Any = None,
     interp: str = 'bilinear',
-    no_relighting: bool = False
+    relighting: bool = False
 ) -> torch.Tensor:
     """
     Apply patch with transformation specified by `tf_data` and `transform_func`.
@@ -294,10 +294,10 @@ def apply_transform(
     """
     ymin, xmin, height, width = patch_loc
     sign_canonical, sign_mask, M, alpha, beta = tf_data
-    if no_relighting:
-        adv_patch.clamp_(0, 1).mul_(1).add_(0).clamp_(0, 1)
-    else:
+    if relighting:
         adv_patch.clamp_(0, 1).mul_(alpha).add_(beta).clamp_(0, 1)
+    else:
+        adv_patch.clamp_(0, 1).mul_(1).add_(0).clamp_(0, 1)
     sign_canonical[:, :-1, ymin:ymin + height, xmin:xmin + width] = adv_patch
     sign_canonical[:, -1, ymin:ymin + height, xmin:xmin + width] = 1
     sign_canonical = sign_mask * patch_mask * sign_canonical
@@ -325,7 +325,7 @@ def add_singleton_dim(x, total_dim):
 
 def transform_and_apply_patch(image, adv_patch, patch_mask, patch_loc,
                               predicted_class, row, img_data,
-                              no_transform=False, no_relighting=False, interp='bilinear'):
+                              no_transform=False, relighting=True, interp='bilinear'):
 
     # Does not support batch mode. Add singleton dims to 4D if needed.
     image = add_singleton_dim(image, 4)
@@ -343,7 +343,7 @@ def transform_and_apply_patch(image, adv_patch, patch_mask, patch_loc,
     tf_data = (sign_canonical, sign_mask, M, alpha.to(device), beta.to(device))
 
     img = apply_transform(image, adv_patch, patch_mask, patch_loc,
-                          transform_func, tf_data, interp=interp, no_relighting=no_relighting)
+                          transform_func, tf_data, interp=interp, relighting=relighting)
     return img
 
 # def transform_and_apply_patch(image, adv_patch, patch_mask, patch_loc,
