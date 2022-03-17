@@ -599,10 +599,6 @@ def run(args,
                     class_name = names[class_index.item()]
                     if len(shape_to_plot_data[class_name]) < 50:
                         fn = str(path).split('/')[-1]
-
-                        # # TODO: remove
-                        # if fn != '9LmBGfnVqmfiJjenXkHgaw.jpg':
-                        #     continue
                         shape_to_plot_data[class_name].append(
                             [im[si: si + 1], targets[targets[:, 0] == si, :], path,
                              predictions_for_plotting[predictions_for_plotting[:, 0] == si]])
@@ -626,9 +622,9 @@ def run(args,
                     ti[:, 0] = 0
                     plot_images(im[i:i+1], ti, paths[i:i+1], f, names, labels=False)
             f = save_dir / f'val_batch{batch_i}_labels.jpg'  # labels
-            Thread(target=plot_images, args=(im, targets, paths, f, names), daemon=True).start()
+            Thread(target=plot_images, args=(im, targets, paths, f, names, 1920, 16, True), daemon=True).start()
             f = save_dir / f'val_batch{batch_i}_pred.jpg'  # predictions
-            Thread(target=plot_images, args=(im, output_to_target(out), paths, f, names), daemon=True).start()
+            Thread(target=plot_images, args=(im, output_to_target(out), paths, f, names, 1920, 16, False), daemon=True).start()
             print(f)
     # ======================================================================= #
     #                            END: Main eval loop                          #
