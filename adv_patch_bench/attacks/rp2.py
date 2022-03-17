@@ -43,23 +43,23 @@ class RP2AttackModule(DetectorAttackModule):
         self.verbose = verbose
 
         bg_size = (self.input_size[0] - 32, self.input_size[1] - 32)
-        self.bg_transforms = K.RandomResizedCrop(bg_size, scale=(0.8, 1), p=1.0)
+        self.bg_transforms = K.RandomResizedCrop(bg_size, scale=(0.8, 1), p=1.0,
+                                                 resample=self.interp)
         # self.obj_transforms = K.container.AugmentationSequential(
         #     K.RandomAffine(30, translate=(0.5, 0.5)),      # Only translate and rotate as in Eykholt et al.
         #     # RandomAffine(30, translate=(0.5, 0.5), scale=(0.25, 4), shear=(0.1, 0.1), p=1.0),
         #     # TODO: add more transforms in the future
         #     return_transform=True,
         # )
-        # self.mask_transforms = K.container.AugmentationSequential(
-        #     K.RandomAffine(30, translate=(0.5, 0.5), resample=Resample.NEAREST),
-        # )
-        self.obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True)
-        self.mask_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, resample=Resample.NEAREST)
+        self.obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0,
+                                             return_transform=True, resample=self.interp)
+        self.mask_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0,
+                                              resample=Resample.NEAREST)
         self.jitter_transform = K.ColorJitter(brightness=0.3, contrast=0.3, p=1.0)
         self.real_transform = {}
         if self.augment_real:
             self.real_transform['tf_patch'] = K.RandomAffine(
-                15, translate=(0.1, 0.1), scale=(0.9, 1.1), p=1.0, resample=Resample.BILINEAR)
+                15, translate=(0.1, 0.1), scale=(0.9, 1.1), p=1.0, resample=self.interp)
             self.real_transform['tf_bg'] = self.bg_transforms
 
     def _setup_opt(self, z_delta):
@@ -115,14 +115,19 @@ class RP2AttackModule(DetectorAttackModule):
         device = obj.device
         dtype = obj.dtype
 
+        obj.detach_()
+        obj_mask.detach_()
+        patch_mask.detach_()
+        backgrounds.detach_()
         obj_mask_dup = obj_mask.expand(self.num_eot, -1, -1, -1)
         ymin, xmin, height, width = mask_to_box(patch_mask)
-        patch_full = torch.zeros_like(obj)
+        # patch_full = torch.zeros_like(obj)
+        all_bg_idx = np.arange(len(backgrounds))
 
         # TODO: Initialize worst-case inputs, use moving average
         # x_adv_worst = x.clone().detach()
-        # ema_const = 0.99
-        ema_const = 0
+        ema_const = 0.99
+        # ema_const = 0
         ema_loss = None
 
         for _ in range(self.num_restarts):
@@ -131,8 +136,9 @@ class RP2AttackModule(DetectorAttackModule):
             z_delta.uniform_(-10, 10)
 
             opt = self._setup_opt(z_delta)
+            # lr_schedule = optim.lr_scheduler.MultiStepLR(opt, [500, 1000, 1500], gamma=0.1)
             lr_schedule = optim.lr_scheduler.ReduceLROnPlateau(
-                opt, factor=0.2, patience=int(self.num_steps / 10),
+                opt, factor=0.5, patience=int(self.num_steps / 10),
                 threshold=1e-9, min_lr=self.step_size * 1e-6, verbose=True)
             start_time = time.time()
 
@@ -142,11 +148,12 @@ class RP2AttackModule(DetectorAttackModule):
                 delta = self._to_model_space(z_delta, 0, 1)
 
                 # Randomly select background and apply transforms (crop and scale)
-                bg_idx = torch.randint(0, len(backgrounds), size=(self.num_eot, ))
+                np.random.shuffle(all_bg_idx)
+                bg_idx = all_bg_idx[:self.num_eot]
                 bgs = backgrounds[bg_idx]
                 bgs = self.bg_transforms(bgs)
                 # Patch image the same way as YOLO
-                bgs = letterbox(bgs, new_shape=self.input_size)[0]
+                bgs = letterbox(bgs, new_shape=self.input_size, color=114/255)[0]
                 synthetic_sign_size = obj_size[0]
 
                 if self.rescaling:
@@ -163,19 +170,21 @@ class RP2AttackModule(DetectorAttackModule):
                         30, translate=(0.45, 0.45),
                         p=1.0, return_transform=True, scale=(low_bin_edge / old_ratio, high_bin_edge / old_ratio))
 
-                # Apply random transformations
-                patch_full[:, ymin:ymin + height, xmin:xmin + width] = delta
-                adv_obj = patch_mask * patch_full + (1 - patch_mask) * obj
+                # Copy patch to synthetic sign
+                adv_obj = obj.clone()
+                adv_obj[:, ymin:ymin + height, xmin:xmin + width] = delta
 
+                # Apply random transformations to both sign and patch
                 adv_obj = adv_obj.expand(self.num_eot, -1, -1, -1)
                 if self.relighting:
                     adv_obj = self.jitter_transform(adv_obj)
                 adv_obj, tf_params = self.obj_transforms(adv_obj)
-                adv_obj = adv_obj.clamp(0, 1)
-
                 o_mask = self.mask_transforms.apply_transform(
                     obj_mask_dup, None, transform=tf_params)
+
+                # Apply sign on background
                 adv_img = o_mask * adv_obj + (1 - o_mask) * bgs
+                adv_img = adv_img.clamp(0, 1)
 
                 # DEBUG
                 # if step % 100 == 0:
@@ -183,11 +192,12 @@ class RP2AttackModule(DetectorAttackModule):
                 #     import pdb
                 #     pdb.set_trace()
 
-                loss = self.compute_loss(adv_img, obj_class)
                 tv = ((delta[:, :, :-1, :] - delta[:, :, 1:, :]).abs().mean() +
                       (delta[:, :, :, :-1] - delta[:, :, :, 1:]).abs().mean())
-                # loss = out[:, :, 4].mean() + self.lmbda * tv
+                loss = self.compute_loss(adv_img, obj_class)
                 loss += self.lmbda * tv
+                # out, _ = self.core_model(adv_img, val=True)
+                # loss = out[:, :, 4].mean() + self.lmbda * tv
                 loss.backward(retain_graph=True)
                 opt.step()
 
@@ -195,8 +205,10 @@ class RP2AttackModule(DetectorAttackModule):
                     ema_loss = loss.item()
                 else:
                     ema_loss = ema_const * ema_loss + (1 - ema_const) * loss.item()
+                # lr_schedule.step(ema_loss)
 
                 if step % 100 == 0 and self.verbose:
+                    print(self.compute_loss(adv_img, obj_class))
                     print(f'step: {step}   loss: {ema_loss:.6f}   time: {time.time() - start_time:.2f}s')
                     start_time = time.time()
 

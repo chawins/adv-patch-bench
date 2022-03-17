@@ -1,25 +1,19 @@
 #!/bin/bash
 PATCH_NAME=14_synthetic_10x10
-EXP=10
+EXP=44
 GPU=0
+MODEL_PATH=/data/shared/adv-patch-bench/yolov5/runs/train/exp2/weights/best.pt
+CSV_PATH=mapillary_vistas_final_merged.csv
 
 # CUDA_VISIBLE_DEVICES=$GPU python -u generate_adv_patch.py \
-#     --device $GPU \
-#     --seed 0 \
-#     --data mapillary_vistas.yaml \
-#     --weights /data/shared/adv-patch-bench/yolov5/runs/train/exp3/weights/best.pt \
-#     --patch-name $PATCH_NAME \
-#     --csv-path mapillary_vistas_final_merged.csv \
-#     --obj-class 14 \
-#     --obj-size 128 \
-#     --obj-path attack_assets/octagon-915.0.png \
-#     --num-bg 50 \
+#     --device $GPU --seed 0 --data mapillary_vistas.yaml \
+#     --weights $MODEL_PATH --patch-name $PATCH_NAME --csv-path CSV_PATH \
 #     --bg-dir /data/shared/mtsd_v2_fully_annotated/train \
-#     --save-images \
-#     --generate-patch synthetic \
-#     --attack-config-path attack_config.yaml \
-#     --imgsz 2560 \
-#     --padded_imgsz 1952,2592
+#     --save-images --attack-config-path attack_config.yaml \
+#     --obj-class 14 --obj-path attack_assets/octagon-915.0.png \
+#     --imgsz 1280 --padded_imgsz 992,1312 \
+#     --obj-size 128 --num-bg 50 --generate-patch synthetic
+    # --imgsz 2560 --padded_imgsz 1952,2592 \
 
 CUDA_VISIBLE_DEVICES=$GPU python -u val_attack_synthetic.py \
     --data mapillary_vistas.yaml \
@@ -28,8 +22,9 @@ CUDA_VISIBLE_DEVICES=$GPU python -u val_attack_synthetic.py \
     --adv-patch-path ./runs/val/exp$EXP/$PATCH_NAME.pkl \
     --tgt-csv-filepath mapillary_vistas_final_merged.csv \
     --attack-config-path attack_config.yaml --name $PATCH_NAME \
-    --weights /data/shared/adv-patch-bench/yolov5/runs/train/exp3/weights/best.pt \
+    --weights $MODEL_PATH \
     --obj-class 14 --plot-class-examples 14 --syn-obj-path attack_assets/octagon-915.0.png \
-    --imgsz 2560 --interp bicubic --padded_imgsz 1952,2592 --batch-size 2 \
-    --attack-type load --synthetic-eval --debug
+    --imgsz 1280 --padded_imgsz 992,1312 --batch-size 2 \
+    --interp bilinear --attack-type load --synthetic-eval --debug
     # --adv-patch-path ./runs/val/exp2/stop_sign_10x10.pkl \
+    # --imgsz 2560 --padded_imgsz 1952,2592 --batch-size 2 \
