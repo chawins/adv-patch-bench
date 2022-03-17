@@ -341,12 +341,12 @@ def plot_pr_curve(px, py, ap, save_dir='pr_curve.png', names=(), recall_per_clas
     
     if 0 < len(names) < 21:  # display per-class legend if < 21 classes
         for i, y in enumerate(py.T):            
-            if names[i] == 'synthetic_stop_sign':
+            if names[i] == 'synthetic':
                 ax.plot(px, y, linewidth=2, label=f'{names[i]} {ap[i, 0]:.3f}', color='indigo', linestyle='--')  # plot(recall, precision)
                 if recall_per_class and precision_per_class:
                     ax.plot(recall_per_class[i], precision_per_class[i], linestyle='None', color='blueviolet', marker='o', alpha=0.2, markersize=3)
                 
-                numpy_filename = Path(save_dir_str) / (str(save_dir).split('.png')[0].split('/')[-1] + '_' + 'synthetic_stop_sign' + '.npy')
+                numpy_filename = Path(save_dir_str) / (str(save_dir).split('.png')[0].split('/')[-1] + '_' + 'synthetic' + '.npy')
                 with open(numpy_filename, 'wb') as f:
                     np.save(f, y)
             elif names[i] == 'octagon':
@@ -378,10 +378,10 @@ def plot_mc_curve(px, py, save_dir='mc_curve.png', names=(), xlabel='Confidence'
 
     if 0 < len(names) < 21:  # display per-class legend if < 21 classes
         for i, y in enumerate(py):
-            if names[i] == 'synthetic_stop_sign':
+            if names[i] == 'synthetic':
                 ax.plot(px, y, label=f'{names[i]}', linewidth=2, linestyle='--', color='indigo')  # plot(confidence, metric)
                 
-                numpy_filename = Path(save_dir_str) / (str(save_dir).split('.png')[0].split('/')[-1] + '_' + 'synthetic_stop_sign' + '.npy')
+                numpy_filename = Path(save_dir_str) / (str(save_dir).split('.png')[0].split('/')[-1] + '_' + 'synthetic' + '.npy')
                 print('filename', numpy_filename)
                 with open(numpy_filename, 'wb') as f:
                     np.save(f, y)
@@ -413,7 +413,7 @@ def plot_confidence_distribution(confidence_per_class, save_dir='Confidence_dist
 
     if 0 < len(names) < 21:  # display per-class legend if < 21 classes
         for i, y in enumerate(confidence_per_class):
-            if names[i] == 'synthetic_stop_sign':
+            if names[i] == 'synthetic':
                 sns.distplot(confidence_per_class[i], hist=False, ax=ax[i], color='indigo')       
             elif names[i] == 'octagon':
                 sns.distplot(confidence_per_class[i], hist=False, ax=ax[i], color='orangered')                
