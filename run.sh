@@ -21,7 +21,8 @@
 #     --experiment clf
 #     # --evaluate
 
-CUDA_VISIBLE_DEVICES=0 python fix_use_polygon_transforms.py \
+
+CUDA_VISIBLE_DEVICES=1 python example_transforms.py \
     --seed 0 \
     --full-precision \
     --batch-size 256 \
@@ -32,7 +33,7 @@ CUDA_VISIBLE_DEVICES=0 python fix_use_polygon_transforms.py \
     --num-classes 12 \
     --resume /data/chawin/adv-patch-bench/results/4/checkpoint_best.pt
 
-# CUDA_VISIBLE_DEVICES=1 python example_transforms.py \
+# CUDA_VISIBLE_DEVICES=0 python fix_use_polygon_transforms.py \
 #     --seed 0 \
 #     --full-precision \
 #     --batch-size 256 \

@@ -63,6 +63,7 @@ SHAPE_LIST = [
 ]
 
 # PLOT_FOLDER = 'mapillaryvistas_plots_model_3_updated_optimized'
+split = 'validation'
 PLOT_FOLDER = 'delete_mapillaryvistas_plots_model_3_updated_optimized'
 NUM_IMGS_PER_PLOT = 100
 COLUMN_NAMES = 'abcdefghijklmnopqrstuvwxyz'
@@ -317,7 +318,10 @@ def main(args):
     max_num_imgs = 200
 
     if DATASET == 'mapillaryvistas':
-        data_dir = '/data/shared/mapillary_vistas/training/'
+        if split == 'train':
+            data_dir = '/data/shared/mapillary_vistas/training/'
+        elif split == 'val':
+            data_dir = '/data/shared/mapillary_vistas/validation/'
     elif DATASET == 'bdd100k':
         data_dir = '/data/shared/bdd100k/images/10k/train/'
 
@@ -452,7 +456,7 @@ def main(args):
     column_names = ['filename', 'object_id', 'shape', 'predicted_shape',
                     'predicted_class', 'group', 'batch_number', 'row', 'column',
                     'tgt', 'alpha', 'beta']
-    csv_filename = '{}_data.csv'.format(DATASET)
+    csv_filename = f'{DATASET}_{split}_data.csv'
 
     df = pd.DataFrame(columns=column_names)
     for subgroup in tqdm(subgroup_to_images):
@@ -467,7 +471,7 @@ def main(args):
         df = pd.concat([df, df_to_add], axis=0)
         df.to_csv(csv_filename, index=False)
 
-    offset_df = pd.read_csv('offset.csv')
+    offset_df = pd.read_csv(f'offset_{split}.csv')
     df['filename_png'] = df['filename'].str.split('_').str[:-1].str.join('_') + '.png'
     df['filename'] = df['filename'].str.split('_').str[:-1].str.join('_') + '.jpg'
 

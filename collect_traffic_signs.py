@@ -14,6 +14,8 @@ from adv_patch_bench.utils import get_box, pad_image
 DATASET = 'mapillaryvistas'
 # DATASET = 'bdd100k'
 
+SPLIT = 'validation'
+
 if DATASET == 'mapillaryvistas':
     TRAFFIC_SIGN_LABEL = 95
 elif DATASET == 'bdd100k':
@@ -142,7 +144,10 @@ def main():
     min_area = 1600
 
     if DATASET == 'mapillaryvistas':
-        data_dir = '/data/shared/mapillary_vistas/training/'
+        if SPLIT == 'training':
+            data_dir = '/data/shared/mapillary_vistas/training/'
+        elif SPLIT == 'validation':
+            data_dir = '/data/shared/mapillary_vistas/validation/'
     elif DATASET == 'bdd100k':
         data_dir = '/data/shared/bdd100k/images/10k/train/'
     else:
@@ -165,11 +170,11 @@ def main():
     if DATASET == 'mapillaryvistas':
         panoptic_per_image_id = {}
         for annotation in panoptic['annotations']:
-            print(annotation)
-            print()
-            print()
-            print(annotation.keys())
-            qq
+            # print(annotation)
+            # print()
+            # print()
+            # print(annotation.keys())
+            # qq
             panoptic_per_image_id[annotation['image_id']] = annotation
 
         # Convert category infos to category_id indexed dictionary
@@ -235,10 +240,9 @@ def main():
         output = crop_traffic_signs(
             filename, panoptic_per_image_id, img_path, label_path,
             min_area=min_area, pad=0.)
-        q
         # save_images(output, filename.split('.')[0], save_paths)
         offset_df = save_offset(output, filename.split('.')[0], save_paths, offset_df)
-    offset_df.to_csv('offset.csv', index=False)
+    offset_df.to_csv(f'offset_{SPLIT}.csv', index=False)
 
 
 def save_images(output, filename, paths):

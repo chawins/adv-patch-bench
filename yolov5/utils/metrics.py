@@ -103,11 +103,11 @@ def ap_per_class(tp, conf, pred_cls, target_cls, plot=False, save_dir='.', names
     # i = 359
     i = int(confidence_threshold * 1000)
 
-    # i = f1.mean(0).argmax()  # max F1 index
-    # print('f1 scores')
-    # print(f1.mean(0))
-    # print('best f1 index', i)
-    # print('best f1 index per class', f1.argmax(axis=1))
+    j = f1.mean(0).argmax()  # max F1 index
+    print('f1 scores')
+    print(f1.mean(0))
+    print('best f1 index', j)
+    print('best f1 index per class', f1.argmax(axis=1))
     
     p, r, f1, fnr = p[:, i], r[:, i], f1[:, i], fnr[:, i]
     tp = (r * nt).round()  # true positives

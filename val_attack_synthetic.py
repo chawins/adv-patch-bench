@@ -149,6 +149,7 @@ def run(args,
     attack_config_path = args.attack_config_path
     adv_sign_class = args.obj_class
     syn_obj_path = args.syn_obj_path
+    min_area = args.min_area
 
     no_transform = args.no_transform
     relighting = not args.no_relighting
@@ -346,6 +347,9 @@ def run(args,
     metrics_per_image_df = pd.DataFrame(columns=['filename', 'num_targeted_sign_class', 'num_patches', 'fn'])
     metrics_per_label_df = pd.DataFrame(
         columns=['filename', 'obj_id', 'label', 'correct_prediction', 'sign_width', 'sign_height', 'confidence'])
+
+    labels_removed = 0
+    predictions_removed = 0
 
     for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
         # 'targets' shape is # number of labels by 8 (image_id, class, x1, y1, label width, label height, number of patches applied, obj id)
@@ -550,40 +554,56 @@ def run(args,
                     confusion_matrix.process_batch(predn, labelsn)
             else:
                 correct, matches = torch.zeros(pred.shape[0], niou, dtype=torch.bool), []
-
+            
+            label_indices_to_drop = []
+            prediction_indices_to_drop = []
+                        
+            # if target is small, we drop both the target and the prediction corresponding to this target (if any)
             # Collecting results
-            for lbl_ in labels:
-                if lbl_[0] == adv_sign_class:
-                    lbl_ = lbl_.cpu()
-                    current_label_metric = {}
+            for lbl_index, lbl_ in enumerate(labels):
+                lbl_ = lbl_.cpu()
+                bbox_width = lbl_[3].item()
+                bbox_height = lbl_[4].item()
+                lbl_area = bbox_width * bbox_height
+                current_label_metric = {}
+                drop_predictions = False
+                if lbl_area < min_area:
+                    drop_predictions = True
+                    label_indices_to_drop.append(lbl_index)
+                else:
                     current_label_metric['filename'] = filename
                     current_label_metric['obj_id'] = lbl_[6].item()
                     current_label_metric['num_patches_applied_to_image'] = lbl_[5].item()
                     current_label_metric['label'] = lbl_[0].item()
                     current_label_metric['correct_prediction'] = 0
-                    current_label_metric['sign_width'] = lbl_[3].item()
-                    current_label_metric['sign_height'] = lbl_[4].item()
+                    current_label_metric['sign_width'] = bbox_width
+                    current_label_metric['sign_height'] = bbox_height
                     current_label_metric['confidence'] = None
 
-                    if len(matches) > 0:
-                        # match on obj_id
-                        match = matches[matches[:, 0] == lbl_[6]]
-                        assert len(match) <= 1
-                        if len(match) > 0:
-                            detection_index = int(match[0, 1])
-                            current_label_metric['confidence'] = pred.cpu().numpy()[detection_index, 4]
-                            if pred.cpu().numpy()[detection_index, 5] == adv_sign_class and pred.cpu().numpy()[
-                                    detection_index, 4] > metrics_confidence_threshold and correct[detection_index, 0]:
-                                current_label_metric['correct_prediction'] = 1
-                    metrics_per_label_df = metrics_per_label_df.append(current_label_metric, ignore_index=True)
+                if len(matches) > 0:
+                    # match on obj_id
+                    match = matches[matches[:, 0] == lbl_[6]]
+                    assert len(match) <= 1
+                    if len(match) > 0:
+                        detection_index = int(match[0, 1])
+                        if drop_predictions:
+                            prediction_indices_to_drop.append(detection_index)
+                            continue
+                        current_label_metric['confidence'] = pred.cpu().numpy()[detection_index, 4]
+                        if pred.cpu().numpy()[detection_index, 5] == adv_sign_class and pred.cpu().numpy()[
+                                detection_index, 4] > metrics_confidence_threshold and correct[detection_index, 0]:
+                            current_label_metric['correct_prediction'] = 1
+                metrics_per_label_df = metrics_per_label_df.append(current_label_metric, ignore_index=True)
 
-            total_positives = sum([1 for x in tcls if x == adv_sign_class])
-            sign_indices = np.logical_and(
-                pred.cpu().numpy()[:, 5] == adv_sign_class, pred.cpu().numpy()[:, 4] >
-                metrics_confidence_threshold)
-            tp = sum(correct.cpu().numpy()[sign_indices, 0])
-            current_image_metrics['fn'] = total_positives - tp
-            metrics_per_image_df = metrics_per_image_df.append(current_image_metrics, ignore_index=True)
+            labels_indices_to_keep = list(set(np.arange(len(labels))).difference(set(label_indices_to_drop)))
+            prediction_indices_to_keep = list(set(np.arange(len(pred))).difference(set(prediction_indices_to_drop)))
+            
+            pred = pred[prediction_indices_to_keep]
+            labels = labels[labels_indices_to_keep]
+            tcls = labels[:, 0].tolist() if nl else []  # target class
+
+            labels_removed += len(label_indices_to_drop)
+            predictions_removed += len(prediction_indices_to_drop)
 
             stats.append((correct.cpu(), pred[:, 4].cpu(), pred[:, 5].cpu(), tcls))  # (correct, conf, pcls, tcls)
 
@@ -629,6 +649,9 @@ def run(args,
     # ======================================================================= #
     #                            END: Main eval loop                          #
     # ======================================================================= #
+
+    print('labels_removed', labels_removed)
+    print('predictions_removed', predictions_removed)
 
     metrics_per_image_df.to_csv(f'{project}/{name}/results_per_image.csv', index=False)
     metrics_per_label_df.to_csv(f'{project}/{name}/results_per_label.csv', index=False)
@@ -848,6 +871,7 @@ def parse_opt():
                               '3D-transform. Patch will directly face camera.'))
     parser.add_argument('--no-relighting', action='store_true',
                         help=('If True, do not apply relighting transform to patch'))
+    parser.add_argument('--min-area', type=int, default=0, help='minimum area for labels. if a label has area > min_area, predictions correspoing to this target will be discarded')
 
     # ============================== Plot / log ============================= #
     parser.add_argument('--save-exp-metrics', action='store_true', help='save metrics for this experiment to dataframe')

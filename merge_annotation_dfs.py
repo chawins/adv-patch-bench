@@ -27,19 +27,24 @@ def main():
     # getting points from manual labeling (instance segmentation) and storing in a dataframe
     manual_inst_seg_anno_df = pd.DataFrame()
 
+    split = 'validation'
+
     json_files = []
 
-    for edit_path in ['traffic_signs_wrong_transform', 'traffic_signs_todo']:
-        for group in ['1', '2', '3']:
-            path_to_json = f'/data/shared/mapillary_vistas/training/hand_annotated_signs/{edit_path}/{group}/'
-            curr_json_files = [path_to_json + p for p in os.listdir(path_to_json) if p.endswith('.json')]
-            json_files.extend(curr_json_files)
-
-    for edit_path in ['traffic_signs_final_check', 'traffic_signs_use_polygon', 'traffic_signs_wrong_octagons']:
-        for group in ['1']:
-            path_to_json = f'/data/shared/mapillary_vistas/training/hand_annotated_signs/{edit_path}/{group}/'
-            curr_json_files = [path_to_json + p for p in os.listdir(path_to_json) if p.endswith('.json')]
-            json_files.extend(curr_json_files)
+    try:
+        for edit_path in ['traffic_signs_wrong_transform', 'traffic_signs_todo']:
+            for group in ['1', '2', '3']:
+                path_to_json = f'/data/shared/mapillary_vistas/{split}/hand_annotated_signs/{edit_path}/{group}/'
+                curr_json_files = [path_to_json + p for p in os.listdir(path_to_json) if p.endswith('.json')]
+                json_files.extend(curr_json_files)
+        
+        for edit_path in ['traffic_signs_final_check', 'traffic_signs_use_polygon', 'traffic_signs_wrong_octagons']:
+            for group in ['1', '2']:
+                path_to_json = f'/data/shared/mapillary_vistas/{split}/hand_annotated_signs/{edit_path}/{group}/'
+                curr_json_files = [path_to_json + p for p in os.listdir(path_to_json) if p.endswith('.json')]
+                json_files.extend(curr_json_files)
+    except:
+        pass
 
     df_filenames = []
     df_points = []
@@ -64,7 +69,10 @@ def main():
     manual_inst_seg_anno_df['points'] = df_points
 
     # loading df with manual class annotations
-    manual_annotated_df = pd.read_csv('/data/shared/mtsd_v2_fully_annotated/traffic_sign_annotation_train.csv')
+    if split == 'training':
+        manual_annotated_df = pd.read_csv('/data/shared/mtsd_v2_fully_annotated/traffic_sign_annotation_train.csv')
+    elif split == 'validation':
+        manual_annotated_df = pd.read_csv('/data/shared/mtsd_v2_fully_annotated/traffic_sign_annotation_validation.csv')
 
     # merging with instance labeling df
     manual_annotated_df = manual_annotated_df.merge(
@@ -94,9 +102,13 @@ def main():
     # read df with tgt, alpha, beta and merge
     df = pd.read_csv('mapillaryvistas_data.csv')
 
+    print(df.shape)
+
     manual_annotated_df['filename_x'] = manual_annotated_df['filename'].apply(
         lambda x: '_'.join(x.split('.png')[0].split('_')[: -1]) + '.jpg')
     manual_annotated_df = manual_annotated_df.merge(df, on=['filename_x', 'object_id'], how='left')
+
+    print(manual_annotated_df.shape)
 
     final_df = manual_annotated_df[[
         'filename', 'object_id', 'shape_x', 'predicted_shape_x', 'predicted_class_x',
@@ -168,7 +180,7 @@ def main():
     error_df['final_check'] = 1
     error_df['group'] = 1
     error_df['filename'] = error_df['filename_x']
-    error_df.to_csv('error_df_2.csv', index=False)
+    error_df.to_csv(f'error_df_{split}.csv', index=False)
 
     final_df['tgt_final'] = tgt_final_values
 
@@ -190,7 +202,7 @@ def main():
             beta_list.append(row['beta'])
     final_df['alpha'] = alpha_list
     final_df['beta'] = beta_list
-    final_df.to_csv('mapillary_vistas_final_merged.csv', index=False)
+    final_df.to_csv(f'mapillary_vistas_{split}_final_merged.csv', index=False)
 
 
 if __name__ == '__main__':

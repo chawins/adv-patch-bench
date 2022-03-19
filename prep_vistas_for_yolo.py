@@ -16,12 +16,11 @@ from tqdm.auto import tqdm
 from adv_patch_bench.models import build_classifier
 from hparams import TS_COLOR_DICT, TS_COLOR_LABEL_LIST, TS_COLOR_OFFSET_DICT
 
-
 def write_yolo_labels(model, label, panoptic_per_image_id, data_dir,
                       num_classes, anno_df, min_area=0, conf_thres=0.,
                       device='cuda', batch_size=128):
     img_path = join(data_dir, 'images')
-    label_path = join(data_dir, 'labels')
+    label_path = join(data_dir, 'labels_v2')
     makedirs(label_path, exist_ok=True)
 
     filenames = [f for f in listdir(img_path) if isfile(join(img_path, f))]
@@ -31,6 +30,8 @@ def write_yolo_labels(model, label, panoptic_per_image_id, data_dir,
     filename_to_idx = {}
     obj_idx = 0
     print('Collecting traffic signs from all images...')
+
+    # filenames_with_small_objects_only = []
     for filename in tqdm(filenames):
         img_id = filename.split('.')[0]
         segment = panoptic_per_image_id[img_id]['segments_info']
@@ -38,6 +39,8 @@ def write_yolo_labels(model, label, panoptic_per_image_id, data_dir,
         img = np.array(img_pil)
         img_height, img_width, _ = img.shape
         filename_to_idx[img_id] = []
+        
+        # image_only_had_small_objs = True
 
         for obj in segment:
             # Check if bounding box is cut off at the image boundary
@@ -48,6 +51,9 @@ def write_yolo_labels(model, label, panoptic_per_image_id, data_dir,
             if (obj['category_id'] != label or obj['area'] < min_area or is_oob
                     or width * height < min_area):
                 continue
+
+            # is_small = width * height < (20 * 20)
+            # image_only_had_small_objs = image_only_had_small_objs and is_small
 
             x_center = (xmin + width / 2) / img_width
             y_center = (ymin + height / 2) / img_height
@@ -72,6 +78,9 @@ def write_yolo_labels(model, label, panoptic_per_image_id, data_dir,
 
             obj_idx += 1
 
+        # if image_only_had_small_objs:
+        #     filenames_with_small_objects_only.apppend(filename)
+
         # DEBUG
         # if len(bbox) > 500:
         #     break
@@ -93,6 +102,9 @@ def write_yolo_labels(model, label, panoptic_per_image_id, data_dir,
 
     # Resolve some errors from predicted_labels
     prob_wrong, num_fix, no_anno = 0, 0, 0
+
+    no_anno_octagon = 0
+
     for i, (correct_shape, y) in enumerate(zip(shapes, predicted_labels)):
         pred_shape = TS_COLOR_LABEL_LIST[y]
         # Remove the color name
@@ -101,6 +113,8 @@ def write_yolo_labels(model, label, panoptic_per_image_id, data_dir,
             continue
         if correct_shape == 'no_annotation':
             no_anno += 1
+            if 'octagon' in pred_shape:
+                no_anno_octagon += 1
             continue
         num_colors = len(TS_COLOR_DICT[correct_shape])
         if num_colors == 0:
@@ -121,7 +135,18 @@ def write_yolo_labels(model, label, panoptic_per_image_id, data_dir,
           'based on max confidence which *may* be incorrect.')
     print(f'=> {no_anno}/{num_samples} samples were not annotated.')
 
-    for filename, obj_idx in filename_to_idx.items():
+    print(f'=> {no_anno_octagon}/{num_samples} octagon samples were not annotated.')
+
+    new_img_path = join(data_dir, 'images_v2')
+    makedirs(new_img_path, exist_ok=True)
+
+    for filename, obj_idx in tqdm(filename_to_idx.items()):
+        if len(obj_idx) == 0:
+            continue
+        img_pil = Image.open(join(img_path, filename+'.jpg'))
+        full_filename = join(new_img_path, filename+'.jpg')
+        img_pil.save(full_filename)
+
         text = ''
         for idx in obj_idx:
             class_label = int(predicted_labels[idx].item())
@@ -129,7 +154,17 @@ def write_yolo_labels(model, label, panoptic_per_image_id, data_dir,
             text += f'{class_label:d} {x_center} {y_center} {obj_width} {obj_height}\n'
         with open(join(label_path, filename + '.txt'), 'w') as f:
             f.write(text)
+    
+    # print()
+    # print(len(filenames_with_small_objects_only))
 
+    # with open('filenames_with_small_objects_only.txt', 'w') as f:
+    #     for line in filenames_with_small_objects_only:
+    #         f.write(line)
+    #         f.write('\n')
+
+    # import pdb
+    # pdb.set_trace()
 
 def main():
     # Arguments
