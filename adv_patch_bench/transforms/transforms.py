@@ -131,7 +131,6 @@ def get_sign_canonical(
         - src (list): List that specifies 4 key points of the canonical sign
     """
     assert sign_size_in_pixel is not None or patch_size_in_pixel is not None
-
     shape = predicted_class.split('-')[0]
     sign_width_in_mm = float(predicted_class.split('-')[1])
     if len(predicted_class.split('-')) == 3:

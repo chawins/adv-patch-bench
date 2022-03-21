@@ -31,21 +31,28 @@ def main():
 
     json_files = []
 
-    try:
-        for edit_path in ['traffic_signs_wrong_transform', 'traffic_signs_todo']:
-            for group in ['1', '2', '3']:
+    
+    # for edit_path in ['traffic_signs_wrong_transform', 'traffic_signs_todo']:
+    # for edit_path in ['traffic_signs_wrong_transform', 'traffic_signs_todo', 'traffic_signs_final_check', 'traffic_signs_use_polygon', 'traffic_signs_wrong_octagons']:
+    for edit_path in ['traffic_signs_wrong_transform', 'traffic_signs_todo', 'traffic_signs_final_check', 'traffic_signs_use_polygon', 'traffic_signs_wrong_octagons']:
+        for group in ['1', '2', '3']:
+            try:
                 path_to_json = f'/data/shared/mapillary_vistas/{split}/hand_annotated_signs/{edit_path}/{group}/'
                 curr_json_files = [path_to_json + p for p in os.listdir(path_to_json) if p.endswith('.json')]
                 json_files.extend(curr_json_files)
-        
-        for edit_path in ['traffic_signs_final_check', 'traffic_signs_use_polygon', 'traffic_signs_wrong_octagons']:
-            for group in ['1', '2']:
-                path_to_json = f'/data/shared/mapillary_vistas/{split}/hand_annotated_signs/{edit_path}/{group}/'
-                curr_json_files = [path_to_json + p for p in os.listdir(path_to_json) if p.endswith('.json')]
-                json_files.extend(curr_json_files)
-    except:
-        pass
+            except:
+                continue
 
+    
+    # for edit_path in ['traffic_signs_use_polygon', 'traffic_signs_wrong_octagons']:
+    # for edit_path in ['traffic_signs_final_check', 'traffic_signs_use_polygon', 'traffic_signs_wrong_octagons']:
+    #     for group in ['1', '2']:
+    #         path_to_json = f'/data/shared/mapillary_vistas/{split}/hand_annotated_signs/{edit_path}/{group}/'
+    #         curr_json_files = [path_to_json + p for p in os.listdir(path_to_json) if p.endswith('.json')]
+    #         json_files.extend(curr_json_files)
+    # except:
+    #     continue
+    
     df_filenames = []
     df_points = []
     for json_path in json_files:
@@ -74,6 +81,7 @@ def main():
     elif split == 'validation':
         manual_annotated_df = pd.read_csv('/data/shared/mtsd_v2_fully_annotated/traffic_sign_annotation_validation.csv')
 
+    print(manual_annotated_df.shape)
     # merging with instance labeling df
     manual_annotated_df = manual_annotated_df.merge(
         manual_inst_seg_anno_df, left_on='filename', right_on='filename', how='left')
@@ -100,16 +108,14 @@ def main():
     manual_annotated_df['final_shape'] = final_shapes
 
     # read df with tgt, alpha, beta and merge
-    df = pd.read_csv('mapillaryvistas_data.csv')
-
-    print(df.shape)
-
-    manual_annotated_df['filename_x'] = manual_annotated_df['filename'].apply(
-        lambda x: '_'.join(x.split('.png')[0].split('_')[: -1]) + '.jpg')
-    manual_annotated_df = manual_annotated_df.merge(df, on=['filename_x', 'object_id'], how='left')
-
-    print(manual_annotated_df.shape)
-
+    # df = pd.read_csv('mapillaryvistas_data.csv')
+    df = pd.read_csv('mapillaryvistas_validation_data.csv')
+    # manual_annotated_df['filename_x'] = manual_annotated_df['filename'].apply(
+        # lambda x: '_'.join(x.split('.png')[0].split('_')[: -1]) + '.jpg')
+    # manual_annotated_df = manual_annotated_df.merge(df, on=['filename_x', 'object_id'], how='left')
+    manual_annotated_df['filename'] = manual_annotated_df['filename'].apply(lambda x: '_'.join(x.split('_')[:-1]) + '.jpg')
+    manual_annotated_df = manual_annotated_df.merge(df, on=['filename', 'object_id'], how='left')
+        
     final_df = manual_annotated_df[[
         'filename', 'object_id', 'shape_x', 'predicted_shape_x', 'predicted_class_x',
         'group_x', 'batch_number_x', 'row_x', 'column_x', 'new_class', 'todo',
@@ -119,13 +125,13 @@ def main():
     ]]
 
     # final_df['tgt_final'] = final_df.apply(lambda x: x['points'] if (x['points'].any() or not np.isnan(x['points'])) else x['tgt'], axis=1)
-    final_df['tgt_final'] = final_df.apply(
-        lambda x: x['points'] if not isinstance(x['points'], float) else x['tgt'], axis=1)
+    # final_df['tgt_final'] = final_df.apply(
+        # lambda x: x['points'] if not isinstance(x['points'], float) else x['tgt'], axis=1)
 
-    shape_df = pd.read_csv('shape_df.csv')
+    # shape_df = pd.read_csv('shape_df.csv')
 
     # manual_annotated_df = manual_annotated_df.merge(shape_df, left_on=['filename_png', 'object_id'], right_on=['filename_png', 'object_id'], how='left')
-    final_df = final_df.merge(shape_df, on=['filename_png', 'object_id'], how='left')
+    # final_df = final_df.merge(shape_df, on=['filename_png', 'object_id'], how='left')
     final_df = final_df[final_df['occlusion'].isna()]
     tgt_final_values = []
 
@@ -136,7 +142,8 @@ def main():
     for index, row in tqdm(final_df.iterrows()):
         shape = row['final_shape'].split('-')[0]
         try:
-            curr_tgt = literal_eval(row['tgt_final'])
+            # curr_tgt = literal_eval(row['tgt_final'])
+            curr_tgt = literal_eval(row['tgt'])
             curr_tgt = np.array(curr_tgt)
         except:
             pass
@@ -145,20 +152,20 @@ def main():
             tgt_final_values.append(row['points'])
             continue
 
-        offset_x_ratio = row['xmin_ratio']
-        offset_y_ratio = row['ymin_ratio']
-        h0, w0 = row['h0'], row['w0']
-        h_ratio, w_ratio = row['h_ratio'], row['w_ratio']
-        h_pad, w_pad = row['h_pad'], row['w_pad']
+        # offset_x_ratio = row['xmin_ratio']
+        # offset_y_ratio = row['ymin_ratio']
+        # h0, w0 = row['h0'], row['w0']
+        # h_ratio, w_ratio = row['h_ratio'], row['w_ratio']
+        # h_pad, w_pad = row['h_pad'], row['w_pad']
 
-        # Have to correct for the padding when df is saved (TODO: this should be simplified)
-        pad_size = int(max(h0, w0) * 0.25)
-        x_min = offset_x_ratio * (w0 + pad_size * 2) - pad_size
-        y_min = offset_y_ratio * (h0 + pad_size * 2) - pad_size
+        # # Have to correct for the padding when df is saved (TODO: this should be simplified)
+        # pad_size = int(max(h0, w0) * 0.25)
+        # x_min = offset_x_ratio * (w0 + pad_size * 2) - pad_size
+        # y_min = offset_y_ratio * (h0 + pad_size * 2) - pad_size
 
-        # Order of coordinate in tgt is inverted, i.e., (x, y) instead of (y, x)
-        curr_tgt[:, 1] = (curr_tgt[:, 1] + y_min) * h_ratio + h_pad
-        curr_tgt[:, 0] = (curr_tgt[:, 0] + x_min) * w_ratio + w_pad
+        # # Order of coordinate in tgt is inverted, i.e., (x, y) instead of (y, x)
+        # curr_tgt[:, 1] = (curr_tgt[:, 1] + y_min) * h_ratio + h_pad
+        # curr_tgt[:, 0] = (curr_tgt[:, 0] + x_min) * w_ratio + w_pad
 
         tgt_final_values.append(curr_tgt.tolist())
 
@@ -179,8 +186,11 @@ def main():
 
     error_df['final_check'] = 1
     error_df['group'] = 1
-    error_df['filename'] = error_df['filename_x']
-    error_df.to_csv(f'error_df_{split}.csv', index=False)
+    # error_df['filename'] = error_df['filename_x']
+    # print(error_df.columns)
+    # if split == 'validation':
+    #     error_df['filename'] = error_df.apply(lambda x: x['filename'].split('.jpg')[0] + '_' + str(x['object_id']) + '.png', axis=1)
+    # error_df.to_csv(f'error_df_{split}.csv', index=False)
 
     final_df['tgt_final'] = tgt_final_values
 

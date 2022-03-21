@@ -19,8 +19,8 @@ from hparams import TS_COLOR_DICT, TS_COLOR_LABEL_LIST, TS_COLOR_OFFSET_DICT
 def write_yolo_labels(model, label, panoptic_per_image_id, data_dir,
                       num_classes, anno_df, min_area=0, conf_thres=0.,
                       device='cuda', batch_size=128):
-    img_path = join(data_dir, 'images')
-    label_path = join(data_dir, 'labels_v2')
+    img_path = join(data_dir, 'images_original')
+    label_path = join(data_dir, 'labels_original')
     makedirs(label_path, exist_ok=True)
 
     filenames = [f for f in listdir(img_path) if isfile(join(img_path, f))]
@@ -31,7 +31,12 @@ def write_yolo_labels(model, label, panoptic_per_image_id, data_dir,
     obj_idx = 0
     print('Collecting traffic signs from all images...')
 
-    # filenames_with_small_objects_only = []
+    bbox_df = pd.DataFrame()
+    bbox_widths = []
+    bbox_heights = []
+    img_ids = []
+    obj_ids = []
+    
     for filename in tqdm(filenames):
         img_id = filename.split('.')[0]
         segment = panoptic_per_image_id[img_id]['segments_info']
@@ -40,20 +45,21 @@ def write_yolo_labels(model, label, panoptic_per_image_id, data_dir,
         img_height, img_width, _ = img.shape
         filename_to_idx[img_id] = []
         
-        # image_only_had_small_objs = True
-
         for obj in segment:
             # Check if bounding box is cut off at the image boundary
             xmin, ymin, width, height = obj['bbox']
+
             is_oob = (xmin == 0) or (ymin == 0) or \
                 ((xmin + width) >= img_width) or ((ymin + height) >= img_height)
 
             if (obj['category_id'] != label or obj['area'] < min_area or is_oob
                     or width * height < min_area):
                 continue
-
-            # is_small = width * height < (20 * 20)
-            # image_only_had_small_objs = image_only_had_small_objs and is_small
+            
+            bbox_widths.append(width)
+            bbox_heights.append(height)
+            img_ids.append(img_id)
+            obj_ids.append(obj['id'])
 
             x_center = (xmin + width / 2) / img_width
             y_center = (ymin + height / 2) / img_height
@@ -78,13 +84,16 @@ def write_yolo_labels(model, label, panoptic_per_image_id, data_dir,
 
             obj_idx += 1
 
-        # if image_only_had_small_objs:
-        #     filenames_with_small_objects_only.apppend(filename)
-
         # DEBUG
         # if len(bbox) > 500:
         #     break
 
+    # bbox_df['widths'] = bbox_widths
+    # bbox_df['heights'] = bbox_heights 
+    # bbox_df['img_ids'] = img_ids 
+    # bbox_df['obj_ids'] = obj_ids 
+    # bbox_df.to_csv('bbox_df.csv', index=False)
+    
     # Classify all patches
     print('==> Classifying traffic signs...')
     traffic_signs = torch.cat(traffic_signs, dim=0)
@@ -103,8 +112,6 @@ def write_yolo_labels(model, label, panoptic_per_image_id, data_dir,
     # Resolve some errors from predicted_labels
     prob_wrong, num_fix, no_anno = 0, 0, 0
 
-    no_anno_octagon = 0
-
     for i, (correct_shape, y) in enumerate(zip(shapes, predicted_labels)):
         pred_shape = TS_COLOR_LABEL_LIST[y]
         # Remove the color name
@@ -113,8 +120,6 @@ def write_yolo_labels(model, label, panoptic_per_image_id, data_dir,
             continue
         if correct_shape == 'no_annotation':
             no_anno += 1
-            if 'octagon' in pred_shape:
-                no_anno_octagon += 1
             continue
         num_colors = len(TS_COLOR_DICT[correct_shape])
         if num_colors == 0:
@@ -135,18 +140,12 @@ def write_yolo_labels(model, label, panoptic_per_image_id, data_dir,
           'based on max confidence which *may* be incorrect.')
     print(f'=> {no_anno}/{num_samples} samples were not annotated.')
 
-    print(f'=> {no_anno_octagon}/{num_samples} octagon samples were not annotated.')
-
-    new_img_path = join(data_dir, 'images_v2')
+    new_img_path = join(data_dir, 'images')
+    new_labels_path = join(data_dir, 'labels')
     makedirs(new_img_path, exist_ok=True)
+    makedirs(new_labels_path, exist_ok=True)
 
     for filename, obj_idx in tqdm(filename_to_idx.items()):
-        if len(obj_idx) == 0:
-            continue
-        img_pil = Image.open(join(img_path, filename+'.jpg'))
-        full_filename = join(new_img_path, filename+'.jpg')
-        img_pil.save(full_filename)
-
         text = ''
         for idx in obj_idx:
             class_label = int(predicted_labels[idx].item())
@@ -154,18 +153,18 @@ def write_yolo_labels(model, label, panoptic_per_image_id, data_dir,
             text += f'{class_label:d} {x_center} {y_center} {obj_width} {obj_height}\n'
         with open(join(label_path, filename + '.txt'), 'w') as f:
             f.write(text)
+
+        # save images in images/labels folder only if image contains at least one label
+        if len(obj_idx) == 0:
+            continue
+        img_pil = Image.open(join(img_path, filename+'.jpg'))
+        full_filename = join(new_img_path, filename+'.jpg')
+        img_pil.save(full_filename)
+        with open(join(new_labels_path, filename + '.txt'), 'w') as f:
+            f.write(text)
+
+        
     
-    # print()
-    # print(len(filenames_with_small_objects_only))
-
-    # with open('filenames_with_small_objects_only.txt', 'w') as f:
-    #     for line in filenames_with_small_objects_only:
-    #         f.write(line)
-    #         f.write('\n')
-
-    # import pdb
-    # pdb.set_trace()
-
 def main():
     # Arguments
     min_area = 3  # NOTE: We will ignore small signs in YOLO
@@ -174,11 +173,13 @@ def main():
     num_classes = 16
     # data_dir = expanduser('~/data/mapillary_vistas/training/')
     # model_path = expanduser('~/adv-patch-bench/results/5/checkpoint_best.pt')
-    data_dir = '/data/shared/mapillary_vistas/training/'
+    split = 'validation'
+    data_dir = f'/data/shared/mapillary_vistas/{split}/'
     model_path = '/data/shared/adv-patch-bench/results/6/checkpoint_best.pt'
     # The final CSV file with our annotation. This will be used to check
     # against the prediction of the classifier
-    csv_path = './mapillary_vistas_final_merged.csv'
+    # csv_path = './mapillary_vistas_final_merged.csv'
+    csv_path = f'./mapillary_vistas_{split}_final_merged.csv'
     anno_df = pd.read_csv(csv_path)
 
     device = 'cuda'

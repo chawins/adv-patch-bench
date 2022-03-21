@@ -11,6 +11,7 @@ import json
 import os
 import pdb
 import pickle
+from posixpath import split
 import sys
 import warnings
 from ast import literal_eval
@@ -150,6 +151,7 @@ def run(args,
     adv_sign_class = args.obj_class
     syn_obj_path = args.syn_obj_path
     min_area = args.min_area
+    # split = args.split
 
     no_transform = args.no_transform
     relighting = not args.no_relighting
@@ -177,6 +179,7 @@ def run(args,
 
     # Set folder and experiment name
     name += f'_{DATASET_NAME}_{attack_type}_{exp_number}'
+    # name += f'_{DATASET_NAME}_{split}_{attack_type}_{exp_number}'
     print(f'=> Experiment name: {name}')
 
     # Initialize/load model and set device
@@ -210,6 +213,10 @@ def run(args,
 
         # Data
         data = check_dataset(data)  # check
+
+    # # print(data)
+    # print(task)
+    # qqq
 
     print(data['train'])
 
@@ -348,6 +355,8 @@ def run(args,
     metrics_per_label_df = pd.DataFrame(
         columns=['filename', 'obj_id', 'label', 'correct_prediction', 'sign_width', 'sign_height', 'confidence'])
 
+    labels_kept = 0
+    predictions_kept = 0
     labels_removed = 0
     predictions_removed = 0
 
@@ -369,7 +378,12 @@ def run(args,
 
             if use_attack and not synthetic_eval:
                 filename = path.split('/')[-1]
-                img_df = df[df['filename_y'] == filename]
+                
+                #TODO: fix this. on here for a temporary fix
+                if task == 'train':
+                    img_df = df[df['filename_y'] == filename]
+                elif task == 'val':
+                    img_df = df[df['filename'] == filename]
 
                 if len(img_df) == 0:
                     continue
@@ -456,6 +470,7 @@ def run(args,
         im = im.half() if half else im.float()  # uint8 to fp16/32
         im /= 255  # 0 - 255 to 0.0 - 1.0
         nb, _, height, width = im.shape  # batch size, channels, height, width
+
         t2 = time_sync()
         dt[0] += t2 - t1
 
@@ -468,6 +483,7 @@ def run(args,
             loss += compute_loss([x.float() for x in train_out], targets)[1]  # box, obj, cls
 
         # NMS
+
         targets[:, 2:6] *= torch.Tensor([width, height, width, height]).to(device)  # to pixels
         lb = [targets[targets[:, 0] == i, 1:] for i in range(nb)] if save_hybrid else []  # for autolabelling
         t3 = time_sync()
@@ -491,23 +507,33 @@ def run(args,
             current_image_metrics['num_targeted_sign_class'] = sum([1 for x in labels[:, 0] if x == adv_sign_class])
             current_image_metrics['num_patches'] = max(labels[:, 5].tolist() + [0])
 
+            label_indices_to_drop = []
+            prediction_indices_to_drop = []
+
             if len(pred) == 0:
+                for lbl_ in labels:
+                    lbl_ = lbl_.cpu()
+                    bbox_width = lbl_[3].item()
+                    bbox_height = lbl_[4].item()
+                    if bbox_area < min_area:
+                        label_indices_to_drop.append(lbl_index)
+                    current_label_metric = {}
+                    current_label_metric['filename'] = filename
+                    current_label_metric['obj_id'] = lbl_[6].item()
+                    current_label_metric['num_patches_applied_to_image'] = lbl_[5].item()
+                    current_label_metric['label'] = lbl_[0].item()
+                    current_label_metric['correct_prediction'] = 0
+                    current_label_metric['sign_width'] = bbox_width
+                    current_label_metric['sign_height'] = bbox_height
+                    current_label_metric['confidence'] = None
+                    metrics_per_label_df = metrics_per_label_df.append(current_label_metric, ignore_index=True)
+
+                labels_indices_to_keep = list(set(np.arange(len(labels))).difference(set(label_indices_to_drop)))
+                labels = labels[labels_indices_to_keep]
+                tcls = labels[:, 0].tolist() if nl else []  # target class
+
                 if nl:
                     stats.append((torch.zeros(0, niou, dtype=torch.bool), torch.Tensor(), torch.Tensor(), tcls))
-
-                for lbl_ in labels:
-                    if lbl_[0] == adv_sign_class:
-                        lbl_ = lbl_.cpu()
-                        current_label_metric = {}
-                        current_label_metric['filename'] = filename
-                        current_label_metric['obj_id'] = lbl_[6].item()
-                        current_label_metric['num_patches_applied_to_image'] = lbl_[5].item()
-                        current_label_metric['label'] = lbl_[0].item()
-                        current_label_metric['correct_prediction'] = 0
-                        current_label_metric['sign_width'] = lbl_[3].item()
-                        current_label_metric['sign_height'] = lbl_[4].item()
-                        current_label_metric['confidence'] = None
-                        metrics_per_label_df = metrics_per_label_df.append(current_label_metric, ignore_index=True)
 
                 continue
 
@@ -555,19 +581,17 @@ def run(args,
             else:
                 correct, matches = torch.zeros(pred.shape[0], niou, dtype=torch.bool), []
             
-            label_indices_to_drop = []
-            prediction_indices_to_drop = []
                         
             # if target is small, we drop both the target and the prediction corresponding to this target (if any)
-            # Collecting results
+            # Collecting results            
             for lbl_index, lbl_ in enumerate(labels):
                 lbl_ = lbl_.cpu()
                 bbox_width = lbl_[3].item()
                 bbox_height = lbl_[4].item()
-                lbl_area = bbox_width * bbox_height
+                bbox_area = bbox_width * bbox_height
                 current_label_metric = {}
                 drop_predictions = False
-                if lbl_area < min_area:
+                if bbox_area < min_area:
                     drop_predictions = True
                     label_indices_to_drop.append(lbl_index)
                 else:
@@ -602,6 +626,8 @@ def run(args,
             labels = labels[labels_indices_to_keep]
             tcls = labels[:, 0].tolist() if nl else []  # target class
 
+            labels_kept += len(labels_indices_to_keep)
+            predictions_kept += len(prediction_indices_to_keep)
             labels_removed += len(label_indices_to_drop)
             predictions_removed += len(prediction_indices_to_drop)
 
@@ -650,6 +676,8 @@ def run(args,
     #                            END: Main eval loop                          #
     # ======================================================================= #
 
+    print('labels_kept', labels_kept)
+    print('predictions_kept', predictions_kept)
     print('labels_removed', labels_removed)
     print('predictions_removed', predictions_removed)
 

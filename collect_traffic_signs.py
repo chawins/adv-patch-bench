@@ -1,6 +1,6 @@
 import csv
 import json
-from os import listdir
+from os import listdir, makedirs
 from os.path import isfile, join
 
 import numpy as np
@@ -234,13 +234,15 @@ def main():
 
     print('[INFO] running detection algorithm')
     save_paths = [join(data_dir, 'traffic_signs'), join(data_dir, 'masks')]
+    for p in save_paths:
+        makedirs(p, exist_ok=True)
 
     offset_df = pd.DataFrame(columns=['filename', 'obj_id', 'xmin', 'ymin', 'xmin_ratio', 'ymin_ratio'])
     for filename in tqdm(filenames):
         output = crop_traffic_signs(
             filename, panoptic_per_image_id, img_path, label_path,
             min_area=min_area, pad=0.)
-        # save_images(output, filename.split('.')[0], save_paths)
+        save_images(output, filename.split('.')[0], save_paths)
         offset_df = save_offset(output, filename.split('.')[0], save_paths, offset_df)
     offset_df.to_csv(f'offset_{SPLIT}.csv', index=False)
 

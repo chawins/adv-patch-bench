@@ -187,7 +187,7 @@ def compute_example_transform(traffic_sign, mask, predicted_class, demo_patch,
         # Group 1: draw both vertices and patch
         if group == 1:
             sign_canonical, sign_mask, src = get_sign_canonical(
-                shape, predicted_class, patch_size_in_pixel, patch_size_in_mm)
+                predicted_class, patch_size_in_pixel, patch_size_in_mm)
 
             old_patch = torch.masked_select(traffic_sign, torch.from_numpy(bool_mask).bool())
             alpha, beta = relight_range(old_patch.numpy().reshape(-1, 1))
@@ -210,6 +210,8 @@ def compute_example_transform(traffic_sign, mask, predicted_class, demo_patch,
             tgt = tgt.astype(np.float32)
 
             if len(src) == 3:
+                print(len(src))
+                print(len(tgt))
                 M = torch.from_numpy(cv.getAffineTransform(src, tgt)).unsqueeze(0).float()
                 transform_func = warp_affine
             else:
@@ -320,7 +322,7 @@ def main(args):
     if DATASET == 'mapillaryvistas':
         if split == 'train':
             data_dir = '/data/shared/mapillary_vistas/training/'
-        elif split == 'val':
+        elif split == 'validation':
             data_dir = '/data/shared/mapillary_vistas/validation/'
     elif DATASET == 'bdd100k':
         data_dir = '/data/shared/bdd100k/images/10k/train/'
@@ -429,9 +431,6 @@ def main(args):
     for img_file, mask_file, y in tqdm(zip(img_files, mask_files, y_hat)):
         filename = img_file.split('/')[-1]
 
-        # if filename != '0KohgmStOYkLZM6v-Frfew_96.png':
-        #     continue
-
         assert filename == mask_file.split('/')[-1]
         image = np.asarray(Image.open(img_file))
         Image.open(mask_file).save('test_mask.png')
@@ -477,7 +476,7 @@ def main(args):
 
     df['object_id'] = df['object_id'].astype('int64')
     offset_df['obj_id'] = offset_df['obj_id'].astype('int64')
-    df = df.merge(right=offset_df, left_on=['filename_png', 'object_id'], right_on=['filename', 'obj_id'])
+    df = df.merge(right=offset_df, left_on=['filename', 'object_id'], right_on=['filename', 'obj_id'])
     df.to_csv(csv_filename, index=False)
 
 
