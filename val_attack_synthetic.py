@@ -351,9 +351,11 @@ def run(args,
             shape_to_plot_data[class_name] = []
 
     # TODO: remove 'metrics_per_image_df' in the future
-    metrics_per_image_df = pd.DataFrame(columns=['filename', 'num_targeted_sign_class', 'num_patches', 'fn'])
+    metrics_per_image_df = pd.DataFrame(
+        columns=['filename', 'num_targeted_sign_class', 'num_patches', 'fn'])
     metrics_per_label_df = pd.DataFrame(
-        columns=['filename', 'obj_id', 'label', 'correct_prediction', 'sign_width', 'sign_height', 'confidence'])
+        columns=['filename', 'obj_id', 'label', 'correct_prediction',
+                 'sign_width', 'sign_height', 'confidence'])
 
     labels_kept = 0
     predictions_kept = 0
@@ -361,7 +363,8 @@ def run(args,
     predictions_removed = 0
 
     for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
-        # 'targets' shape is # number of labels by 8 (image_id, class, x1, y1, label width, label height, number of patches applied, obj id)
+        # 'targets' shape is # number of labels by 8
+        # (image_id, class, x1, y1, label_width, label_height, #patches, obj_id)
         targets = torch.nn.functional.pad(targets, (0, 2), "constant", 0)  # effectively zero padding
 
         # DEBUG
@@ -378,8 +381,8 @@ def run(args,
 
             if use_attack and not synthetic_eval:
                 filename = path.split('/')[-1]
-                
-                #TODO: fix this. on here for a temporary fix
+
+                # TODO: fix this. on here for a temporary fix
                 if task == 'train':
                     img_df = df[df['filename_y'] == filename]
                 elif task == 'val':
@@ -580,10 +583,9 @@ def run(args,
                     confusion_matrix.process_batch(predn, labelsn)
             else:
                 correct, matches = torch.zeros(pred.shape[0], niou, dtype=torch.bool), []
-            
-                        
+
             # if target is small, we drop both the target and the prediction corresponding to this target (if any)
-            # Collecting results            
+            # Collecting results
             for lbl_index, lbl_ in enumerate(labels):
                 lbl_ = lbl_.cpu()
                 bbox_width = lbl_[3].item()
@@ -621,7 +623,7 @@ def run(args,
 
             labels_indices_to_keep = list(set(np.arange(len(labels))).difference(set(label_indices_to_drop)))
             prediction_indices_to_keep = list(set(np.arange(len(pred))).difference(set(prediction_indices_to_drop)))
-            
+
             correct = correct[prediction_indices_to_keep]
             pred = pred[prediction_indices_to_keep]
             labels = labels[labels_indices_to_keep]
@@ -671,7 +673,8 @@ def run(args,
             f = save_dir / f'val_batch{batch_i}_labels.jpg'  # labels
             Thread(target=plot_images, args=(im, targets, paths, f, names, 1920, 16, True), daemon=True).start()
             f = save_dir / f'val_batch{batch_i}_pred.jpg'  # predictions
-            Thread(target=plot_images, args=(im, output_to_target(out), paths, f, names, 1920, 16, False), daemon=True).start()
+            Thread(target=plot_images, args=(im, output_to_target(out),
+                   paths, f, names, 1920, 16, False), daemon=True).start()
             print(f)
     # ======================================================================= #
     #                            END: Main eval loop                          #
@@ -879,7 +882,6 @@ def parse_opt():
                         help='evaluate with pasted synthetic signs')
     parser.add_argument('--debug', action='store_true')
     # =========================== Attack arguments ========================== #
-    # General
     parser.add_argument('--attack-type', type=str, required=True,
                         help='which attack evaluation to run (none, load, per-sign, random, debug)')
     parser.add_argument('--adv-patch-path', type=str, default='',
@@ -900,8 +902,9 @@ def parse_opt():
                               '3D-transform. Patch will directly face camera.'))
     parser.add_argument('--no-relighting', action='store_true',
                         help=('If True, do not apply relighting transform to patch'))
-    parser.add_argument('--min-area', type=int, default=0, help='minimum area for labels. if a label has area > min_area, predictions correspoing to this target will be discarded')
-
+    parser.add_argument('--min-area', type=float, default=0,
+                        help=('Minimum area for labels. if a label has area > min_area,'
+                              'predictions correspoing to this target will be discarded'))
     # ============================== Plot / log ============================= #
     parser.add_argument('--save-exp-metrics', action='store_true', help='save metrics for this experiment to dataframe')
     parser.add_argument('--plot-single-images', action='store_true',
