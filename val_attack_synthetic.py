@@ -622,6 +622,7 @@ def run(args,
             labels_indices_to_keep = list(set(np.arange(len(labels))).difference(set(label_indices_to_drop)))
             prediction_indices_to_keep = list(set(np.arange(len(pred))).difference(set(prediction_indices_to_drop)))
             
+            correct = correct[prediction_indices_to_keep]
             pred = pred[prediction_indices_to_keep]
             labels = labels[labels_indices_to_keep]
             tcls = labels[:, 0].tolist() if nl else []  # target class
