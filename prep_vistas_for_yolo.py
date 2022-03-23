@@ -28,14 +28,9 @@ def write_yolo_labels(model, label, panoptic_per_image_id, data_dir,
 
     bbox, traffic_signs, shapes = [], [], []
     filename_to_idx = {}
+    idx_to_obj_id = {}
     obj_idx = 0
     print('Collecting traffic signs from all images...')
-
-    bbox_df = pd.DataFrame()
-    bbox_widths = []
-    bbox_heights = []
-    img_ids = []
-    obj_ids = []
     
     for filename in tqdm(filenames):
         img_id = filename.split('.')[0]
@@ -55,11 +50,6 @@ def write_yolo_labels(model, label, panoptic_per_image_id, data_dir,
             if (obj['category_id'] != label or obj['area'] < min_area or is_oob
                     or width * height < min_area):
                 continue
-            
-            bbox_widths.append(width)
-            bbox_heights.append(height)
-            img_ids.append(img_id)
-            obj_ids.append(obj['id'])
 
             x_center = (xmin + width / 2) / img_width
             y_center = (ymin + height / 2) / img_height
@@ -73,6 +63,7 @@ def write_yolo_labels(model, label, panoptic_per_image_id, data_dir,
             traffic_sign = traffic_sign.permute(2, 0, 1).unsqueeze(0) / 255
             traffic_signs.append(TF.resize(traffic_sign, [128, 128]))
             filename_to_idx[img_id].append(obj_idx)
+            idx_to_obj_id[obj_idx] = obj['id']
 
             # Get available "final_shape" from our annotation
             traffic_sign_name = f"{img_id}_{obj['id']}.png"
@@ -88,12 +79,6 @@ def write_yolo_labels(model, label, panoptic_per_image_id, data_dir,
         # if len(bbox) > 500:
         #     break
 
-    # bbox_df['widths'] = bbox_widths
-    # bbox_df['heights'] = bbox_heights 
-    # bbox_df['img_ids'] = img_ids 
-    # bbox_df['obj_ids'] = obj_ids 
-    # bbox_df.to_csv('bbox_df.csv', index=False)
-    
     # Classify all patches
     print('==> Classifying traffic signs...')
     traffic_signs = torch.cat(traffic_signs, dim=0)
@@ -150,7 +135,8 @@ def write_yolo_labels(model, label, panoptic_per_image_id, data_dir,
         for idx in obj_idx:
             class_label = int(predicted_labels[idx].item())
             x_center, y_center, obj_width, obj_height = bbox[idx]
-            text += f'{class_label:d} {x_center} {y_center} {obj_width} {obj_height}\n'
+            obj_id = idx_to_obj_id[idx]
+            text += f'{class_label:d} {x_center} {y_center} {obj_width} {obj_height} {obj_id}\n'
         with open(join(label_path, filename + '.txt'), 'w') as f:
             f.write(text)
 
@@ -173,6 +159,7 @@ def main():
     num_classes = 16
     # data_dir = expanduser('~/data/mapillary_vistas/training/')
     # model_path = expanduser('~/adv-patch-bench/results/5/checkpoint_best.pt')
+    # split = 'training'
     split = 'validation'
     data_dir = f'/data/shared/mapillary_vistas/{split}/'
     model_path = '/data/shared/adv-patch-bench/results/6/checkpoint_best.pt'

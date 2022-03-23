@@ -199,12 +199,17 @@ def main():
         'predicted_class_x': 'predicted_class', 'batch_number_x': 'batch_number',
         'row_x': 'row', 'column_x': 'column', 'filename_x': 'filename'
     })
-    missed_alpha_beta_df = pd.read_csv('mapillary_vistas_missed_alpha_beta.csv')
+    missed_alpha_beta_df = pd.read_csv(f'mapillary_vistas_{split}_missed_alpha_beta.csv')
     alpha_list = []
     beta_list = []
     for index, row in tqdm(final_df.iterrows()):
-        if row['filename'] in missed_alpha_beta_df['filename'].values:
-            idx = missed_alpha_beta_df['filename'] == row['filename']
+        if split == 'validation':
+            # filename_and_obj_id = row['filename'] + '_' + row['obj_id']
+            filename_and_obj_id = row['filename'].split('.jpg')[0] + '_' + str(row['object_id']) + '.png'
+            print(filename_and_obj_id)
+        if filename_and_obj_id in missed_alpha_beta_df['filename'].values:
+            print(filename_and_obj_id in missed_alpha_beta_df['filename'].values)
+            idx = missed_alpha_beta_df['filename'] == filename_and_obj_id
             alpha_list.append(missed_alpha_beta_df[idx]['alpha'].item())
             beta_list.append(missed_alpha_beta_df[idx]['beta'].item())
         else:

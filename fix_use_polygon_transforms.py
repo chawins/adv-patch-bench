@@ -513,7 +513,8 @@ def main(args):
     main_df = pd.read_csv(f'mapillary_vistas_{split}_final_merged.csv')
     main_df = main_df.merge(corrections_df, on=['filename'], how='left', suffixes=('', '_polygon'))
     print('saving df')
-    main_df.to_csv(f'mapillary_vistas_{split}_final_merged_real_final.csv', index=False)
+    # main_df.to_csv(f'mapillary_vistas_{split}_final_merged_real_final.csv', index=False)
+    main_df.to_csv(f'mapillary_vistas_{split}_final_merged.csv', index=False)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('Example Transform', parents=[get_args_parser()])

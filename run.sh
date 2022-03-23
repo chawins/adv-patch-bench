@@ -33,6 +33,17 @@
 #     --num-classes 12 \
 #     --resume /data/chawin/adv-patch-bench/results/4/checkpoint_best.pt
 
+# CUDA_VISIBLE_DEVICES=0 python example_transforms_get_missed_alpha_betas.py \
+#     --seed 0 \
+#     --full-precision \
+#     --batch-size 256 \
+#     --data /data/shared/mtsd_v2_fully_annotated/cropped_signs_v6/ \
+#     --dataset mtsd \
+#     --arch resnet18 \
+#     --output-dir /data/chawin/adv-patch-bench/results/ \
+#     --num-classes 12 \
+#     --resume /data/chawin/adv-patch-bench/results/4/checkpoint_best.pt
+
 CUDA_VISIBLE_DEVICES=0 python fix_use_polygon_transforms.py \
     --seed 0 \
     --full-precision \
@@ -43,6 +54,8 @@ CUDA_VISIBLE_DEVICES=0 python fix_use_polygon_transforms.py \
     --output-dir /data/chawin/adv-patch-bench/results/ \
     --num-classes 12 \
     --resume /data/chawin/adv-patch-bench/results/4/checkpoint_best.pt
+
+
 
 # CUDA_VISIBLE_DEVICES=0 python generate_adv_patch.py \
 #     --seed 0 \

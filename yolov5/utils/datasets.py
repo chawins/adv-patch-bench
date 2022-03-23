@@ -616,7 +616,7 @@ class LoadImagesAndLabels(Dataset):
             # labels = cutout(img, labels, p=0.5)
             # nl = len(labels)  # update after cutout
 
-        labels_out = torch.zeros((nl, 6))
+        labels_out = torch.zeros((nl, 7))
         if nl:
             labels_out[:, 1:] = torch.from_numpy(labels)
 
@@ -917,9 +917,9 @@ def verify_image_label(args):
                 l = np.array(l, dtype=np.float32)
             nl = len(l)
             if nl:
-                assert l.shape[1] == 5, f'labels require 5 columns, {l.shape[1]} columns detected'
+                assert l.shape[1] == 6, f'labels require 5 columns, {l.shape[1]} columns detected'
                 assert (l >= 0).all(), f'negative label values {l[l < 0]}'
-                assert (l[:, 1:] <= 1).all(), f'non-normalized or out of bounds coordinates {l[:, 1:][l[:, 1:] > 1]}'
+                assert (l[:, 1:-2] <= 1).all(), f'non-normalized or out of bounds coordinates {l[:, 1:][l[:, 1:] > 1]}'
                 _, i = np.unique(l, axis=0, return_index=True)
                 if len(i) < nl:  # duplicate row check
                     l = l[i]  # remove duplicates
@@ -928,10 +928,10 @@ def verify_image_label(args):
                     msg = f'{prefix}WARNING: {im_file}: {nl - len(i)} duplicate labels removed'
             else:
                 ne = 1  # label empty
-                l = np.zeros((0, 5), dtype=np.float32)
+                l = np.zeros((0, 6), dtype=np.float32)
         else:
             nm = 1  # label missing
-            l = np.zeros((0, 5), dtype=np.float32)
+            l = np.zeros((0, 6), dtype=np.float32)
         return im_file, l, shape, segments, nm, nf, ne, nc, msg
     except Exception as e:
         nc = 1

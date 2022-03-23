@@ -362,7 +362,7 @@ def run(args,
 
     for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
         # 'targets' shape is # number of labels by 8 (image_id, class, x1, y1, label width, label height, number of patches applied, obj id)
-        targets = torch.nn.functional.pad(targets, (0, 2), "constant", 0)  # effectively zero padding
+        targets = torch.nn.functional.pad(targets, (0, 1), "constant", 0)  # effectively zero padding
 
         # DEBUG
         if args.debug and batch_i == 20:
@@ -395,7 +395,7 @@ def run(args,
                     continue
                 num_apply_imgs += 1
 
-                num_patches_applied_to_image = 0
+                # num_patches_applied_to_image = 0
 
                 # Apply patch on all of the signs on this image
                 for _, row in img_df.iterrows():
@@ -406,8 +406,7 @@ def run(args,
                     shape = predicted_class.split('-')[0]
                     if shape != names[adv_sign_class]:
                         continue
-                    total_num_patches += 1
-
+                    
                     # Run attack for each sign
                     if attack_type == 'per-sign':
                         print('=> Generating adv patch...')
@@ -423,10 +422,11 @@ def run(args,
                         im[image_i].to(device), adv_patch.to(device), patch_mask, patch_loc,
                         predicted_class, row, img_data, no_transform=no_transform, relighting=relighting,
                         interp=args.interp) * 255
-                    num_patches_applied_to_image += 1
+                    # num_patches_applied_to_image += 1
+                    total_num_patches += 1
 
                 # set targets[6] to #patches_applied_to_image
-                targets[targets[:, 0] == image_i, 6] = num_patches_applied_to_image
+                # targets[targets[:, 0] == image_i, 6] = num_patches_applied_to_image
 
             elif synthetic_eval:
                 if use_attack:
@@ -519,10 +519,10 @@ def run(args,
                         label_indices_to_drop.append(lbl_index)
                     current_label_metric = {}
                     current_label_metric['filename'] = filename
-                    current_label_metric['obj_id'] = lbl_[6].item()
-                    current_label_metric['num_patches_applied_to_image'] = lbl_[5].item()
+                    current_label_metric['obj_id'] = lbl_[5].item()
                     current_label_metric['label'] = lbl_[0].item()
                     current_label_metric['correct_prediction'] = 0
+                    current_label_metric['prediction'] = None
                     current_label_metric['sign_width'] = bbox_width
                     current_label_metric['sign_height'] = bbox_height
                     current_label_metric['confidence'] = None
@@ -596,10 +596,10 @@ def run(args,
                     label_indices_to_drop.append(lbl_index)
                 else:
                     current_label_metric['filename'] = filename
-                    current_label_metric['obj_id'] = lbl_[6].item()
-                    current_label_metric['num_patches_applied_to_image'] = lbl_[5].item()
+                    current_label_metric['obj_id'] = lbl_[5].item()
                     current_label_metric['label'] = lbl_[0].item()
                     current_label_metric['correct_prediction'] = 0
+                    current_label_metric['prediction'] = None
                     current_label_metric['sign_width'] = bbox_width
                     current_label_metric['sign_height'] = bbox_height
                     current_label_metric['confidence'] = None
@@ -614,9 +614,11 @@ def run(args,
                             prediction_indices_to_drop.append(detection_index)
                             continue
                         current_label_metric['confidence'] = pred.cpu().numpy()[detection_index, 4]
+                        current_label_metric['prediction'] = pred.cpu().numpy()[detection_index, 5]
                         if pred.cpu().numpy()[detection_index, 5] == adv_sign_class and pred.cpu().numpy()[
                                 detection_index, 4] > metrics_confidence_threshold and correct[detection_index, 0]:
                             current_label_metric['correct_prediction'] = 1
+                            
                 metrics_per_label_df = metrics_per_label_df.append(current_label_metric, ignore_index=True)
 
             labels_indices_to_keep = list(set(np.arange(len(labels))).difference(set(label_indices_to_drop)))
