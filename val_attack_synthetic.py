@@ -681,11 +681,6 @@ def run(args,
     #                            END: Main eval loop                          #
     # ======================================================================= #
 
-    print('labels_kept', labels_kept)
-    print('predictions_kept', predictions_kept)
-    print('labels_removed', labels_removed)
-    print('predictions_removed', predictions_removed)
-
     metrics_per_image_df.to_csv(f'{project}/{name}/results_per_image.csv', index=False)
     metrics_per_label_df.to_csv(f'{project}/{name}/results_per_label.csv', index=False)
 
@@ -712,7 +707,7 @@ def run(args,
     current_exp_metrics = {}
 
     if len(stats) and stats[0].any():
-        tp, fp, p, r, f1, ap, ap_class, fnr, fn = ap_per_class(
+        tp, fp, p, r, f1, ap, ap_class, fnr, fn, max_f1_index = ap_per_class(
             *stats, plot=plots, save_dir=save_dir, names=names, confidence_threshold=metrics_confidence_threshold)
         ap50, ap = ap[:, 0], ap.mean(1)  # AP@0.5, AP@0.5:0.95
         mp, mr, map50, map = p.mean(), r.mean(), ap50.mean(), ap.mean()
@@ -735,6 +730,20 @@ def run(args,
     metrics_df_column_names.append('map_50_95_all')
     current_exp_metrics['map_50_95_all'] = map
     LOGGER.info(pf % ('all', seen, nt.sum(), mp, mr, map50, map))
+
+    metrics_df_column_names.append('min_area')
+    current_exp_metrics['min_area'] = min_area
+    metrics_df_column_names.append('labels_kept')
+    current_exp_metrics['labels_kept'] = labels_kept
+    metrics_df_column_names.append('predictions_kept')
+    current_exp_metrics['predictions_kept'] = predictions_kept
+    metrics_df_column_names.append('labels_removed')
+    current_exp_metrics['labels_removed'] = labels_removed
+    metrics_df_column_names.append('predictions_removed')
+    current_exp_metrics['predictions_removed'] = predictions_removed
+
+    metrics_df_column_names.append('max_f1_index')
+    current_exp_metrics['max_f1_index'] = max_f1_index
 
     # Print results per class
     # if (verbose or (nc < 50 and not training)) and nc > 1 and len(stats):
