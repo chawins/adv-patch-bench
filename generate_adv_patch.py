@@ -226,7 +226,8 @@ def main(
     rescaling=False,
     csv_path='',
     data=None,
-    attack_config_path=None
+    attack_config_path=None,
+    task=None
 ):
     cudnn.benchmark = True
     torch.manual_seed(seed)
@@ -281,7 +282,6 @@ def main(
     # patch_mask[:, obj_size[0] - offset_h - h:obj_size[0] - offset_h + h, offset_w - w:offset_w + w] = 1
 
     dataloader = None
-    task = None
     if generate_patch == 'real':
         task = 'train'  # Use transform-annotated images from training set
         stride, pt = model.stride, model.pt
@@ -315,6 +315,7 @@ if __name__ == "__main__":
     parser.add_argument('--device', type=str, default='0', help='set device, e.g., "0,1,3"')
     parser.add_argument('--data', type=str, default=ROOT / 'data/coco128.yaml', help='dataset.yaml path')
     parser.add_argument('--weights', nargs='+', type=str, default=ROOT / 'yolov5s.pt', help='model.pt path(s)')
+    parser.add_argument('--task', default='train', help='train or val')
     parser.add_argument('--batch-size', type=int, default=32, help='batch size')
     parser.add_argument('--imgsz', type=int, default=1280, help='inference size (width)')
     parser.add_argument('--save-txt', action='store_true', help='save results to *.txt')
