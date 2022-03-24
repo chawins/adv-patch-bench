@@ -1,6 +1,6 @@
 #!/bin/bash
 GPU=1
-PATCH_NAME=test-min-area-1200
+PATCH_NAME=test-min-area-200
 EXP=46
 MODEL_PATH=/data/shared/adv-patch-bench/yolov5/runs/train/exp2/weights/best.pt
 CSV_PATH=mapillary_vistas_final_training_merged.csv
@@ -26,7 +26,7 @@ CUDA_VISIBLE_DEVICES=$GPU python -u val_attack_synthetic.py \
     --weights $MODEL_PATH \
     --obj-class 14 --plot-class-examples 14 --syn-obj-path attack_assets/octagon-915.0.png \
     --imgsz 1280 --padded_imgsz 992,1312 --batch-size 8 \
-    --interp bilinear --attack-type none --min-area 1200
+    --interp bilinear --attack-type none --min-area 200
     # --metrics-confidence-threshold 0.359 \
 # --adv-patch-path ./runs/val/exp2/stop_sign_10x10.pkl \
 # --imgsz 2560 --padded_imgsz 1952,2592 --batch-size 2 \

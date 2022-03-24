@@ -179,10 +179,10 @@ def ap_per_class_custom(tp, conf, pred_cls, target_cls, plot=False, save_dir='.'
     fp = (tp / (p + eps) - tp).round()  # false positives
     fn = nt - tp
     # nt is positives
-    all_precision = tp.sum() / (tp.sum() + fp.sum())
-    all_fnr = fn.sum() / nt.sum()
+    precision_cmb = tp.sum() / (tp.sum() + fp.sum())
+    fnr_cmb = fn.sum() / nt.sum()
     return (tp, p, r, ap, unique_classes.astype('int32'), fnr, fn, i,
-            all_precision, all_fnr)
+            precision_cmb, fnr_cmb)
 
 
 def compute_ap(recall, precision):

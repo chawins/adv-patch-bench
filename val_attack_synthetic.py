@@ -108,7 +108,7 @@ def process_batch(detections, labels, iouv):
 
 def populate_default_metric(lbl_, min_area, filename):
     lbl_ = lbl_.cpu().numpy()
-    class_label, _, _, bbox_width, bbox_height, obj_id, _ = lbl_
+    class_label, _, _, bbox_width, bbox_height, obj_id = lbl_
     bbox_area = bbox_width * bbox_height
     current_label_metric = {}
     current_label_metric['filename'] = filename
@@ -119,7 +119,9 @@ def populate_default_metric(lbl_, min_area, filename):
     current_label_metric['sign_width'] = bbox_width
     current_label_metric['sign_height'] = bbox_height
     current_label_metric['confidence'] = None
-    current_label_metric['too_small'] = bbox_area < min_area
+    # current_label_metric['too_small'] = bbox_area < min_area
+    # FIXME
+    current_label_metric['too_small'] = bbox_area < min_area or class_label == 15
     return current_label_metric
 
 
@@ -382,8 +384,6 @@ def run(args,
     for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
         # Originally, targets has shape (#labels, 7)
         # [image_id, class, x1, y1, label_width, label_height, obj_id]
-        # TODO: is this still needed?
-        targets = torch.nn.functional.pad(targets, (0, 1), "constant", 0)  # effectively zero padding
 
         # DEBUG
         if args.debug and batch_i == 100:
@@ -393,10 +393,6 @@ def run(args,
             break
         # ======================= BEGIN: apply patch ======================== #
         for image_i, path in enumerate(paths):
-            # Assign each label in the image an object id
-            # TODO: is this still needed?
-            targets[targets[:, 0] == image_i, 7] = torch.arange(
-                torch.sum(targets[:, 0] == image_i), dtype=targets.dtype)
 
             if use_attack and not synthetic_eval:
                 filename = path.split('/')[-1]
@@ -528,8 +524,6 @@ def run(args,
             current_image_metrics = {}
             current_image_metrics['filename'] = filename
             current_image_metrics['num_targeted_sign_class'] = sum([1 for x in labels[:, 0] if x == adv_sign_class])
-            # FIXME: labels[:, 5] has been changed to obj_id?
-            current_image_metrics['num_patches'] = max(labels[:, 5].tolist() + [0])
 
             # If the target object is too small, we drop both the target and
             # the corresponding prediction.
@@ -539,7 +533,6 @@ def run(args,
             # If there's no prediction at all, we can collect the targets and
             # continue to the next image.
             if len(pred) == 0:
-                # FIXME: for lbl_ in labels:
                 for lbl_index, lbl_ in enumerate(labels):
                     current_label_metric = populate_default_metric(lbl_, min_area, filename)
                     lbl_index_to_keep[lbl_index] = ~current_label_metric['too_small']
