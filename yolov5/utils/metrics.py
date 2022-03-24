@@ -169,7 +169,7 @@ def ap_per_class_custom(tp, conf, pred_cls, target_cls, plot=False, save_dir='.'
     print('f1 scores')
     print(f1.mean(0))
     print('best f1 index', i)
-    print('best f1 index per class', f1.argmax(axis=1))
+    # print('best f1 index per class', f1.argmax(axis=1))
 
     fnr_pickle_filepath = str(save_dir) + '/fnr.pickle'
     with open(fnr_pickle_filepath, 'wb') as handle:

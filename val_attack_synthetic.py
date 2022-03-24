@@ -489,7 +489,8 @@ def run(args,
         targets[:, 2:6] *= torch.Tensor([width, height, width, height]).to(device)  # to pixels
         lb = [targets[targets[:, 0] == i, 1:] for i in range(nb)] if save_hybrid else []  # for autolabelling
         t3 = time_sync()
-        out = non_max_suppression(out, conf_thres, iou_thres, labels=lb, multi_label=True, agnostic=single_cls)
+        out = non_max_suppression(out, conf_thres, iou_thres, labels=lb,
+                                  multi_label=True, agnostic=single_cls)
         dt[2] += time_sync() - t3
 
         # Metrics
@@ -583,7 +584,8 @@ def run(args,
             else:
                 correct, matches = torch.zeros(pred.shape[0], niou, dtype=torch.bool), []
 
-            # if target is small, we drop both the target and the prediction corresponding to this target (if any)
+            # if target is small, we drop both the target and the prediction
+            # corresponding to this target (if any).
             # Collecting results
             for lbl_index, lbl_ in enumerate(labels):
                 lbl_ = lbl_.cpu()
@@ -614,10 +616,14 @@ def run(args,
                         if drop_predictions:
                             prediction_indices_to_drop.append(detection_index)
                             continue
-                        current_label_metric['confidence'] = pred.cpu().numpy()[detection_index, 4]
-                        current_label_metric['prediction'] = pred.cpu().numpy()[detection_index, 5]
-                        if pred.cpu().numpy()[detection_index, 5] == adv_sign_class and pred.cpu().numpy()[
-                                detection_index, 4] > metrics_conf_thres and correct[detection_index, 0]:
+                        pred_conf, pred_label = pred[detection_index, 4:6].cpu().numpy()
+                        current_label_metric['confidence'] = pred_conf
+                        current_label_metric['prediction'] = pred_label
+                        # Get detection boolean at iou_thres
+                        iou_idx = torch.where(iouv >= iou_thres)[0][0]
+                        is_detected = correct[detection_index, iou_idx]
+                        if (use_attack and pred_label == adv_sign_class and
+                                pred_conf > metrics_conf_thres and is_detected):
                             current_label_metric['correct_prediction'] = 1
 
                 metrics_per_label_df = metrics_per_label_df.append(current_label_metric, ignore_index=True)
@@ -926,7 +932,7 @@ def parse_opt():
                         help='save single images in a folder instead of batch images in a single plot')
     parser.add_argument('--plot-class-examples', type=str, default='', nargs='*',
                         help='save single images containing individual classes in different folders.')
-    parser.add_argument('--metrics-confidence-threshold', type=float, default=0.5, help='confidence threshold')
+    parser.add_argument('--metrics-confidence-threshold', type=float, default=None, help='confidence threshold')
 
     # TODO: remove when no bug
     # parser.add_argument('--num-bg', type=int, default=16, help='number of backgrounds to generate adversarial patch')
