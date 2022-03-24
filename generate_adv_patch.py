@@ -281,6 +281,7 @@ def main(
     # patch_mask[:, obj_size[0] - offset_h - h:obj_size[0] - offset_h + h, offset_w - w:offset_w + w] = 1
 
     dataloader = None
+    task = None
     if generate_patch == 'real':
         task = 'train'  # Use transform-annotated images from training set
         stride, pt = model.stride, model.pt
