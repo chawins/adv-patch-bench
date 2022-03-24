@@ -16,11 +16,34 @@ from tqdm.auto import tqdm
 from adv_patch_bench.models import build_classifier
 from hparams import TS_COLOR_DICT, TS_COLOR_LABEL_LIST, TS_COLOR_OFFSET_DICT
 
+
+def set_default_args(parser):
+    # Don't change this and don't set it in command line
+    parser.add_argument('--distributed', action='store_true')
+    parser.add_argument('--arch', default='resnet50', type=str)
+    parser.add_argument('--pretrained', action='store_true', help='Load pretrained model on ImageNet-1k')
+    parser.add_argument('--output-dir', default='./', type=str, help='output dir')
+    parser.add_argument('--full-precision', action='store_false')
+    parser.add_argument('--warmup-epochs', default=0, type=int)
+    parser.add_argument('--batch-size', default=128, type=int)
+    parser.add_argument('--lr', default=0.1, type=float)
+    parser.add_argument('--momentum', default=0.9, type=float)
+    parser.add_argument('--wd', default=1e-4, type=float)
+    parser.add_argument('--optim', default='sgd', type=str)
+    parser.add_argument('--betas', default=(0.9, 0.999), nargs=2, type=float)
+    parser.add_argument('--eps', default=1e-8, type=float)
+    parser.add_argument('--seed', default=0, type=int)
+    parser.add_argument('--gpu', default=None, type=int, help='GPU id to use.')
+    parser.add_argument('--dataset', default='mtsd', type=str, help='Dataset')
+
+
 def write_yolo_labels(model, label, panoptic_per_image_id, data_dir,
                       num_classes, anno_df, min_area=0, conf_thres=0.,
                       device='cuda', batch_size=128):
-    img_path = join(data_dir, 'images_original')
-    label_path = join(data_dir, 'labels_original')
+    # img_path = join(data_dir, 'images_original')
+    # label_path = join(data_dir, 'labels_original')
+    img_path = join(data_dir, 'images')
+    label_path = join(data_dir, 'labels')
     makedirs(label_path, exist_ok=True)
 
     filenames = [f for f in listdir(img_path) if isfile(join(img_path, f))]
@@ -31,7 +54,7 @@ def write_yolo_labels(model, label, panoptic_per_image_id, data_dir,
     idx_to_obj_id = {}
     obj_idx = 0
     print('Collecting traffic signs from all images...')
-    
+
     for filename in tqdm(filenames):
         img_id = filename.split('.')[0]
         segment = panoptic_per_image_id[img_id]['segments_info']
@@ -39,7 +62,7 @@ def write_yolo_labels(model, label, panoptic_per_image_id, data_dir,
         img = np.array(img_pil)
         img_height, img_width, _ = img.shape
         filename_to_idx[img_id] = []
-        
+
         for obj in segment:
             # Check if bounding box is cut off at the image boundary
             xmin, ymin, width, height = obj['bbox']
@@ -125,13 +148,16 @@ def write_yolo_labels(model, label, panoptic_per_image_id, data_dir,
           'based on max confidence which *may* be incorrect.')
     print(f'=> {no_anno}/{num_samples} samples were not annotated.')
 
-    new_img_path = join(data_dir, 'images')
-    new_labels_path = join(data_dir, 'labels')
-    makedirs(new_img_path, exist_ok=True)
-    makedirs(new_labels_path, exist_ok=True)
+    # new_img_path = join(data_dir, 'images')
+    # new_labels_path = join(data_dir, 'labels')
+    # makedirs(new_img_path, exist_ok=True)
+    # makedirs(new_labels_path, exist_ok=True)
 
     for filename, obj_idx in tqdm(filename_to_idx.items()):
         text = ''
+        # Save images in images/labels folder only if image contains at least one label
+        if len(obj_idx) == 0:
+            continue
         for idx in obj_idx:
             class_label = int(predicted_labels[idx].item())
             x_center, y_center, obj_width, obj_height = bbox[idx]
@@ -139,18 +165,16 @@ def write_yolo_labels(model, label, panoptic_per_image_id, data_dir,
             text += f'{class_label:d} {x_center} {y_center} {obj_width} {obj_height} {obj_id}\n'
         with open(join(label_path, filename + '.txt'), 'w') as f:
             f.write(text)
-
-        # save images in images/labels folder only if image contains at least one label
-        if len(obj_idx) == 0:
-            continue
-        img_pil = Image.open(join(img_path, filename+'.jpg'))
-        full_filename = join(new_img_path, filename+'.jpg')
-        img_pil.save(full_filename)
-        with open(join(new_labels_path, filename + '.txt'), 'w') as f:
-            f.write(text)
-
         
-    
+        # img_pil = Image.open(join(img_path, filename + '.jpg'))
+        # full_filename = join(new_img_path, filename + '.jpg')
+        # img_pil.save(full_filename)
+        # with open(join(new_labels_path, filename + '.txt'), 'w') as f:
+        #     f.write(text)
+        # with open(join(label_path, filename + '.txt'), 'w') as f:
+        #     f.write(text)
+
+
 def main():
     # Arguments
     min_area = 3  # NOTE: We will ignore small signs in YOLO
@@ -159,13 +183,12 @@ def main():
     num_classes = 16
     # data_dir = expanduser('~/data/mapillary_vistas/training/')
     # model_path = expanduser('~/adv-patch-bench/results/5/checkpoint_best.pt')
-    # split = 'training'
-    split = 'validation'
+    split = 'training'
+    # split = 'validation'
     data_dir = f'/data/shared/mapillary_vistas/{split}/'
     model_path = '/data/shared/adv-patch-bench/results/6/checkpoint_best.pt'
     # The final CSV file with our annotation. This will be used to check
     # against the prediction of the classifier
-    # csv_path = './mapillary_vistas_final_merged.csv'
     csv_path = f'./mapillary_vistas_{split}_final_merged.csv'
     anno_df = pd.read_csv(csv_path)
 
@@ -175,25 +198,9 @@ def main():
     np.random.seed(seed)
     cudnn.benchmark = True
 
-    # Don't change this and don't set it in command line
     parser = argparse.ArgumentParser(description='Manually set args', add_help=False)
-    parser.add_argument('--distributed', action='store_true')
-    parser.add_argument('--arch', default='resnet50', type=str)
-    parser.add_argument('--pretrained', action='store_true', help='Load pretrained model on ImageNet-1k')
-    parser.add_argument('--output-dir', default='./', type=str, help='output dir')
-    parser.add_argument('--full-precision', action='store_false')
-    parser.add_argument('--warmup-epochs', default=0, type=int)
-    parser.add_argument('--batch-size', default=128, type=int)
-    parser.add_argument('--lr', default=0.1, type=float)
-    parser.add_argument('--momentum', default=0.9, type=float)
-    parser.add_argument('--wd', default=1e-4, type=float)
-    parser.add_argument('--optim', default='sgd', type=str)
-    parser.add_argument('--betas', default=(0.9, 0.999), nargs=2, type=float)
-    parser.add_argument('--eps', default=1e-8, type=float)
+    set_default_args(parser)
     parser.add_argument('--resume', default=model_path, type=str, help='path to latest checkpoint')
-    parser.add_argument('--seed', default=0, type=int)
-    parser.add_argument('--gpu', default=None, type=int, help='GPU id to use.')
-    parser.add_argument('--dataset', default='mtsd', type=str, help='Dataset')
     parser.add_argument('--num-classes', default=num_classes, type=int, help='Number of classes')
     args = parser.parse_args()
 

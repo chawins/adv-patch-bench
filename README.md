@@ -52,7 +52,7 @@ TODO: Get Mapillary data ready for testing and the benchmark.
 ### Data Preparation
 
 - `prep_mtsd_for_yolo.py`: Prepare MTSD dataset for YOLOv5.
-- `prep_vistas_for_yolo.py`: Prepare Vistas dataset for YOLOv5 using a pretrained classifier to determine classes of the signs. May require substantial memory to run. Insufficient memory can lead to the script getting "killed" with no error message.
+- `prep_vistas_for_yolo.py`: Prepare Vistas dataset for YOLOv5 using a pretrained classifier to determine classes of the signs. May require substantial memory to run. Insufficient memory can lead to the script getting killed with no error message.
 - YOLO expects samples and labels in `root_dir/images/*` and `root_dir/labels/*`, respectively. See [this link](https://github.com/ultralytics/yolov5/wiki/Train-Custom-Data#13-organize-directories) for more detail.
 - Training set: MTSD training. Symlink to `~/data/yolo_data/(images or labels)/train`.
 - Validation set: MTSD validation Symlink to `~/data/yolo_data/(images or labels)/val`.
