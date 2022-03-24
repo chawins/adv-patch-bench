@@ -41,7 +41,7 @@ from yolov5.utils.general import (LOGGER, box_iou, check_dataset,
                                   increment_path, non_max_suppression,
                                   print_args, scale_coords, xywh2xyxy,
                                   xyxy2xywh)
-from yolov5.utils.metrics import ConfusionMatrix, ap_per_class
+from yolov5.utils.metrics import ConfusionMatrix, ap_per_class_custom
 from yolov5.utils.plots import output_to_target, plot_images, plot_val_study
 from yolov5.utils.torch_utils import select_device, time_sync
 
@@ -154,7 +154,7 @@ def run(args,
 
     no_transform = args.no_transform
     relighting = not args.no_relighting
-    metrics_confidence_threshold = args.metrics_confidence_threshold
+    metrics_conf_thres = args.metrics_confidence_threshold
     img_size = tuple([int(x) for x in args.padded_imgsz.split(',')])
 
     torch.manual_seed(args.seed)
@@ -362,14 +362,12 @@ def run(args,
     predictions_removed = 0
 
     for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
-        # 'targets' shape is # number of labels by 8
-        # (image_id, class, x1, y1, label_width, label_height, number of patches applied, obj_id)
-        import pdb
-        pdb.set_trace()
+        # 'targets' shape is #labels x 8
+        # (image_id, class, x1, y1, label_width, label_height, obj_id, #patches)
         targets = torch.nn.functional.pad(targets, (0, 1), "constant", 0)  # effectively zero padding
 
         # DEBUG
-        if args.debug and batch_i == 50:
+        if args.debug and batch_i == 10:
             break
 
         if num_apply_imgs >= len(filename_list) and args.run_only_img_txt:
@@ -619,7 +617,7 @@ def run(args,
                         current_label_metric['confidence'] = pred.cpu().numpy()[detection_index, 4]
                         current_label_metric['prediction'] = pred.cpu().numpy()[detection_index, 5]
                         if pred.cpu().numpy()[detection_index, 5] == adv_sign_class and pred.cpu().numpy()[
-                                detection_index, 4] > metrics_confidence_threshold and correct[detection_index, 0]:
+                                detection_index, 4] > metrics_conf_thres and correct[detection_index, 0]:
                             current_label_metric['correct_prediction'] = 1
 
                 metrics_per_label_df = metrics_per_label_df.append(current_label_metric, ignore_index=True)
@@ -709,8 +707,9 @@ def run(args,
     current_exp_metrics = {}
 
     if len(stats) and stats[0].any():
-        tp, fp, p, r, f1, ap, ap_class, fnr, fn, max_f1_index = ap_per_class(
-            *stats, plot=plots, save_dir=save_dir, names=names, confidence_threshold=metrics_confidence_threshold)
+        metrics = ap_per_class_custom(*stats, plot=plots, save_dir=save_dir, names=names,
+                                      metrics_conf_thres=metrics_conf_thres)
+        tp, p, r, ap, ap_class, fnr, fn, max_f1_index, precision_cmb, fnr_cmb = metrics
         ap50, ap = ap[:, 0], ap.mean(1)  # AP@0.5, AP@0.5:0.95
         mp, mr, map50, map = p.mean(), r.mean(), ap50.mean(), ap.mean()
         nt = np.bincount(stats[3].astype(np.int64), minlength=nc)  # number of targets per class
@@ -731,6 +730,10 @@ def run(args,
     current_exp_metrics['map_50_all'] = map50
     metrics_df_column_names.append('map_50_95_all')
     current_exp_metrics['map_50_95_all'] = map
+    metrics_df_column_names.append('precision_cmb')
+    current_exp_metrics['precision_cmb'] = precision_cmb
+    metrics_df_column_names.append('fnr_cmb')
+    current_exp_metrics['fnr_cmb'] = fnr_cmb
     LOGGER.info(pf % ('all', seen, nt.sum(), mp, mr, map50, map))
 
     metrics_df_column_names.append('min_area')

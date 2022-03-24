@@ -20,11 +20,11 @@ def fitness(x):
     return (x[:, :4] * w).sum(1)
 
 
-def ap_per_class(tp, conf, pred_cls, target_cls, plot=False, save_dir='.', names=(), eps=1e-16, confidence_threshold=0.5):
+def ap_per_class(tp, conf, pred_cls, target_cls, plot=False, save_dir='.', names=(), eps=1e-16):
     """ Compute the average precision, given the recall and precision curves.
     Source: https://github.com/rafaelpadilla/Object-Detection-Metrics.
     # Arguments
-        tp:  True positives (nparray, nx1 or nx10). 10 for 10 IoU levels (0.5-0.95)
+        tp:  True positives (nparray, nx1 or nx10).
         conf:  Objectness value from 0-1 (nparray).
         pred_cls:  Predicted object classes (nparray).
         target_cls:  True object classes (nparray).
@@ -33,17 +33,75 @@ def ap_per_class(tp, conf, pred_cls, target_cls, plot=False, save_dir='.', names
     # Returns
         The average precision as computed in py-faster-rcnn.
     """
-    # Sort by objectness (from highest to lowest)
-    i = np.argsort(-conf)
 
+    # Sort by objectness
+    i = np.argsort(-conf)
     tp, conf, pred_cls = tp[i], conf[i], pred_cls[i]
-    
+
+    # Find unique classes
     unique_classes, nt = np.unique(target_cls, return_counts=True)
     nc = unique_classes.shape[0]  # number of classes, number of detections
 
     # Create Precision-Recall curve and compute AP for each class
     px, py = np.linspace(0, 1, 1000), []  # for plotting
-    ap, p, r = np.zeros((nc, tp.shape[1])), np.zeros((nc, 1000)), np.zeros((nc, 1000))    
+    ap, p, r = np.zeros((nc, tp.shape[1])), np.zeros((nc, 1000)), np.zeros((nc, 1000))
+    for ci, c in enumerate(unique_classes):
+        i = pred_cls == c
+        n_l = nt[ci]  # number of labels
+        n_p = i.sum()  # number of predictions
+
+        if n_p == 0 or n_l == 0:
+            continue
+        else:
+            # Accumulate FPs and TPs
+            fpc = (1 - tp[i]).cumsum(0)
+            tpc = tp[i].cumsum(0)
+
+            # Recall
+            recall = tpc / (n_l + eps)  # recall curve
+            r[ci] = np.interp(-px, -conf[i], recall[:, 0], left=0)  # negative x, xp because xp decreases
+
+            # Precision
+            precision = tpc / (tpc + fpc)  # precision curve
+            p[ci] = np.interp(-px, -conf[i], precision[:, 0], left=1)  # p at pr_score
+
+            # AP from recall-precision curve
+            for j in range(tp.shape[1]):
+                ap[ci, j], mpre, mrec = compute_ap(recall[:, j], precision[:, j])
+                if plot and j == 0:
+                    py.append(np.interp(px, mrec, mpre))  # precision at mAP@0.5
+
+    # Compute F1 (harmonic mean of precision and recall)
+    f1 = 2 * p * r / (p + r + eps)
+    names = [v for k, v in names.items() if k in unique_classes]  # list: only classes that have data
+    names = {i: v for i, v in enumerate(names)}  # to dict
+    if plot:
+        plot_pr_curve(px, py, ap, Path(save_dir) / 'PR_curve.png', names)
+        plot_mc_curve(px, f1, Path(save_dir) / 'F1_curve.png', names, ylabel='F1')
+        plot_mc_curve(px, p, Path(save_dir) / 'P_curve.png', names, ylabel='Precision')
+        plot_mc_curve(px, r, Path(save_dir) / 'R_curve.png', names, ylabel='Recall')
+
+    i = f1.mean(0).argmax()  # max F1 index
+    p, r, f1 = p[:, i], r[:, i], f1[:, i]
+    tp = (r * nt).round()  # true positives
+    fp = (tp / (p + eps) - tp).round()  # false positives
+    return tp, fp, p, r, f1, ap, unique_classes.astype('int32')
+
+
+def ap_per_class_custom(tp, conf, pred_cls, target_cls, plot=False, save_dir='.',
+                        names=(), eps=1e-16, metrics_conf_thres=None):
+    """Our custom computation of multiple metrics"""
+    # Sort by objectness (from highest to lowest)
+    i = np.argsort(-conf)
+
+    tp, conf, pred_cls = tp[i], conf[i], pred_cls[i]
+
+    unique_classes, nt = np.unique(target_cls, return_counts=True)
+    nc = unique_classes.shape[0]  # number of classes, number of detections
+
+    # Create Precision-Recall curve and compute AP for each class
+    px, py = np.linspace(0, 1, 1000), []  # for plotting
+    ap, p, r = np.zeros((nc, tp.shape[1])), np.zeros((nc, 1000)), np.zeros((nc, 1000))
     fnr = np.zeros((nc, 1000))
 
     recall_per_class = []
@@ -58,10 +116,10 @@ def ap_per_class(tp, conf, pred_cls, target_cls, plot=False, save_dir='.', names
         if n_p == 0 or n_l == 0:
             continue
         else:
-            # Accumulate FPs and TPs        
+            # Accumulate FPs and TPs
             fpc = (1 - tp[i]).cumsum(0)
             tpc = tp[i].cumsum(0)
-            
+
             confidence_per_class.append(conf[i])
 
             # Recall / True Positive Rate
@@ -90,27 +148,29 @@ def ap_per_class(tp, conf, pred_cls, target_cls, plot=False, save_dir='.', names
     names = {i: v for i, v in enumerate(names)}  # to dict
     if plot:
         plot_pr_curve(px, py, ap, Path(save_dir) / 'PR_curve.png', names, save_dir_str=save_dir)
-        plot_pr_curve(px, py, ap, Path(save_dir) / 'PR_curve_with_points.png', names, recall_per_class, precision_per_class, save_dir_str=save_dir)
+        plot_pr_curve(px, py, ap, Path(save_dir) / 'PR_curve_with_points.png', names,
+                      recall_per_class, precision_per_class, save_dir_str=save_dir)
         plot_mc_curve(px, f1, Path(save_dir) / 'F1_curve.png', names, ylabel='F1', save_dir_str=save_dir)
         plot_mc_curve(px, p, Path(save_dir) / 'P_curve.png', names, ylabel='Precision', save_dir_str=save_dir)
         plot_mc_curve(px, r, Path(save_dir) / 'R_curve.png', names, ylabel='Recall/TPR', save_dir_str=save_dir)
         plot_mc_curve(px, fnr, Path(save_dir) / 'FNR_curve.png', names, ylabel='FNR', save_dir_str=save_dir)
-        plot_confidence_distribution(confidence_per_class, Path(save_dir) / 'Confidence_distribution.png', names, ylabel='Density')
+        plot_confidence_distribution(confidence_per_class, Path(
+            save_dir) / 'Confidence_distribution.png', names, ylabel='Density')
 
         numpy_filename = Path(save_dir) / 'x_axis.npy'
         with open(numpy_filename, 'wb') as f:
             np.save(f, px)
 
     # i = 359
-    # i = int(confidence_threshold * 1000)
-
-    i = f1.mean(0).argmax()  # max F1 index
+    if metrics_conf_thres is not None:
+        i = int(metrics_conf_thres * 1000)
+    else:
+        i = f1.mean(0).argmax()  # max F1 index
     print('f1 scores')
     print(f1.mean(0))
     print('best f1 index', i)
     print('best f1 index per class', f1.argmax(axis=1))
-    
-    
+
     fnr_pickle_filepath = str(save_dir) + '/fnr.pickle'
     with open(fnr_pickle_filepath, 'wb') as handle:
         pickle.dump(fnr, handle, protocol=pickle.HIGHEST_PROTOCOL)
@@ -119,7 +179,11 @@ def ap_per_class(tp, conf, pred_cls, target_cls, plot=False, save_dir='.', names
     tp = (r * nt).round()  # true positives
     fp = (tp / (p + eps) - tp).round()  # false positives
     fn = nt - tp
-    return tp, fp, p, r, f1, ap, unique_classes.astype('int32'), fnr, fn, i
+    # nt is positives
+    all_precision = tp.sum() / (tp.sum() + fp.sum())
+    all_fnr = fn.sum() / nt.sum()
+    return (tp, p, r, ap, unique_classes.astype('int32'), fnr, fn, i,
+            all_precision, all_fnr)
 
 
 def compute_ap(recall, precision):
@@ -198,7 +262,6 @@ class ConfusionMatrix:
             for i, dc in enumerate(detection_classes):
                 if not any(m1 == i):
                     self.matrix[dc, self.nc] += 1  # background FN
-
 
     def matrix(self):
         return self.matrix
@@ -340,27 +403,34 @@ def wh_iou(wh1, wh2):
 
 # Plots ----------------------------------------------------------------------------------------------------------------
 
-def plot_pr_curve(px, py, ap, save_dir='pr_curve.png', names=(), recall_per_class=None, precision_per_class=None, save_dir_str=None):
+def plot_pr_curve(px, py, ap, save_dir='pr_curve.png', names=(),
+                  recall_per_class=None, precision_per_class=None, save_dir_str=None):
     # Precision-recall curve
     fig, ax = plt.subplots(1, 1, figsize=(9, 6), tight_layout=True)
     py = np.stack(py, axis=1)
-    
+
     if 0 < len(names) < 21:  # display per-class legend if < 21 classes
-        for i, y in enumerate(py.T):            
+        for i, y in enumerate(py.T):
             if names[i] == 'synthetic':
-                ax.plot(px, y, linewidth=2, label=f'{names[i]} {ap[i, 0]:.3f}', color='indigo', linestyle='--')  # plot(recall, precision)
+                ax.plot(px, y, linewidth=2, label=f'{names[i]} {ap[i, 0]:.3f}',
+                        color='indigo', linestyle='--')  # plot(recall, precision)
                 if recall_per_class and precision_per_class:
-                    ax.plot(recall_per_class[i], precision_per_class[i], linestyle='None', color='blueviolet', marker='o', alpha=0.2, markersize=3)
-                
-                numpy_filename = Path(save_dir_str) / (str(save_dir).split('.png')[0].split('/')[-1] + '_' + 'synthetic' + '.npy')
+                    ax.plot(recall_per_class[i], precision_per_class[i], linestyle='None',
+                            color='blueviolet', marker='o', alpha=0.2, markersize=3)
+
+                numpy_filename = Path(save_dir_str) / (str(save_dir).split('.png')
+                                                       [0].split('/')[-1] + '_' + 'synthetic' + '.npy')
                 with open(numpy_filename, 'wb') as f:
                     np.save(f, y)
             elif names[i] == 'octagon':
-                ax.plot(px, y, linewidth=2, label=f'{names[i]} {ap[i, 0]:.3f}', color='orangered', linestyle='--')  # plot(recall, precision)
+                ax.plot(px, y, linewidth=2, label=f'{names[i]} {ap[i, 0]:.3f}',
+                        color='orangered', linestyle='--')  # plot(recall, precision)
                 if recall_per_class and precision_per_class:
-                    ax.plot(recall_per_class[i], precision_per_class[i], linestyle='None', color='coral', marker='o', alpha=0.2, markersize=3)
-                
-                numpy_filename = Path(save_dir_str) / (str(save_dir).split('.png')[0].split('/')[-1] + '_' + 'octagon' + '.npy')
+                    ax.plot(recall_per_class[i], precision_per_class[i], linestyle='None',
+                            color='coral', marker='o', alpha=0.2, markersize=3)
+
+                numpy_filename = Path(save_dir_str) / (str(save_dir).split('.png')
+                                                       [0].split('/')[-1] + '_' + 'octagon' + '.npy')
                 with open(numpy_filename, 'wb') as f:
                     np.save(f, y)
             else:
@@ -385,16 +455,20 @@ def plot_mc_curve(px, py, save_dir='mc_curve.png', names=(), xlabel='Confidence'
     if 0 < len(names) < 21:  # display per-class legend if < 21 classes
         for i, y in enumerate(py):
             if names[i] == 'synthetic':
-                ax.plot(px, y, label=f'{names[i]}', linewidth=2, linestyle='--', color='indigo')  # plot(confidence, metric)
-                
-                numpy_filename = Path(save_dir_str) / (str(save_dir).split('.png')[0].split('/')[-1] + '_' + 'synthetic' + '.npy')
+                ax.plot(px, y, label=f'{names[i]}', linewidth=2, linestyle='--',
+                        color='indigo')  # plot(confidence, metric)
+
+                numpy_filename = Path(save_dir_str) / (str(save_dir).split('.png')
+                                                       [0].split('/')[-1] + '_' + 'synthetic' + '.npy')
                 print('filename', numpy_filename)
                 with open(numpy_filename, 'wb') as f:
                     np.save(f, y)
             elif names[i] == 'octagon':
-                ax.plot(px, y, label=f'{names[i]}', linewidth=2, linestyle='--', color='orangered')  # plot(confidence, metric)
-                
-                numpy_filename = Path(save_dir_str) / (str(save_dir).split('.png')[0].split('/')[-1] + '_' + 'octagon' + '.npy')
+                ax.plot(px, y, label=f'{names[i]}', linewidth=2, linestyle='--',
+                        color='orangered')  # plot(confidence, metric)
+
+                numpy_filename = Path(save_dir_str) / (str(save_dir).split('.png')
+                                                       [0].split('/')[-1] + '_' + 'octagon' + '.npy')
                 print('filename', numpy_filename)
                 with open(numpy_filename, 'wb') as f:
                     np.save(f, y)
@@ -413,16 +487,19 @@ def plot_mc_curve(px, py, save_dir='mc_curve.png', names=(), xlabel='Confidence'
     fig.savefig(Path(save_dir), dpi=250)
     plt.close()
 
-def plot_confidence_distribution(confidence_per_class, save_dir='Confidence_distribution.png', names=(), xlabel='Confidence', ylabel='Metric'):
+
+def plot_confidence_distribution(
+        confidence_per_class, save_dir='Confidence_distribution.png', names=(),
+        xlabel='Confidence', ylabel='Metric'):
     # Metric-confidence curve
     fig, ax = plt.subplots(len(names), 1, figsize=(10, len(names) * 7), tight_layout=True)
 
     if 0 < len(names) < 21:  # display per-class legend if < 21 classes
         for i, y in enumerate(confidence_per_class):
             if names[i] == 'synthetic':
-                sns.distplot(confidence_per_class[i], hist=False, ax=ax[i], color='indigo')       
+                sns.distplot(confidence_per_class[i], hist=False, ax=ax[i], color='indigo')
             elif names[i] == 'octagon':
-                sns.distplot(confidence_per_class[i], hist=False, ax=ax[i], color='orangered')                
+                sns.distplot(confidence_per_class[i], hist=False, ax=ax[i], color='orangered')
             else:
                 sns.distplot(confidence_per_class[i], hist=False, ax=ax[i])
             ax[i].set_xlabel(xlabel + '\n' + names[i])

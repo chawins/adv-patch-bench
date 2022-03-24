@@ -26,7 +26,7 @@ CUDA_VISIBLE_DEVICES=$GPU python -u val_attack_synthetic.py \
     --attack-config-path attack_config.yaml --name $PATCH_NAME \
     --weights $MODEL_PATH \
     --obj-class 14 --plot-class-examples 14 --syn-obj-path attack_assets/octagon-915.0.png \
-    --imgsz 1280 --padded_imgsz 992,1312 --batch-size 2 \
+    --imgsz 1280 --padded_imgsz 992,1312 --batch-size 8 \
     --interp bilinear --attack-type none --synthetic-eval --debug
 # --adv-patch-path ./runs/val/exp2/stop_sign_10x10.pkl \
 # --imgsz 2560 --padded_imgsz 1952,2592 --batch-size 2 \
