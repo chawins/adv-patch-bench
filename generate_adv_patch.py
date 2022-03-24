@@ -256,12 +256,12 @@ def main(
     # TODO: Move this to a separate script for generating patch size/location
     # Example: 10x10-inch patch in the middle of 36x36-inch sign
     # (1) 1 square
-    mid_height = obj_size[0] // 2 + round(40 / 128 * obj_size[0])
-    mid_width = obj_size[1] // 2
-    patch_size = 10
-    # mid_height = obj_size[0] // 2 + 35
+    # mid_height = obj_size[0] // 2 + round(40 / 128 * obj_size[0])
     # mid_width = obj_size[1] // 2
-    # patch_size = 20
+    # patch_size = 10
+    mid_height = obj_size[0] // 2 + 35
+    mid_width = obj_size[1] // 2
+    patch_size = 20
     h = round(patch_size / 36 / 2 * obj_size[0])
     w = round(patch_size / 36 / 2 * obj_size[1])
     patch_mask[:, mid_height - h:mid_height + h, mid_width - w:mid_width + w] = 1
