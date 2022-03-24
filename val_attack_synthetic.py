@@ -93,7 +93,8 @@ def process_batch(detections, labels, iouv):
 
     matches = []
     if x[0].shape[0]:
-        matches = torch.cat((torch.stack(x, 1), iou[x[0], x[1]][:, None]), 1).cpu().numpy()  # [label, detection, iou]
+        # [label_idx, detection, iou]
+        matches = torch.cat((torch.stack(x, 1), iou[x[0], x[1]][:, None]), 1).cpu().numpy()
         if x[0].shape[0] > 1:
             # sort matches by decreasing order of IOU
             matches = matches[matches[:, 2].argsort()[::-1]]
@@ -103,6 +104,23 @@ def process_batch(detections, labels, iouv):
         matches = torch.Tensor(matches).to(iouv.device)
         correct[matches[:, 1].long()] = matches[:, 2:3] >= iouv
     return correct, matches
+
+
+def populate_default_metric(lbl_, min_area, filename):
+    lbl_ = lbl_.cpu().numpy()
+    class_label, _, _, bbox_width, bbox_height, obj_id, _ = lbl_
+    bbox_area = bbox_width * bbox_height
+    current_label_metric = {}
+    current_label_metric['filename'] = filename
+    current_label_metric['obj_id'] = obj_id
+    current_label_metric['label'] = class_label
+    current_label_metric['correct_prediction'] = 0
+    current_label_metric['prediction'] = None
+    current_label_metric['sign_width'] = bbox_width
+    current_label_metric['sign_height'] = bbox_height
+    current_label_metric['confidence'] = None
+    current_label_metric['too_small'] = bbox_area < min_area
+    return current_label_metric
 
 
 @torch.no_grad()
@@ -362,19 +380,21 @@ def run(args,
     predictions_removed = 0
 
     for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
-        # 'targets' shape is #labels x 8
-        # (image_id, class, x1, y1, label_width, label_height, obj_id, #patches)
+        # Originally, targets has shape (#labels, 7)
+        # [image_id, class, x1, y1, label_width, label_height, obj_id]
+        # TODO: is this still needed?
         targets = torch.nn.functional.pad(targets, (0, 1), "constant", 0)  # effectively zero padding
 
         # DEBUG
-        if args.debug and batch_i == 10:
+        if args.debug and batch_i == 100:
             break
 
         if num_apply_imgs >= len(filename_list) and args.run_only_img_txt:
             break
         # ======================= BEGIN: apply patch ======================== #
         for image_i, path in enumerate(paths):
-            # assign each label in the image an object id
+            # Assign each label in the image an object id
+            # TODO: is this still needed?
             targets[targets[:, 0] == image_i, 7] = torch.arange(
                 torch.sum(targets[:, 0] == image_i), dtype=targets.dtype)
 
@@ -497,6 +517,8 @@ def run(args,
         predictions_for_plotting = output_to_target(out)
 
         for si, pred in enumerate(out):
+            # pred (Array[N, 6]), x1, y1, x2, y2, confidence, class
+            # labels (Array[M, 5]), class, x1, y1, x2, y2
             labels = targets[targets[:, 0] == si, 1:]
 
             nl = len(labels)
@@ -510,34 +532,26 @@ def run(args,
             current_image_metrics['num_targeted_sign_class'] = sum([1 for x in labels[:, 0] if x == adv_sign_class])
             current_image_metrics['num_patches'] = max(labels[:, 5].tolist() + [0])
 
-            label_indices_to_drop = []
-            prediction_indices_to_drop = []
+            # If the target object is too small, we drop both the target and
+            # the corresponding prediction.
+            lbl_index_to_keep = np.ones(len(labels), dtype=np.bool)
+            pred_index_to_keep = np.ones(len(pred), dtype=np.bool)
 
+            # If there's no prediction at all, we can collect the targets and
+            # continue to the next image.
             if len(pred) == 0:
-                for lbl_ in labels:
-                    lbl_ = lbl_.cpu()
-                    bbox_width = lbl_[3].item()
-                    bbox_height = lbl_[4].item()
-                    if bbox_area < min_area:
-                        label_indices_to_drop.append(lbl_index)
-                    current_label_metric = {}
-                    current_label_metric['filename'] = filename
-                    current_label_metric['obj_id'] = lbl_[5].item()
-                    current_label_metric['label'] = lbl_[0].item()
-                    current_label_metric['correct_prediction'] = 0
-                    current_label_metric['prediction'] = None
-                    current_label_metric['sign_width'] = bbox_width
-                    current_label_metric['sign_height'] = bbox_height
-                    current_label_metric['confidence'] = None
-                    metrics_per_label_df = metrics_per_label_df.append(current_label_metric, ignore_index=True)
+                # FIXME: for lbl_ in labels:
+                for lbl_index, lbl_ in enumerate(labels):
+                    current_label_metric = populate_default_metric(lbl_, min_area, filename)
+                    lbl_index_to_keep[lbl_index] = ~current_label_metric['too_small']
+                    metrics_per_label_df = metrics_per_label_df.append(
+                        current_label_metric, ignore_index=True)
 
-                labels_indices_to_keep = list(set(np.arange(len(labels))).difference(set(label_indices_to_drop)))
-                labels = labels[labels_indices_to_keep]
+                labels = labels[lbl_index_to_keep]
                 tcls = labels[:, 0].tolist() if nl else []  # target class
-
                 if nl:
-                    stats.append((torch.zeros(0, niou, dtype=torch.bool), torch.Tensor(), torch.Tensor(), tcls))
-
+                    stats.append((torch.zeros(0, niou, dtype=torch.bool), 
+                                  torch.Tensor(), torch.Tensor(), tcls))
                 continue
 
             # Predictions
@@ -545,15 +559,13 @@ def run(args,
                 pred[:, 5] = 0
             predn = pred.clone()
 
-            # detections (Array[N, 6]), x1, y1, x2, y2, confidence, class
-            # labels (Array[M, 5]), class, x1, y1, x2, y2
-
             tbox = xywh2xyxy(labels[:, 1:5]).cpu()  # target boxes
             class_only = np.expand_dims(labels[:, 0].cpu(), axis=0)
             tbox = np.concatenate((class_only.T, tbox), axis=1)
 
             num_labels_changed = 0
 
+            # TODO: comment
             if synthetic_eval:
                 for lbl in tbox:
                     if lbl[0] == syn_sign_class:
@@ -578,70 +590,64 @@ def run(args,
                 scale_coords(im[si].shape[1:], tbox, shape, shapes[si][1])  # native-space labels
                 labelsn = torch.cat((labels[:, 0:1], tbox), 1)  # native-space labels
 
+                # `matches` represent all the matches between target objects
+                # and predictions, i.e., [label_idx, pred_idx, iou]
+                # `label_idx`: idx of object in `labels`
+                # `pred_idx`: idx of object in `predn`
                 correct, matches = process_batch(predn, labelsn, iouv)
                 if plots:
                     confusion_matrix.process_batch(predn, labelsn)
             else:
                 correct, matches = torch.zeros(pred.shape[0], niou, dtype=torch.bool), []
 
-            # if target is small, we drop both the target and the prediction
-            # corresponding to this target (if any).
+            # When there's no match, create a dummy match to make next steps easier
+            if len(matches) == 0:
+                matches = np.zeros((1, 1)) - 1
+
             # Collecting results
             for lbl_index, lbl_ in enumerate(labels):
-                lbl_ = lbl_.cpu()
-                bbox_width = lbl_[3].item()
-                bbox_height = lbl_[4].item()
-                bbox_area = bbox_width * bbox_height
-                current_label_metric = {}
-                drop_predictions = False
-                if bbox_area < min_area:
-                    drop_predictions = True
-                    label_indices_to_drop.append(lbl_index)
-                else:
-                    current_label_metric['filename'] = filename
-                    current_label_metric['obj_id'] = lbl_[5].item()
-                    current_label_metric['label'] = lbl_[0].item()
-                    current_label_metric['correct_prediction'] = 0
-                    current_label_metric['prediction'] = None
-                    current_label_metric['sign_width'] = bbox_width
-                    current_label_metric['sign_height'] = bbox_height
-                    current_label_metric['confidence'] = None
+                current_label_metric = populate_default_metric(lbl_, min_area, filename)
+                lbl_index_to_keep[lbl_index] = ~current_label_metric['too_small']
 
-                if len(matches) > 0:
-                    # match on obj_id
-                    match = matches[matches[:, 0] == lbl_[6]]
-                    assert len(match) <= 1
-                    if len(match) > 0:
-                        detection_index = int(match[0, 1])
-                        if drop_predictions:
-                            prediction_indices_to_drop.append(detection_index)
-                            continue
-                        pred_conf, pred_label = pred[detection_index, 4:6].cpu().numpy()
-                        current_label_metric['confidence'] = pred_conf
-                        current_label_metric['prediction'] = pred_label
-                        # Get detection boolean at iou_thres
-                        iou_idx = torch.where(iouv >= iou_thres)[0][0]
-                        is_detected = correct[detection_index, iou_idx]
-                        if (use_attack and pred_label == adv_sign_class and
-                                pred_conf > metrics_conf_thres and is_detected):
-                            current_label_metric['correct_prediction'] = 1
+                # Find a match with this object label
+                match = matches[matches[:, 0] == lbl_index]
+                # If there's no match, save current metric and continue to next labels
+                if len(match) == 0:
+                    metrics_per_label_df = metrics_per_label_df.append(
+                        current_label_metric, ignore_index=True)
+                    continue
+                assert len(match) <= 1  # There can only be one match per object
 
-                metrics_per_label_df = metrics_per_label_df.append(current_label_metric, ignore_index=True)
+                # Find index of `pred` corresponding to this match
+                det_idx = int(match[0, 1])
+                # Drop this prediction if the target object is too small
+                pred_index_to_keep[det_idx] = ~current_label_metric['too_small']
+                # Populate other metrics
+                pred_conf, pred_label = pred[det_idx, 4:6].cpu().numpy()
+                current_label_metric['confidence'] = pred_conf
+                current_label_metric['prediction'] = pred_label
+                # Get detection boolean at iou_thres
+                iou_idx = torch.where(iouv >= iou_thres)[0][0]
+                is_detected = correct[det_idx, iou_idx]
+                if (use_attack and pred_label == adv_sign_class and
+                        pred_conf > metrics_conf_thres and is_detected):
+                    current_label_metric['correct_prediction'] = 1
+                metrics_per_label_df = metrics_per_label_df.append(
+                    current_label_metric, ignore_index=True)
 
-            labels_indices_to_keep = list(set(np.arange(len(labels))).difference(set(label_indices_to_drop)))
-            prediction_indices_to_keep = list(set(np.arange(len(pred))).difference(set(prediction_indices_to_drop)))
-
-            correct = correct[prediction_indices_to_keep]
-            pred = pred[prediction_indices_to_keep]
-            labels = labels[labels_indices_to_keep]
+            # Filter out predictions and labels with too small objects
+            correct = correct[pred_index_to_keep]
+            pred = pred[pred_index_to_keep]
+            labels = labels[lbl_index_to_keep]
             tcls = labels[:, 0].tolist() if nl else []  # target class
 
-            labels_kept += len(labels_indices_to_keep)
-            predictions_kept += len(prediction_indices_to_keep)
-            labels_removed += len(label_indices_to_drop)
-            predictions_removed += len(prediction_indices_to_drop)
+            labels_kept += lbl_index_to_keep.sum()
+            predictions_kept += pred_index_to_keep.sum()
+            labels_removed += (~lbl_index_to_keep).sum()
+            predictions_removed += (~pred_index_to_keep).sum()
 
-            stats.append((correct.cpu(), pred[:, 4].cpu(), pred[:, 5].cpu(), tcls))  # (correct, conf, pcls, tcls)
+            # (correct, conf, pcls, tcls)
+            stats.append((correct.cpu(), pred[:, 4].cpu(), pred[:, 5].cpu(), tcls))
 
             # Save/log
             if save_txt:
@@ -724,6 +730,8 @@ def run(args,
 
     # Print results
     pf = '%20s' + '%11i' * 2 + '%11.3g' * 4  # print format
+    metrics_df_column_names.append('exp_name')
+    current_exp_metrics['exp_name'] = args.name
     metrics_df_column_names.append('num_images')
     current_exp_metrics['num_images'] = seen
     metrics_df_column_names.append('num_targets_all')
