@@ -417,8 +417,6 @@ def run(args,
                     continue
                 num_apply_imgs += 1
 
-                # num_patches_applied_to_image = 0
-
                 # Loop over signs on this image and apply patch if applicable
                 for _, row in img_df.iterrows():
                     (h0, w0), ((h_ratio, w_ratio), (w_pad, h_pad)) = shapes[image_i]
@@ -530,6 +528,7 @@ def run(args,
             current_image_metrics = {}
             current_image_metrics['filename'] = filename
             current_image_metrics['num_targeted_sign_class'] = sum([1 for x in labels[:, 0] if x == adv_sign_class])
+            # FIXME: labels[:, 5] has been changed to obj_id?
             current_image_metrics['num_patches'] = max(labels[:, 5].tolist() + [0])
 
             # If the target object is too small, we drop both the target and
@@ -546,11 +545,10 @@ def run(args,
                     lbl_index_to_keep[lbl_index] = ~current_label_metric['too_small']
                     metrics_per_label_df = metrics_per_label_df.append(
                         current_label_metric, ignore_index=True)
-
                 labels = labels[lbl_index_to_keep]
                 tcls = labels[:, 0].tolist() if nl else []  # target class
                 if nl:
-                    stats.append((torch.zeros(0, niou, dtype=torch.bool), 
+                    stats.append((torch.zeros(0, niou, dtype=torch.bool),
                                   torch.Tensor(), torch.Tensor(), tcls))
                 continue
 
@@ -611,7 +609,8 @@ def run(args,
 
                 # Find a match with this object label
                 match = matches[matches[:, 0] == lbl_index]
-                # If there's no match, save current metric and continue to next labels
+                # If there's no match, just save current metric and continue to
+                # the next label.
                 if len(match) == 0:
                     metrics_per_label_df = metrics_per_label_df.append(
                         current_label_metric, ignore_index=True)
@@ -714,8 +713,7 @@ def run(args,
 
     # Compute metrics
     stats = [np.concatenate(x, 0) for x in zip(*stats)]  # to numpy
-
-    metrics_df_column_names = ["name", "apply_patch", "random_patch"]
+    metrics_df_column_names = ['name', 'apply_patch', 'random_patch']
     current_exp_metrics = {}
 
     if len(stats) and stats[0].any():
@@ -730,8 +728,6 @@ def run(args,
 
     # Print results
     pf = '%20s' + '%11i' * 2 + '%11.3g' * 4  # print format
-    metrics_df_column_names.append('exp_name')
-    current_exp_metrics['exp_name'] = args.name
     metrics_df_column_names.append('num_images')
     current_exp_metrics['num_images'] = seen
     metrics_df_column_names.append('num_targets_all')
@@ -760,7 +756,6 @@ def run(args,
     current_exp_metrics['labels_removed'] = labels_removed
     metrics_df_column_names.append('predictions_removed')
     current_exp_metrics['predictions_removed'] = predictions_removed
-
     metrics_df_column_names.append('max_f1_index')
     current_exp_metrics['max_f1_index'] = max_f1_index
 
