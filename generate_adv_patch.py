@@ -56,7 +56,7 @@ def load_yolov5(weights, device, imgsz, img_size, data, dnn, half):
     return model, data
 
 
-def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
+def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda', task='train',
                        img_size=(992, 1312), obj_class=0, obj_size=None,
                        bg_dir='./', num_bg=16, save_images=False, save_dir='./',
                        generate_patch='synthetic', rescaling=False,
@@ -147,7 +147,12 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
             for image_i, path in enumerate(paths):
                 filename = path.split('/')[-1]
 
-                img_df = df[df['filename_y'] == filename]
+                #TODO: fix this. on here for a temporary fix
+                if task == 'train':
+                    img_df = df[df['filename_y'] == filename]
+                elif task == 'val':
+                    img_df = df[df['filename'] == filename]
+
                 if len(img_df) == 0:
                     continue
                 for _, row in img_df.iterrows():
@@ -284,7 +289,7 @@ def main(
                                        workers=8, prefix=colorstr(f'{task}: '))[0]
 
     adv_patch = generate_adv_patch(
-        model, obj_numpy, patch_mask, device=device, img_size=img_size,
+        model, obj_numpy, patch_mask, device=device, task=task, img_size=img_size,
         obj_class=obj_class, obj_size=obj_size, bg_dir=bg_dir, num_bg=num_bg,
         save_images=save_images, save_dir=save_dir, generate_patch=generate_patch,
         rescaling=rescaling, csv_path=csv_path, dataloader=dataloader,

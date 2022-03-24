@@ -10,12 +10,13 @@ def get_args_parser():
 
 def main(args, corrections_df):
     # df = pd.read_csv('../../../../data/shared/mtsd_v2_fully_annotated/traffic_sign_annotation_train.csv')
-    df = pd.read_csv('../../../../data/shared/mtsd_v2_fully_annotated/traffic_sign_annotation_validation.csv')
-    # df = pd.read_csv('error_df.csv')
-    column = args.column
+    # df = pd.read_csv('../../../../data/shared/mtsd_v2_fully_annotated/traffic_sign_annotation_validation.csv')
+    df = pd.read_csv('error_df_validation.csv')
+    # column = args.column
+    column = 'final_check'
     df = df[df['occlusion'].isna()]
-    df = df[df[f'{column}'] == 1]
-    df = df[df['group'] == args.group]
+    # df = df[df[f'{column}'] == 1]
+    # df = df[df['group'] == args.group]
 
     corrections_df = pd.concat([corrections_df, df], axis=0)
     
@@ -45,6 +46,9 @@ def main(args, corrections_df):
             os.makedirs(img_file_destination_cropped)
 
         if not os.path.isfile(img_file):
+            print(filename)
+            print(new_filename)
+            print(img_file)
             raise Exception()
 
         img_file_destination += filename

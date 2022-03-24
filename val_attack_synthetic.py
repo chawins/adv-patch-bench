@@ -149,6 +149,8 @@ def run(args,
     attack_config_path = args.attack_config_path
     adv_sign_class = args.obj_class
     syn_obj_path = args.syn_obj_path
+    min_area = args.min_area
+    # split = args.split
 
     no_transform = args.no_transform
     relighting = not args.no_relighting
@@ -176,6 +178,7 @@ def run(args,
 
     # Set folder and experiment name
     name += f'_{DATASET_NAME}_{attack_type}_{exp_number}'
+    # name += f'_{DATASET_NAME}_{split}_{attack_type}_{exp_number}'
     print(f'=> Experiment name: {name}')
 
     # Initialize/load model and set device
@@ -209,6 +212,10 @@ def run(args,
 
         # Data
         data = check_dataset(data)  # check
+
+    # # print(data)
+    # print(task)
+    # qqq
 
     print(data['train'])
 
@@ -343,13 +350,23 @@ def run(args,
             shape_to_plot_data[class_name] = []
 
     # TODO: remove 'metrics_per_image_df' in the future
-    metrics_per_image_df = pd.DataFrame(columns=['filename', 'num_targeted_sign_class', 'num_patches', 'fn'])
+    metrics_per_image_df = pd.DataFrame(
+        columns=['filename', 'num_targeted_sign_class', 'num_patches', 'fn'])
     metrics_per_label_df = pd.DataFrame(
-        columns=['filename', 'obj_id', 'label', 'correct_prediction', 'sign_width', 'sign_height', 'confidence'])
+        columns=['filename', 'obj_id', 'label', 'correct_prediction',
+                 'sign_width', 'sign_height', 'confidence'])
+
+    labels_kept = 0
+    predictions_kept = 0
+    labels_removed = 0
+    predictions_removed = 0
 
     for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
-        # 'targets' shape is # number of labels by 8 (image_id, class, x1, y1, label width, label height, number of patches applied, obj id)
-        targets = torch.nn.functional.pad(targets, (0, 2), "constant", 0)  # effectively zero padding
+        # 'targets' shape is # number of labels by 8
+        # (image_id, class, x1, y1, label_width, label_height, number of patches applied, obj_id)
+        import pdb
+        pdb.set_trace()
+        targets = torch.nn.functional.pad(targets, (0, 1), "constant", 0)  # effectively zero padding
 
         # DEBUG
         if args.debug and batch_i == 50:
@@ -365,7 +382,12 @@ def run(args,
 
             if use_attack and not synthetic_eval:
                 filename = path.split('/')[-1]
-                img_df = df[df['filename_y'] == filename]
+
+                # TODO: fix this. on here for a temporary fix
+                if task == 'train':
+                    img_df = df[df['filename_y'] == filename]
+                elif task == 'val':
+                    img_df = df[df['filename'] == filename]
 
                 if len(img_df) == 0:
                     continue
@@ -377,9 +399,9 @@ def run(args,
                     continue
                 num_apply_imgs += 1
 
-                num_patches_applied_to_image = 0
+                # num_patches_applied_to_image = 0
 
-                # Apply patch on all of the signs on this image
+                # Loop over signs on this image and apply patch if applicable
                 for _, row in img_df.iterrows():
                     (h0, w0), ((h_ratio, w_ratio), (w_pad, h_pad)) = shapes[image_i]
                     img_data = (h0, w0, h_ratio, w_ratio, w_pad, h_pad)
@@ -388,7 +410,6 @@ def run(args,
                     shape = predicted_class.split('-')[0]
                     if shape != names[adv_sign_class]:
                         continue
-                    total_num_patches += 1
 
                     # Run attack for each sign
                     if attack_type == 'per-sign':
@@ -402,13 +423,15 @@ def run(args,
 
                     # # Transform and apply patch on the image. `im` has range [0, 255]
                     im[image_i] = transform_and_apply_patch(
-                        im[image_i].to(device), adv_patch.to(device), patch_mask, patch_loc,
-                        predicted_class, row, img_data, no_transform=no_transform, relighting=relighting,
+                        im[image_i].to(device), adv_patch.to(device),
+                        patch_mask, patch_loc, predicted_class, row, img_data,
+                        no_transform=no_transform, relighting=relighting,
                         interp=args.interp) * 255
-                    num_patches_applied_to_image += 1
+                    # num_patches_applied_to_image += 1
+                    total_num_patches += 1
 
                 # set targets[6] to #patches_applied_to_image
-                targets[targets[:, 0] == image_i, 6] = num_patches_applied_to_image
+                # targets[targets[:, 0] == image_i, 6] = num_patches_applied_to_image
 
             elif synthetic_eval:
                 if use_attack:
@@ -452,6 +475,7 @@ def run(args,
         im = im.half() if half else im.float()  # uint8 to fp16/32
         im /= 255  # 0 - 255 to 0.0 - 1.0
         nb, _, height, width = im.shape  # batch size, channels, height, width
+
         t2 = time_sync()
         dt[0] += t2 - t1
 
@@ -487,23 +511,33 @@ def run(args,
             current_image_metrics['num_targeted_sign_class'] = sum([1 for x in labels[:, 0] if x == adv_sign_class])
             current_image_metrics['num_patches'] = max(labels[:, 5].tolist() + [0])
 
+            label_indices_to_drop = []
+            prediction_indices_to_drop = []
+
             if len(pred) == 0:
+                for lbl_ in labels:
+                    lbl_ = lbl_.cpu()
+                    bbox_width = lbl_[3].item()
+                    bbox_height = lbl_[4].item()
+                    if bbox_area < min_area:
+                        label_indices_to_drop.append(lbl_index)
+                    current_label_metric = {}
+                    current_label_metric['filename'] = filename
+                    current_label_metric['obj_id'] = lbl_[5].item()
+                    current_label_metric['label'] = lbl_[0].item()
+                    current_label_metric['correct_prediction'] = 0
+                    current_label_metric['prediction'] = None
+                    current_label_metric['sign_width'] = bbox_width
+                    current_label_metric['sign_height'] = bbox_height
+                    current_label_metric['confidence'] = None
+                    metrics_per_label_df = metrics_per_label_df.append(current_label_metric, ignore_index=True)
+
+                labels_indices_to_keep = list(set(np.arange(len(labels))).difference(set(label_indices_to_drop)))
+                labels = labels[labels_indices_to_keep]
+                tcls = labels[:, 0].tolist() if nl else []  # target class
+
                 if nl:
                     stats.append((torch.zeros(0, niou, dtype=torch.bool), torch.Tensor(), torch.Tensor(), tcls))
-
-                for lbl_ in labels:
-                    if lbl_[0] == adv_sign_class:
-                        lbl_ = lbl_.cpu()
-                        current_label_metric = {}
-                        current_label_metric['filename'] = filename
-                        current_label_metric['obj_id'] = lbl_[6].item()
-                        current_label_metric['num_patches_applied_to_image'] = lbl_[5].item()
-                        current_label_metric['label'] = lbl_[0].item()
-                        current_label_metric['correct_prediction'] = 0
-                        current_label_metric['sign_width'] = lbl_[3].item()
-                        current_label_metric['sign_height'] = lbl_[4].item()
-                        current_label_metric['confidence'] = None
-                        metrics_per_label_df = metrics_per_label_df.append(current_label_metric, ignore_index=True)
 
                 continue
 
@@ -551,39 +585,57 @@ def run(args,
             else:
                 correct, matches = torch.zeros(pred.shape[0], niou, dtype=torch.bool), []
 
+            # if target is small, we drop both the target and the prediction corresponding to this target (if any)
             # Collecting results
-            for lbl_ in labels:
-                if lbl_[0] == adv_sign_class:
-                    lbl_ = lbl_.cpu()
-                    current_label_metric = {}
+            for lbl_index, lbl_ in enumerate(labels):
+                lbl_ = lbl_.cpu()
+                bbox_width = lbl_[3].item()
+                bbox_height = lbl_[4].item()
+                bbox_area = bbox_width * bbox_height
+                current_label_metric = {}
+                drop_predictions = False
+                if bbox_area < min_area:
+                    drop_predictions = True
+                    label_indices_to_drop.append(lbl_index)
+                else:
                     current_label_metric['filename'] = filename
-                    current_label_metric['obj_id'] = lbl_[6].item()
-                    current_label_metric['num_patches_applied_to_image'] = lbl_[5].item()
+                    current_label_metric['obj_id'] = lbl_[5].item()
                     current_label_metric['label'] = lbl_[0].item()
                     current_label_metric['correct_prediction'] = 0
-                    current_label_metric['sign_width'] = lbl_[3].item()
-                    current_label_metric['sign_height'] = lbl_[4].item()
+                    current_label_metric['prediction'] = None
+                    current_label_metric['sign_width'] = bbox_width
+                    current_label_metric['sign_height'] = bbox_height
                     current_label_metric['confidence'] = None
 
-                    if len(matches) > 0:
-                        # match on obj_id
-                        match = matches[matches[:, 0] == lbl_[6]]
-                        assert len(match) <= 1
-                        if len(match) > 0:
-                            detection_index = int(match[0, 1])
-                            current_label_metric['confidence'] = pred.cpu().numpy()[detection_index, 4]
-                            if pred.cpu().numpy()[detection_index, 5] == adv_sign_class and pred.cpu().numpy()[
-                                    detection_index, 4] > metrics_confidence_threshold and correct[detection_index, 0]:
-                                current_label_metric['correct_prediction'] = 1
-                    metrics_per_label_df = metrics_per_label_df.append(current_label_metric, ignore_index=True)
+                if len(matches) > 0:
+                    # match on obj_id
+                    match = matches[matches[:, 0] == lbl_[6]]
+                    assert len(match) <= 1
+                    if len(match) > 0:
+                        detection_index = int(match[0, 1])
+                        if drop_predictions:
+                            prediction_indices_to_drop.append(detection_index)
+                            continue
+                        current_label_metric['confidence'] = pred.cpu().numpy()[detection_index, 4]
+                        current_label_metric['prediction'] = pred.cpu().numpy()[detection_index, 5]
+                        if pred.cpu().numpy()[detection_index, 5] == adv_sign_class and pred.cpu().numpy()[
+                                detection_index, 4] > metrics_confidence_threshold and correct[detection_index, 0]:
+                            current_label_metric['correct_prediction'] = 1
 
-            total_positives = sum([1 for x in tcls if x == adv_sign_class])
-            sign_indices = np.logical_and(
-                pred.cpu().numpy()[:, 5] == adv_sign_class, pred.cpu().numpy()[:, 4] >
-                metrics_confidence_threshold)
-            tp = sum(correct.cpu().numpy()[sign_indices, 0])
-            current_image_metrics['fn'] = total_positives - tp
-            metrics_per_image_df = metrics_per_image_df.append(current_image_metrics, ignore_index=True)
+                metrics_per_label_df = metrics_per_label_df.append(current_label_metric, ignore_index=True)
+
+            labels_indices_to_keep = list(set(np.arange(len(labels))).difference(set(label_indices_to_drop)))
+            prediction_indices_to_keep = list(set(np.arange(len(pred))).difference(set(prediction_indices_to_drop)))
+
+            correct = correct[prediction_indices_to_keep]
+            pred = pred[prediction_indices_to_keep]
+            labels = labels[labels_indices_to_keep]
+            tcls = labels[:, 0].tolist() if nl else []  # target class
+
+            labels_kept += len(labels_indices_to_keep)
+            predictions_kept += len(prediction_indices_to_keep)
+            labels_removed += len(label_indices_to_drop)
+            predictions_removed += len(prediction_indices_to_drop)
 
             stats.append((correct.cpu(), pred[:, 4].cpu(), pred[:, 5].cpu(), tcls))  # (correct, conf, pcls, tcls)
 
@@ -599,10 +651,6 @@ def run(args,
                     class_name = names[class_index.item()]
                     if len(shape_to_plot_data[class_name]) < 50:
                         fn = str(path).split('/')[-1]
-
-                        # # TODO: remove
-                        # if fn != '9LmBGfnVqmfiJjenXkHgaw.jpg':
-                        #     continue
                         shape_to_plot_data[class_name].append(
                             [im[si: si + 1], targets[targets[:, 0] == si, :], path,
                              predictions_for_plotting[predictions_for_plotting[:, 0] == si]])
@@ -626,9 +674,10 @@ def run(args,
                     ti[:, 0] = 0
                     plot_images(im[i:i+1], ti, paths[i:i+1], f, names, labels=False)
             f = save_dir / f'val_batch{batch_i}_labels.jpg'  # labels
-            Thread(target=plot_images, args=(im, targets, paths, f, names), daemon=True).start()
+            Thread(target=plot_images, args=(im, targets, paths, f, names, 1920, 16, True), daemon=True).start()
             f = save_dir / f'val_batch{batch_i}_pred.jpg'  # predictions
-            Thread(target=plot_images, args=(im, output_to_target(out), paths, f, names), daemon=True).start()
+            Thread(target=plot_images, args=(im, output_to_target(out),
+                   paths, f, names, 1920, 16, False), daemon=True).start()
             print(f)
     # ======================================================================= #
     #                            END: Main eval loop                          #
@@ -660,7 +709,7 @@ def run(args,
     current_exp_metrics = {}
 
     if len(stats) and stats[0].any():
-        tp, fp, p, r, f1, ap, ap_class, fnr, fn = ap_per_class(
+        tp, fp, p, r, f1, ap, ap_class, fnr, fn, max_f1_index = ap_per_class(
             *stats, plot=plots, save_dir=save_dir, names=names, confidence_threshold=metrics_confidence_threshold)
         ap50, ap = ap[:, 0], ap.mean(1)  # AP@0.5, AP@0.5:0.95
         mp, mr, map50, map = p.mean(), r.mean(), ap50.mean(), ap.mean()
@@ -683,6 +732,20 @@ def run(args,
     metrics_df_column_names.append('map_50_95_all')
     current_exp_metrics['map_50_95_all'] = map
     LOGGER.info(pf % ('all', seen, nt.sum(), mp, mr, map50, map))
+
+    metrics_df_column_names.append('min_area')
+    current_exp_metrics['min_area'] = min_area
+    metrics_df_column_names.append('labels_kept')
+    current_exp_metrics['labels_kept'] = labels_kept
+    metrics_df_column_names.append('predictions_kept')
+    current_exp_metrics['predictions_kept'] = predictions_kept
+    metrics_df_column_names.append('labels_removed')
+    current_exp_metrics['labels_removed'] = labels_removed
+    metrics_df_column_names.append('predictions_removed')
+    current_exp_metrics['predictions_removed'] = predictions_removed
+
+    metrics_df_column_names.append('max_f1_index')
+    current_exp_metrics['max_f1_index'] = max_f1_index
 
     # Print results per class
     # if (verbose or (nc < 50 and not training)) and nc > 1 and len(stats):
@@ -831,7 +894,6 @@ def parse_opt():
                         help='evaluate with pasted synthetic signs')
     parser.add_argument('--debug', action='store_true')
     # =========================== Attack arguments ========================== #
-    # General
     parser.add_argument('--attack-type', type=str, required=True,
                         help='which attack evaluation to run (none, load, per-sign, random, debug)')
     parser.add_argument('--adv-patch-path', type=str, default='',
@@ -852,7 +914,9 @@ def parse_opt():
                               '3D-transform. Patch will directly face camera.'))
     parser.add_argument('--no-relighting', action='store_true',
                         help=('If True, do not apply relighting transform to patch'))
-
+    parser.add_argument('--min-area', type=float, default=0,
+                        help=('Minimum area for labels. if a label has area > min_area,'
+                              'predictions correspoing to this target will be discarded'))
     # ============================== Plot / log ============================= #
     parser.add_argument('--save-exp-metrics', action='store_true', help='save metrics for this experiment to dataframe')
     parser.add_argument('--plot-single-images', action='store_true',

@@ -342,9 +342,13 @@ def main(args):
     # Arguments
     min_area = 1600
     max_num_imgs = 200
+    split = 'validation'
 
     if DATASET == 'mapillaryvistas':
-        data_dir = '/data/shared/mapillary_vistas/training/'
+        if split == 'traning':
+            data_dir = '/data/shared/mapillary_vistas/training/'
+        elif split == 'validation':
+            data_dir = '/data/shared/mapillary_vistas/validation/'
     elif DATASET == 'bdd100k':
         data_dir = '/data/shared/bdd100k/images/10k/train/'
 
@@ -448,7 +452,9 @@ def main(args):
 
     print('[INFO] running detection algorithm')
 
-    final_df = pd.read_csv('mapillary_vistas_final_merged.csv')
+    # final_df = pd.read_csv('mapillary_vistas_final_merged.csv')
+    final_df = pd.read_csv(f'mapillary_vistas_{split}_final_merged.csv')
+
     final_df = final_df[(final_df['final_shape'] != 'circle-750.0') & (final_df['points'].isna()) & (final_df['final_shape'] != 'other-0.0-0.0') & (final_df['final_shape'] == 'octagon-915.0')]
     # final_df = final_df[(final_df['final_shape'] != 'circle-750.0') & (final_df['use_polygon'] == 1) & (final_df['points'].isna()) & (final_df['final_shape'] != 'other-0.0-0.0')]
     print(final_df.shape)
@@ -502,12 +508,13 @@ def main(args):
     corrections_df['filename'] = filenames_list
     corrections_df['tgt_polygon'] = tgt_list
     # corrections_df['use_polygon'] = True
-    corrections_df.to_csv('use_polygons_corrections_df.csv', index=False)
+    corrections_df.to_csv(f'use_polygons_corrections_{split}_df.csv', index=False)
 
-    main_df = pd.read_csv('mapillary_vistas_final_merged.csv')
+    main_df = pd.read_csv(f'mapillary_vistas_{split}_final_merged.csv')
     main_df = main_df.merge(corrections_df, on=['filename'], how='left', suffixes=('', '_polygon'))
     print('saving df')
-    main_df.to_csv('mapillary_vistas_final_merged.csv', index=False)
+    # main_df.to_csv(f'mapillary_vistas_{split}_final_merged_real_final.csv', index=False)
+    main_df.to_csv(f'mapillary_vistas_{split}_final_merged.csv', index=False)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('Example Transform', parents=[get_args_parser()])

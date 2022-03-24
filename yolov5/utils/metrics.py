@@ -6,6 +6,7 @@ Model validation metrics
 import math
 import warnings
 from pathlib import Path
+import pickle
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -101,19 +102,24 @@ def ap_per_class(tp, conf, pred_cls, target_cls, plot=False, save_dir='.', names
             np.save(f, px)
 
     # i = 359
-    i = int(confidence_threshold * 1000)
+    # i = int(confidence_threshold * 1000)
 
-    # i = f1.mean(0).argmax()  # max F1 index
-    # print('f1 scores')
-    # print(f1.mean(0))
-    # print('best f1 index', i)
-    # print('best f1 index per class', f1.argmax(axis=1))
+    i = f1.mean(0).argmax()  # max F1 index
+    print('f1 scores')
+    print(f1.mean(0))
+    print('best f1 index', i)
+    print('best f1 index per class', f1.argmax(axis=1))
     
+    
+    fnr_pickle_filepath = str(save_dir) + '/fnr.pickle'
+    with open(fnr_pickle_filepath, 'wb') as handle:
+        pickle.dump(fnr, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
     p, r, f1, fnr = p[:, i], r[:, i], f1[:, i], fnr[:, i]
     tp = (r * nt).round()  # true positives
     fp = (tp / (p + eps) - tp).round()  # false positives
     fn = nt - tp
-    return tp, fp, p, r, f1, ap, unique_classes.astype('int32'), fnr, fn
+    return tp, fp, p, r, f1, ap, unique_classes.astype('int32'), fnr, fn, i
 
 
 def compute_ap(recall, precision):

@@ -63,6 +63,7 @@ SHAPE_LIST = [
 ]
 
 # PLOT_FOLDER = 'mapillaryvistas_plots_model_3_updated_optimized'
+split = 'validation'
 PLOT_FOLDER = 'delete_mapillaryvistas_plots_model_3_updated_optimized'
 NUM_IMGS_PER_PLOT = 100
 COLUMN_NAMES = 'abcdefghijklmnopqrstuvwxyz'
@@ -186,7 +187,7 @@ def compute_example_transform(traffic_sign, mask, predicted_class, demo_patch,
         # Group 1: draw both vertices and patch
         if group == 1:
             sign_canonical, sign_mask, src = get_sign_canonical(
-                shape, predicted_class, patch_size_in_pixel, patch_size_in_mm)
+                predicted_class, patch_size_in_pixel, patch_size_in_mm)
 
             old_patch = torch.masked_select(traffic_sign, torch.from_numpy(bool_mask).bool())
             alpha, beta = relight_range(old_patch.numpy().reshape(-1, 1))
@@ -209,6 +210,8 @@ def compute_example_transform(traffic_sign, mask, predicted_class, demo_patch,
             tgt = tgt.astype(np.float32)
 
             if len(src) == 3:
+                print(len(src))
+                print(len(tgt))
                 M = torch.from_numpy(cv.getAffineTransform(src, tgt)).unsqueeze(0).float()
                 transform_func = warp_affine
             else:
@@ -317,7 +320,10 @@ def main(args):
     max_num_imgs = 200
 
     if DATASET == 'mapillaryvistas':
-        data_dir = '/data/shared/mapillary_vistas/training/'
+        if split == 'train':
+            data_dir = '/data/shared/mapillary_vistas/training/'
+        elif split == 'validation':
+            data_dir = '/data/shared/mapillary_vistas/validation/'
     elif DATASET == 'bdd100k':
         data_dir = '/data/shared/bdd100k/images/10k/train/'
 
@@ -425,9 +431,6 @@ def main(args):
     for img_file, mask_file, y in tqdm(zip(img_files, mask_files, y_hat)):
         filename = img_file.split('/')[-1]
 
-        # if filename != '0KohgmStOYkLZM6v-Frfew_96.png':
-        #     continue
-
         assert filename == mask_file.split('/')[-1]
         image = np.asarray(Image.open(img_file))
         Image.open(mask_file).save('test_mask.png')
@@ -452,7 +455,7 @@ def main(args):
     column_names = ['filename', 'object_id', 'shape', 'predicted_shape',
                     'predicted_class', 'group', 'batch_number', 'row', 'column',
                     'tgt', 'alpha', 'beta']
-    csv_filename = '{}_data.csv'.format(DATASET)
+    csv_filename = f'{DATASET}_{split}_data.csv'
 
     df = pd.DataFrame(columns=column_names)
     for subgroup in tqdm(subgroup_to_images):
@@ -467,13 +470,13 @@ def main(args):
         df = pd.concat([df, df_to_add], axis=0)
         df.to_csv(csv_filename, index=False)
 
-    offset_df = pd.read_csv('offset.csv')
+    offset_df = pd.read_csv(f'offset_{split}.csv')
     df['filename_png'] = df['filename'].str.split('_').str[:-1].str.join('_') + '.png'
     df['filename'] = df['filename'].str.split('_').str[:-1].str.join('_') + '.jpg'
 
     df['object_id'] = df['object_id'].astype('int64')
     offset_df['obj_id'] = offset_df['obj_id'].astype('int64')
-    df = df.merge(right=offset_df, left_on=['filename_png', 'object_id'], right_on=['filename', 'obj_id'])
+    df = df.merge(right=offset_df, left_on=['filename', 'object_id'], right_on=['filename', 'obj_id'])
     df.to_csv(csv_filename, index=False)
 
 
