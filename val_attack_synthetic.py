@@ -11,7 +11,6 @@ import json
 import os
 import pdb
 import pickle
-from posixpath import split
 import sys
 import warnings
 from ast import literal_eval
@@ -363,7 +362,10 @@ def run(args,
     predictions_removed = 0
 
     for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
-        # 'targets' shape is # number of labels by 8 (image_id, class, x1, y1, label width, label height, number of patches applied, obj id)
+        # 'targets' shape is # number of labels by 8
+        # (image_id, class, x1, y1, label_width, label_height, number of patches applied, obj_id)
+        import pdb
+        pdb.set_trace()
         targets = torch.nn.functional.pad(targets, (0, 1), "constant", 0)  # effectively zero padding
 
         # DEBUG
@@ -399,7 +401,7 @@ def run(args,
 
                 # num_patches_applied_to_image = 0
 
-                # Apply patch on all of the signs on this image
+                # Loop over signs on this image and apply patch if applicable
                 for _, row in img_df.iterrows():
                     (h0, w0), ((h_ratio, w_ratio), (w_pad, h_pad)) = shapes[image_i]
                     img_data = (h0, w0, h_ratio, w_ratio, w_pad, h_pad)
@@ -408,7 +410,7 @@ def run(args,
                     shape = predicted_class.split('-')[0]
                     if shape != names[adv_sign_class]:
                         continue
-                    
+
                     # Run attack for each sign
                     if attack_type == 'per-sign':
                         print('=> Generating adv patch...')
@@ -421,8 +423,9 @@ def run(args,
 
                     # # Transform and apply patch on the image. `im` has range [0, 255]
                     im[image_i] = transform_and_apply_patch(
-                        im[image_i].to(device), adv_patch.to(device), patch_mask, patch_loc,
-                        predicted_class, row, img_data, no_transform=no_transform, relighting=relighting,
+                        im[image_i].to(device), adv_patch.to(device),
+                        patch_mask, patch_loc, predicted_class, row, img_data,
+                        no_transform=no_transform, relighting=relighting,
                         interp=args.interp) * 255
                     # num_patches_applied_to_image += 1
                     total_num_patches += 1
@@ -485,7 +488,6 @@ def run(args,
             loss += compute_loss([x.float() for x in train_out], targets)[1]  # box, obj, cls
 
         # NMS
-
         targets[:, 2:6] *= torch.Tensor([width, height, width, height]).to(device)  # to pixels
         lb = [targets[targets[:, 0] == i, 1:] for i in range(nb)] if save_hybrid else []  # for autolabelling
         t3 = time_sync()
@@ -619,7 +621,7 @@ def run(args,
                         if pred.cpu().numpy()[detection_index, 5] == adv_sign_class and pred.cpu().numpy()[
                                 detection_index, 4] > metrics_confidence_threshold and correct[detection_index, 0]:
                             current_label_metric['correct_prediction'] = 1
-                            
+
                 metrics_per_label_df = metrics_per_label_df.append(current_label_metric, ignore_index=True)
 
             labels_indices_to_keep = list(set(np.arange(len(labels))).difference(set(label_indices_to_drop)))

@@ -299,9 +299,6 @@ class RP2AttackModule(DetectorAttackModule):
                     tf_function, curr_tf_data, interp=self.interp,
                     **self.real_transform, relighting=self.relighting)
 
-                # adv_img = resize_transform(adv_img)
-                # TODO: check size of adv_img
-
                 # DEBUG
                 # torchvision.utils.save_image(adv_img, 'temp.png')
                 # import pdb
@@ -322,12 +319,13 @@ class RP2AttackModule(DetectorAttackModule):
                 else:
                     opt.step()
 
-                # lr_schedule.step(loss)
 
                 if ema_loss is None:
                     ema_loss = loss.item()
                 else:
                     ema_loss = ema_const * ema_loss + (1 - ema_const) * loss.item()
+                # lr_schedule.step(loss)
+                
                 if step % 100 == 0 and self.verbose:
                     print(f'step: {step:4d}   loss: {ema_loss:.4f}   time: {time.time() - start_time:.2f}s')
                     start_time = time.time()
