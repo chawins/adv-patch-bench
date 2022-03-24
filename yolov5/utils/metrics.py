@@ -161,15 +161,14 @@ def ap_per_class_custom(tp, conf, pred_cls, target_cls, plot=False, save_dir='.'
         with open(numpy_filename, 'wb') as f:
             np.save(f, px)
 
-    # i = 359
     if metrics_conf_thres is not None:
         i = int(metrics_conf_thres * 1000)
     else:
         i = f1.mean(0).argmax()  # max F1 index
     print('f1 scores')
-    print(f1.mean(0))
+    # print(f1.mean(0))
     print('best f1 index', i)
-    # print('best f1 index per class', f1.argmax(axis=1))
+    print('best f1 index per class', f1.argmax(axis=1))
 
     fnr_pickle_filepath = str(save_dir) + '/fnr.pickle'
     with open(fnr_pickle_filepath, 'wb') as handle:
