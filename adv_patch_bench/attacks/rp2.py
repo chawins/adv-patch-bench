@@ -19,8 +19,7 @@ EPS = 1e-6
 class RP2AttackModule(DetectorAttackModule):
 
     def __init__(self, attack_config, core_model, loss_fn, norm, eps,
-                 rescaling=False, verbose=False, interp=None,
-                 **kwargs):
+                 rescaling=False, verbose=False, interp=None, **kwargs):
         super(RP2AttackModule, self).__init__(
             attack_config, core_model, loss_fn, norm, eps, **kwargs)
         self.num_steps = attack_config['rp2_num_steps']
@@ -208,7 +207,7 @@ class RP2AttackModule(DetectorAttackModule):
                 # lr_schedule.step(ema_loss)
 
                 if step % 100 == 0 and self.verbose:
-                    print(self.compute_loss(adv_img, obj_class))
+                    # print(self.compute_loss(adv_img, obj_class))
                     print(f'step: {step}   loss: {ema_loss:.6f}   time: {time.time() - start_time:.2f}s')
                     start_time = time.time()
 
@@ -319,13 +318,12 @@ class RP2AttackModule(DetectorAttackModule):
                 else:
                     opt.step()
 
-
                 if ema_loss is None:
                     ema_loss = loss.item()
                 else:
                     ema_loss = ema_const * ema_loss + (1 - ema_const) * loss.item()
                 # lr_schedule.step(loss)
-                
+
                 if step % 100 == 0 and self.verbose:
                     print(f'step: {step:4d}   loss: {ema_loss:.4f}   time: {time.time() - start_time:.2f}s')
                     start_time = time.time()

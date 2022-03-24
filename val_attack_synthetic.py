@@ -386,7 +386,7 @@ def run(args,
         # [image_id, class, x1, y1, label_width, label_height, obj_id]
 
         # DEBUG
-        if args.debug and batch_i == 100:
+        if args.debug and batch_i == 20:
             break
 
         if num_apply_imgs >= len(filename_list) and args.run_only_img_txt:

@@ -67,17 +67,21 @@ def write_yolo_labels(model, label, panoptic_per_image_id, data_dir,
             # Check if bounding box is cut off at the image boundary
             xmin, ymin, width, height = obj['bbox']
 
+            # Check if the object is out of bound
             is_oob = (xmin == 0) or (ymin == 0) or \
                 ((xmin + width) >= img_width) or ((ymin + height) >= img_height)
 
-            if (obj['category_id'] != label or obj['area'] < min_area or is_oob
-                    or width * height < min_area):
+            obj_width = width / img_width
+            obj_height = height / img_height
+            # Compute object area if the image were to be resized to have
+            # width of 1280 pixels
+            obj_area = (obj_width * 1280) * (height / img_width * 1280)
+
+            if obj['category_id'] != label or is_oob or obj_area < min_area:
                 continue
 
             x_center = (xmin + width / 2) / img_width
             y_center = (ymin + height / 2) / img_height
-            obj_width = width / img_width
-            obj_height = height / img_height
             bbox.append([x_center, y_center, obj_width, obj_height])
 
             # Collect traffic signs and resize them to 128x128 (same resolution
@@ -160,12 +164,15 @@ def write_yolo_labels(model, label, panoptic_per_image_id, data_dir,
             continue
         for idx in obj_idx:
             class_label = int(predicted_labels[idx].item())
+            # Exclude labels for "other" class
+            if class_label == num_classes - 1:
+                continue
             x_center, y_center, obj_width, obj_height = bbox[idx]
             obj_id = idx_to_obj_id[idx]
             text += f'{class_label:d} {x_center} {y_center} {obj_width} {obj_height} {obj_id}\n'
         with open(join(label_path, filename + '.txt'), 'w') as f:
             f.write(text)
-        
+
         # img_pil = Image.open(join(img_path, filename + '.jpg'))
         # full_filename = join(new_img_path, filename + '.jpg')
         # img_pil.save(full_filename)
@@ -177,7 +184,7 @@ def write_yolo_labels(model, label, panoptic_per_image_id, data_dir,
 
 def main():
     # Arguments
-    min_area = 3  # NOTE: We will ignore small signs in YOLO
+    min_area = 50  # NOTE: We will ignore small signs in YOLO
     label_to_classify = 95      # Class id of traffic signs on Vistas
     conf_thres = 0.
     num_classes = 16
