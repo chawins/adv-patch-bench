@@ -302,6 +302,9 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
             ni = i + nb * epoch  # number integrated batches (since train start)
             imgs = imgs.to(device, non_blocking=True).float() / 255  # uint8 to float32, 0-255 to 0.0-1.0
 
+            # EDIT: Remove last column that is irrelevant for training
+            targets = targets[:, :-1]
+            
             # Warmup
             if ni <= nw:
                 xi = [0, nw]  # x interp

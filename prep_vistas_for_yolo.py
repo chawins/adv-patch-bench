@@ -14,7 +14,8 @@ from PIL import Image
 from tqdm.auto import tqdm
 
 from adv_patch_bench.models import build_classifier
-from hparams import TS_COLOR_DICT, TS_COLOR_LABEL_LIST, TS_COLOR_OFFSET_DICT
+from hparams import (MIN_OBJ_AREA, NUM_CLASSES, TS_COLOR_DICT,
+                     TS_COLOR_LABEL_LIST, TS_COLOR_OFFSET_DICT)
 
 
 def set_default_args(parser):
@@ -184,10 +185,10 @@ def write_yolo_labels(model, label, panoptic_per_image_id, data_dir,
 
 def main():
     # Arguments
-    min_area = 50  # NOTE: We will ignore small signs in YOLO
+    min_area = MIN_OBJ_AREA
     label_to_classify = 95      # Class id of traffic signs on Vistas
     conf_thres = 0.
-    num_classes = 16
+    num_classes = NUM_CLASSES
     # data_dir = expanduser('~/data/mapillary_vistas/training/')
     # model_path = expanduser('~/adv-patch-bench/results/5/checkpoint_best.pt')
     split = 'training'

@@ -60,6 +60,12 @@ TODO: Get Mapillary data ready for testing and the benchmark.
 - If you run into `Argument list too long` error, try to raise limit of argument stack size by `ulimit -S -s 100000000`. [Ref.](https://unix.stackexchange.com/a/401797)
 
 ```bash
+mkdir yolo_data
+mkdir yolo_data/images
+mkdir yolo_data/images/train yolo_data/images/val yolo_data/images/test
+mkdir yolo_data/labels
+mkdir yolo_data/labels/train yolo_data/labels/val yolo_data/labels/test
+
 cd ~/data/yolo_data/images/train
 ln -s ~/data/mtsd_v2_fully_annotated/images/train/* .
 cd ~/data/yolo_data/images/val

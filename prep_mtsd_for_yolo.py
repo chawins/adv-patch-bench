@@ -6,7 +6,8 @@ from os.path import expanduser, join
 import pandas as pd
 from tqdm import tqdm
 
-from hparams import TS_COLOR_DICT, TS_COLOR_OFFSET_DICT
+from hparams import (MIN_OBJ_AREA, NUM_CLASSES, TS_COLOR_DICT,
+                     TS_COLOR_OFFSET_DICT)
 
 
 def readlines(path):
@@ -62,9 +63,13 @@ for json_file in tqdm(json_files):
         y_center = (obj['bbox']['ymin'] + obj['bbox']['ymax']) / 2 / height
         obj_width = (obj['bbox']['xmax'] - obj['bbox']['xmin']) / width
         obj_height = (obj['bbox']['ymax'] - obj['bbox']['ymin']) / height
-        # text += f'0 {x_center} {y_center} {obj_width} {obj_height}\n'
         class_index = mtsd_label_to_class_index.get(obj['label'], bg_idx)
-        text += f'{class_index} {x_center} {y_center} {obj_width} {obj_height}\n'
+        # Compute object area if the image were to be resized to have width of 1280 pixels
+        obj_area = (obj_width * 1280) * (height / width * 1280)
+        # Remove labels for small or "other" objects
+        if obj_area < MIN_OBJ_AREA or class_index == NUM_CLASSES - 1:
+            continue
+        text += f'{class_index} {x_center} {y_center} {obj_width} {obj_height} 0\n'
 
     with open(join(label_path, split, filename + '.txt'), 'w') as f:
         f.write(text)
