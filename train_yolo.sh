@@ -13,6 +13,7 @@ CUDA_VISIBLE_DEVICES=$GPU torchrun \
     --exist-ok \
     --workers 24 \
     --device $GPU
+    # --resume
 
 # CUDA_VISIBLE_DEVICES=0,1 python \
 #     train_yolov5.py \
