@@ -233,10 +233,6 @@ def run(args,
         # Data
         data = check_dataset(data)  # check
 
-    # # print(data)
-    # print(task)
-    # qqq
-
     print(data['train'])
 
     # Configure
@@ -385,6 +381,8 @@ def run(args,
         # Originally, targets has shape (#labels, 7)
         # [image_id, class, x1, y1, label_width, label_height, obj_id]
 
+        # targets = targets[targets[:, 1] != 15]
+
         # DEBUG
         if args.debug and batch_i == 20:
             break
@@ -397,11 +395,7 @@ def run(args,
             if use_attack and not synthetic_eval:
                 filename = path.split('/')[-1]
 
-                # TODO: fix this. on here for a temporary fix
-                if task == 'train':
-                    img_df = df[df['filename_y'] == filename]
-                elif task == 'val':
-                    img_df = df[df['filename'] == filename]
+                img_df = df[df['filename'] == filename]
 
                 if len(img_df) == 0:
                     continue
