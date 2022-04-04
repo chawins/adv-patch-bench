@@ -27,10 +27,10 @@ from adv_patch_bench.transforms import (gen_sign_mask, get_box_vertices,
 from adv_patch_bench.utils import (draw_from_contours, img_numpy_to_torch,
                                    pad_image)
 
-DATASET = 'mapillaryvistas'
+DATASET = 'mapillary_vistas'
 # DATASET = 'bdd100k'
 
-if DATASET == 'mapillaryvistas':
+if DATASET == 'mapillary_vistas':
     TRAFFIC_SIGN_LABEL = 95
 elif DATASET == 'bdd100k':
     TRAFFIC_SIGN_LABEL = 'traffic sign'
@@ -63,7 +63,6 @@ SHAPE_LIST = [
 ]
 
 # PLOT_FOLDER = 'mapillaryvistas_plots_model_3_updated_optimized'
-split = 'validation'
 PLOT_FOLDER = 'delete_mapillaryvistas_plots_model_3_updated_optimized'
 NUM_IMGS_PER_PLOT = 100
 COLUMN_NAMES = 'abcdefghijklmnopqrstuvwxyz'
@@ -106,6 +105,7 @@ def get_args_parser():
     parser.add_argument('--betas', default=(0.9, 0.999), nargs=2, type=float)
     parser.add_argument('--eps', default=1e-8, type=float)
     parser.add_argument('--resume', default='', type=str, help='path to latest checkpoint')
+    parser.add_argument('--split', default='training', type=str)
     return parser
 
 def draw_vertices(traffic_sign, points, color=[0, 255, 0]):
@@ -167,6 +167,7 @@ def compute_example_transform(traffic_sign, mask, predicted_class, demo_patch,
             group = 2
 
     if shape != 'other':
+        print(shape)
         tgt = get_box_vertices(vertices, shape).astype(np.int64)
         # Filter some vertices that might be out of bound
         if (tgt < 0).any() or (tgt >= size).any():
@@ -212,6 +213,7 @@ def compute_example_transform(traffic_sign, mask, predicted_class, demo_patch,
             if len(src) == 3:
                 print(len(src))
                 print(len(tgt))
+                print(predicted_class)
                 M = torch.from_numpy(cv.getAffineTransform(src, tgt)).unsqueeze(0).float()
                 transform_func = warp_affine
             else:
@@ -319,8 +321,8 @@ def main(args):
     min_area = 1600
     max_num_imgs = 200
 
-    if DATASET == 'mapillaryvistas':
-        if split == 'train':
+    if DATASET == 'mapillary_vistas':
+        if split == 'training':
             data_dir = '/data/shared/mapillary_vistas/training/'
         elif split == 'validation':
             data_dir = '/data/shared/mapillary_vistas/validation/'
@@ -340,7 +342,7 @@ def main(args):
     model = build_classifier(args)[0]
     model.eval()
 
-    if DATASET == 'mapillaryvistas':
+    if DATASET == 'mapillary_vistas':
         img_path = join(data_dir, 'traffic_signs')
         img_files = sorted([join(img_path, f) for f in listdir(img_path) if
                             isfile(join(img_path, f)) and f.endswith('.png')])
@@ -427,6 +429,11 @@ def main(args):
 
     print('[INFO] running detection algorithm')
 
+    missed_alpha_beta_df = pd.DataFrame()
+    df_filenames = []
+    df_alphas = []
+    df_betas = []
+
     subgroup_to_images = {}
     for img_file, mask_file, y in tqdm(zip(img_files, mask_files, y_hat)):
         filename = img_file.split('/')[-1]
@@ -435,6 +442,18 @@ def main(args):
         image = np.asarray(Image.open(img_file))
         Image.open(mask_file).save('test_mask.png')
         mask = np.asarray(Image.open(mask_file))
+
+        try:
+            bool_mask = (mask == 255).astype(np.uint8)
+            traffic_sign = img_numpy_to_torch(image)
+            old_patch = torch.masked_select(traffic_sign, torch.from_numpy(bool_mask).bool())
+            alpha, beta = relight_range(old_patch.numpy().reshape(-1, 1))
+            
+            df_filenames.append(filename)
+            df_alphas.append(alpha)
+            df_betas.append(beta)
+        except ValueError:
+            continue
 
         output = compute_example_transform(image, mask, CLASS_LIST[y], demo_patch,
                                            patch_size_in_mm=150,
@@ -451,6 +470,11 @@ def main(args):
 
         adv_image = adv_image.permute(1, 2, 0).numpy()
         subgroup_to_images[(shape, group)].append([adv_image, filename, obj_id, predicted_class, tgt, alpha, beta])
+
+    missed_alpha_beta_df['filename'] = df_filenames
+    missed_alpha_beta_df['alpha'] = df_alphas
+    missed_alpha_beta_df['beta'] = df_betas
+    missed_alpha_beta_df.to_csv(f'mapillary_vistas_{split}_alpha_beta.csv', index=False)
 
     column_names = ['filename', 'object_id', 'shape', 'predicted_shape',
                     'predicted_class', 'group', 'batch_number', 'row', 'column',
@@ -479,8 +503,8 @@ def main(args):
     df = df.merge(right=offset_df, left_on=['filename', 'object_id'], right_on=['filename', 'obj_id'])
     df.to_csv(csv_filename, index=False)
 
-
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('Example Transform', parents=[get_args_parser()])
     args = parser.parse_args()
+    split = args.split
     main(args)

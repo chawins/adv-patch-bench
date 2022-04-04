@@ -147,11 +147,7 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda', task='train'
             for image_i, path in enumerate(paths):
                 filename = path.split('/')[-1]
 
-                #TODO: fix this. on here for a temporary fix
-                if task == 'train':
-                    img_df = df[df['filename_y'] == filename]
-                elif task == 'val':
-                    img_df = df[df['filename'] == filename]
+                img_df = df[df['filename'] == filename]
 
                 if len(img_df) == 0:
                     continue

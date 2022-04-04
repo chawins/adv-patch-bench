@@ -1,3 +1,4 @@
+import argparse
 import json
 import os
 from ast import literal_eval
@@ -23,17 +24,15 @@ CLASS_LIST = [
 ]
 
 
-def main():
+def main(args):
+    split = args.split
+    if split not in ['training', 'validation']:
+        raise Exception('Please enter a valid split')
+    
     # getting points from manual labeling (instance segmentation) and storing in a dataframe
     manual_inst_seg_anno_df = pd.DataFrame()
-
-    split = 'validation'
-
     json_files = []
 
-    
-    # for edit_path in ['traffic_signs_wrong_transform', 'traffic_signs_todo']:
-    # for edit_path in ['traffic_signs_wrong_transform', 'traffic_signs_todo', 'traffic_signs_final_check', 'traffic_signs_use_polygon', 'traffic_signs_wrong_octagons']:
     for edit_path in ['traffic_signs_wrong_transform', 'traffic_signs_todo', 'traffic_signs_final_check', 'traffic_signs_use_polygon', 'traffic_signs_wrong_octagons']:
         for group in ['1', '2', '3']:
             try:
@@ -41,18 +40,12 @@ def main():
                 curr_json_files = [path_to_json + p for p in os.listdir(path_to_json) if p.endswith('.json')]
                 json_files.extend(curr_json_files)
             except:
-                continue
-
+                pass
     
-    # for edit_path in ['traffic_signs_use_polygon', 'traffic_signs_wrong_octagons']:
-    # for edit_path in ['traffic_signs_final_check', 'traffic_signs_use_polygon', 'traffic_signs_wrong_octagons']:
-    #     for group in ['1', '2']:
-    #         path_to_json = f'/data/shared/mapillary_vistas/{split}/hand_annotated_signs/{edit_path}/{group}/'
-    #         curr_json_files = [path_to_json + p for p in os.listdir(path_to_json) if p.endswith('.json')]
-    #         json_files.extend(curr_json_files)
-    # except:
-    #     continue
-    
+    # 04_G_l3AleUQWBSJ4_R8Hw_56.png
+    # print(curr_json_files)
+    # print('04_G_l3AleUQWBSJ4_R8Hw_56.json' in curr_json_files)
+    # qqq
     df_filenames = []
     df_points = []
     for json_path in json_files:
@@ -66,8 +59,8 @@ def main():
         #     print(edit_path)
         #     qqq
 
-        if len(json_data['shapes']) != 1:
-            print(json_path)
+        # if len(json_data['shapes']) != 1:
+        #     print(json_path)
         assert len(json_data['shapes']) == 1
         for annotation in json_data['shapes']:
             df_points.append(annotation['points'])
@@ -81,7 +74,8 @@ def main():
     elif split == 'validation':
         manual_annotated_df = pd.read_csv('/data/shared/mtsd_v2_fully_annotated/traffic_sign_annotation_validation.csv')
 
-    print(manual_annotated_df.shape)
+    # print(manual_annotated_df.shape)
+
     # merging with instance labeling df
     manual_annotated_df = manual_annotated_df.merge(
         manual_inst_seg_anno_df, left_on='filename', right_on='filename', how='left')
@@ -108,8 +102,7 @@ def main():
     manual_annotated_df['final_shape'] = final_shapes
 
     # read df with tgt, alpha, beta and merge
-    # df = pd.read_csv('mapillaryvistas_data.csv')
-    df = pd.read_csv('mapillaryvistas_validation_data.csv')
+    df = pd.read_csv(f'mapillaryvistas_{split}_data.csv')
     # manual_annotated_df['filename_x'] = manual_annotated_df['filename'].apply(
         # lambda x: '_'.join(x.split('.png')[0].split('_')[: -1]) + '.jpg')
     # manual_annotated_df = manual_annotated_df.merge(df, on=['filename_x', 'object_id'], how='left')
@@ -179,10 +172,9 @@ def main():
                 errors.append(row)
                 indices.append(index)
 
-    print('num errors', len(errors))
+    print('[INFO] num errors', len(errors))
 
     error_df = final_df.loc[indices]
-    print(error_df.shape)
 
     error_df['final_check'] = 1
     error_df['group'] = 1
@@ -199,16 +191,17 @@ def main():
         'predicted_class_x': 'predicted_class', 'batch_number_x': 'batch_number',
         'row_x': 'row', 'column_x': 'column', 'filename_x': 'filename'
     })
-    missed_alpha_beta_df = pd.read_csv(f'mapillary_vistas_{split}_missed_alpha_beta.csv')
+    missed_alpha_beta_df = pd.read_csv(f'mapillary_vistas_{split}_alpha_beta.csv')
     alpha_list = []
     beta_list = []
     for index, row in tqdm(final_df.iterrows()):
-        if split == 'validation':
+        # if split == 'validation':
             # filename_and_obj_id = row['filename'] + '_' + row['obj_id']
-            filename_and_obj_id = row['filename'].split('.jpg')[0] + '_' + str(row['object_id']) + '.png'
-            print(filename_and_obj_id)
+            # filename_and_obj_id = row['filename'].split('.jpg')[0] + '_' + str(row['object_id']) + '.png'
+            # print(filename_and_obj_id)
+        filename_and_obj_id = row['filename'].split('.jpg')[0] + '_' + str(row['object_id']) + '.png'
         if filename_and_obj_id in missed_alpha_beta_df['filename'].values:
-            print(filename_and_obj_id in missed_alpha_beta_df['filename'].values)
+            # print(filename_and_obj_id in missed_alpha_beta_df['filename'].values)
             idx = missed_alpha_beta_df['filename'] == filename_and_obj_id
             alpha_list.append(missed_alpha_beta_df[idx]['alpha'].item())
             beta_list.append(missed_alpha_beta_df[idx]['beta'].item())
@@ -219,6 +212,8 @@ def main():
     final_df['beta'] = beta_list
     final_df.to_csv(f'mapillary_vistas_{split}_final_merged.csv', index=False)
 
-
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser(description='Dataset Preperation', add_help=False)
+    parser.add_argument('--split', default='training', type=str)
+    args = parser.parse_args()
+    main(args)

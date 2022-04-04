@@ -12,8 +12,8 @@ def main(args, corrections_df):
     # df = pd.read_csv('../../../../data/shared/mtsd_v2_fully_annotated/traffic_sign_annotation_train.csv')
     # df = pd.read_csv('../../../../data/shared/mtsd_v2_fully_annotated/traffic_sign_annotation_validation.csv')
     df = pd.read_csv('error_df_validation.csv')
-    # column = args.column
-    column = 'final_check'
+    column = args.column
+    # column = 'final_check'
     df = df[df['occlusion'].isna()]
     # df = df[df[f'{column}'] == 1]
     # df = df[df['group'] == args.group]
@@ -64,8 +64,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     try:
-        # corrections_df = pd.read_csv("mapillary_vistas_corrections.csv")
-        corrections_df = pd.read_csv("mapillary_vistas_corrections_validation.csv")
+        corrections_df = pd.read_csv("mapillary_vistas_corrections.csv")
+        # corrections_df = pd.read_csv("mapillary_vistas_corrections_validation.csv")
     except:
         corrections_df = pd.DataFrame()
 
