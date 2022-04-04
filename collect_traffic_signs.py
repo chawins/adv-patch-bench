@@ -1,3 +1,4 @@
+import argparse
 import csv
 import json
 from os import listdir, makedirs
@@ -13,8 +14,6 @@ from adv_patch_bench.utils import get_box, pad_image
 
 DATASET = 'mapillaryvistas'
 # DATASET = 'bdd100k'
-
-SPLIT = 'validation'
 
 if DATASET == 'mapillaryvistas':
     TRAFFIC_SIGN_LABEL = 95
@@ -262,11 +261,14 @@ def save_offset(output, filename, paths, offset_df):
             output['offset_x_ratio'],
             output['offset_y_ratio']):
         offset_df = offset_df.append(
-            {'filename': f'{filename}.jpg', 'obj_id': obj_id, 'xmin': xmin, 'ymin': ymin, 'xmin_ratio': xmin_ratio,
+            {'filename': f'{filename}.png', 'obj_id': obj_id, 'xmin': xmin, 'ymin': ymin, 'xmin_ratio': xmin_ratio,
              'ymin_ratio': ymin_ratio},
             ignore_index=True)
     return offset_df
 
-
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Dataset Preperation', add_help=False)
+    parser.add_argument('--split', default='training', type=str)
+    args = parser.parse_args()
+    SPLIT = args.split
     main()
