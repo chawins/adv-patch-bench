@@ -52,12 +52,10 @@ CUDA_VISIBLE_DEVICES=$GPU torchrun \
 #     --weights yolov5s.pt \
 #     --exist-ok \
 #     --workers 8 \
-#     --device 0,1 
+#     --device 0,1
 
-# CUDA_VISIBLE_DEVICES=0 python val.py \
-# --img 1280 \
-# --batch 3 \
-# --data mtsd.yaml \
-# --weights /home/chawin/adv-patch-bench/yolov5/runs/train/exp/weights/best.pt \
-# --exist-ok \
-# --workers 8
+CUDA_VISIBLE_DEVICES=$GPU torchrun \
+    --standalone --nnodes=1 --max_restarts 0 --nproc_per_node $NUM_GPU \
+    val.py \
+    --img 1280 --batch 64 --data mtsd.yaml --workers 24 --device $GPU --exist-ok \
+    --weights /data/shared/adv-patch-bench/yolov5/runs/train/exp5/weights/best.pt
