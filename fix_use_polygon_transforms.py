@@ -26,10 +26,10 @@ from adv_patch_bench.transforms import (gen_sign_mask, get_box_vertices,
 from adv_patch_bench.utils import (draw_from_contours, img_numpy_to_torch,
                                    pad_image)
 
-DATASET = 'mapillaryvistas'
+DATASET = 'mapillary_vistas'
 # DATASET = 'bdd100k'
 
-if DATASET == 'mapillaryvistas':
+if DATASET == 'mapillary_vistas':
     TRAFFIC_SIGN_LABEL = 95
 elif DATASET == 'bdd100k':
     TRAFFIC_SIGN_LABEL = 'traffic sign'
@@ -104,6 +104,7 @@ def get_args_parser():
     parser.add_argument('--betas', default=(0.9, 0.999), nargs=2, type=float)
     parser.add_argument('--eps', default=1e-8, type=float)
     parser.add_argument('--resume', default='', type=str, help='path to latest checkpoint')
+    parser.add_argument('--split', default='training', type=str)
     return parser
 
 
@@ -338,14 +339,11 @@ def plot_subgroup(adversarial_images, metadata, group, shape, plot_folder=PLOT_F
 
 
 def main(args):
-
     # Arguments
-    min_area = 1600
-    max_num_imgs = 200
-    split = 'validation'
+    split = args.split
 
-    if DATASET == 'mapillaryvistas':
-        if split == 'traning':
+    if DATASET == 'mapillary_vistas':
+        if split == 'training':
             data_dir = '/data/shared/mapillary_vistas/training/'
         elif split == 'validation':
             data_dir = '/data/shared/mapillary_vistas/validation/'
@@ -365,7 +363,7 @@ def main(args):
     # model = build_classifier(args)[0]
     # model.eval()
 
-    if DATASET == 'mapillaryvistas':
+    if DATASET == 'mapillary_vistas':
         img_path = join(data_dir, 'traffic_signs')
         img_files = sorted([join(img_path, f) for f in listdir(img_path) if
                             isfile(join(img_path, f)) and f.endswith('.png')])
@@ -462,18 +460,22 @@ def main(args):
     # corrections_df = pd.DataFrame(columns=['filename', 'tgt_polygon'])
     corrections_df = pd.DataFrame(columns=['filename'])
     filenames_list = []
+    object_id_list = []
     tgt_list = []
 
     error_files = []
     for img_file, mask_file in tqdm(zip(img_files, mask_files)):
-        filename = img_file.split('/')[-1]
+        
+        filename_and_obj_id  = img_file.split('/')[-1]
+        filename = '_'.join(filename_and_obj_id.split('_')[:-1]) + '.jpg'
+        obj_id = int(filename_and_obj_id.split('.png')[0].split('_')[-1])
 
-        if filename not in final_df['filename'].values:
+        row = final_df[(final_df['filename'] == filename) & (final_df['object_id'] == obj_id)]
+        if len(row) == 0:
             continue
+        assert len(row) == 1
 
-        row = final_df[final_df['filename'] == filename]
-
-        assert filename == mask_file.split('/')[-1]
+        assert filename_and_obj_id == mask_file.split('/')[-1]
         image = np.asarray(Image.open(img_file))
         Image.open(mask_file).save('test_mask.png')
         mask = np.asarray(Image.open(mask_file))
@@ -489,34 +491,27 @@ def main(args):
         adv_image, shape, group, tgt, alpha, beta = output
 
         filenames_list.append(filename)
+        object_id_list.append(obj_id)
         if tgt.ndim == 3:
             tgt = tgt[0]
         tgt = tgt.tolist()
         tgt_list.append(tgt)
                                            
-        # output = compute_example_transform(image, mask, CLASS_LIST[y], demo_patch,
-        #                                    patch_size_in_mm=150,
-        #                                    patch_size_in_pixel=32)
-        # /data/shared/mapillary_vistas/training/traffic_signs/11NKfv7sx4-XU_lupQ1JhA_62.png
-        # /data/shared/mapillary_vistas/training/traffic_signs/177UqjbStkQA07PsZQT_XA_19.png
-        # print('after')
-        # print()
-
     print('num errors', len(error_files))
     print(error_files)
     
     corrections_df['filename'] = filenames_list
+    corrections_df['object_id'] = object_id_list
     corrections_df['tgt_polygon'] = tgt_list
-    # corrections_df['use_polygon'] = True
     corrections_df.to_csv(f'use_polygons_corrections_{split}_df.csv', index=False)
 
     main_df = pd.read_csv(f'mapillary_vistas_{split}_final_merged.csv')
-    main_df = main_df.merge(corrections_df, on=['filename'], how='left', suffixes=('', '_polygon'))
+    main_df = main_df.merge(corrections_df, on=['filename', 'object_id'], how='left', suffixes=('', '_polygon'))
     print('saving df')
     # main_df.to_csv(f'mapillary_vistas_{split}_final_merged_real_final.csv', index=False)
     main_df.to_csv(f'mapillary_vistas_{split}_final_merged.csv', index=False)
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser('Example Transform', parents=[get_args_parser()])
+    parser = argparse.ArgumentParser('Dataset Preperation', parents=[get_args_parser()])
     args = parser.parse_args()
     main(args)
