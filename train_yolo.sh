@@ -29,5 +29,5 @@ NUM_GPU=4
 CUDA_VISIBLE_DEVICES=$GPU torchrun \
     --standalone --nnodes=1 --max_restarts 0 --nproc_per_node $NUM_GPU \
     val.py \
-    --img 1280 --batch 64 --data mtsd.yaml --workers 24 --device $GPU --exist-ok \
+    --img 1280 --batch 32 --data mtsd.yaml --workers 24 --device $GPU --exist-ok \
     --weights /data/shared/adv-patch-bench/yolov5/runs/train/exp5/weights/best.pt
