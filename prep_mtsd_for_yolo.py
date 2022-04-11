@@ -65,7 +65,7 @@ for json_file in tqdm(json_files):
         obj_height = (obj['bbox']['ymax'] - obj['bbox']['ymin']) / height
         class_index = mtsd_label_to_class_index.get(obj['label'], bg_idx)
         # Compute object area if the image were to be resized to have width of 1280 pixels
-        obj_area = (obj_width * 1280) * (height / width * 1280)
+        obj_area = (obj_width * 1280) * (obj_height * height / width * 1280)
         # Remove labels for small or "other" objects
         if obj_area < MIN_OBJ_AREA or class_index == NUM_CLASSES - 1:
             continue
