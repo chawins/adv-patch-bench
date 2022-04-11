@@ -1,8 +1,8 @@
 #!/bin/bash
 GPU=0
-PATCH_NAME=14_10x10
+PATCH_NAME=test-min-area-600
 EXP=49
-MODEL_PATH=/data/shared/adv-patch-bench/yolov5/runs/train/exp5/weights/best.pt
+MODEL_PATH=/data/shared/adv-patch-bench/yolov5/runs/train/exp6/weights/best.pt
 CSV_PATH=mapillary_vistas_training_final_merged.csv
 SYN_OBJ_PATH=attack_assets/octagon-915.0.png
 OBJ_CLASS=14
@@ -24,8 +24,9 @@ CUDA_VISIBLE_DEVICES=$GPU python -u val_attack_synthetic.py \
     --tgt-csv-filepath $CSV_PATH --weights $MODEL_PATH \
     --attack-config-path attack_config.yaml --name $PATCH_NAME \
     --obj-class $OBJ_CLASS --plot-class-examples $OBJ_CLASS --syn-obj-path $SYN_OBJ_PATH \
-    --imgsz 1280 --padded_imgsz 992,1312 --batch-size 12 \
-    --interp bilinear --attack-type none --min-area 200 \
-    --metrics-confidence-threshold 0.527 --debug \
+    --imgsz 2560 --padded_imgsz 1952,2592 --batch-size 4 \
+    --interp bilinear --attack-type none --min-area 600
+# --metrics-confidence-threshold 0.527
+# --data mtsd.yaml --tgt-csv-filepath $CSV_PATH \
 # --adv-patch-path ./runs/val/exp2/stop_sign_10x10.pkl \
-# --imgsz 2560 --padded_imgsz 1952,2592 --batch-size 2 \
+# --imgsz 1280 --padded_imgsz 992,1312 --batch-size 12

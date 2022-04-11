@@ -2,17 +2,12 @@
 GPU=0,1,2,3
 NUM_GPU=4
 
-# CUDA_VISIBLE_DEVICES=$GPU torchrun \
-#     --standalone --nnodes=1 --max_restarts 0 --nproc_per_node $NUM_GPU \
-#     train_yolov5.py \
-#     --hyp yolov5/data/hyps/hyp.scratch.yaml \
-#     --img 1280 \
-#     --batch 64 \
-#     --data yolov5/data/mtsd.yaml \
-#     --weights yolov5m.pt \
-#     --exist-ok \
-#     --workers 24 \
-#     --device $GPU
+CUDA_VISIBLE_DEVICES=$GPU torchrun \
+    --standalone --nnodes=1 --max_restarts 0 --nproc_per_node $NUM_GPU \
+    train_yolov5.py \
+    --exist-ok --workers 24 --device $GPU --data yolov5/data/mtsd.yaml \
+    --hyp yolov5/data/hyps/hyp.scratch.yaml \
+    --img 2560 --batch 8 --weights yolov5m.pt --resume
 # --resume
 
 # CUDA_VISIBLE_DEVICES=0,1 python \
@@ -26,8 +21,8 @@ NUM_GPU=4
 #     --workers 8 \
 #     --device 0,1
 
-CUDA_VISIBLE_DEVICES=$GPU torchrun \
-    --standalone --nnodes=1 --max_restarts 0 --nproc_per_node $NUM_GPU \
-    val.py \
-    --img 1280 --batch 32 --data mtsd.yaml --workers 24 --device $GPU --exist-ok \
-    --weights /data/shared/adv-patch-bench/yolov5/runs/train/exp5/weights/best.pt
+# CUDA_VISIBLE_DEVICES=$GPU torchrun \
+#     --standalone --nnodes=1 --max_restarts 0 --nproc_per_node $NUM_GPU \
+#     val.py \
+#     --img 1280 --batch 8 --data mtsd.yaml --workers 24 --device $GPU --exist-ok \
+#     --weights /data/shared/adv-patch-bench/yolov5/runs/train/exp5/weights/best.pt
