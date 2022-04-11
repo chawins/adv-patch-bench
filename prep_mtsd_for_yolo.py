@@ -48,6 +48,9 @@ json_files = [join(anno_path, f) for f in os.listdir(anno_path)
               if os.path.isfile(join(anno_path, f)) and f.endswith('.json')]
 print(f'Found {len(json_files)} files')
 
+num_too_small = 0
+num_other = 0
+
 for json_file in tqdm(json_files):
     filename = json_file.split('.')[-2].split('/')[-1]
     split = split_dict[filename]
@@ -67,9 +70,16 @@ for json_file in tqdm(json_files):
         # Compute object area if the image were to be resized to have width of 1280 pixels
         obj_area = (obj_width * 1280) * (obj_height * height / width * 1280)
         # Remove labels for small or "other" objects
-        if obj_area < MIN_OBJ_AREA or class_index == NUM_CLASSES - 1:
+        if obj_area < MIN_OBJ_AREA:
+            num_too_small += 1
+            continue
+        if class_index == NUM_CLASSES - 1:
+            num_other += 1
             continue
         text += f'{class_index} {x_center} {y_center} {obj_width} {obj_height} 0\n'
 
     with open(join(label_path, split, filename + '.txt'), 'w') as f:
         f.write(text)
+
+print(f'{num_too_small} signs are too small, and {num_other} of the remaining ones have "other" class.')
+print('Finished.')
