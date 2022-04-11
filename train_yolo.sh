@@ -45,8 +45,8 @@ CUDA_VISIBLE_DEVICES=$GPU torchrun \
 #     # --resume
 =======
     --exist-ok --workers 24 --device $GPU --data yolov5/data/mtsd.yaml \
-    --hyp yolov5/data/hyps/hyp.scratch.yaml \
-    --img 2560 --batch 8 --weights yolov5m.pt --resume
+    --hyp yolov5/data/hyps/hyp.finetune.yaml \
+    --img 2560 --batch 16 --weights yolov5s.pt
 # --resume
 >>>>>>> e3e096e... from azure1
 
