@@ -1,8 +1,8 @@
 import json
 import os
 import pdb
-from os.path import expanduser, join
 import shutil
+from os.path import expanduser, join
 
 import pandas as pd
 from tqdm import tqdm
@@ -18,12 +18,10 @@ def readlines(path):
 
 # path = expanduser('~/data/mtsd_v2_fully_annotated/')
 # csv_path = expanduser('~/adv-patch-bench/traffic_sign_dimension_v6.csv')
-# anno_path = expanduser(join(path, 'annotations'))
-# label_path = expanduser(join(path, 'labels'))
-# data = pd.read_csv(csv_path)
+
 
 path = '/data/shared/mtsd_v2_fully_annotated/'
-csv_path = '/data/shared/mtsd_v2_fully_annotated/traffic_sign_dimension_v6.csv'
+csv_path = './traffic_sign_dimension_v6.csv'
 similarity_df_csv_path = 'similar_files_df.csv'
 anno_path = join(path, 'annotations')
 label_path = join(path, 'labels')
@@ -69,11 +67,10 @@ for json_file in tqdm(json_files):
     jpg_filename = f'{filename}.jpg'
     if jpg_filename in similar_files_df['filename'].values:
         similar_files_count += 1
-        # qqq
         continue
-    
+
     split = split_dict[filename]
-    
+
     # Read JSON files
     with open(json_file) as f:
         anno = json.load(f)
@@ -98,13 +95,12 @@ for json_file in tqdm(json_files):
             num_other += 1
             continue
         text += f'{class_index} {x_center} {y_center} {obj_width} {obj_height} 0\n'
-    
+
     with open(join(label_path, split, filename + '.txt'), 'w') as f:
         f.write(text)
 
-print('[INFO] there are', similar_files_count, 'similar files in mapillary and mtsd')
-
-print('[INFO] removing images in both the mapillary dataset and mtsd from mtsd')
+print(f'[INFO] There are {similar_files_count} similar files in Mapillary and MTSD')
+print('[INFO] These duplicates will be removed from MTSD')
 
 
 data_path = join(path, 'images/')
