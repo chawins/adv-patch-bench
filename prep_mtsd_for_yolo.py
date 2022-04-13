@@ -59,13 +59,10 @@ json_files = [join(anno_path, f) for f in os.listdir(anno_path)
               if os.path.isfile(join(anno_path, f)) and f.endswith('.json')]
 print(f'Found {len(json_files)} files')
 
-<<<<<<< HEAD
 similar_files_count = 0
-=======
 num_too_small = 0
 num_other = 0
 
->>>>>>> b72b781... add message for prep_mtsd
 for json_file in tqdm(json_files):
     filename = json_file.split('.')[-2].split('/')[-1]
 
@@ -105,7 +102,6 @@ for json_file in tqdm(json_files):
     with open(join(label_path, split, filename + '.txt'), 'w') as f:
         f.write(text)
 
-<<<<<<< HEAD
 print('[INFO] there are', similar_files_count, 'similar files in mapillary and mtsd')
 
 print('[INFO] removing images in both the mapillary dataset and mtsd from mtsd')
@@ -125,7 +121,6 @@ for json_file in tqdm(json_files):
     image_path = os.path.join(data_path, split, jpg_filename)
     image_new_path = os.path.join(new_data_path, split, jpg_filename)
     shutil.move(image_path, image_new_path)
-=======
+
 print(f'{num_too_small} signs are too small, and {num_other} of the remaining ones have "other" class.')
 print('Finished.')
->>>>>>> b72b781... add message for prep_mtsd
