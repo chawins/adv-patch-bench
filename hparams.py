@@ -34,7 +34,8 @@ for k in TS_COLOR_DICT:
 
 # Make sure that ordering is correct
 TS_COLOR_LABEL_LIST = list(TS_COLOR_LABEL_DICT.keys())
-print(TS_COLOR_LABEL_LIST)
+# print('TS_COLOR_LABEL_LIST: ', TS_COLOR_LABEL_LIST)
 
-MIN_OBJ_AREA = 50
+MIN_OBJ_AREA = 0
 NUM_CLASSES = len(TS_COLOR_LABEL_LIST)
+

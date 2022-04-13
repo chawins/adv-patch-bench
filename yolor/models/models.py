@@ -1,3 +1,8 @@
+# from yolor.utils.google_utils import *
+# from yolor.utils.layers import *
+# from yolor.utils.parse_config import *
+# from yolor.utils import torch_utils
+
 from utils.google_utils import *
 from utils.layers import *
 from utils.parse_config import *
