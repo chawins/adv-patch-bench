@@ -16,10 +16,9 @@ def readlines(path):
         lines = f.readlines()
     return [line.strip() for line in lines]
 
+
 # path = expanduser('~/data/mtsd_v2_fully_annotated/')
 # csv_path = expanduser('~/adv-patch-bench/traffic_sign_dimension_v6.csv')
-
-
 path = '/data/shared/mtsd_v2_fully_annotated/'
 csv_path = './traffic_sign_dimension_v6.csv'
 similarity_df_csv_path = 'similar_files_df.csv'
@@ -35,7 +34,6 @@ for idx, row in data.iterrows():
     if row['target'] in TS_COLOR_OFFSET_DICT and not use_mtsd_original_labels:
         idx = TS_COLOR_OFFSET_DICT[row['target']]
         color_list = TS_COLOR_DICT[row['target']]
-        # print(row['sign'], row['target'])
         if len(color_list) > 0:
             idx += color_list.index(row['color'])
         mtsd_label_to_class_index[row['sign']] = idx
@@ -60,6 +58,7 @@ print(f'Found {len(json_files)} files')
 similar_files_count = 0
 num_too_small = 0
 num_other = 0
+num_cross_boundary = 0
 
 for json_file in tqdm(json_files):
     filename = json_file.split('.')[-2].split('/')[-1]
@@ -85,9 +84,11 @@ for json_file in tqdm(json_files):
 
         class_index = mtsd_label_to_class_index.get(obj['label'], bg_idx)
         # Compute object area if the image were to be resized to have width of 1280 pixels
-        # obj_area = (obj_width * 1280) * (height / width * 1280)
         obj_area = (obj_width * 1280) * (obj_height * height / width * 1280)
         # Remove labels for small or "other" objects
+        if 'cross_boundary' in obj['bbox']:
+            num_cross_boundary += 1
+            continue
         if obj_area < MIN_OBJ_AREA:
             num_too_small += 1
             continue
@@ -99,9 +100,12 @@ for json_file in tqdm(json_files):
     with open(join(label_path, split, filename + '.txt'), 'w') as f:
         f.write(text)
 
-print(f'[INFO] There are {similar_files_count} similar files in Mapillary and MTSD')
-print('[INFO] These duplicates will be removed from MTSD')
-
+print(f'There are {similar_files_count} similar files in Mapillary and MTSD')
+print('These duplicates will be removed from MTSD')
+print('The following objects are being excluded from the label files:')
+print(f'{num_cross_boundary} signs cross boundary.')
+print(f'{num_too_small} of the remaining ones are too small (< {MIN_OBJ_AREA} pixel^2).')
+print(f'{num_other} of the remaining ones are in "other" class.')
 
 data_path = join(path, 'images/')
 new_data_path = join(path, 'images_mapillary_duplicates/')
@@ -116,7 +120,7 @@ for json_file in tqdm(json_files):
         continue
     image_path = os.path.join(data_path, split, jpg_filename)
     image_new_path = os.path.join(new_data_path, split, jpg_filename)
-    shutil.move(image_path, image_new_path)
+    if os.path.isfile(image_path):
+        shutil.move(image_path, image_new_path)
 
-print(f'{num_too_small} signs are too small, and {num_other} of the remaining ones have "other" class.')
 print('Finished.')
