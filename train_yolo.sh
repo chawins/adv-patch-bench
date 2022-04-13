@@ -5,6 +5,7 @@ NUM_GPU=4
 CUDA_VISIBLE_DEVICES=$GPU torchrun \
     --standalone --nnodes=1 --max_restarts 0 --nproc_per_node $NUM_GPU \
     train_yolov5.py \
+<<<<<<< HEAD
     --hyp yolov5/data/hyps/hyp.finetune.yaml \
     --img 1280 \
     --batch 32 \
@@ -42,6 +43,12 @@ CUDA_VISIBLE_DEVICES=$GPU torchrun \
 #     --device $GPU \
 #     --save-period 1
 #     # --resume
+=======
+    --exist-ok --workers 24 --device $GPU --data yolov5/data/mtsd.yaml \
+    --hyp yolov5/data/hyps/hyp.scratch.yaml \
+    --img 2560 --batch 8 --weights yolov5m.pt --resume
+# --resume
+>>>>>>> e3e096e... from azure1
 
 # CUDA_VISIBLE_DEVICES=0,1 python \
 #     train_yolov5.py \
@@ -54,8 +61,8 @@ CUDA_VISIBLE_DEVICES=$GPU torchrun \
 #     --workers 8 \
 #     --device 0,1
 
-CUDA_VISIBLE_DEVICES=$GPU torchrun \
-    --standalone --nnodes=1 --max_restarts 0 --nproc_per_node $NUM_GPU \
-    val.py \
-    --img 1280 --batch 32 --data mtsd.yaml --workers 24 --device $GPU --exist-ok \
-    --weights /data/shared/adv-patch-bench/yolov5/runs/train/exp5/weights/best.pt
+# CUDA_VISIBLE_DEVICES=$GPU torchrun \
+#     --standalone --nnodes=1 --max_restarts 0 --nproc_per_node $NUM_GPU \
+#     val.py \
+#     --img 1280 --batch 8 --data mtsd.yaml --workers 24 --device $GPU --exist-ok \
+#     --weights /data/shared/adv-patch-bench/yolov5/runs/train/exp5/weights/best.pt

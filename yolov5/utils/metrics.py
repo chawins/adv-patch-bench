@@ -412,6 +412,7 @@ def plot_pr_curve(px, py, ap, save_dir='pr_curve.png', names=(),
 
     if 0 < len(names) < 21:  # display per-class legend if < 21 classes
         for i, y in enumerate(py.T):
+            # EDIT: plot synthetic signs
             if names[i] == 'synthetic':
                 ax.plot(px, y, linewidth=2, label=f'{names[i]} {ap[i, 0]:.3f}',
                         color='indigo', linestyle='--')  # plot(recall, precision)
@@ -423,17 +424,18 @@ def plot_pr_curve(px, py, ap, save_dir='pr_curve.png', names=(),
                                                     [0].split('/')[-1] + '_' + 'synthetic' + '.npy')
                 with open(numpy_filename, 'wb') as f:
                     np.save(f, y)
-            elif names[i] == 'octagon':
-                ax.plot(px, y, linewidth=2, label=f'{names[i]} {ap[i, 0]:.3f}',
-                        color='orangered', linestyle='--')  # plot(recall, precision)
-                if recall_per_class and precision_per_class:
-                    ax.plot(recall_per_class[i], precision_per_class[i], linestyle='None',
-                            color='coral', marker='o', alpha=0.2, markersize=3)
+            # DEBUG: plot octagon
+            # elif names[i] == 'octagon':
+            #     ax.plot(px, y, linewidth=2, label=f'{names[i]} {ap[i, 0]:.3f}',
+            #             color='orangered', linestyle='--')  # plot(recall, precision)
+            #     if recall_per_class and precision_per_class:
+            #         ax.plot(recall_per_class[i], precision_per_class[i], linestyle='None',
+            #                 color='coral', marker='o', alpha=0.2, markersize=3)
 
-                numpy_filename = Path(save_path) / (str(save_dir).split('.png')
-                                                    [0].split('/')[-1] + '_' + 'octagon' + '.npy')
-                with open(numpy_filename, 'wb') as f:
-                    np.save(f, y)
+            #     numpy_filename = Path(save_path) / (str(save_dir).split('.png')
+            #                                         [0].split('/')[-1] + '_' + 'octagon' + '.npy')
+            #     with open(numpy_filename, 'wb') as f:
+            #         np.save(f, y)
             else:
                 ax.plot(px, y, linewidth=1, label=f'{names[i]} {ap[i, 0]:.3f}')  # plot(recall, precision)
     else:
@@ -457,6 +459,7 @@ def plot_mc_curve(px, py, save_dir='mc_curve.png', names=(), xlabel='Confidence'
 
     if 0 < len(names) < 21:  # display per-class legend if < 21 classes
         for i, y in enumerate(py):
+            # EDIT: plot synthetic signs
             if names[i] == 'synthetic':
                 ax.plot(px, y, label=f'{names[i]}', linewidth=2, linestyle='--',
                         color='indigo')  # plot(confidence, metric)
@@ -466,15 +469,16 @@ def plot_mc_curve(px, py, save_dir='mc_curve.png', names=(), xlabel='Confidence'
                 print('filename', numpy_filename)
                 with open(numpy_filename, 'wb') as f:
                     np.save(f, y)
-            elif names[i] == 'octagon':
-                ax.plot(px, y, label=f'{names[i]}', linewidth=2, linestyle='--',
-                        color='orangered')  # plot(confidence, metric)
+            # DEBUG: plot octagon
+            # elif names[i] == 'octagon':
+            #     ax.plot(px, y, label=f'{names[i]}', linewidth=2, linestyle='--',
+            #             color='orangered')  # plot(confidence, metric)
 
-                numpy_filename = Path(save_path) / (str(save_dir).split('.png')
-                                                    [0].split('/')[-1] + '_' + 'octagon' + '.npy')
-                print('filename', numpy_filename)
-                with open(numpy_filename, 'wb') as f:
-                    np.save(f, y)
+            #     numpy_filename = Path(save_path) / (str(save_dir).split('.png')
+            #                                         [0].split('/')[-1] + '_' + 'octagon' + '.npy')
+            #     print('filename', numpy_filename)
+            #     with open(numpy_filename, 'wb') as f:
+            #         np.save(f, y)
             else:
                 ax.plot(px, y, linewidth=1, label=f'{names[i]}')  # plot(confidence, metric)
     else:
