@@ -88,6 +88,9 @@ for json_file in tqdm(json_files):
         # obj_area = (obj_width * 1280) * (height / width * 1280)
         obj_area = (obj_width * 1280) * (obj_height * height / width * 1280)
         # Remove labels for small or "other" objects
+        if obj_area < 0:
+            import pdb
+            pdb.set_trace()
         if obj_area < MIN_OBJ_AREA:
             num_too_small += 1
             continue
