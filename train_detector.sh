@@ -7,8 +7,9 @@ CUDA_VISIBLE_DEVICES=$GPU torchrun \
     --standalone --nnodes=1 --max_restarts 0 --nproc_per_node $NUM_GPU \
     train_yolov5.py \
     --exist-ok --workers 24 --device $GPU --data yolov5/data/mtsd.yaml \
-    --hyp yolov5/data/hyps/hyp.finetune.yaml \
+    --hyp yolov5/data/hyps/hyp.scratch.yaml \
     --img 2560 --batch 16 --weights yolov5s.pt
+# --hyp yolov5/data/hyps/hyp.finetune.yaml \
 # --resume
 
 # Train a detector on Detectron2
