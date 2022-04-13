@@ -64,6 +64,7 @@ def compute_loss(p, targets, model):  # predictions, targets, model
     #print(device)
     lcls, lbox, lobj = torch.zeros(1, device=device), torch.zeros(1, device=device), torch.zeros(1, device=device)
     tcls, tbox, indices, anchors = build_targets(p, targets, model)  # targets
+
     h = model.hyp  # hyperparameters
 
     # Define criteria
@@ -125,6 +126,7 @@ def compute_loss(p, targets, model):  # predictions, targets, model
 
 
 def build_targets(p, targets, model):
+    targets = targets[:, 0:6]
     nt = targets.shape[0]  # number of anchors, targets
     tcls, tbox, indices, anch = [], [], [], []
     gain = torch.ones(6, device=targets.device)  # normalized to gridspace gain

@@ -170,6 +170,8 @@ def run(args,
     adv_sign_class = args.obj_class
     syn_obj_path = args.syn_obj_path
     min_area = args.min_area
+    model_name = args.model_name
+
     # split = args.split
 
     no_transform = args.no_transform
@@ -202,6 +204,7 @@ def run(args,
     print(f'=> Experiment name: {name}')
 
     # Initialize/load model and set device
+    print('[INFO] Loading Model')
     training = model is not None
     if training:  # called by train.py
         device, pt, jit, engine = next(model.parameters()).device, True, False, False  # get model device, PyTorch model
@@ -215,23 +218,39 @@ def run(args,
         save_dir = increment_path(Path(project) / name, exist_ok=exist_ok)  # increment run
         (save_dir / 'labels' if save_txt else save_dir).mkdir(parents=True, exist_ok=True)  # make dir
 
-        # Load model
-        model = DetectMultiBackend(weights, device=device, dnn=dnn)
-        stride, pt, jit, engine = model.stride, model.pt, model.jit, model.engine
-        imgsz = check_img_size(imgsz, s=stride)  # check image size
-        half &= (pt or jit or engine) and device.type != 'cpu'  # half precision only supported by PyTorch on CUDA
-        if pt or jit:
-            model.model.half() if half else model.model.float()
-        elif engine:
-            batch_size = model.batch_size
-        else:
-            half = False
-            batch_size = 1  # export.py models default to batch-size 1
-            device = torch.device('cpu')
-            LOGGER.info(f'Forcing --batch-size 1 square inference shape(1,3,{imgsz},{imgsz}) for non-PyTorch backends')
+        # TODO: add as arg
+
+        # model_name = 'yolov5'
+        if model_name == 'yolov5':
+            # Load model
+            model = DetectMultiBackend(weights, device=device, dnn=dnn)
+            stride, pt, jit, engine = model.stride, model.pt, model.jit, model.engine
+            imgsz = check_img_size(imgsz, s=stride)  # check image size
+            half &= (pt or jit or engine) and device.type != 'cpu'  # half precision only supported by PyTorch on CUDA
+            if pt or jit:
+                model.model.half() if half else model.model.float()
+            elif engine:
+                batch_size = model.batch_size
+            else:
+                half = False
+                batch_size = 1  # export.py models default to batch-size 1
+                device = torch.device('cpu')
+                LOGGER.info(f'Forcing --batch-size 1 square inference shape(1,3,{imgsz},{imgsz}) for non-PyTorch backends')
+        elif model_name == 'yolor':
+            # TODO: move to imports above
+            from yolor.models.models import Darknet
+            # Load model
+            cfg = 'yolor/cfg/yolor_p6.cfg'
+            model = Darknet(cfg, imgsz).cuda()
+            model.load_state_dict(torch.load(weights[0], map_location=device)['model'])
+            model.to(device).eval()
+            stride, pt = 64, True
+            if half:
+                model.half()  # to FP16
 
         # Data
         data = check_dataset(data)  # check
+
 
     print(data['train'])
 
@@ -244,16 +263,36 @@ def run(args,
 
     # Dataloader
     if not training:
-        model.warmup(imgsz=(1, 3, imgsz, imgsz), half=half)  # warmup
         pad = 0.0 if task == 'speed' else 0.5
         task = task if task in ('train', 'val', 'test') else 'val'  # path to train/val/test images
+        if model_name == 'yolov5':
+            model.warmup(imgsz=(1, 3, imgsz, imgsz), half=half)  # warmup
+        elif model_name == 'yolor':
+            img = torch.zeros((1, 3, imgsz, imgsz), device=device)  # init img
+            _ = model(img.half() if half else img) if device.type != 'cpu' else None  # run once
+
+        
         dataloader = create_dataloader(data[task], imgsz, batch_size, stride,
                                        single_cls, pad=pad, rect=pt,
                                        workers=workers,
                                        prefix=colorstr(f'{task}: '))[0]
 
+
+        
+        # path = data['test'] if opt.task == 'test' else data['val']  # path to val/test images
+        # dataloader = create_dataloader(path, imgsz, batch_size, 64, opt, pad=0.5, rect=True)[0]
+
     seen = 0
-    names = {k: v for k, v in enumerate(model.names if hasattr(model, 'names') else model.module.names)}
+    # names = {k: v for k, v in enumerate(model.names if hasattr(model, 'names') else model.module.names)}
+    
+    
+    try:
+        # names = model.names if hasattr(model, 'names') else model.module.names
+        names = {k: v for k, v in enumerate(model.names if hasattr(model, 'names') else model.module.names)}
+    except:
+        names = {k: v for k, v in enumerate(data['names'])}
+        # names = data['names'] # number classes, names
+
     nc = len(names)
     assert adv_sign_class < nc, 'Obj Class to attack does not exist'
     print('Class names: ', names)
@@ -486,7 +525,11 @@ def run(args,
         dt[0] += t2 - t1
 
         # Inference
-        out, train_out = model(im) if training else model(im, augment=augment, val=True)  # inference, loss outputs
+        if model_name == 'yolov5':
+            out, train_out = model(im) if training else model(im, augment=augment, val=True)  # inference, loss outputs
+        elif model_name == 'yolor':
+            out, train_out = model(im, augment=augment)  # inference and training outputs
+                
         dt[1] += time_sync() - t2
 
         # Loss
@@ -497,12 +540,24 @@ def run(args,
         targets[:, 2:6] *= torch.Tensor([width, height, width, height]).to(device)  # to pixels
         lb = [targets[targets[:, 0] == i, 1:] for i in range(nb)] if save_hybrid else []  # for autolabelling
         t3 = time_sync()
-        out = non_max_suppression(out, conf_thres, iou_thres, labels=lb,
-                                  multi_label=True, agnostic=single_cls)
+        # print(out.shape)
+        # print(out, '\n')
+        from yolor.utils.general import non_max_suppression
+        # print(conf_thres, iou_thres)
+        # qqq
+        out = non_max_suppression(out, conf_thres=conf_thres, iou_thres=iou_thres)
+        # out = non_max_suppression(out, conf_thres, iou_thres, labels=lb,
+        #                           multi_label=True, agnostic=single_cls)
+        # print(out, '\n\n')
+            # qqq
+
         dt[2] += time_sync() - t3
 
         # Metrics
         predictions_for_plotting = output_to_target(out)
+        # print(list(predictions_for_plotting[:, 1]))
+        # qqq
+        
 
         for si, pred in enumerate(out):
             # pred (Array[N, 6]), x1, y1, x2, y2, confidence, class
@@ -534,6 +589,10 @@ def run(args,
                         current_label_metric, ignore_index=True)
                 labels = labels[lbl_index_to_keep]
                 tcls = labels[:, 0].tolist() if nl else []  # target class
+                
+                labels_kept += lbl_index_to_keep.sum()
+                labels_removed += (~lbl_index_to_keep).sum()
+                
                 if nl:
                     stats.append((torch.zeros(0, niou, dtype=torch.bool),
                                   torch.Tensor(), torch.Tensor(), tcls))
@@ -644,8 +703,10 @@ def run(args,
 
             for class_index in labels[:, 0]:
                 if class_index in plot_class_examples:
-                    class_name = names[class_index.item()]
-                    if len(shape_to_plot_data[class_name]) < 50:
+                    # print(class_index.item())
+                    # class_name = names[class_index.item()]
+                    class_name = names[int(class_index.item())]
+                    if len(shape_to_plot_data[class_name]) < 10:
                         fn = str(path).split('/')[-1]
                         shape_to_plot_data[class_name].append(
                             [im[si: si + 1], targets[targets[:, 0] == si, :], path,
@@ -883,6 +944,8 @@ def parse_opt():
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
     parser.add_argument('--half', action='store_true', help='use FP16 half-precision inference')
     parser.add_argument('--dnn', action='store_true', help='use OpenCV DNN for ONNX inference')
+    parser.add_argument('--model_name', default='yolov5', help='yolov5 or yolor')
+
     # ========================== Our misc arguments ========================= #
     parser.add_argument('--seed', type=int, default=0, help='set random seed')
     parser.add_argument('--padded_imgsz', type=str, default='992,1312',

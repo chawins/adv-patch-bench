@@ -446,9 +446,9 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         for i, file in pbar:
             l = self.labels[i]  # label
             if l is not None and l.shape[0]:
-                assert l.shape[1] == 5, '> 5 label columns: %s' % file
+                assert l.shape[1] == 6, '> 5 label columns: %s' % file
                 assert (l >= 0).all(), 'negative labels: %s' % file
-                assert (l[:, 1:] <= 1).all(), 'non-normalized or out of bounds coordinate labels: %s' % file
+                assert (l[:, 1:-2] <= 1).all(), 'non-normalized or out of bounds coordinate labels: %s' % file
                 if np.unique(l, axis=0).shape[0] < l.shape[0]:  # duplicate rows
                     nd += 1  # print('WARNING: duplicate rows in %s' % self.label_files[i])  # duplicate rows
                 if single_cls:
@@ -619,7 +619,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                 if nL:
                     labels[:, 1] = 1 - labels[:, 1]
 
-        labels_out = torch.zeros((nL, 6))
+        labels_out = torch.zeros((nL, 6+1))
         if nL:
             labels_out[:, 1:] = torch.from_numpy(labels)
 
@@ -729,7 +729,9 @@ class LoadImagesAndLabels9(Dataset):  # for training/testing
         for i, file in pbar:
             l = self.labels[i]  # label
             if l is not None and l.shape[0]:
-                assert l.shape[1] == 5, '> 5 label columns: %s' % file
+                # print(l)
+                # print(l.shape)
+                assert l.shape[1] == 6, '> 6 label columns: %s' % file
                 assert (l >= 0).all(), 'negative labels: %s' % file
                 assert (l[:, 1:] <= 1).all(), 'non-normalized or out of bounds coordinate labels: %s' % file
                 if np.unique(l, axis=0).shape[0] < l.shape[0]:  # duplicate rows
@@ -808,7 +810,7 @@ class LoadImagesAndLabels9(Dataset):  # for training/testing
                     with open(label, 'r') as f:
                         l = np.array([x.split() for x in f.read().splitlines()], dtype=np.float32)  # labels
                 if len(l) == 0:
-                    l = np.zeros((0, 5), dtype=np.float32)
+                    l = np.zeros((0, 6), dtype=np.float32)
                 x[img] = [l, shape]
             except Exception as e:
                 print('WARNING: Ignoring corrupted image and/or label %s: %s' % (img, e))
@@ -902,8 +904,13 @@ class LoadImagesAndLabels9(Dataset):  # for training/testing
                 if nL:
                     labels[:, 1] = 1 - labels[:, 1]
 
-        labels_out = torch.zeros((nL, 6))
+        # labels_out = torch.zeros((nL, 6))
+        # EDIT
+        labels_out = torch.zeros((nL, 7))
         if nL:
+            # print("HERE")
+            # print(labels_out.shape)
+            # print(labels.shape)
             labels_out[:, 1:] = torch.from_numpy(labels)
 
         # Convert
