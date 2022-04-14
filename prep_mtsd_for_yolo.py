@@ -107,6 +107,7 @@ print(f'{num_cross_boundary} signs cross boundary.')
 print(f'{num_too_small} of the remaining ones are too small (< {MIN_OBJ_AREA} pixel^2).')
 print(f'{num_other} of the remaining ones are in "other" class.')
 
+# Moving duplicated files to a separate directory
 data_path = join(path, 'images/')
 new_data_path = join(path, 'images_mapillary_duplicates/')
 for split in splits:

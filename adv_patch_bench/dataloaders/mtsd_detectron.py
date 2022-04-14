@@ -27,6 +27,9 @@ anno_path = expanduser(join(path, 'annotations'))
 label_path = expanduser(join(path, 'labels'))
 data = pd.read_csv(csv_path)
 
+similarity_df_csv_path = 'similar_files_df.csv'
+similar_files_df = pd.read_csv(similarity_df_csv_path)
+
 selected_labels = list(TS_COLOR_OFFSET_DICT.keys())
 mtsd_label_to_class_index = {}
 for _, row in data.iterrows():
@@ -51,7 +54,6 @@ for split in splits:
 # Get all JSON files
 json_files = [join(anno_path, f) for f in os.listdir(anno_path)
               if os.path.isfile(join(anno_path, f)) and f.endswith('.json')]
-print(f'Found {len(json_files)} files')
 
 
 def get_mtsd_dict(split):
@@ -61,8 +63,12 @@ def get_mtsd_dict(split):
     dataset_dicts = []
 
     for idx, json_file in tqdm(enumerate(json_files)):
+
         filename = json_file.split('.')[-2].split('/')[-1]
         if filename not in filenames:
+            continue
+        jpg_filename = f'{filename}.jpg'
+        if jpg_filename in similar_files_df['filename'].values:
             continue
 
         # Read JSON files

@@ -28,6 +28,9 @@ from detectron2.modeling import GeneralizedRCNNWithTTA
 # Import this file to register MTSD for detectron
 import adv_patch_bench.dataloaders.mtsd_detectron
 
+import torch.multiprocessing
+torch.multiprocessing.set_sharing_strategy('file_system')
+
 
 def build_evaluator(cfg, dataset_name, output_folder=None):
     # """
@@ -67,7 +70,7 @@ def build_evaluator(cfg, dataset_name, output_folder=None):
     # elif len(evaluator_list) == 1:
     #     return evaluator_list[0]
     # return DatasetEvaluators(evaluator_list)
-    return COCOEvaluator('mtsd_val', output_dir=output_folder)
+    return COCOEvaluator('mtsd_val', output_dir=cfg.OUTPUT_DIR)
 
 
 class Trainer(DefaultTrainer):
