@@ -67,7 +67,7 @@ def build_evaluator(cfg, dataset_name, output_folder=None):
     # elif len(evaluator_list) == 1:
     #     return evaluator_list[0]
     # return DatasetEvaluators(evaluator_list)
-    return COCOEvaluator('mtsd_val', output_dir=output_folder)
+    return COCOEvaluator('mtsd_val', output_dir='./temppp')
 
 
 class Trainer(DefaultTrainer):

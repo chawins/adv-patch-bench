@@ -140,3 +140,4 @@ runs/*
 tmp*
 notebooks/
 detectron_output/
+delete_mapillaryvistas_plots_model_3_updated_optimized/
