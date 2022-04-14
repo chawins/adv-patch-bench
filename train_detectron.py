@@ -28,6 +28,9 @@ from detectron2.modeling import GeneralizedRCNNWithTTA
 # Import this file to register MTSD for detectron
 import adv_patch_bench.dataloaders.mtsd_detectron
 
+import torch.multiprocessing
+torch.multiprocessing.set_sharing_strategy('file_system')
+
 
 def build_evaluator(cfg, dataset_name, output_folder=None):
     # """
