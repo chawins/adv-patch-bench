@@ -1,0 +1,36 @@
+# YOLOv5 🚀 by Ultralytics, GPL-3.0 license
+# COCO128 dataset https://www.kaggle.com/ultralytics/coco128 (first 128 images from COCO train2017)
+# Example usage: python train.py --data coco128.yaml
+# parent
+# ├── yolov5
+# └── datasets
+#     └── coco128  ← downloads here
+
+
+# Train/val/test sets as 1) dir: path/to/imgs, 2) file: path/to/imgs.txt, or 3) list: [path/to/imgs1, path/to/imgs2, ..]
+# path: /data/shared/mapillary_vistas/  # dataset root dir
+# train: training/images  # train images (relative to 'path') 128 images
+# # train: training/images_group1  # train images (relative to 'path') 128 images
+# val: validation/images  # val images (relative to 'path') 128 images
+# test: testing/images # test images (optional)
+
+# path: /data/shared/mapillary_vistas/  # dataset root dir
+train: /data/shared/mapillary_vistas/training/images  # train images (relative to 'path') 128 images
+# train: training/images_group1  # train images (relative to 'path') 128 images
+val: /data/shared/mapillary_vistas/validation/images  # val images (relative to 'path') 128 images
+# test: testing/images # test images (optional)
+
+# Classes
+# nc: 15  # number of classes
+# names: ['circle-white', 'circle-blue', 'circle-red', 'triangle-white', 
+#         'triangle-yellow', 'triangle_inverted', 'diamond-600', 'diamond-915', 
+#         'square', 'rect-458-610-white', 'rect-458-610-other', 'rect-762-915', 
+#         'rect-915-1220', 'pentagon', 'octagon']  # class names
+nc: 16  # number of classes
+names: ['circle-white', 'circle-blue', 'circle-red', 'triangle-white', 
+        'triangle-yellow', 'triangle_inverted', 'diamond-600', 'diamond-915', 
+        'square', 'rect-458-610-white', 'rect-458-610-other', 'rect-762-915', 
+        'rect-915-1220', 'pentagon', 'octagon', 'other']  # class names
+
+# Download script/URL (optional)
+download: 
