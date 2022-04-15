@@ -19,7 +19,7 @@ SOLVER:
   BASE_LR: 0.01  # EDIT
   STEPS: (50000, 70000, 90000)  # EDIT
   MAX_ITER: 100000  # EDIT
-  IMS_PER_BATCH: 40
+  IMS_PER_BATCH: 32
 INPUT:
   RANDOM_FLIP: 'none'  # EDIT: traffic sign can't be flipped
   MAX_SIZE_TRAIN: 4096   
