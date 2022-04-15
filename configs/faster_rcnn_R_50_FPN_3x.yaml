@@ -19,15 +19,15 @@ SOLVER:
   BASE_LR: 0.01  # EDIT
   STEPS: (50000, 70000, 90000)  # EDIT
   MAX_ITER: 100000  # EDIT
-  IMS_PER_BATCH: 48
+  IMS_PER_BATCH: 40
 INPUT:
   RANDOM_FLIP: 'none'  # EDIT: traffic sign can't be flipped
-  MAX_SIZE_TRAIN: 5000   
+  MAX_SIZE_TRAIN: 4096   
   MAX_SIZE_TEST: 2048
   CROP:
     TYPE: 'absolute'
     SIZE: (1000, 1000)
 DATALOADER:
-  NUM_WORKERS: 32
+  NUM_WORKERS: 64
   SAMPLER_TRAIN: 'RepeatFactorTrainingSampler'  # EDIT: default: 'TrainingSampler'
   REPEAT_THRESHOLD: 1.0  # EDIT: default: 0
