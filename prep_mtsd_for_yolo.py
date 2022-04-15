@@ -96,7 +96,7 @@ for json_file in tqdm(json_files):
         if obj_area < MIN_OBJ_AREA:
             num_too_small += 1
             continue
-        if class_index == NUM_CLASSES - 1:
+        if class_index == bg_idx:
             num_other += 1
             continue
         text += f'{class_index} {x_center} {y_center} {obj_width} {obj_height} 0\n'

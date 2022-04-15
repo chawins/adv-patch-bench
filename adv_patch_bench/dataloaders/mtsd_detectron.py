@@ -93,7 +93,7 @@ def get_mtsd_dict(split):
             # Scale by 1280 / width to normalize varying image size (this is not a bug)
             obj_area = (obj_width / width * 1280) * (obj_height / width * 1280)
             # Remove labels for small or "other" objects
-            if obj_area < MIN_OBJ_AREA or class_index == NUM_CLASSES - 1:
+            if obj_area < MIN_OBJ_AREA or class_index == bg_idx:
                 continue
             obj = {
                 'bbox': [obj['bbox']['xmin'], obj['bbox']['ymin'], obj['bbox']['xmax'], obj['bbox']['ymax']],
@@ -111,7 +111,10 @@ def get_mtsd_dict(split):
 splits = ['train', 'test', 'val']
 for split in splits:
     DatasetCatalog.register(f'mtsd_{split}', lambda s=split: get_mtsd_dict(s))
-    MetadataCatalog.get(f'mtsd_{split}').set(thing_classes=TS_COLOR_LABEL_LIST[:-1])
+    if use_mtsd_original_labels:
+        MetadataCatalog.get(f'mtsd_{split}').set(thing_classes=data['sign'].tolist())
+    else:
+        MetadataCatalog.get(f'mtsd_{split}').set(thing_classes=TS_COLOR_LABEL_LIST[:-1])
 
 
 # DEBUG
