@@ -1,7 +1,7 @@
 import torch.nn.functional as F
 
-# from yolor.utils.general import *
-from utils.general import *
+from yolor.utils.general import *
+# from utils.general import *
 
 import torch
 from torch import nn
