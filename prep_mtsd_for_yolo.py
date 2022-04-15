@@ -26,7 +26,7 @@ anno_path = join(path, 'annotations')
 label_path = join(path, 'labels')
 data = pd.read_csv(csv_path)
 similar_files_df = pd.read_csv(similarity_df_csv_path)
-use_mtsd_original_labels = False
+use_mtsd_original_labels = True
 
 selected_labels = list(TS_COLOR_OFFSET_DICT.keys())
 mtsd_label_to_class_index = {}
@@ -81,6 +81,10 @@ for json_file in tqdm(json_files):
         y_center = (obj['bbox']['ymin'] + obj['bbox']['ymax']) / 2 / height
         obj_width = (obj['bbox']['xmax'] - obj['bbox']['xmin']) / width
         obj_height = (obj['bbox']['ymax'] - obj['bbox']['ymin']) / height
+
+        import pdb
+        pdb.set_trace()
+        mtsd_label_to_class_index
 
         class_index = mtsd_label_to_class_index.get(obj['label'], bg_idx)
         # Compute object area if the image were to be resized to have width of 1280 pixels
