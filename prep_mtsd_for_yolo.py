@@ -105,9 +105,9 @@ for json_file in tqdm(json_files):
         obj_width = (obj['bbox']['xmax'] - obj['bbox']['xmin']) / width
         obj_height = (obj['bbox']['ymax'] - obj['bbox']['ymin']) / height
 
-        # import pdb
-        # pdb.set_trace()
-        # mtsd_label_to_class_index
+        import pdb
+        pdb.set_trace()
+        mtsd_label_to_class_index
 
         class_index = mtsd_label_to_class_index.get(obj['label'], bg_idx)
         # Compute object area if the image were to be resized to have width of 1280 pixels
@@ -123,8 +123,9 @@ for json_file in tqdm(json_files):
             num_other += 1
             continue
 
-    with open(join(label_path, split, filename + '.txt'), 'w') as f:
-        f.write(text)
+    if text != '':
+        with open(join(label_path, split, filename + '.txt'), 'w') as f:
+            f.write(text)
 
 print(f'There are {similar_files_count} similar files in Mapillary and MTSD')
 print('These duplicates will be removed from MTSD')
