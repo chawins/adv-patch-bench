@@ -21,41 +21,43 @@ def readlines(path):
 # path = expanduser('~/data/mtsd_v2_fully_annotated/')
 # csv_path = expanduser('~/adv-patch-bench/traffic_sign_dimension_v6.csv')
 use_mtsd_original_labels = False
+use_color = False
 
 path = '/data/shared/mtsd_v2_fully_annotated/'
 csv_path = './traffic_sign_dimension_v6.csv'
 similarity_df_csv_path = 'similar_files_df.csv'
 anno_path = join(path, 'annotations')
-label_path = join(path, 'labels_original') if use_mtsd_original_labels else join(path, 'labels')
+
+if use_mtsd_original_labels:
+    label_path = 'labels_original'
+elif use_color:
+    label_path = 'labels'
+else:
+    label_path = 'labels_no_color'
+label_path = join(path, label_path)
 data = pd.read_csv(csv_path)
 similar_files_df = pd.read_csv(similarity_df_csv_path)
-<<<<<<< HEAD
-=======
-use_mtsd_original_labels = True
->>>>>>> d2bb6c91f20b6207733bb52c8147425453b5874f
 
-
-# selected_labels = list(TS_COLOR_OFFSET_DICT.keys())
-# mtsd_label_to_class_index = {}
-# for idx, row in data.iterrows():
-#     if row['target'] in TS_COLOR_OFFSET_DICT and not use_mtsd_original_labels:
-#         idx = TS_COLOR_OFFSET_DICT[row['target']]
-#         color_list = TS_COLOR_DICT[row['target']]
-#         if len(color_list) > 0:
-#             idx += color_list.index(row['color'])
-#         mtsd_label_to_class_index[row['sign']] = idx
-#     elif use_mtsd_original_labels:
-#         mtsd_label_to_class_index[row['sign']] = idx
-# bg_idx = max(list(mtsd_label_to_class_index.values())) + 1
-
-selected_labels = list(TS_COLOR_DICT.keys())
 mtsd_label_to_class_index = {}
-for idx, row in data.iterrows():
-    if row['target'] in TS_COLOR_DICT and not use_mtsd_original_labels:
-        idx = selected_labels.index(row['target'])
-        mtsd_label_to_class_index[row['sign']] = idx
-    elif use_mtsd_original_labels:
-        mtsd_label_to_class_index[row['sign']] = idx
+if use_color:
+    selected_labels = list(TS_COLOR_OFFSET_DICT.keys())
+    for idx, row in data.iterrows():
+        if row['target'] in TS_COLOR_OFFSET_DICT and not use_mtsd_original_labels:
+            idx = TS_COLOR_OFFSET_DICT[row['target']]
+            color_list = TS_COLOR_DICT[row['target']]
+            if len(color_list) > 0:
+                idx += color_list.index(row['color'])
+            mtsd_label_to_class_index[row['sign']] = idx
+        elif use_mtsd_original_labels:
+            mtsd_label_to_class_index[row['sign']] = idx
+else:
+    selected_labels = list(TS_COLOR_DICT.keys())
+    for idx, row in data.iterrows():
+        if row['target'] in TS_COLOR_DICT and not use_mtsd_original_labels:
+            idx = selected_labels.index(row['target'])
+            mtsd_label_to_class_index[row['sign']] = idx
+        elif use_mtsd_original_labels:
+            mtsd_label_to_class_index[row['sign']] = idx
 bg_idx = max(list(mtsd_label_to_class_index.values())) + 1
 
 # Save filenames and the data partition they belong to
@@ -104,15 +106,10 @@ for json_file in tqdm(json_files):
         obj_width = (obj['bbox']['xmax'] - obj['bbox']['xmin']) / width
         obj_height = (obj['bbox']['ymax'] - obj['bbox']['ymin']) / height
 
-<<<<<<< HEAD
-        # print(obj)
-        # qqq
-=======
-        import pdb
-        pdb.set_trace()
-        mtsd_label_to_class_index
+        # import pdb
+        # pdb.set_trace()
+        # mtsd_label_to_class_index
 
->>>>>>> d2bb6c91f20b6207733bb52c8147425453b5874f
         class_index = mtsd_label_to_class_index.get(obj['label'], bg_idx)
         # Compute object area if the image were to be resized to have width of 1280 pixels
         obj_area = (obj_width * 1280) * (obj_height * height / width * 1280)

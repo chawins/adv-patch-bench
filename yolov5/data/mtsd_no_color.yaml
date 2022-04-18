@@ -8,26 +8,15 @@
 
 
 # Train/val/test sets as 1) dir: path/to/imgs, 2) file: path/to/imgs.txt, or 3) list: [path/to/imgs1, path/to/imgs2, ..]
-# path: /data/shared/yolo_data/  # dataset root dir
-# train: images/train  # train images (relative to 'path') 128 images
-# val: images/val  # val images (relative to 'path') 128 images
-# test: images/test # test images (optional)
+path: /data/shared/yolo_data/  # dataset root dir
+train: images/train  # train images (relative to 'path') 128 images
+val: images/val  # val images (relative to 'path') 128 images
+test: images/test # test images (optional)
 
-train: /data/shared/mtsd_v2_fully_annotated/images/train  # train images (relative to 'path') 128 images
-val: /data/shared/mtsd_v2_fully_annotated/images/val  # val images (relative to 'path') 128 images
-test: # test images (optional)
-
-# Classes
-# nc: 15  # number of classes
-# names: ['circle-white', 'circle-blue', 'circle-red', 'triangle-white', 
-#         'triangle-yellow', 'triangle_inverted', 'diamond-600', 'diamond-915', 
-#         'square', 'rect-458-610-white', 'rect-458-610-other', 'rect-762-915', 
-#         'rect-915-1220', 'pentagon', 'octagon']  # class names
-
-nc: 12  # number of classes        
+nc: 11  # number of classes        
 names: ['circle-750.0', 'triangle-900.0', 'triangle_inverted-1220.0', 
         'diamond-600.0', 'diamond-915.0', 'square-600.0', 'rect-458.0-610.0', 
-        'rect-762.0-915.0', 'rect-915.0-1220.0', 'pentagon-915.0', 'octagon-915.0', 'other-0.0-0.0']
+        'rect-762.0-915.0', 'rect-915.0-1220.0', 'pentagon-915.0', 'octagon-915.0']
 
 # Download script/URL (optional)
 download: 
