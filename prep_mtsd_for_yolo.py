@@ -122,6 +122,7 @@ for json_file in tqdm(json_files):
         if class_index == bg_idx:
             num_other += 1
             continue
+        text += f'{class_index:d} {x_center} {y_center} {obj_width} {obj_height} 0\n'
 
     if text != '':
         with open(join(label_path, split, filename + '.txt'), 'w') as f:
