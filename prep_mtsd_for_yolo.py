@@ -4,6 +4,7 @@ import pdb
 import shutil
 from os.path import expanduser, join
 
+import matplotlib.pyplot as plt
 import pandas as pd
 from tqdm import tqdm
 
@@ -19,23 +20,35 @@ def readlines(path):
 
 # path = expanduser('~/data/mtsd_v2_fully_annotated/')
 # csv_path = expanduser('~/adv-patch-bench/traffic_sign_dimension_v6.csv')
+use_mtsd_original_labels = False
+
 path = '/data/shared/mtsd_v2_fully_annotated/'
 csv_path = './traffic_sign_dimension_v6.csv'
 similarity_df_csv_path = 'similar_files_df.csv'
 anno_path = join(path, 'annotations')
-label_path = join(path, 'labels')
+label_path = join(path, 'labels_original') if use_mtsd_original_labels else join(path, 'labels')
 data = pd.read_csv(csv_path)
 similar_files_df = pd.read_csv(similarity_df_csv_path)
-use_mtsd_original_labels = False
 
-selected_labels = list(TS_COLOR_OFFSET_DICT.keys())
+
+# selected_labels = list(TS_COLOR_OFFSET_DICT.keys())
+# mtsd_label_to_class_index = {}
+# for idx, row in data.iterrows():
+#     if row['target'] in TS_COLOR_OFFSET_DICT and not use_mtsd_original_labels:
+#         idx = TS_COLOR_OFFSET_DICT[row['target']]
+#         color_list = TS_COLOR_DICT[row['target']]
+#         if len(color_list) > 0:
+#             idx += color_list.index(row['color'])
+#         mtsd_label_to_class_index[row['sign']] = idx
+#     elif use_mtsd_original_labels:
+#         mtsd_label_to_class_index[row['sign']] = idx
+# bg_idx = max(list(mtsd_label_to_class_index.values())) + 1
+
+selected_labels = list(TS_COLOR_DICT.keys())
 mtsd_label_to_class_index = {}
 for idx, row in data.iterrows():
-    if row['target'] in TS_COLOR_OFFSET_DICT and not use_mtsd_original_labels:
-        idx = TS_COLOR_OFFSET_DICT[row['target']]
-        color_list = TS_COLOR_DICT[row['target']]
-        if len(color_list) > 0:
-            idx += color_list.index(row['color'])
+    if row['target'] in TS_COLOR_DICT and not use_mtsd_original_labels:
+        idx = selected_labels.index(row['target'])
         mtsd_label_to_class_index[row['sign']] = idx
     elif use_mtsd_original_labels:
         mtsd_label_to_class_index[row['sign']] = idx
@@ -60,6 +73,11 @@ num_too_small = 0
 num_other = 0
 num_cross_boundary = 0
 
+# plotting parameters
+num_images_per_row = 5
+num_images_per_col = 10
+num_images_plotted = 0
+
 for json_file in tqdm(json_files):
     filename = json_file.split('.')[-2].split('/')[-1]
 
@@ -82,6 +100,8 @@ for json_file in tqdm(json_files):
         obj_width = (obj['bbox']['xmax'] - obj['bbox']['xmin']) / width
         obj_height = (obj['bbox']['ymax'] - obj['bbox']['ymin']) / height
 
+        # print(obj)
+        # qqq
         class_index = mtsd_label_to_class_index.get(obj['label'], bg_idx)
         # Compute object area if the image were to be resized to have width of 1280 pixels
         obj_area = (obj_width * 1280) * (obj_height * height / width * 1280)
@@ -95,7 +115,6 @@ for json_file in tqdm(json_files):
         if class_index == NUM_CLASSES - 1:
             num_other += 1
             continue
-        text += f'{class_index} {x_center} {y_center} {obj_width} {obj_height} 0\n'
 
     with open(join(label_path, split, filename + '.txt'), 'w') as f:
         f.write(text)
@@ -109,7 +128,7 @@ print(f'{num_other} of the remaining ones are in "other" class.')
 
 # Moving duplicated files to a separate directory
 data_path = join(path, 'images/')
-new_data_path = join(path, 'images_mapillary_duplicates/')
+new_data_path = join(path, 'images_mtsd_duplicates/')
 for split in splits:
     os.makedirs(os.path.join(new_data_path, split), exist_ok=True)
 
