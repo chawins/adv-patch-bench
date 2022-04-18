@@ -2,14 +2,28 @@
 GPU=0,1,2,3
 NUM_GPU=4
 
+# CUDA_VISIBLE_DEVICES=$GPU torchrun \
+#     --standalone --nnodes=1 --max_restarts 0 --nproc_per_node $NUM_GPU \
+#     train_yolov5.py \
+#     --hyp yolov5/data/hyps/hyp.scratch.yaml \
+#     --img 1280 \
+#     --batch 32 \
+#     --data yolov5/data/mtsd_no_color.yaml \
+#     --weights yolov5/yolov5s.pt \
+#     --exist-ok \
+#     --workers 24 \
+#     --device $GPU \
+#     --save-period 15 \
+#     --epochs 100
+
 CUDA_VISIBLE_DEVICES=$GPU torchrun \
     --standalone --nnodes=1 --max_restarts 0 --nproc_per_node $NUM_GPU \
     train_yolov5.py \
-    --hyp yolov5/data/hyps/hyp.finetune.yaml \
+    --hyp yolov5/data/hyps/hyp.scratch.yaml \
     --img 1280 \
     --batch 32 \
-    --data yolov5/data/mtsd_original.yaml \
-    --weights yolov5/yolov5s.pt \
+    --data yolov5/data/mtsd_no_color.yaml \
+    --weights runs/train/exp/weights/best.pt \
     --exist-ok \
     --workers 24 \
     --device $GPU \

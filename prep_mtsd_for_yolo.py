@@ -29,6 +29,10 @@ anno_path = join(path, 'annotations')
 label_path = join(path, 'labels_original') if use_mtsd_original_labels else join(path, 'labels')
 data = pd.read_csv(csv_path)
 similar_files_df = pd.read_csv(similarity_df_csv_path)
+<<<<<<< HEAD
+=======
+use_mtsd_original_labels = True
+>>>>>>> d2bb6c91f20b6207733bb52c8147425453b5874f
 
 
 # selected_labels = list(TS_COLOR_OFFSET_DICT.keys())
@@ -100,8 +104,15 @@ for json_file in tqdm(json_files):
         obj_width = (obj['bbox']['xmax'] - obj['bbox']['xmin']) / width
         obj_height = (obj['bbox']['ymax'] - obj['bbox']['ymin']) / height
 
+<<<<<<< HEAD
         # print(obj)
         # qqq
+=======
+        import pdb
+        pdb.set_trace()
+        mtsd_label_to_class_index
+
+>>>>>>> d2bb6c91f20b6207733bb52c8147425453b5874f
         class_index = mtsd_label_to_class_index.get(obj['label'], bg_idx)
         # Compute object area if the image were to be resized to have width of 1280 pixels
         obj_area = (obj_width * 1280) * (obj_height * height / width * 1280)
@@ -112,7 +123,7 @@ for json_file in tqdm(json_files):
         if obj_area < MIN_OBJ_AREA:
             num_too_small += 1
             continue
-        if class_index == NUM_CLASSES - 1:
+        if class_index == bg_idx:
             num_other += 1
             continue
 
