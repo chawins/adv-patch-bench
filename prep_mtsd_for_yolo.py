@@ -18,12 +18,11 @@ def readlines(path):
     return [line.strip() for line in lines]
 
 
-# path = expanduser('~/data/mtsd_v2_fully_annotated/')
-# csv_path = expanduser('~/adv-patch-bench/traffic_sign_dimension_v6.csv')
 use_mtsd_original_labels = False
 use_color = False
 
-path = '/data/shared/mtsd_v2_fully_annotated/'
+# path = '/data/shared/mtsd_v2_fully_annotated/'
+path = expanduser('~/data/mtsd_v2_fully_annotated/')
 csv_path = './traffic_sign_dimension_v6.csv'
 similarity_df_csv_path = 'similar_files_df.csv'
 anno_path = join(path, 'annotations')
