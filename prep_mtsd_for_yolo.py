@@ -105,9 +105,9 @@ for json_file in tqdm(json_files):
         obj_width = (obj['bbox']['xmax'] - obj['bbox']['xmin']) / width
         obj_height = (obj['bbox']['ymax'] - obj['bbox']['ymin']) / height
 
-        import pdb
-        pdb.set_trace()
-        mtsd_label_to_class_index
+        # import pdb
+        # pdb.set_trace()
+        # mtsd_label_to_class_index
 
         class_index = mtsd_label_to_class_index.get(obj['label'], bg_idx)
         # Compute object area if the image were to be resized to have width of 1280 pixels

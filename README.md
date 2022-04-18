@@ -60,6 +60,7 @@ TODO: Get Mapillary data ready for testing and the benchmark.
 - If you run into `Argument list too long` error, try to raise limit of argument stack size by `ulimit -S -s 100000000`. [Ref.](https://unix.stackexchange.com/a/401797)
 
 ```bash
+LABEL_NAME=labels
 cd ~/data/ && mkdir yolo_data && mkdir yolo_data/images yolo_data/labels
 mkdir yolo_data/images/train yolo_data/images/val yolo_data/images/test
 mkdir yolo_data/labels/train yolo_data/labels/val yolo_data/labels/test
@@ -72,11 +73,11 @@ cd ~/data/yolo_data/images/test
 ln -s ~/data/mapillary_vistas/training/images/* .
 
 cd ~/data/yolo_data/labels/train
-ln -s ~/data/mtsd_v2_fully_annotated/labels/train/* .
+ln -s ~/data/mtsd_v2_fully_annotated/$LABEL_NAME/train/* .
 cd ~/data/yolo_data/labels/val
-ln -s ~/data/mtsd_v2_fully_annotated/labels/val/* .
+ln -s ~/data/mtsd_v2_fully_annotated/$LABEL_NAME/val/* .
 cd ~/data/yolo_data/labels/test
-ln -s ~/data/mapillary_vistas/training/labels/* .
+ln -s ~/data/mapillary_vistas/training/$LABEL_NAME/* .
 
 # Change data path in mtsd.yml in adv-patch-bench/yolov5/data/ to the absolute
 # path to yolo_data
