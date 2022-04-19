@@ -49,6 +49,13 @@ TODO: Get Mapillary data ready for testing and the benchmark.
 
 - Install required packages: `pip install -r requirements.txt`
 
+## YOLOR
+
+```bash
+# Download yolor-p6 pretrained weights
+cd ./yolor/scripts && gdown 1Tdn3yqpZ79X7R1Ql0zNlNScB1Dv9Fp76
+```
+
 ### Data Preparation
 
 - `prep_mtsd_for_yolo.py`: Prepare MTSD dataset for YOLOv5.
