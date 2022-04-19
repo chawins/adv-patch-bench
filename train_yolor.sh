@@ -128,7 +128,7 @@ CUDA_VISIBLE_DEVICES=$GPU torchrun \
     --cfg yolor/cfg/yolor_p6.cfg \
     --weights yolor/scripts/yolor_p6.pt \
     --sync-bn \
-    --name yolor_p6_mtsd \
+    --name yolor_p6_mtsd_no_color \
     --hyp hyp.scratch.1280.yaml \
     --epochs 300
 
