@@ -40,6 +40,7 @@ from yolor.utils.torch_utils import (ModelEMA, intersect_dicts, select_device,
                                      torch_distributed_zero_first)
 
 logger = logging.getLogger(__name__)
+os.environ['NUMEXPR_MAX_THREADS'] = '96'
 
 try:
     import wandb
