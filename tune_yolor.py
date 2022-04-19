@@ -3,7 +3,6 @@ import logging
 import math
 import os
 import random
-import test  # import test.py to get mAP after each epoch
 import time
 from pathlib import Path
 from warnings import warn
@@ -21,6 +20,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
+import yolor.test as test  # import test.py to get mAP after each epoch
 #from models.yolo import Model
 from yolor.models.models import *
 from yolor.utils.autoanchor import check_anchors
