@@ -48,6 +48,24 @@ except ImportError:
     logger.info("Install Weights & Biases for experiment logging via 'pip install wandb' (recommended)")
 
 
+def get_rank():
+    if not is_dist_avail_and_initialized():
+        return 0
+    return dist.get_rank()
+
+
+def is_dist_avail_and_initialized():
+    if not dist.is_available():
+        return False
+    if not dist.is_initialized():
+        return False
+    return True
+
+
+def is_main_process():
+    return get_rank() == 0
+
+
 def train(hyp, opt, device, tb_writer=None, wandb=None):
     logger.info(f'Hyperparameters {hyp}')
     save_dir, epochs, batch_size, total_batch_size, weights, rank = \
@@ -146,7 +164,7 @@ def train(hyp, opt, device, tb_writer=None, wandb=None):
     # plot_lr_scheduler(optimizer, scheduler, epochs)
 
     # Logging
-    if wandb and wandb.run is None:
+    if wandb and wandb.run is None and is_main_process():
         opt.hyp = hyp  # add hyperparameters
         wandb_run = wandb.init(config=opt, resume="allow",
                                project='YOLOR' if opt.project == 'runs/train' else Path(opt.project).stem,
