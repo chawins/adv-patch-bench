@@ -1,3 +1,9 @@
+# Set paths
+PATH_MAPILLARY_ANNO_TRAIN = './mapillary_vistas_training_final_merged.csv'
+PATH_MAPILLARY_ANNO_VAL = './mapillary_vistas_validation_final_merged.csv'
+
+
+# Traffic sign classes and colors
 TS_COLOR_DICT = {
     'circle-750.0': ['white', 'blue', 'red'],   # (1) white+red, (2) blue+white
     'triangle-900.0': ['white', 'yellow'],  # (1) white, (2) yellow
@@ -38,4 +44,3 @@ TS_COLOR_LABEL_LIST = list(TS_COLOR_LABEL_DICT.keys())
 
 MIN_OBJ_AREA = 0
 NUM_CLASSES = len(TS_COLOR_LABEL_LIST)
-

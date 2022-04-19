@@ -22,7 +22,9 @@ SOLVER:
   IMS_PER_BATCH: 32
 INPUT:
   RANDOM_FLIP: 'none'  # EDIT: traffic sign can't be flipped
-  MAX_SIZE_TRAIN: 4096   
+  MIN_SIZE_TRAIN: (0, )  # TODO: does this disables resizing? If not working, see https://github.com/facebookresearch/detectron2/issues/2275
+  MAX_SIZE_TRAIN: 4096
+  MIN_SIZE_TEST: 0   
   MAX_SIZE_TEST: 2048
   CROP:
     TYPE: 'absolute'
