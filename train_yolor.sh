@@ -1,5 +1,6 @@
 GPU=0,1,2,3,4,5,6,7
 NUM_GPU=8
+NUMEXPR_MAX_THREADS=96
 
 # CUDA_VISIBLE_DEVICES=1 python yolor/train.py \
 # --batch-size 128 \
@@ -122,7 +123,7 @@ NUM_GPU=8
 CUDA_VISIBLE_DEVICES=$GPU python3 -m torch.distributed.launch \
     --standalone --nnodes=1 --max_restarts 0 --nproc_per_node $NUM_GPU \
     tune_yolor.py \
-    --batch-size 64 \
+    --batch-size 32 \
     --img 1280 960 \
     --data yolov5/data/mtsd_no_color.yaml \
     --cfg yolor/cfg/yolor_p6.cfg \
