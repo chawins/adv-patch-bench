@@ -74,8 +74,9 @@ def train(hyp, opt, device, tb_writer=None, wandb=None):
         data_dict = yaml.load(f, Loader=yaml.FullLoader)  # data dict
     with torch_distributed_zero_first(rank):
         check_dataset(data_dict)  # check
-    train_path = data_dict['train']
-    test_path = data_dict['val']
+    # EDIT: append path to match YOLOv5 implementation
+    train_path = os.path.join(data_dict['path'], data_dict['train'])
+    test_path = os.path.join(data_dict['path'], data_dict['val'])
 
     # EDIT: added try except to get names for mtsd
     try:
