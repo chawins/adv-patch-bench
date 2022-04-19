@@ -119,7 +119,7 @@ NUM_GPU=8
 # --hyp hyp.scratch.1280.yaml \
 # --epochs 300
 
-CUDA_VISIBLE_DEVICES=$GPU torchrun \
+CUDA_VISIBLE_DEVICES=$GPU python3 -m torch.distributed.launch \
     --standalone --nnodes=1 --max_restarts 0 --nproc_per_node $NUM_GPU \
     tune_yolor.py \
     --batch-size 128 \
