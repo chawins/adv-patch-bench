@@ -126,7 +126,7 @@ CUDA_VISIBLE_DEVICES=$GPU python3 -m torch.distributed.launch \
     --sync-bn --workers 96 --batch-size 40 --img 1280 960 --hyp hyp.scratch.1280.yaml \
     --cfg yolor/cfg/yolor_p6.cfg --weights yolor/scripts/yolor_p6.pt \
     --data yolov5/data/mtsd_no_color.yaml --name yolor_p6_mtsd_no_color \
-    --cache-images --epochs 200
+    --epochs 200
 
 # CUDA_VISIBLE_DEVICES=0,1,2,3 python3 -m torch.distributed.launch --nproc_per_node 4 \
 # --master_port 9527 yolor/tune.py \
