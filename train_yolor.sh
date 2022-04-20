@@ -1,5 +1,5 @@
-GPU=0,1,2,3,4,5,6,7
-NUM_GPU=8
+GPU=0,1,2,3
+NUM_GPU=4
 NUMEXPR_MAX_THREADS=96
 
 # CUDA_VISIBLE_DEVICES=1 python yolor/train.py \
