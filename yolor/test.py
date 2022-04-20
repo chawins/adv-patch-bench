@@ -9,17 +9,18 @@ import torch
 import yaml
 from tqdm import tqdm
 
-from models.models import *
-from utils.datasets import create_dataloader
-from utils.general import (box_iou, check_dataset, check_file, check_img_size,
-                           clip_coords, coco80_to_coco91_class, increment_path,
-                           non_max_suppression, scale_coords, set_logging,
-                           xywh2xyxy, xyxy2xywh)
-from utils.google_utils import attempt_load
-from utils.loss import compute_loss
-from utils.metrics import ap_per_class
-from utils.plots import output_to_target, plot_images
-from utils.torch_utils import select_device, time_synchronized
+from yolor.models.models import *
+from yolor.utils.datasets import create_dataloader
+from yolor.utils.general import (box_iou, check_dataset, check_file,
+                                 check_img_size, clip_coords,
+                                 coco80_to_coco91_class, increment_path,
+                                 non_max_suppression, scale_coords,
+                                 set_logging, xywh2xyxy, xyxy2xywh)
+from yolor.utils.google_utils import attempt_load
+from yolor.utils.loss import compute_loss
+from yolor.utils.metrics import ap_per_class
+from yolor.utils.plots import output_to_target, plot_images
+from yolor.utils.torch_utils import select_device, time_synchronized
 
 
 def load_classes(path):

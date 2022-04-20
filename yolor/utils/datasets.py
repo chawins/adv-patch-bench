@@ -3,9 +3,11 @@
 import glob
 import math
 import os
+import pickle
 import random
 import shutil
 import time
+from copy import deepcopy
 from itertools import repeat
 from multiprocessing.pool import ThreadPool
 from pathlib import Path
@@ -14,16 +16,12 @@ from threading import Thread
 import cv2
 import numpy as np
 import torch
-from PIL import Image, ExifTags
-from torch.utils.data import Dataset
-from tqdm import tqdm
-
-import pickle
-from copy import deepcopy
+from PIL import ExifTags, Image
 from pycocotools import mask as maskUtils
+from torch.utils.data import Dataset
 from torchvision.utils import save_image
-
-from yolor.utils.general import xyxy2xywh, xywh2xyxy
+from tqdm import tqdm
+from yolor.utils.general import xywh2xyxy, xyxy2xywh
 from yolor.utils.torch_utils import torch_distributed_zero_first
 
 # Parameters
