@@ -379,15 +379,17 @@ def train(hyp, opt, device, tb_writer=None, wandb=None):
             final_epoch = epoch + 1 == epochs
             if not opt.notest or final_epoch:  # Calculate mAP
                 if epoch >= 3:
-                    results, maps, times = test.test(opt.data,
-                                                     batch_size=batch_size*2,
-                                                     imgsz=imgsz_test,
-                                                     model=ema.ema.module if hasattr(ema.ema, 'module') else ema.ema,
-                                                     single_cls=opt.single_cls,
-                                                     dataloader=testloader,
-                                                     save_dir=save_dir,
-                                                     plots=plots and final_epoch,
-                                                     log_imgs=opt.log_imgs if wandb else 0)
+                    results, maps, times = test.test(
+                        opt.data,
+                        batch_size=batch_size*2,
+                        imgsz=imgsz_test,
+                        model=ema.ema.module if hasattr(ema.ema, 'module') else ema.ema,
+                        single_cls=opt.single_cls,
+                        dataloader=testloader,
+                        save_dir=save_dir,
+                        plots=plots and final_epoch,
+                        log_imgs=opt.log_imgs if wandb else 0,
+                    )
 
             # Write
             with open(results_file, 'a') as f:
