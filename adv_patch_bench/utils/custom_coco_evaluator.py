@@ -346,9 +346,11 @@ class CustomCOCOEvaluator(DatasetEvaluator):
             ap_50.append(ap if not np.isnan(ap) else 0)
 
         # EDIT
+        print('=================== HERE ===================')
         print(np.mean(ap_50_95), np.mean(ap_50))
-        import pdb
-        pdb.set_trace()
+        print('=================== HERE ===================')
+        # import pdb
+        # pdb.set_trace()
 
         # tabulate it
         N_COLS = min(6, len(results_per_category) * 2)
