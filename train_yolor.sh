@@ -123,7 +123,7 @@ NUMEXPR_MAX_THREADS=96
 CUDA_VISIBLE_DEVICES=$GPU python3 -m torch.distributed.launch \
     --standalone --nnodes 1 --max_restarts 0 --nproc_per_node $NUM_GPU \
     tune_yolor.py \
-    --sync-bn --workers 48 --batch-size 20 --img 1280 960 --hyp hyp.scratch.1280.yaml \
+    --sync-bn --workers 96 --batch-size 20 --img 1280 960 --hyp hyp.scratch.1280.yaml \
     --cfg yolor/cfg/yolor_p6.cfg --weights yolor/scripts/yolor_p6.pt \
     --data yolov5/data/mtsd_no_color.yaml --name yolor_p6_mtsd_no_color \
     --epochs 200
