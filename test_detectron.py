@@ -1,3 +1,4 @@
+import cv2
 from detectron2.config import get_cfg
 from detectron2.data import (MetadataCatalog, build_detection_test_loader,
                              build_detection_train_loader)
@@ -9,14 +10,13 @@ from detectron2.utils.visualizer import Visualizer
 # Import this file to register MTSD for detectron
 from adv_patch_bench.dataloaders.mtsd_detectron import get_mtsd_dict
 from adv_patch_bench.utils.custom_coco_evaluator import CustomCOCOEvaluator
-import cv2
 
 
 def main(cfg, args):
     # distributed is set to False
     evaluator = CustomCOCOEvaluator('mtsd_val', cfg, False,
                                     output_dir=cfg.OUTPUT_DIR,
-                                    use_fast_impl=False)
+                                    use_fast_impl=True)
     if args.debug:
         sampler = list(range(100))
     else:
@@ -38,11 +38,11 @@ def main_single(cfg, args):
     # val_loader = build_detection_test_loader(cfg, cfg.DATASETS.TEST[0],
     #                                          batch_size=1,
     #                                          num_workers=cfg.DATALOADER.NUM_WORKERS)
-    # val_loader = build_detection_train_loader(cfg, cfg.DATASETS.TEST[0],
-    #                                           total_batch_size=1,
-    #                                           num_workers=cfg.DATALOADER.NUM_WORKERS)
-    val_loader = get_mtsd_dict('val')
+    val_loader = build_detection_train_loader(cfg)
+    # val_loader = get_mtsd_dict('val')
     for i, inpt in enumerate(val_loader):
+        import pdb
+        pdb.set_trace()
         # img = inpt[0]['image'].permute(1, 2, 0).numpy()
         # prediction = model(img)
         # visualizer = Visualizer(img[:, :, ::-1], metadata=metadata, scale=0.5)

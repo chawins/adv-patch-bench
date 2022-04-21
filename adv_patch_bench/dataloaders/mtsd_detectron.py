@@ -6,7 +6,7 @@ import pandas as pd
 from detectron2.data import DatasetCatalog, MetadataCatalog
 from detectron2.structures import BoxMode
 from hparams import (MIN_OBJ_AREA, TS_COLOR_DICT, TS_COLOR_LABEL_LIST,
-                     TS_COLOR_OFFSET_DICT)
+                     TS_COLOR_OFFSET_DICT, TS_NO_COLOR_LABEL_LIST)
 from tqdm import tqdm
 
 
@@ -25,6 +25,8 @@ data = pd.read_csv(csv_path)
 use_mtsd_original_labels = False
 use_color = False
 ignore_other = True
+# use_color = True
+# ignore_other = False
 
 similarity_df_csv_path = 'similar_files_df.csv'
 similar_files_df = pd.read_csv(similarity_df_csv_path)
@@ -115,7 +117,7 @@ for split in splits:
     if use_mtsd_original_labels:
         thing_classes = data['sign'].tolist()
     else:
-        thing_classes = TS_COLOR_LABEL_LIST
+        thing_classes = TS_COLOR_LABEL_LIST if use_color else TS_NO_COLOR_LABEL_LIST
         if ignore_other:
             thing_classes = thing_classes[:-1]
     MetadataCatalog.get(f'mtsd_{split}').set(thing_classes=thing_classes)
