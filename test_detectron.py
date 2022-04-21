@@ -26,8 +26,6 @@ def main(cfg):
                                              num_workers=cfg.DATALOADER.NUM_WORKERS,
                                              sampler=sampler)
     predictor = DefaultPredictor(cfg)
-    import pdb
-    pdb.set_trace()
     print(inference_on_dataset(predictor.model, val_loader, evaluator))
 
 
