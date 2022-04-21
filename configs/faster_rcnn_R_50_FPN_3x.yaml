@@ -20,7 +20,7 @@ SOLVER:
   BASE_LR: 0.01  # EDIT
   STEPS: (50000, 70000, 90000)  # EDIT
   MAX_ITER: 100000  # EDIT
-  IMS_PER_BATCH: 24
+  IMS_PER_BATCH: 32
 INPUT:
   RANDOM_FLIP: 'horizontal'  # EDIT: traffic sign can be flipped?. Option: 'none', 'horizontal'
   # EDIT: follow MTSD paper: no resizing during training but crop to (1000, 1000)
