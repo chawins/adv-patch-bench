@@ -19,7 +19,7 @@ def readlines(path):
 
 
 use_mtsd_original_labels = False
-use_color = False
+use_color = True
 
 # path = '/data/shared/mtsd_v2_fully_annotated/'
 path = expanduser('~/data/mtsd_v2_fully_annotated/')
@@ -30,7 +30,7 @@ anno_path = join(path, 'annotations')
 if use_mtsd_original_labels:
     label_path = 'labels_original'
 elif use_color:
-    label_path = 'labels'
+    label_path = 'labels_color'
 else:
     label_path = 'labels_no_color'
 label_path = join(path, label_path)

@@ -1,8 +1,6 @@
 # Detector train script
-GPU=0,1,2,3,4,5,6,7
-NUM_GPU=8
-
-INPUT_SIZE=2560
+GPU=4,5,6,7
+NUM_GPU=4
 
 # Train a YOLO detector
 # CUDA_VISIBLE_DEVICES=$GPU torchrun \
@@ -18,9 +16,9 @@ INPUT_SIZE=2560
 CUDA_VISIBLE_DEVICES=$GPU python train_detectron.py \
     --num-gpus $NUM_GPU \
     --config-file ./configs/faster_rcnn_R_50_FPN_3x.yaml \
-    OUTPUT_DIR ./detectron_output/faster_rcnn_R_50_FPN_mtsd_orig \
-    MODEL.ROI_HEADS.NUM_CLASSES 401
-# MODEL.ROI_HEADS.NUM_CLASSES 15
+    OUTPUT_DIR ./detectron_output/faster_rcnn_R_50_FPN_mtsd_no_color_1 \
+    MODEL.ROI_HEADS.NUM_CLASSES 11
+# MODEL.ROI_HEADS.NUM_CLASSES 11 # 11, 15, 401
 # MODEL.ROI_HEADS.IOU_THRESHOLDS = [0.5]
 # MODEL.ROI_HEADS.NMS_THRESH_TEST = 0.5
 # MODEL.WEIGHTS

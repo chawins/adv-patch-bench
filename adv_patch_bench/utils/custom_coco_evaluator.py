@@ -17,13 +17,16 @@ from detectron2.config import CfgNode
 from detectron2.data import MetadataCatalog
 from detectron2.data.datasets.coco import convert_to_coco_json
 from detectron2.evaluation.evaluator import DatasetEvaluator
-from detectron2.evaluation.fast_eval_api import COCOeval_opt
 from detectron2.structures import Boxes, BoxMode, pairwise_iou
 from detectron2.utils.file_io import PathManager
 from detectron2.utils.logger import create_small_table
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
 from tabulate import tabulate
+
+# EDIT
+# from detectron2.evaluation.fast_eval_api import COCOeval_opt
+from .custom_coco_eval_api import COCOeval_opt
 
 
 class CustomCOCOEvaluator(DatasetEvaluator):
@@ -143,7 +146,8 @@ class CustomCOCOEvaluator(DatasetEvaluator):
                 "instances" that contains :class:`Instances`.
         """
         for input, output in zip(inputs, outputs):
-            prediction = {"image_id": input["image_id"]}
+            prediction = {"image_id": input["image_id"],
+                          "file_name": input["file_name"]}
 
             if "instances" in output:
                 instances = output["instances"].to(self._cpu_device)
@@ -342,10 +346,12 @@ class CustomCOCOEvaluator(DatasetEvaluator):
 
         # EDIT
         print('=================== HERE ===================')
-        print(np.mean(ap_50_95), np.mean(ap_50))
-        print('=================== HERE ===================')
-        # import pdb
-        # pdb.set_trace()
+        map_50_95 = np.mean(ap_50_95)
+        map_50 = np.mean(ap_50)
+        results.update({'mAP@0.5:0.95': map_50_95})
+        results.update({'mAP@0.5': map_50})
+        print(f'mAP@0.5: {map_50:.4f}')
+        print(f'mAP@0.5:0.95: {map_50_95:.4f}')
 
         # tabulate it
         N_COLS = min(6, len(results_per_category) * 2)
