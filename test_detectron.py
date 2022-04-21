@@ -16,7 +16,7 @@ def main(cfg, args):
     # distributed is set to False
     evaluator = CustomCOCOEvaluator('mtsd_val', cfg, False,
                                     output_dir=cfg.OUTPUT_DIR,
-                                    use_fast_impl=True)
+                                    use_fast_impl=False)
     if args.debug:
         sampler = list(range(100))
     else:

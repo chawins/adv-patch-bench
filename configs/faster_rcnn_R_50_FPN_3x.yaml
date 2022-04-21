@@ -20,7 +20,7 @@ SOLVER:
   BASE_LR: 0.01  # EDIT
   STEPS: (50000, 70000, 90000)  # EDIT
   MAX_ITER: 100000  # EDIT
-  IMS_PER_BATCH: 32
+  IMS_PER_BATCH: 24
 INPUT:
   RANDOM_FLIP: 'horizontal'  # EDIT: traffic sign can be flipped?. Option: 'none', 'horizontal'
   # EDIT: follow MTSD paper: no resizing during training but crop to (1000, 1000)
@@ -35,7 +35,7 @@ INPUT:
   MIN_SIZE_TEST: 2048   
   MAX_SIZE_TEST: 2048
 DATALOADER:
-  NUM_WORKERS: 64
+  NUM_WORKERS: 48
   SAMPLER_TRAIN: 'RepeatFactorTrainingSampler'  # EDIT: default: 'TrainingSampler'
   REPEAT_THRESHOLD: 1.0  # EDIT: default: 0
 DATASETS:

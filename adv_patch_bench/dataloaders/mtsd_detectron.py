@@ -20,24 +20,34 @@ path = expanduser('~/data/mtsd_v2_fully_annotated/')
 csv_path = expanduser('~/adv-patch-bench/traffic_sign_dimension_v6.csv')
 anno_path = expanduser(join(path, 'annotations'))
 data = pd.read_csv(csv_path)
+
 # TODO: include in config file
 use_mtsd_original_labels = False
+use_color = False
 ignore_other = True
 
 similarity_df_csv_path = 'similar_files_df.csv'
 similar_files_df = pd.read_csv(similarity_df_csv_path)
 
-selected_labels = list(TS_COLOR_OFFSET_DICT.keys())
+if use_color:
+    label_dict = TS_COLOR_OFFSET_DICT
+else:
+    label_dict = TS_COLOR_DICT
+
+selected_labels = list(label_dict.keys())
 mtsd_label_to_class_index = {}
 for idx, row in data.iterrows():
-    if row['target'] in TS_COLOR_OFFSET_DICT and not use_mtsd_original_labels:
-        idx = TS_COLOR_OFFSET_DICT[row['target']]
-        color_list = TS_COLOR_DICT[row['target']]
-        if len(color_list) > 0:
-            idx += color_list.index(row['color'])
+    if use_mtsd_original_labels:
         mtsd_label_to_class_index[row['sign']] = idx
-    elif use_mtsd_original_labels:
-        mtsd_label_to_class_index[row['sign']] = idx
+    elif row['target'] in label_dict:
+        if use_color:
+            cat_idx = TS_COLOR_OFFSET_DICT[row['target']]
+            color_list = TS_COLOR_DICT[row['target']]
+            if len(color_list) > 0:
+                cat_idx += color_list.index(row['color'])
+        else:
+            cat_idx = selected_labels.index(row['target'])
+        mtsd_label_to_class_index[row['sign']] = cat_idx
 bg_idx = max(list(mtsd_label_to_class_index.values())) + 1
 
 # Get all JSON files
