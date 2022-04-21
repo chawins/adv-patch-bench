@@ -26,7 +26,7 @@ csv_path = expanduser('~/adv-patch-bench/traffic_sign_dimension_v6.csv')
 anno_path = expanduser(join(path, 'annotations'))
 label_path = expanduser(join(path, 'labels'))
 data = pd.read_csv(csv_path)
-use_mtsd_original_labels = True  # TODO
+use_mtsd_original_labels = False  # TODO
 
 similarity_df_csv_path = 'similar_files_df.csv'
 similar_files_df = pd.read_csv(similarity_df_csv_path)

@@ -316,11 +316,6 @@ class CustomCOCOEvaluator(DatasetEvaluator):
         if not np.isfinite(sum(results.values())):
             self._logger.info("Some metrics cannot be computed and is shown as NaN.")
 
-        # EDIT
-        # results
-        # import pdb
-        # pdb.set_trace()
-
         if class_names is None or len(class_names) <= 1:
             return results
         # Compute per-category AP
