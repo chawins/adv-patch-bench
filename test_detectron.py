@@ -16,7 +16,7 @@ def main(cfg, args):
     # distributed is set to False
     evaluator = CustomCOCOEvaluator('mtsd_val', cfg, False,
                                     output_dir=cfg.OUTPUT_DIR,
-                                    use_fast_impl=True)
+                                    use_fast_impl=False)
     if args.debug:
         sampler = list(range(100))
     else:
@@ -38,8 +38,8 @@ def main_single(cfg, args):
     # val_loader = build_detection_test_loader(cfg, cfg.DATASETS.TEST[0],
     #                                          batch_size=1,
     #                                          num_workers=cfg.DATALOADER.NUM_WORKERS)
-    val_loader = build_detection_train_loader(cfg)
-    # val_loader = get_mtsd_dict('val')
+    # val_loader = build_detection_train_loader(cfg)
+    val_loader = get_mtsd_dict('val')
     for i, inpt in enumerate(val_loader):
         import pdb
         pdb.set_trace()
@@ -53,6 +53,7 @@ def main_single(cfg, args):
         visualizer = Visualizer(img[:, :, ::-1], metadata=metadata, scale=0.5)
         out_gt = visualizer.draw_dataset_dict(inpt)
         out_gt.save('gt.png')
+        visualizer = Visualizer(img[:, :, ::-1], metadata=metadata, scale=0.5)
         out_pred = visualizer.draw_instance_predictions(prediction['instances'].to('cpu'))
         out_pred.save('pred.png')
         import pdb

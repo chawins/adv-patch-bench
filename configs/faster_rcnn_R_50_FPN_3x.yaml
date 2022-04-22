@@ -1,7 +1,7 @@
 # This file is copied directly from
 # https://github.com/facebookresearch/detectron2/blob/main/configs/COCO-Detection/faster_rcnn_R_50_FPN_3x.yaml
 
-_BASE_: "./Base-RCNN-FPN.yaml"  # EDIT: path
+_BASE_: "./Base-RCNN-FPN.yaml"  # EDIT: path to base config file
 CUDNN_BENCHMARK: True   # EDIT
 MODEL:
   WEIGHTS: "detectron2://ImageNetPretrained/MSRA/R-50.pkl"
@@ -22,7 +22,7 @@ SOLVER:
   MAX_ITER: 100000  # EDIT
   IMS_PER_BATCH: 32
 INPUT:
-  RANDOM_FLIP: 'horizontal'  # EDIT: traffic sign can be flipped?. Option: 'none', 'horizontal'
+  RANDOM_FLIP: 'none'  # EDIT: traffic sign can be flipped?. Option: 'none' (orig), 'horizontal' (shape)
   # EDIT: follow MTSD paper: no resizing during training but crop to (1000, 1000)
   MIN_SIZE_TRAIN: (0, )  # TODO: does this disables resizing? If not working, see https://github.com/facebookresearch/detectron2/issues/2275
   MAX_SIZE_TRAIN: 5000

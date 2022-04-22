@@ -21,13 +21,13 @@ from detectron2.structures import Boxes, BoxMode, pairwise_iou
 from detectron2.utils.file_io import PathManager
 from detectron2.utils.logger import create_small_table
 from pycocotools.coco import COCO
-from pycocotools.cocoeval import COCOeval
 from tabulate import tabulate
 
 # EDIT
 # from detectron2.evaluation.fast_eval_api import COCOeval_opt
 from .custom_coco_eval_api import COCOeval_opt
-
+# from pycocotools.cocoeval import COCOeval
+from .custom_cocoeval import COCOeval
 
 class CustomCOCOEvaluator(DatasetEvaluator):
     """
@@ -563,6 +563,7 @@ def _evaluate_predictions_on_coco(
             c.pop("bbox", None)
 
     coco_dt = coco_gt.loadRes(coco_results)
+    
     coco_eval = (COCOeval_opt if use_fast_impl else COCOeval)(coco_gt, coco_dt, iou_type)
     if img_ids is not None:
         coco_eval.params.imgIds = img_ids
@@ -584,6 +585,17 @@ def _evaluate_predictions_on_coco(
             "They have to agree with each other. For meaning of OKS, please refer to "
             "http://cocodataset.org/#keypoints-eval."
         )
+
+    # TODO: 
+    # EDIT: Ignore ground truth with "other" class
+    # bg_cat_id = max(catIds)
+    # bg_cat_id = 
+    # num_ignore = 0
+    # for imgId in img_ids:
+    #     for gt in coco_gt[imgId, bg_cat_id]:
+    #         gt['ignore'] = 1
+    #         num_ignore += 1
+    # print(f'=> {num_ignore} instances ignored (id: {bg_cat_id}).')
 
     coco_eval.evaluate()
     coco_eval.accumulate()

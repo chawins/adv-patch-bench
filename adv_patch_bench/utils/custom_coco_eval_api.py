@@ -80,7 +80,7 @@ class COCOeval_opt(COCOeval):
         ious = [[self.ious[imgId, catId] for catId in catIds] for imgId in p.imgIds]
 
         # EDIT: Ignore ground truth with "other" class
-        bg_cat_id = max(catIds) + 1
+        bg_cat_id = max(catIds)
         # ious: [num_detection, num_gt] x num_classes
         # Unmatched ground truths don't appear in `ious` and can be counted
         # directly as FN
@@ -97,9 +97,12 @@ class COCOeval_opt(COCOeval):
         # (this also depends on iou thres).
         # import pdb
         # pdb.set_trace()
+        num_ignore = 0
         for imgId in p.imgIds:
             for gt in self._gts[imgId, bg_cat_id]:
                 gt['ignore'] = 1
+                num_ignore += 1
+        print(f'=> {num_ignore} instances ignored (id: {bg_cat_id}).')
 
         if not p.useCats:
             # For each image, flatten per-category lists into a single list

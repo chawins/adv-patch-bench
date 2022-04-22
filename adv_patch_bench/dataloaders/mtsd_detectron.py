@@ -22,11 +22,11 @@ anno_path = expanduser(join(path, 'annotations'))
 data = pd.read_csv(csv_path)
 
 # TODO: include in config file
-use_mtsd_original_labels = False
-use_color = False
-ignore_other = True
-# use_color = True
-# ignore_other = False
+use_mtsd_original_labels = True
+# use_color = False
+# ignore_other = True
+use_color = True
+ignore_other = False
 
 similarity_df_csv_path = 'similar_files_df.csv'
 similar_files_df = pd.read_csv(similarity_df_csv_path)

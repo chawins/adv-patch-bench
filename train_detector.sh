@@ -16,8 +16,8 @@ NUM_GPU=4
 CUDA_VISIBLE_DEVICES=$GPU python train_detectron.py \
     --num-gpus $NUM_GPU \
     --config-file ./configs/faster_rcnn_R_50_FPN_3x.yaml \
-    OUTPUT_DIR ./detectron_output/faster_rcnn_R_50_FPN_mtsd_no_color_1 \
-    MODEL.ROI_HEADS.NUM_CLASSES 11
+    OUTPUT_DIR ./detectron_output/faster_rcnn_R_50_FPN_mtsd_orig_2 \
+    MODEL.ROI_HEADS.NUM_CLASSES 401
 # MODEL.ROI_HEADS.NUM_CLASSES 11 # 11, 15, 401
 # MODEL.ROI_HEADS.IOU_THRESHOLDS = [0.5]
 # MODEL.ROI_HEADS.NMS_THRESH_TEST = 0.5

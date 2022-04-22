@@ -18,8 +18,11 @@ import os
 from collections import OrderedDict
 
 import detectron2.utils.comm as comm
+import torch.multiprocessing
 from detectron2.checkpoint import DetectionCheckpointer
 from detectron2.config import get_cfg
+from detectron2.data import (build_detection_train_loader,
+                             get_detection_dataset_dicts)
 from detectron2.engine import (DefaultTrainer, default_argument_parser,
                                default_setup, hooks, launch)
 from detectron2.evaluation import COCOEvaluator, verify_results
@@ -27,8 +30,8 @@ from detectron2.modeling import GeneralizedRCNNWithTTA
 
 # Import this file to register MTSD for detectron
 import adv_patch_bench.dataloaders.mtsd_detectron
+from adv_patch_bench.utils.custom_sampler import RepeatFactorTrainingSampler
 
-import torch.multiprocessing
 torch.multiprocessing.set_sharing_strategy('file_system')
 
 
@@ -101,6 +104,28 @@ class Trainer(DefaultTrainer):
         res = cls.test(cfg, model, evaluators)
         res = OrderedDict({k + "_TTA": v for k, v in res.items()})
         return res
+
+    @classmethod
+    def build_train_loader(cls, cfg):
+        """
+        Returns:
+            iterable
+
+        It now calls :func:`detectron2.data.build_detection_train_loader`.
+        Overwrite it if you'd like a different data loader.
+        """
+        dataset = get_detection_dataset_dicts(
+            cfg.DATASETS.TRAIN,
+            filter_empty=cfg.DATALOADER.FILTER_EMPTY_ANNOTATIONS,
+            min_keypoints=cfg.MODEL.ROI_KEYPOINT_HEAD.MIN_KEYPOINTS_PER_IMAGE
+            if cfg.MODEL.KEYPOINT_ON
+            else 0,
+            proposal_files=cfg.DATASETS.PROPOSAL_FILES_TRAIN if cfg.MODEL.LOAD_PROPOSALS else None,
+        )
+        repeat_factors = RepeatFactorTrainingSampler.repeat_factors_from_category_frequency(
+            dataset, cfg.DATALOADER.REPEAT_THRESHOLD
+        )
+        return build_detection_train_loader(cfg, sampler=RepeatFactorTrainingSampler(repeat_factors))
 
 
 def setup(args):
