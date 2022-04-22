@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# Copyright (c) Facebook, Inc. and its affiliates.
 """
 A main training script.
 This scripts reads a given config file and runs the training or evaluation.
@@ -30,7 +29,8 @@ from detectron2.modeling import GeneralizedRCNNWithTTA
 
 # Import this file to register MTSD for detectron
 import adv_patch_bench.dataloaders.mtsd_detectron
-from adv_patch_bench.utils.custom_sampler import RepeatFactorTrainingSampler
+from adv_patch_bench.utils.detectron.custom_sampler import RepeatFactorTrainingSampler
+from adv_patch_bench.utils.detectron.custom_best_checkpointer import BestCheckpointer
 
 torch.multiprocessing.set_sharing_strategy('file_system')
 
@@ -88,22 +88,22 @@ class Trainer(DefaultTrainer):
     def build_evaluator(cls, cfg, dataset_name, output_folder=None):
         return build_evaluator(cfg, dataset_name, output_folder)
 
-    @classmethod
-    def test_with_TTA(cls, cfg, model):
-        logger = logging.getLogger("detectron2.trainer")
-        # In the end of training, run an evaluation with TTA
-        # Only support some R-CNN models.
-        logger.info("Running inference with test-time augmentation ...")
-        model = GeneralizedRCNNWithTTA(cfg, model)
-        evaluators = [
-            cls.build_evaluator(
-                cfg, name, output_folder=os.path.join(cfg.OUTPUT_DIR, "inference_TTA")
-            )
-            for name in cfg.DATASETS.TEST
-        ]
-        res = cls.test(cfg, model, evaluators)
-        res = OrderedDict({k + "_TTA": v for k, v in res.items()})
-        return res
+    # @classmethod
+    # def test_with_TTA(cls, cfg, model):
+    #     logger = logging.getLogger("detectron2.trainer")
+    #     # In the end of training, run an evaluation with TTA
+    #     # Only support some R-CNN models.
+    #     logger.info("Running inference with test-time augmentation ...")
+    #     model = GeneralizedRCNNWithTTA(cfg, model)
+    #     evaluators = [
+    #         cls.build_evaluator(
+    #             cfg, name, output_folder=os.path.join(cfg.OUTPUT_DIR, "inference_TTA")
+    #         )
+    #         for name in cfg.DATASETS.TEST
+    #     ]
+    #     res = cls.test(cfg, model, evaluators)
+    #     res = OrderedDict({k + "_TTA": v for k, v in res.items()})
+    #     return res
 
     @classmethod
     def build_train_loader(cls, cfg):
@@ -162,10 +162,14 @@ def main(args):
     """
     trainer = Trainer(cfg)
     trainer.resume_or_load(resume=args.resume)
-    if cfg.TEST.AUG.ENABLED:
-        trainer.register_hooks(
-            [hooks.EvalHook(0, lambda: trainer.test_with_TTA(cfg, trainer.model))]
-        )
+    # Register hook for our custom checkpointer every `eval_period` steps
+    trainer.register_hooks([
+        BestCheckpointer(cfg.TEST.EVAL_PERIOD, trainer.checkpointer),
+    ])
+    # if cfg.TEST.AUG.ENABLED:
+    #     trainer.register_hooks(
+    #         [hooks.EvalHook(0, lambda: trainer.test_with_TTA(cfg, trainer.model))]
+    #     )
     return trainer.train()
 
 
