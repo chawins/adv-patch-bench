@@ -1,18 +1,13 @@
 import json
 import os
-import pdb
-import random
 from os.path import expanduser, join
 
-import cv2
 import pandas as pd
 from detectron2.data import DatasetCatalog, MetadataCatalog
 from detectron2.structures import BoxMode
-from detectron2.utils.visualizer import Visualizer
+from hparams import (MIN_OBJ_AREA, TS_COLOR_DICT, TS_COLOR_LABEL_LIST,
+                     TS_COLOR_OFFSET_DICT, TS_NO_COLOR_LABEL_LIST)
 from tqdm import tqdm
-
-from hparams import (MIN_OBJ_AREA, NUM_CLASSES, TS_COLOR_DICT,
-                     TS_COLOR_LABEL_LIST, TS_COLOR_OFFSET_DICT)
 
 
 def readlines(path):
@@ -24,34 +19,38 @@ def readlines(path):
 path = expanduser('~/data/mtsd_v2_fully_annotated/')
 csv_path = expanduser('~/adv-patch-bench/traffic_sign_dimension_v6.csv')
 anno_path = expanduser(join(path, 'annotations'))
-label_path = expanduser(join(path, 'labels'))
 data = pd.read_csv(csv_path)
-use_mtsd_original_labels = True  # TODO
+
+# TODO: include in config file
+use_mtsd_original_labels = True
+# use_color = False
+# ignore_other = True
+use_color = True
+ignore_other = False
 
 similarity_df_csv_path = 'similar_files_df.csv'
 similar_files_df = pd.read_csv(similarity_df_csv_path)
 
-selected_labels = list(TS_COLOR_OFFSET_DICT.keys())
+if use_color:
+    label_dict = TS_COLOR_OFFSET_DICT
+else:
+    label_dict = TS_COLOR_DICT
+
+selected_labels = list(label_dict.keys())
 mtsd_label_to_class_index = {}
 for idx, row in data.iterrows():
-    if row['target'] in TS_COLOR_OFFSET_DICT and not use_mtsd_original_labels:
-        idx = TS_COLOR_OFFSET_DICT[row['target']]
-        color_list = TS_COLOR_DICT[row['target']]
-        if len(color_list) > 0:
-            idx += color_list.index(row['color'])
+    if use_mtsd_original_labels:
         mtsd_label_to_class_index[row['sign']] = idx
-    elif use_mtsd_original_labels:
-        mtsd_label_to_class_index[row['sign']] = idx
+    elif row['target'] in label_dict:
+        if use_color:
+            cat_idx = TS_COLOR_OFFSET_DICT[row['target']]
+            color_list = TS_COLOR_DICT[row['target']]
+            if len(color_list) > 0:
+                cat_idx += color_list.index(row['color'])
+        else:
+            cat_idx = selected_labels.index(row['target'])
+        mtsd_label_to_class_index[row['sign']] = cat_idx
 bg_idx = max(list(mtsd_label_to_class_index.values())) + 1
-
-# Save filenames and the data partition they belong to
-splits = ['train', 'test', 'val']
-split_dict = {}
-for split in splits:
-    os.makedirs(join(label_path, split), exist_ok=True)
-    filenames = readlines(expanduser(join(path, 'splits', split + '.txt')))
-    for name in filenames:
-        split_dict[name] = split
 
 # Get all JSON files
 json_files = [join(anno_path, f) for f in os.listdir(anno_path)
@@ -93,7 +92,7 @@ def get_mtsd_dict(split):
             # Scale by 1280 / width to normalize varying image size (this is not a bug)
             obj_area = (obj_width / width * 1280) * (obj_height / width * 1280)
             # Remove labels for small or "other" objects
-            if obj_area < MIN_OBJ_AREA or class_index == bg_idx:
+            if obj_area < MIN_OBJ_AREA or (ignore_other and class_index == bg_idx):
                 continue
             obj = {
                 'bbox': [obj['bbox']['xmin'], obj['bbox']['ymin'], obj['bbox']['xmax'], obj['bbox']['ymax']],
@@ -101,6 +100,10 @@ def get_mtsd_dict(split):
                 'category_id': class_index,
             }
             objs.append(obj)
+
+        # Skip images with no object of interest
+        if len(objs) == 0:
+            continue
 
         record['annotations'] = objs
         dataset_dicts.append(record)
@@ -112,18 +115,9 @@ splits = ['train', 'test', 'val']
 for split in splits:
     DatasetCatalog.register(f'mtsd_{split}', lambda s=split: get_mtsd_dict(s))
     if use_mtsd_original_labels:
-        MetadataCatalog.get(f'mtsd_{split}').set(thing_classes=data['sign'].tolist())
+        thing_classes = data['sign'].tolist()
     else:
-        MetadataCatalog.get(f'mtsd_{split}').set(thing_classes=TS_COLOR_LABEL_LIST[:-1])
-
-
-# DEBUG
-# metadata = MetadataCatalog.get('mtsd_train')
-# dataset_dicts = get_mtsd_dict('train')
-# for d in random.sample(dataset_dicts, 10):
-#     img = cv2.imread(d["file_name"])
-#     visualizer = Visualizer(img[:, :, ::-1], metadata=metadata, scale=0.5)
-#     out = visualizer.draw_dataset_dict(d)
-#     out.save('test.png')
-#     import pdb
-#     pdb.set_trace()
+        thing_classes = TS_COLOR_LABEL_LIST if use_color else TS_NO_COLOR_LABEL_LIST
+        if ignore_other:
+            thing_classes = thing_classes[:-1]
+    MetadataCatalog.get(f'mtsd_{split}').set(thing_classes=thing_classes)

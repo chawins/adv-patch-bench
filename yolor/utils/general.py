@@ -16,13 +16,13 @@ import matplotlib
 import numpy as np
 import torch
 import yaml
-
 from yolor.utils.google_utils import gsutil_getsize
-from yolor.utils.metrics import fitness, fitness_p, fitness_r, fitness_ap50, fitness_ap, fitness_f   
+from yolor.utils.metrics import (fitness, fitness_ap, fitness_ap50, fitness_f,
+                                 fitness_p, fitness_r)
 from yolor.utils.torch_utils import init_torch_seeds
 
 # from utils.google_utils import gsutil_getsize
-# from utils.metrics import fitness, fitness_p, fitness_r, fitness_ap50, fitness_ap, fitness_f   
+# from utils.metrics import fitness, fitness_p, fitness_r, fitness_ap50, fitness_ap, fitness_f
 # from utils.torch_utils import init_torch_seeds
 
 # Set printoptions
@@ -82,6 +82,7 @@ def check_file(file):
 def check_dataset(dict):
     # Download dataset if not found locally
     val, s = dict.get('val'), dict.get('download')
+    val = os.path.join(dict['path'], val)
     if val and len(val):
         val = [Path(x).resolve() for x in (val if isinstance(val, list) else [val])]  # val path
         if not all(x.exists() for x in val):
@@ -226,19 +227,19 @@ def bbox_iou(box1, box2, x1y1x2y2=True, GIoU=False, DIoU=False, CIoU=False, EIoU
                 with torch.no_grad():
                     alpha = v / ((1 + eps) - iou + v)
                 return iou - (rho2 / c2 + v * alpha)  # CIoU
-            elif EIoU: # Efficient IoU https://arxiv.org/abs/2101.08158
-                rho3 = (w1-w2) **2
+            elif EIoU:  # Efficient IoU https://arxiv.org/abs/2101.08158
+                rho3 = (w1-w2) ** 2
                 c3 = cw ** 2 + eps
-                rho4 = (h1-h2) **2
+                rho4 = (h1-h2) ** 2
                 c4 = ch ** 2 + eps
                 return iou - rho2 / c2 - rho3 / c3 - rho4 / c4  # EIoU
             elif ECIoU:
                 v = (4 / math.pi ** 2) * torch.pow(torch.atan(w2 / h2) - torch.atan(w1 / h1), 2)
                 with torch.no_grad():
                     alpha = v / ((1 + eps) - iou + v)
-                rho3 = (w1-w2) **2
+                rho3 = (w1-w2) ** 2
                 c3 = cw ** 2 + eps
-                rho4 = (h1-h2) **2
+                rho4 = (h1-h2) ** 2
                 c4 = ch ** 2 + eps
                 return iou - v * alpha - rho2 / c2 - rho3 / c3 - rho4 / c4  # ECIoU
         else:  # GIoU https://arxiv.org/pdf/1902.09630.pdf
@@ -366,8 +367,8 @@ def strip_optimizer(f='weights/best.pt', s=''):  # from utils.general import *; 
     x['optimizer'] = None
     x['training_results'] = None
     x['epoch'] = -1
-    #x['model'].half()  # to FP16
-    #for p in x['model'].parameters():
+    # x['model'].half()  # to FP16
+    # for p in x['model'].parameters():
     #    p.requires_grad = False
     torch.save(x, s or f)
     mb = os.path.getsize(s or f) / 1E6  # filesize

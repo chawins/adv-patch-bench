@@ -211,8 +211,9 @@ def write_yolo_labels(model, label, panoptic_per_image_id, data_dir,
             x_center, y_center, obj_width, obj_height = bbox[idx]
             obj_id = idx_to_obj_id[idx]
             text += f'{class_label:d} {x_center} {y_center} {obj_width} {obj_height} {obj_id}\n'
-        with open(join(label_path, filename + '.txt'), 'w') as f:
-            f.write(text)
+        if text != '':
+            with open(join(label_path, filename + '.txt'), 'w') as f:
+                f.write(text)
 
         # img_pil = Image.open(join(img_path, filename + '.jpg'))
         # full_filename = join(new_img_path, filename + '.jpg')

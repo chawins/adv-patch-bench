@@ -131,7 +131,7 @@ def main(args):
         panoptic_json_path = f'{data_dir}/v2.0/panoptic/panoptic_2020.json'
     elif DATASET == 'bdd100k':
         panoptic_json_path = '/data/shared/bdd100k/labels/pan_seg/polygons/pan_seg_train.json'
-
+    
     with open(panoptic_json_path) as panoptic_file:
         panoptic = json.load(panoptic_file)
 

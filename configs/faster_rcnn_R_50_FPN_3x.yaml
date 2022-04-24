@@ -1,7 +1,8 @@
 # This file is copied directly from
 # https://github.com/facebookresearch/detectron2/blob/main/configs/COCO-Detection/faster_rcnn_R_50_FPN_3x.yaml
 
-_BASE_: "./Base-RCNN-FPN.yaml"  # EDIT: path
+_BASE_: "./Base-RCNN-FPN.yaml"  # EDIT: path to base config file
+CUDNN_BENCHMARK: True   # EDIT
 MODEL:
   WEIGHTS: "detectron2://ImageNetPretrained/MSRA/R-50.pkl"
   MASK_ON: False
@@ -21,13 +22,24 @@ SOLVER:
   MAX_ITER: 100000  # EDIT
   IMS_PER_BATCH: 32
 INPUT:
-  RANDOM_FLIP: 'none'  # EDIT: traffic sign can't be flipped
-  MAX_SIZE_TRAIN: 4096   
-  MAX_SIZE_TEST: 2048
+  RANDOM_FLIP: 'none'  # EDIT: traffic sign can be flipped?. Option: 'none' (orig), 'horizontal' (shape)
+  # EDIT: follow MTSD paper: no resizing during training but crop to (1000, 1000)
+  MIN_SIZE_TRAIN: (0, )  # TODO: does this disables resizing? If not working, see https://github.com/facebookresearch/detectron2/issues/2275
+  MAX_SIZE_TRAIN: 5000
   CROP:
+    ENABLED: True
     TYPE: 'absolute'
     SIZE: (1000, 1000)
+  # EDIT: Test with max size 2048. This is slightly different from MTSD paper 
+  # where images smaller than 2048 are not saled up.
+  MIN_SIZE_TEST: 2048   
+  MAX_SIZE_TEST: 2048
 DATALOADER:
-  NUM_WORKERS: 64
+  NUM_WORKERS: 48
   SAMPLER_TRAIN: 'RepeatFactorTrainingSampler'  # EDIT: default: 'TrainingSampler'
   REPEAT_THRESHOLD: 1.0  # EDIT: default: 0
+DATASETS:
+  TRAIN: ('mtsd_train', )  # EDIT
+  TEST: ('mtsd_val', )  # EDIT
+TEST:
+  EVAL_PERIOD: 1000

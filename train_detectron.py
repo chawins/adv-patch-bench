@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# Copyright (c) Facebook, Inc. and its affiliates.
 """
 A main training script.
 This scripts reads a given config file and runs the training or evaluation.
@@ -18,8 +17,11 @@ import os
 from collections import OrderedDict
 
 import detectron2.utils.comm as comm
+import torch.multiprocessing
 from detectron2.checkpoint import DetectionCheckpointer
 from detectron2.config import get_cfg
+from detectron2.data import (build_detection_train_loader,
+                             get_detection_dataset_dicts)
 from detectron2.engine import (DefaultTrainer, default_argument_parser,
                                default_setup, hooks, launch)
 from detectron2.evaluation import COCOEvaluator, verify_results
@@ -27,8 +29,9 @@ from detectron2.modeling import GeneralizedRCNNWithTTA
 
 # Import this file to register MTSD for detectron
 import adv_patch_bench.dataloaders.mtsd_detectron
+from adv_patch_bench.utils.detectron.custom_sampler import RepeatFactorTrainingSampler
+from adv_patch_bench.utils.detectron.custom_best_checkpointer import BestCheckpointer
 
-import torch.multiprocessing
 torch.multiprocessing.set_sharing_strategy('file_system')
 
 
@@ -85,22 +88,44 @@ class Trainer(DefaultTrainer):
     def build_evaluator(cls, cfg, dataset_name, output_folder=None):
         return build_evaluator(cfg, dataset_name, output_folder)
 
+    # @classmethod
+    # def test_with_TTA(cls, cfg, model):
+    #     logger = logging.getLogger("detectron2.trainer")
+    #     # In the end of training, run an evaluation with TTA
+    #     # Only support some R-CNN models.
+    #     logger.info("Running inference with test-time augmentation ...")
+    #     model = GeneralizedRCNNWithTTA(cfg, model)
+    #     evaluators = [
+    #         cls.build_evaluator(
+    #             cfg, name, output_folder=os.path.join(cfg.OUTPUT_DIR, "inference_TTA")
+    #         )
+    #         for name in cfg.DATASETS.TEST
+    #     ]
+    #     res = cls.test(cfg, model, evaluators)
+    #     res = OrderedDict({k + "_TTA": v for k, v in res.items()})
+    #     return res
+
     @classmethod
-    def test_with_TTA(cls, cfg, model):
-        logger = logging.getLogger("detectron2.trainer")
-        # In the end of training, run an evaluation with TTA
-        # Only support some R-CNN models.
-        logger.info("Running inference with test-time augmentation ...")
-        model = GeneralizedRCNNWithTTA(cfg, model)
-        evaluators = [
-            cls.build_evaluator(
-                cfg, name, output_folder=os.path.join(cfg.OUTPUT_DIR, "inference_TTA")
-            )
-            for name in cfg.DATASETS.TEST
-        ]
-        res = cls.test(cfg, model, evaluators)
-        res = OrderedDict({k + "_TTA": v for k, v in res.items()})
-        return res
+    def build_train_loader(cls, cfg):
+        """
+        Returns:
+            iterable
+
+        It now calls :func:`detectron2.data.build_detection_train_loader`.
+        Overwrite it if you'd like a different data loader.
+        """
+        dataset = get_detection_dataset_dicts(
+            cfg.DATASETS.TRAIN,
+            filter_empty=cfg.DATALOADER.FILTER_EMPTY_ANNOTATIONS,
+            min_keypoints=cfg.MODEL.ROI_KEYPOINT_HEAD.MIN_KEYPOINTS_PER_IMAGE
+            if cfg.MODEL.KEYPOINT_ON
+            else 0,
+            proposal_files=cfg.DATASETS.PROPOSAL_FILES_TRAIN if cfg.MODEL.LOAD_PROPOSALS else None,
+        )
+        repeat_factors = RepeatFactorTrainingSampler.repeat_factors_from_category_frequency(
+            dataset, cfg.DATALOADER.REPEAT_THRESHOLD
+        )
+        return build_detection_train_loader(cfg, sampler=RepeatFactorTrainingSampler(repeat_factors))
 
 
 def setup(args):
@@ -137,10 +162,14 @@ def main(args):
     """
     trainer = Trainer(cfg)
     trainer.resume_or_load(resume=args.resume)
-    if cfg.TEST.AUG.ENABLED:
-        trainer.register_hooks(
-            [hooks.EvalHook(0, lambda: trainer.test_with_TTA(cfg, trainer.model))]
-        )
+    # Register hook for our custom checkpointer every `eval_period` steps
+    trainer.register_hooks([
+        BestCheckpointer(cfg.TEST.EVAL_PERIOD, trainer.checkpointer),
+    ])
+    # if cfg.TEST.AUG.ENABLED:
+    #     trainer.register_hooks(
+    #         [hooks.EvalHook(0, lambda: trainer.test_with_TTA(cfg, trainer.model))]
+    #     )
     return trainer.train()
 
 
@@ -155,24 +184,3 @@ if __name__ == "__main__":
         dist_url=args.dist_url,
         args=(args,),
     )
-
-
-# config_path = 'COCO-Detection/faster_rcnn_R_50_FPN_3x.yaml'
-
-# cfg = get_cfg()
-# cfg.merge_from_file(model_zoo.get_config_file(config_path))
-# cfg.DATASETS.TRAIN = ('mtsd_train',)
-# cfg.DATASETS.TEST = ()
-# cfg.DATALOADER.NUM_WORKERS = 2
-# cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url(config_path)  # Let training initialize from model zoo
-# cfg.SOLVER.IMS_PER_BATCH = 2
-# cfg.SOLVER.BASE_LR = 0.00025  # pick a good LR
-# cfg.SOLVER.MAX_ITER = 300    # 300 iterations seems good enough for this toy dataset; you will need to train longer for a practical dataset
-# cfg.SOLVER.STEPS = []        # do not decay learning rate
-# cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 128   # faster, and good enough for this toy dataset (default: 512)
-# cfg.MODEL.ROI_HEADS.NUM_CLASSES = NUM_CLASSES - 1
-
-# os.makedirs(cfg.OUTPUT_DIR, exist_ok=True)
-# trainer = DefaultTrainer(cfg)
-# trainer.resume_or_load(resume=False)
-# trainer.train()

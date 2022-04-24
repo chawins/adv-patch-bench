@@ -20,26 +20,52 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
-import test  # import test.py to get mAP after each epoch
+import yolor.test as test  # import test.py to get mAP after each epoch
 #from models.yolo import Model
 from yolor.models.models import *
 from yolor.utils.autoanchor import check_anchors
 from yolor.utils.datasets import create_dataloader9 as create_dataloader
-from yolor.utils.general import labels_to_class_weights, increment_path, labels_to_image_weights, init_seeds, \
-    fitness, fitness_p, fitness_r, fitness_ap50, fitness_ap, fitness_f, strip_optimizer, get_latest_run,\
-    check_dataset, check_file, check_git_status, check_img_size, print_mutation, set_logging
+from yolor.utils.general import (check_dataset, check_file, check_git_status,
+                                 check_img_size, fitness, fitness_ap,
+                                 fitness_ap50, fitness_f, fitness_p, fitness_r,
+                                 get_latest_run, increment_path, init_seeds,
+                                 labels_to_class_weights,
+                                 labels_to_image_weights, print_mutation,
+                                 set_logging, strip_optimizer)
 from yolor.utils.google_utils import attempt_download
 from yolor.utils.loss import compute_loss
-from yolor.utils.plots import plot_images, plot_labels, plot_results, plot_evolution
-from yolor.utils.torch_utils import ModelEMA, select_device, intersect_dicts, torch_distributed_zero_first
+from yolor.utils.plots import (plot_evolution, plot_images, plot_labels,
+                               plot_results)
+from yolor.utils.torch_utils import (ModelEMA, intersect_dicts, select_device,
+                                     torch_distributed_zero_first)
 
 logger = logging.getLogger(__name__)
+os.environ['NUMEXPR_MAX_THREADS'] = '96'
 
 try:
     import wandb
 except ImportError:
     wandb = None
     logger.info("Install Weights & Biases for experiment logging via 'pip install wandb' (recommended)")
+
+
+def get_rank():
+    if not is_dist_avail_and_initialized():
+        return 0
+    return dist.get_rank()
+
+
+def is_dist_avail_and_initialized():
+    if not dist.is_available():
+        return False
+    if not dist.is_initialized():
+        return False
+    return True
+
+
+def is_main_process():
+    return get_rank() == 0
+
 
 def train(hyp, opt, device, tb_writer=None, wandb=None):
     logger.info(f'Hyperparameters {hyp}')
@@ -67,12 +93,16 @@ def train(hyp, opt, device, tb_writer=None, wandb=None):
         data_dict = yaml.load(f, Loader=yaml.FullLoader)  # data dict
     with torch_distributed_zero_first(rank):
         check_dataset(data_dict)  # check
-    train_path = data_dict['train']
-    test_path = data_dict['val']
-    
+    # EDIT: append path to match YOLOv5 implementation
+    train_path = os.path.join(data_dict['path'], data_dict['train'])
+    test_path = os.path.join(data_dict['path'], data_dict['val'])
+
     # EDIT: added try except to get names for mtsd
     try:
-        nc, names = (1, ['item']) if opt.single_cls else (int(data_dict['nc']), data_dict['names'])  # number classes, names
+        nc, names = (
+            1, ['item']) if opt.single_cls else(
+            int(data_dict['nc']),
+            data_dict['names'])  # number classes, names
     except:
         import pandas as pd
         nc = int(data_dict['nc'])
@@ -98,7 +128,7 @@ def train(hyp, opt, device, tb_writer=None, wandb=None):
         model.load_state_dict(state_dict, strict=False)
         print('Transferred %g/%g items from %s' % (len(state_dict), len(model.state_dict()), weights))  # report
     else:
-        model = Darknet(opt.cfg).to(device) # create
+        model = Darknet(opt.cfg).to(device)  # create
 
     # Optimizer
     nbs = 64  # nominal batch size
@@ -130,12 +160,12 @@ def train(hyp, opt, device, tb_writer=None, wandb=None):
 
     # Scheduler https://arxiv.org/pdf/1812.01187.pdf
     # https://pytorch.org/docs/stable/_modules/torch/optim/lr_scheduler.html#OneCycleLR
-    lf = lambda x: ((1 + math.cos(x * math.pi / epochs)) / 2) * (1 - hyp['lrf']) + hyp['lrf']  # cosine
+    def lf(x): return ((1 + math.cos(x * math.pi / epochs)) / 2) * (1 - hyp['lrf']) + hyp['lrf']  # cosine
     scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda=lf)
     # plot_lr_scheduler(optimizer, scheduler, epochs)
 
     # Logging
-    if wandb and wandb.run is None:
+    if wandb and wandb.run is None and is_main_process():
         opt.hyp = hyp  # add hyperparameters
         wandb_run = wandb.init(config=opt, resume="allow",
                                project='YOLOR' if opt.project == 'runs/train' else Path(opt.project).stem,
@@ -173,7 +203,7 @@ def train(hyp, opt, device, tb_writer=None, wandb=None):
         del ckpt, state_dict
 
     # Image sizes
-    gs = 64 #int(max(model.stride))  # grid size (max stride)
+    gs = 64  # int(max(model.stride))  # grid size (max stride)
     imgsz, imgsz_test = [check_img_size(x, gs) for x in opt.img_size]  # verify imgsz are gs-multiples
 
     # DP mode
@@ -242,9 +272,9 @@ def train(hyp, opt, device, tb_writer=None, wandb=None):
     logger.info('Image sizes %g train, %g test\n'
                 'Using %g dataloader workers\nLogging results to %s\n'
                 'Starting training for %g epochs...' % (imgsz, imgsz_test, dataloader.num_workers, save_dir, epochs))
-    
+
     torch.save(model, wdir / 'init.pt')
-    
+
     for epoch in range(start_epoch, epochs):  # epoch ------------------------------------------------------------------
         model.train()
 
@@ -349,15 +379,17 @@ def train(hyp, opt, device, tb_writer=None, wandb=None):
             final_epoch = epoch + 1 == epochs
             if not opt.notest or final_epoch:  # Calculate mAP
                 if epoch >= 3:
-                    results, maps, times = test.test(opt.data,
-                                                 batch_size=batch_size*2,
-                                                 imgsz=imgsz_test,
-                                                 model=ema.ema.module if hasattr(ema.ema, 'module') else ema.ema,
-                                                 single_cls=opt.single_cls,
-                                                 dataloader=testloader,
-                                                 save_dir=save_dir,
-                                                 plots=plots and final_epoch,
-                                                 log_imgs=opt.log_imgs if wandb else 0)
+                    results, maps, times = test.test(
+                        opt.data,
+                        batch_size=batch_size*2,
+                        imgsz=imgsz_test,
+                        model=ema.ema.module if hasattr(ema.ema, 'module') else ema.ema,
+                        single_cls=opt.single_cls,
+                        dataloader=testloader,
+                        save_dir=save_dir,
+                        plots=plots and final_epoch,
+                        log_imgs=opt.log_imgs if wandb else 0,
+                    )
 
             # Write
             with open(results_file, 'a') as f:
@@ -380,7 +412,8 @@ def train(hyp, opt, device, tb_writer=None, wandb=None):
             fi = fitness(np.array(results).reshape(1, -1))  # weighted combination of [P, R, mAP@.5, mAP@.5-.95]
             fi_p = fitness_p(np.array(results).reshape(1, -1))  # weighted combination of [P, R, mAP@.5, mAP@.5-.95]
             fi_r = fitness_r(np.array(results).reshape(1, -1))  # weighted combination of [P, R, mAP@.5, mAP@.5-.95]
-            fi_ap50 = fitness_ap50(np.array(results).reshape(1, -1))  # weighted combination of [P, R, mAP@.5, mAP@.5-.95]
+            # weighted combination of [P, R, mAP@.5, mAP@.5-.95]
+            fi_ap50 = fitness_ap50(np.array(results).reshape(1, -1))
             fi_ap = fitness_ap(np.array(results).reshape(1, -1))  # weighted combination of [P, R, mAP@.5, mAP@.5-.95]
             if (fi_p > 0.0) or (fi_r > 0.0):
                 fi_f = fitness_f(np.array(results).reshape(1, -1))  # weighted combination of [P, R, mAP@.5, mAP@.5-.95]
@@ -439,7 +472,7 @@ def train(hyp, opt, device, tb_writer=None, wandb=None):
                     torch.save(ckpt, wdir / 'epoch_{:03d}.pt'.format(epoch))
                 if epoch >= (epochs-5):
                     torch.save(ckpt, wdir / 'last_{:03d}.pt'.format(epoch))
-                elif epoch >= 420: 
+                elif epoch >= 420:
                     torch.save(ckpt, wdir / 'last_{:03d}.pt'.format(epoch))
                 del ckpt
         # end epoch ----------------------------------------------------------------------------------------------------
