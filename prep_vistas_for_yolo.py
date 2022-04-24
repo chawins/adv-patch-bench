@@ -3,6 +3,7 @@ import json
 import pdb
 from os import listdir, makedirs
 from os.path import expanduser, isfile, join
+import shutil
 
 import numpy as np
 import pandas as pd
@@ -40,7 +41,7 @@ def set_default_args(parser):
 
 def write_yolo_labels(model, label, panoptic_per_image_id, data_dir,
                       num_classes, anno_df, min_area=0, conf_thres=0.,
-                      device='cuda', batch_size=128):
+                      device='cuda', batch_size=128, use_colors_in_labels=True):
     # img_path = join(data_dir, 'images_original')
     # label_path = join(data_dir, 'labels_original')
     img_path = join(data_dir, 'images')
@@ -78,7 +79,7 @@ def write_yolo_labels(model, label, panoptic_per_image_id, data_dir,
             # width of 1280 pixels
             obj_area = (obj_width * 1280) * (height / img_width * 1280)
 
-            if obj['category_id'] != label or is_oob or obj_area < min_area:
+            if obj['category_id'] != label or is_oob or obj_area <= min_area:
                 continue
 
             x_center = (xmin + width / 2) / img_width
@@ -94,8 +95,9 @@ def write_yolo_labels(model, label, panoptic_per_image_id, data_dir,
             idx_to_obj_id[obj_idx] = obj['id']
 
             # Get available "final_shape" from our annotation
-            traffic_sign_name = f"{img_id}_{obj['id']}.png"
-            row = anno_df[anno_df['filename'] == traffic_sign_name]
+            traffic_sign_name = f"{img_id}.jpg"
+            row = anno_df[(anno_df['filename'] == traffic_sign_name) & (anno_df['object_id'] == obj['id'])]
+            # row = anno_df[anno_df['filename'] == traffic_sign_name]
             if len(row) == 1:
                 shapes.append(row['final_shape'].values[0])
             else:
@@ -124,16 +126,35 @@ def write_yolo_labels(model, label, panoptic_per_image_id, data_dir,
 
     # Resolve some errors from predicted_labels
     prob_wrong, num_fix, no_anno = 0, 0, 0
+    
+    selected_labels = list(TS_COLOR_DICT.keys())
+    
+    # print()
+    # print(selected_labels)
+    # print()
+
+    # => no checkpoint found at /data/shared/adv-patch-bench/results/6/checkpoint_best.pt
 
     for i, (correct_shape, y) in enumerate(zip(shapes, predicted_labels)):
         pred_shape = TS_COLOR_LABEL_LIST[y]
         # Remove the color name
         pred_shape = '-'.join(pred_shape.split('-')[:-1])
+
+        if not use_colors_in_labels:
+            if correct_shape == 'no_annotation':
+                new_label = selected_labels.index(pred_shape)
+                no_anno += 1
+            else:
+                new_label = selected_labels.index(correct_shape)
+            predicted_labels[i] = new_label
+            continue
+
         if correct_shape == pred_shape:
             continue
         if correct_shape == 'no_annotation':
             no_anno += 1
             continue
+
         num_colors = len(TS_COLOR_DICT[correct_shape])
         if num_colors == 0:
             # If there's a mismatch, we trust `correct_shape` and replace
@@ -158,16 +179,35 @@ def write_yolo_labels(model, label, panoptic_per_image_id, data_dir,
     # makedirs(new_img_path, exist_ok=True)
     # makedirs(new_labels_path, exist_ok=True)
 
+    no_label_image_data_dir = join(data_dir, 'images_mapillary_duplicates/')
+    makedirs(no_label_image_data_dir, exist_ok=True)
+
     for filename, obj_idx in tqdm(filename_to_idx.items()):
         text = ''
         # Save images in images/labels folder only if image contains at least one label
         if len(obj_idx) == 0:
+            filename_jpg = f'{filename}.jpg'
+            original_image_path = join(img_path, filename_jpg)
+            no_label_image_data_path = join(no_label_image_data_dir, filename_jpg)
+
+            if isfile(original_image_path):
+                shutil.move(original_image_path, no_label_image_data_path)
             continue
         for idx in obj_idx:
             class_label = int(predicted_labels[idx].item())
-            # Exclude labels for "other" class
-            if class_label == num_classes - 1:
-                continue
+
+            # # Exclude labels for "other" class
+            # if class_label == num_classes - 1:
+            #     continue
+
+            # if class_label > 11:
+            #     print()
+            #     print(class_label)
+            #     print(filename)
+            #     print()
+            #     print(predicted_labels[idx])
+            #     qqq
+
             x_center, y_center, obj_width, obj_height = bbox[idx]
             obj_id = idx_to_obj_id[idx]
             text += f'{class_label:d} {x_center} {y_center} {obj_width} {obj_height} {obj_id}\n'
@@ -210,6 +250,7 @@ def main():
     set_default_args(parser)
     parser.add_argument('--resume', default=model_path, type=str, help='path to latest checkpoint')
     parser.add_argument('--num-classes', default=num_classes, type=int, help='Number of classes')
+    parser.add_argument('--use-colors-in-labels', action='store_true', help='if False, labels generated will not contain color of signs and will only have the shape')
     args = parser.parse_args()
 
     model, _, _ = build_classifier(args)
@@ -233,7 +274,7 @@ def main():
     write_yolo_labels(
         model, label_to_classify, panoptic_per_image_id, data_dir, num_classes,
         anno_df, min_area=min_area, conf_thres=conf_thres, device=device,
-        batch_size=args.batch_size)
+        batch_size=args.batch_size, use_colors_in_labels=args.use_colors_in_labels)
 
 
 if __name__ == '__main__':

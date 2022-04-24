@@ -89,9 +89,12 @@ def ap_per_class(tp, conf, pred_cls, target_cls, plot=False, save_dir='.', names
 
 
 def ap_per_class_custom(tp, conf, pred_cls, target_cls, plot=False, save_dir='.',
-                        names=(), eps=1e-16, metrics_conf_thres=None):
+                        names=(), eps=1e-16, metrics_conf_thres=None, other_class_label=None):
     """Our custom computation of multiple metrics"""
     # Sort by objectness (from highest to lowest)
+    if other_class_label:
+        target_cls = target_cls[target_cls != other_class_label]
+    
     i = np.argsort(-conf)
 
     tp, conf, pred_cls = tp[i], conf[i], pred_cls[i]
@@ -125,9 +128,6 @@ def ap_per_class_custom(tp, conf, pred_cls, target_cls, plot=False, save_dir='.'
             # Recall / True Positive Rate
             recall = tpc / (n_l + eps)  # recall curve
             recall_per_class.append(recall[:, 0])
-            # print(recall_per_class[0].shape)
-            # print(recall_per_class)
-            # qqq
             r[ci] = np.interp(-px, -conf[i], recall[:, 0], left=0)  # negative x, xp because xp decreases
             fnr[ci] = 1 - r[ci]
 
@@ -141,7 +141,7 @@ def ap_per_class_custom(tp, conf, pred_cls, target_cls, plot=False, save_dir='.'
                 ap[ci, j], mpre, mrec = compute_ap(recall[:, j], precision[:, j])
                 if plot and j == 0:
                     py.append(np.interp(px, mrec, mpre))  # precision at mAP@0.5
-
+    
     # Compute F1 (harmonic mean of precision and recall)
     f1 = 2 * p * r / (p + r + eps)
     names = [v for k, v in names.items() if k in unique_classes]  # list: only classes that have data
@@ -178,6 +178,15 @@ def ap_per_class_custom(tp, conf, pred_cls, target_cls, plot=False, save_dir='.'
     tp = (r * nt).round()  # true positives
     fp = (tp / (p + eps) - tp).round()  # false positives
     fn = nt - tp
+
+    print(names)
+    print('tp', tp)
+    print()
+    print('fp', fp)
+    print()
+    print('fn', fn)
+    print()
+    print('nt', nt)
     # nt is positives
     precision_cmb = tp.sum() / (tp.sum() + fp.sum())
     fnr_cmb = fn.sum() / nt.sum()

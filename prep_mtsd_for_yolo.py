@@ -16,6 +16,7 @@ def readlines(path):
         lines = f.readlines()
     return [line.strip() for line in lines]
 
+use_mtsd_original_labels = False
 
 # path = expanduser('~/data/mtsd_v2_fully_annotated/')
 # csv_path = expanduser('~/adv-patch-bench/traffic_sign_dimension_v6.csv')
@@ -23,19 +24,29 @@ path = '/data/shared/mtsd_v2_fully_annotated/'
 csv_path = './traffic_sign_dimension_v6.csv'
 similarity_df_csv_path = 'similar_files_df.csv'
 anno_path = join(path, 'annotations')
-label_path = join(path, 'labels')
+label_path = join(path, 'labels_original') if use_mtsd_original_labels else join(path, 'labels')
 data = pd.read_csv(csv_path)
 similar_files_df = pd.read_csv(similarity_df_csv_path)
-use_mtsd_original_labels = True
 
-selected_labels = list(TS_COLOR_OFFSET_DICT.keys())
+# selected_labels = list(TS_COLOR_OFFSET_DICT.keys())
+# mtsd_label_to_class_index = {}
+# for idx, row in data.iterrows():
+#     if row['target'] in TS_COLOR_OFFSET_DICT and not use_mtsd_original_labels:
+#         idx = TS_COLOR_OFFSET_DICT[row['target']]
+#         color_list = TS_COLOR_DICT[row['target']]
+#         if len(color_list) > 0:
+#             idx += color_list.index(row['color'])
+#         mtsd_label_to_class_index[row['sign']] = idx
+#     elif use_mtsd_original_labels:
+#         mtsd_label_to_class_index[row['sign']] = idx
+# bg_idx = max(list(mtsd_label_to_class_index.values())) + 1
+
+
+selected_labels = list(TS_COLOR_DICT.keys())
 mtsd_label_to_class_index = {}
 for idx, row in data.iterrows():
-    if row['target'] in TS_COLOR_OFFSET_DICT and not use_mtsd_original_labels:
-        idx = TS_COLOR_OFFSET_DICT[row['target']]
-        color_list = TS_COLOR_DICT[row['target']]
-        if len(color_list) > 0:
-            idx += color_list.index(row['color'])
+    if row['target'] in TS_COLOR_DICT and not use_mtsd_original_labels:
+        idx = selected_labels.index(row['target'])
         mtsd_label_to_class_index[row['sign']] = idx
     elif use_mtsd_original_labels:
         mtsd_label_to_class_index[row['sign']] = idx
@@ -82,9 +93,9 @@ for json_file in tqdm(json_files):
         obj_width = (obj['bbox']['xmax'] - obj['bbox']['xmin']) / width
         obj_height = (obj['bbox']['ymax'] - obj['bbox']['ymin']) / height
 
-        import pdb
-        pdb.set_trace()
-        mtsd_label_to_class_index
+        # import pdb
+        # pdb.set_trace()
+        # mtsd_label_to_class_index
 
         class_index = mtsd_label_to_class_index.get(obj['label'], bg_idx)
         # Compute object area if the image were to be resized to have width of 1280 pixels

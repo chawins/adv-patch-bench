@@ -21,47 +21,14 @@ if DATASET == 'mapillaryvistas':
 elif DATASET == 'bdd100k':
     TRAFFIC_SIGN_LABEL = 'traffic sign'
 
-CLASS_LIST = ['circle-white', 'circle-blue', 'circle-red', 'triangle-white', 
-        'triangle-yellow', 'triangle_inverted', 'diamond-600', 'diamond-915', 
-        'square', 'rect-458-610-white', 'rect-458-610-other', 'rect-762-915', 
-        'rect-915-1220', 'pentagon', 'octagon']
-# CLASS_LIST = [
-#     'circle-750.0',
-#     'triangle-900.0',
-#     'octagon-915.0',
-#     'other-0.0-0.0',
-#     'triangle_inverted-1220.0',
-#     'diamond-600.0',
-#     'diamond-915.0',
-#     'square-600.0',
-#     'rect-458.0-610.0',
-#     'rect-762.0-915.0',
-#     'rect-915.0-1220.0',
-#     'pentagon-915.0'
-# ]
+# CLASS_LIST = ['circle-white', 'circle-blue', 'circle-red', 'triangle-white', 
+#         'triangle-yellow', 'triangle_inverted', 'diamond-600', 'diamond-915', 
+#         'square', 'rect-458-610-white', 'rect-458-610-other', 'rect-762-915', 
+#         'rect-915-1220', 'pentagon', 'octagon', 'other']
 
-# SHAPE_LIST = [
-#     'circle',
-#     'triangle',
-#     'triangle_inverted',
-#     'diamond',
-#     'square',
-#     'rect',
-#     'pentagon',
-#     'octagon',
-#     'other'
-# ]
-
-# CLASS_LIST = ['octagon-915.0-915.0',
-#               'diamond-915.0-915.0',
-#               'pentagon-915.0-915.0',
-#               'rect-915.0-1220.0',
-#               'rect-762.0-915.0',
-#               'triangle-900.0',
-#               'circle-750.0',
-#               'triangle_inverted-1220.0-1220.0',
-#               'rect-458.0-610.0',
-#               'other-0.0-0.0']
+CLASS_LIST = ['circle-750.0', 'triangle-900.0', 'triangle_inverted-1220.0', 
+        'diamond-600.0', 'diamond-915.0', 'square-600.0', 'rect-458.0-610.0', 
+        'rect-762.0-915.0', 'rect-915.0-1220.0', 'pentagon-915.0', 'octagon-915.0', 'other-0.0-0.0']
 
 
 def crop_traffic_signs(filename, panoptic_per_image_id, img_path, label_path,
@@ -171,11 +138,6 @@ def main(args):
     if DATASET == 'mapillaryvistas':
         panoptic_per_image_id = {}
         for annotation in panoptic['annotations']:
-            # print(annotation)
-            # print()
-            # print()
-            # print(annotation.keys())
-            # qq
             panoptic_per_image_id[annotation['image_id']] = annotation
 
         # Convert category infos to category_id indexed dictionary
@@ -233,9 +195,11 @@ def main(args):
 
     filenames.sort()
 
-    df = pd.read_csv('runs/val_yolov5/yolor_mapillary_none_0/results_per_label.csv')
-    df = df[df['label'] != 15]
-    fn_df = df[(df['prediction'] != df['label']) | (df['confidence'] < (290/1000))]
+    df = pd.read_csv('runs/val/exp_mapillary_none_18/results_per_label.csv')
+    # df = pd.read_csv('runs/val_yolov5/yolor_mapillary_none_0/results_per_label.csv')
+    
+    df = df[df['label'] != 11]
+    fn_df = df[(df['prediction'] != df['label']) | (df['confidence'] < (300/1000))]
 
     print('[INFO] running detection algorithm and plotting traffic signs')
 
@@ -288,26 +252,6 @@ def main(args):
                     plt.savefig(fig_file_path, facecolor='white', transparent=False)
                     plt.close(fig)
                     
-def save_images(output, filename, paths):
-    for img, mask, obj_id in zip(output['images'], output['masks'], output['obj_id']):
-        Image.fromarray(img, 'RGB').save(join(paths[0], f'{filename}_{obj_id}.png'))
-        Image.fromarray(mask * 255).save(join(paths[1], f'{filename}_{obj_id}.png'))
-
-
-def save_offset(output, filename, paths, offset_df):
-    # for obj_id in output['obj_id']:
-    for obj_id, xmin, ymin, xmin_ratio, ymin_ratio in zip(
-            output['obj_id'],
-            output['offset_x'],
-            output['offset_y'],
-            output['offset_x_ratio'],
-            output['offset_y_ratio']):
-        offset_df = offset_df.append(
-            {'filename': f'{filename}.png', 'obj_id': obj_id, 'xmin': xmin, 'ymin': ymin, 'xmin_ratio': xmin_ratio,
-             'ymin_ratio': ymin_ratio},
-            ignore_index=True)
-    return offset_df
-
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Dataset Preperation', add_help=False)
     parser.add_argument('--split', default='training', type=str)
