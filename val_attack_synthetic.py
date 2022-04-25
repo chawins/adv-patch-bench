@@ -77,7 +77,7 @@ def save_one_json(predn, jdict, path, class_map):
                       'score': round(p[4], 5)})
 
 
-def process_batch(detections, labels, iouv, keep_correct_predictions_only=True):
+def process_batch(detections, labels, iouv, other_class_label=None):
     """
     Return correct predictions matrix. Both sets of boxes are in (x1, y1, x2, y2) format.
     Arguments:
@@ -89,10 +89,13 @@ def process_batch(detections, labels, iouv, keep_correct_predictions_only=True):
     correct = torch.zeros(detections.shape[0], iouv.shape[0], dtype=torch.bool, device=iouv.device)
     iou = box_iou(labels[:, 1:5], detections[:, :4])
 
-    if keep_correct_predictions_only:
-        x = torch.where((iou >= iouv[0]) & (labels[:, 0:1] == detections[:, 5]))  # IoU above threshold and classes match
+    if other_class_label:
+        # x = torch.where((iou >= iouv[0]) & (labels[:, 0:1] == detections[:, 5]))  # IoU above threshold and classes match
+        x = torch.where((iou >= iouv[0]) & ((labels[:, 0:1] == detections[:, 5]) | (labels[:, 0:1] == other_class_label)))  # IoU above threshold and classes match        
     else:
-        x = torch.where((iou >= iouv[0]))  # IoU above threshold
+        x = torch.where((iou >= iouv[0]) & (labels[:, 0:1] == detections[:, 5]))  # IoU above threshold and classes match
+    # else:
+    #     x = torch.where((iou >= iouv[0]))  # IoU above threshold
 
     matches = []
     if x[0].shape[0]:
@@ -640,17 +643,22 @@ def run(args,
                 # _, matches = process_batch(predn, labelsn, iouv, keep_correct_predictions_only=False)
 
                 # matching on bounding boxes, i.e, match label and pred if iou >= 0.5
-                correct, matches = process_batch(predn, labelsn, iouv, keep_correct_predictions_only=False)
+                # correct, matches = process_batch(predn, labelsn, iouv)
+                correct, matches = process_batch(predn, labelsn, iouv, other_class_label=other_class_label)
 
                 if plots:
                     confusion_matrix.process_batch(predn, labelsn)
             else:
                 correct, matches = torch.zeros(pred.shape[0], niou, dtype=torch.bool), []
+                # correct_v2, matches_v2 = torch.zeros(pred.shape[0], niou, dtype=torch.bool), []
 
             # When there's no match, create a dummy match to make next steps easier
             if len(matches) == 0:
                 matches = np.zeros((1, 1)) - 1
 
+            # if len(matches_v2) == 0:
+            #     matches_v2 = np.zeros((1, 1)) - 1
+                
             # Collecting results
             for lbl_index, lbl_ in enumerate(labels):
                 # Find a match with this object label
@@ -690,11 +698,7 @@ def run(args,
                     # we change the label from 'other' to the detected class so there is no false negative/false positive
                     labels[lbl_index, 0] = pred_label.item()
                     current_label_metric['label'] = pred_label.item()
-                elif class_label != pred_label:                    
-                    # if ground truth is not 'other', and the label and prediction are different,
-                    # we need to fix the 'correct' array because the initial matching was only done on iou
-                    correct[det_idx] = torch.BoolTensor([False] * len(iouv))
-
+                
                 # Get detection boolean at iou_thres
                 iou_idx = torch.where(iouv >= iou_thres)[0][0]
                 is_detected = correct[det_idx, iou_idx]

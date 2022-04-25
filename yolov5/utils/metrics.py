@@ -127,6 +127,8 @@ def ap_per_class_custom(tp, conf, pred_cls, target_cls, plot=False, save_dir='.'
 
             # Recall / True Positive Rate
             recall = tpc / (n_l + eps)  # recall curve
+            
+            # print(recall)
             recall_per_class.append(recall[:, 0])
             r[ci] = np.interp(-px, -conf[i], recall[:, 0], left=0)  # negative x, xp because xp decreases
             fnr[ci] = 1 - r[ci]
@@ -180,13 +182,13 @@ def ap_per_class_custom(tp, conf, pred_cls, target_cls, plot=False, save_dir='.'
     fn = nt - tp
 
     print(names)
-    print('tp', tp)
+    print('true positives', tp)
     print()
-    print('fp', fp)
+    print('false positive', fp)
     print()
-    print('fn', fn)
+    print('false negatives', fn)
     print()
-    print('nt', nt)
+    print('num targets', nt)
     # nt is positives
     precision_cmb = tp.sum() / (tp.sum() + fp.sum())
     fnr_cmb = fn.sum() / nt.sum()
