@@ -77,7 +77,7 @@ def save_one_json(predn, jdict, path, class_map):
                       'score': round(p[4], 5)})
 
 
-def process_batch(detections, labels, iouv):
+def process_batch(detections, labels, iouv, other_class_label=None):
     """
     Return correct predictions matrix. Both sets of boxes are in (x1, y1, x2, y2) format.
     Arguments:
@@ -89,7 +89,13 @@ def process_batch(detections, labels, iouv):
     correct = torch.zeros(detections.shape[0], iouv.shape[0], dtype=torch.bool, device=iouv.device)
     iou = box_iou(labels[:, 1:5], detections[:, :4])
 
-    x = torch.where((iou >= iouv[0]) & (labels[:, 0:1] == detections[:, 5]))  # IoU above threshold and classes match
+    if other_class_label:
+        # x = torch.where((iou >= iouv[0]) & (labels[:, 0:1] == detections[:, 5]))  # IoU above threshold and classes match
+        x = torch.where((iou >= iouv[0]) & ((labels[:, 0:1] == detections[:, 5]) | (labels[:, 0:1] == other_class_label)))  # IoU above threshold and classes match        
+    else:
+        x = torch.where((iou >= iouv[0]) & (labels[:, 0:1] == detections[:, 5]))  # IoU above threshold and classes match
+    # else:
+    #     x = torch.where((iou >= iouv[0]))  # IoU above threshold
 
     matches = []
     if x[0].shape[0]:
@@ -119,11 +125,8 @@ def populate_default_metric(lbl_, min_area, filename):
     current_label_metric['sign_width'] = bbox_width
     current_label_metric['sign_height'] = bbox_height
     current_label_metric['confidence'] = None
-    # current_label_metric['too_small'] = bbox_area < min_area
-    # FIXME
-    current_label_metric['too_small'] = bbox_area < min_area or class_label == 15
+    current_label_metric['too_small'] = bbox_area < min_area
     return current_label_metric
-
 
 @torch.no_grad()
 def run(args,
@@ -171,6 +174,8 @@ def run(args,
     syn_obj_path = args.syn_obj_path
     min_area = args.min_area
     model_name = args.model_name
+    other_class_label = args.other_class_label
+    model_trained_without_other = args.model_trained_without_other
 
     # split = args.split
 
@@ -277,21 +282,17 @@ def run(args,
                                        workers=workers,
                                        prefix=colorstr(f'{task}: '))[0]
 
-
-        
         # path = data['test'] if opt.task == 'test' else data['val']  # path to val/test images
         # dataloader = create_dataloader(path, imgsz, batch_size, 64, opt, pad=0.5, rect=True)[0]
 
     seen = 0
-    # names = {k: v for k, v in enumerate(model.names if hasattr(model, 'names') else model.module.names)}
-    
     
     try:
-        # names = model.names if hasattr(model, 'names') else model.module.names
         names = {k: v for k, v in enumerate(model.names if hasattr(model, 'names') else model.module.names)}
+        # TODO: temporary fix
+        names[11] = 'other'
     except:
         names = {k: v for k, v in enumerate(data['names'])}
-        # names = data['names'] # number classes, names
 
     nc = len(names)
     assert adv_sign_class < nc, 'Obj Class to attack does not exist'
@@ -420,10 +421,13 @@ def run(args,
         # Originally, targets has shape (#labels, 7)
         # [image_id, class, x1, y1, label_width, label_height, obj_id]
 
+        if model_trained_without_other:
+            targets = targets[targets[:, 1] != other_class_label]
         # targets = targets[targets[:, 1] != 15]
 
         # DEBUG
-        if args.debug and batch_i == 20:
+        # if args.debug and batch_i == 20:
+        if args.debug and batch_i == 100:
             break
 
         if num_apply_imgs >= len(filename_list) and args.run_only_img_txt:
@@ -555,10 +559,7 @@ def run(args,
 
         # Metrics
         predictions_for_plotting = output_to_target(out)
-        # print(list(predictions_for_plotting[:, 1]))
-        # qqq
         
-
         for si, pred in enumerate(out):
             # pred (Array[N, 6]), x1, y1, x2, y2, confidence, class
             # labels (Array[M, 5]), class, x1, y1, x2, y2
@@ -579,8 +580,7 @@ def run(args,
             lbl_index_to_keep = np.ones(len(labels), dtype=np.bool)
             pred_index_to_keep = np.ones(len(pred), dtype=np.bool)
 
-            # If there's no prediction at all, we can collect the targets and
-            # continue to the next image.
+            # If there's no prediction at all, we can collect the targets and continue to the next image.
             if len(pred) == 0:
                 for lbl_index, lbl_ in enumerate(labels):
                     current_label_metric = populate_default_metric(lbl_, min_area, filename)
@@ -638,39 +638,67 @@ def run(args,
                 # and predictions, i.e., [label_idx, pred_idx, iou]
                 # `label_idx`: idx of object in `labels`
                 # `pred_idx`: idx of object in `predn`
-                correct, matches = process_batch(predn, labelsn, iouv)
+
+                # correct, _ = process_batch(predn, labelsn, iouv)
+                # _, matches = process_batch(predn, labelsn, iouv, keep_correct_predictions_only=False)
+
+                # matching on bounding boxes, i.e, match label and pred if iou >= 0.5
+                # correct, matches = process_batch(predn, labelsn, iouv)
+                correct, matches = process_batch(predn, labelsn, iouv, other_class_label=other_class_label)
+
                 if plots:
                     confusion_matrix.process_batch(predn, labelsn)
             else:
                 correct, matches = torch.zeros(pred.shape[0], niou, dtype=torch.bool), []
+                # correct_v2, matches_v2 = torch.zeros(pred.shape[0], niou, dtype=torch.bool), []
 
             # When there's no match, create a dummy match to make next steps easier
             if len(matches) == 0:
                 matches = np.zeros((1, 1)) - 1
 
+            # if len(matches_v2) == 0:
+            #     matches_v2 = np.zeros((1, 1)) - 1
+                
             # Collecting results
             for lbl_index, lbl_ in enumerate(labels):
+                # Find a match with this object label
+                match = matches[matches[:, 0] == lbl_index]
+
+                assert len(match) <= 1  # There can only be one match per object
+
                 current_label_metric = populate_default_metric(lbl_, min_area, filename)
                 lbl_index_to_keep[lbl_index] = ~current_label_metric['too_small']
 
-                # Find a match with this object label
-                match = matches[matches[:, 0] == lbl_index]
+                class_label = lbl_[0]
+                                
                 # If there's no match, just save current metric and continue to
                 # the next label.
                 if len(match) == 0:
+                    # if ground truth is 'other' and there is NO prediction, we drop the label so it's not counted as a false negative
+                    if class_label == other_class_label:
+                        lbl_index_to_keep[lbl_index] = 0
+                        
                     metrics_per_label_df = metrics_per_label_df.append(
                         current_label_metric, ignore_index=True)
                     continue
-                assert len(match) <= 1  # There can only be one match per object
 
                 # Find index of `pred` corresponding to this match
                 det_idx = int(match[0, 1])
-                # Drop this prediction if the target object is too small
-                pred_index_to_keep[det_idx] = ~current_label_metric['too_small']
+                
                 # Populate other metrics
                 pred_conf, pred_label = pred[det_idx, 4:6].cpu().numpy()
                 current_label_metric['confidence'] = pred_conf
                 current_label_metric['prediction'] = pred_label
+
+                # Drop this prediction if the target object is too small
+                pred_index_to_keep[det_idx] = ~current_label_metric['too_small']
+
+                if class_label == other_class_label:
+                    # if ground truth is 'other' and there is a prediction, we count any detection as a true positive
+                    # we change the label from 'other' to the detected class so there is no false negative/false positive
+                    labels[lbl_index, 0] = pred_label.item()
+                    current_label_metric['label'] = pred_label.item()
+                
                 # Get detection boolean at iou_thres
                 iou_idx = torch.where(iouv >= iou_thres)[0][0]
                 is_detected = correct[det_idx, iou_idx]
@@ -685,7 +713,7 @@ def run(args,
             pred = pred[pred_index_to_keep]
             labels = labels[lbl_index_to_keep]
             tcls = labels[:, 0].tolist() if nl else []  # target class
-
+            
             labels_kept += lbl_index_to_keep.sum()
             predictions_kept += pred_index_to_keep.sum()
             labels_removed += (~lbl_index_to_keep).sum()
@@ -766,7 +794,7 @@ def run(args,
 
     if len(stats) and stats[0].any():
         metrics = ap_per_class_custom(*stats, plot=plots, save_dir=save_dir, names=names,
-                                      metrics_conf_thres=metrics_conf_thres)
+                                      metrics_conf_thres=metrics_conf_thres, other_class_label=other_class_label)
         tp, p, r, ap, ap_class, fnr, fn, max_f1_index, precision_cmb, fnr_cmb = metrics
         ap50, ap = ap[:, 0], ap.mean(1)  # AP@0.5, AP@0.5:0.95
         mp, mr, map50, map = p.mean(), r.mean(), ap50.mean(), ap.mean()
@@ -831,7 +859,7 @@ def run(args,
         LOGGER.info(pf % (names[c], seen, nt[c], p[i], r[i], ap50[i], ap[i]))
     metrics_df_column_names.append('dataset')
     current_exp_metrics['dataset'] = DATASET_NAME
-
+    
     metrics_df_column_names.append('total_num_patches')
     current_exp_metrics['total_num_patches'] = total_num_patches
 
@@ -945,6 +973,8 @@ def parse_opt():
     parser.add_argument('--half', action='store_true', help='use FP16 half-precision inference')
     parser.add_argument('--dnn', action='store_true', help='use OpenCV DNN for ONNX inference')
     parser.add_argument('--model_name', default='yolov5', help='yolov5 or yolor')
+    parser.add_argument('--other-class-label', type=int, default=None, help="Class for the 'other' label")
+    parser.add_argument('--model-trained-without-other', action='store_true', help="True if model was trained without the 'other' class label")
 
     # ========================== Our misc arguments ========================= #
     parser.add_argument('--seed', type=int, default=0, help='set random seed')

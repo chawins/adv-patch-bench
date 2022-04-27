@@ -60,24 +60,92 @@
 #     --synthetic-eval \
 #     --syn-obj-path attack_assets/octagon-915.0.png
 
-# # Test real dataset WITHOUT patch
-CUDA_VISIBLE_DEVICES=0 python -u val_attack_synthetic.py \
+
+
+
+# CUDA_VISIBLE_DEVICES=0 python -u val_attack_synthetic.py \
+#     --imgsz 1280 \
+#     --padded_imgsz 992,1312 \
+#     --batch-size 8 \
+#     --data mapillary_vistas.yaml \
+#     --weights /data/shared/adv-patch-bench/yolov5/runs/train/exp2.1/weights/best.pt \
+#     --exist-ok \
+#     --workers 8 \
+#     --task train \
+#     --save-exp-metrics \
+#     --tgt-csv-filepath mapillary_vistas_final_merged.csv \
+#     --obj-class 14 \
+#     --plot-class-examples 14 \
+#     --interp bicubic \
+#     --attack-type none 
+
+# CUDA_VISIBLE_DEVICES=0 python -u val_attack_synthetic.py \
+#     --imgsz 2560 \
+#     --padded_imgsz 1952,2592 \
+#     --batch-size 8 \
+#     --data mapillary_vistas.yaml \
+#     --weights /data/shared/adv-patch-bench/yolov5/runs/train/exp5/weights/best.pt \
+#     --exist-ok \
+#     --workers 8 \
+#     --task train \
+#     --save-exp-metrics \
+#     --tgt-csv-filepath mapillary_vistas_final_merged.csv \
+#     --obj-class 14 \
+#     --plot-class-examples 14 \
+#     --interp bicubic \
+#     --attack-type none 
+
+# CUDA_VISIBLE_DEVICES=0 python -u val_attack_synthetic.py \
+#     --imgsz 1280 \
+#     --padded_imgsz 992,1312 \
+#     --batch-size 8 \
+#     --data mapillary_vistas_no_color.yaml \
+#     --weights /data/shared/adv-patch-bench/yolov5/runs/train/exp6/weights/best.pt \
+#     --exist-ok \
+#     --workers 8 \
+#     --task train \
+#     --save-exp-metrics \
+#     --tgt-csv-filepath mapillary_vistas_final_merged.csv \
+#     --obj-class 10 \
+#     --plot-class-examples 10 \
+#     --interp bicubic \
+#     --attack-type none
+    
+CUDA_VISIBLE_DEVICES=1 python -u val_attack_synthetic.py \
     --imgsz 1280 \
     --padded_imgsz 992,1312 \
     --batch-size 8 \
-    --data mapillary_vistas.yaml \
-    --weights /data/shared/adv-patch-bench/yolov5/runs/train/exp2.1/weights/best.pt \
+    --data mapillary_vistas_no_color.yaml \
+    --weights /data/shared/adv-patch-bench/yolov5/runs/train/exp7/weights/best.pt \
     --exist-ok \
     --workers 8 \
     --task train \
     --save-exp-metrics \
-    --metrics-confidence-threshold 0.359 \
     --tgt-csv-filepath mapillary_vistas_final_merged.csv \
-    --obj-class 14 \
-    --plot-class-examples 14 \
+    --obj-class 10 \
+    --plot-class-examples 10 \
     --interp bicubic \
-    --attack-type none \
-    --debug
+    --attack-type none 
+
+
+# # Test real dataset WITHOUT patch
+# CUDA_VISIBLE_DEVICES=0 python -u val_attack_synthetic.py \
+#     --imgsz 1280 \
+#     --padded_imgsz 992,1312 \
+#     --batch-size 8 \
+#     --data mapillary_vistas.yaml \
+#     --weights /data/shared/adv-patch-bench/yolov5/runs/train/exp2.1/weights/best.pt \
+#     --exist-ok \
+#     --workers 8 \
+#     --task train \
+#     --save-exp-metrics \
+#     --metrics-confidence-threshold 0.359 \
+#     --tgt-csv-filepath mapillary_vistas_final_merged.csv \
+#     --obj-class 14 \
+#     --plot-class-examples 14 \
+#     --interp bicubic \
+#     --attack-type none \
+#     --debug
 
 # Test on real dataset with patch on train dataset
 # CUDA_VISIBLE_DEVICES=0 python -u val_attack_synthetic.py \

@@ -17,6 +17,7 @@ def readlines(path):
         lines = f.readlines()
     return [line.strip() for line in lines]
 
+use_mtsd_original_labels = False
 
 use_mtsd_original_labels = False
 use_color = True
