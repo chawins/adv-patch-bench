@@ -58,7 +58,7 @@ class COCOeval:
     # Data, paper, and tutorials available at:  http://mscoco.org/
     # Code written by Piotr Dollar and Tsung-Yi Lin, 2015.
     # Licensed under the Simplified BSD License [see coco/license.txt]
-    def __init__(self, cocoGt=None, cocoDt=None, iouType='segm'):
+    def __init__(self, cocoGt=None, cocoDt=None, iouType='segm', mode=None):
         '''
         Initialize CocoEval using coco APIs for gt and dt
         :param cocoGt: coco object with ground truth annotations
@@ -80,6 +80,9 @@ class COCOeval:
         if not cocoGt is None:
             self.params.imgIds = sorted(cocoGt.getImgIds())
             self.params.catIds = sorted(cocoGt.getCatIds())
+        # EDIT: set mode (None, 'drop', 'match')
+        self.mode = mode
+        self.other_catId = 89
 
     def _prepare(self):
         '''
@@ -104,8 +107,8 @@ class COCOeval:
             _toMask(gts, self.cocoGt)
             _toMask(dts, self.cocoDt)
         # set ignore flag
-        bg_cat_id = max(p.catIds)
-        num_ignore = 0
+        # bg_cat_id = max(p.catIds)
+        # num_ignore = 0
         for gt in gts:
             gt['ignore'] = gt['ignore'] if 'ignore' in gt else 0
             gt['ignore'] = 'iscrowd' in gt and gt['iscrowd']
@@ -115,8 +118,7 @@ class COCOeval:
             # if gt['category_id'] == bg_cat_id:
             #     gt['ignore'] = 1
             #     num_ignore += 1
-
-        print(f'=> {num_ignore} instances ignored (id: {bg_cat_id}).')
+        # print(f'=> {num_ignore} instances ignored (id: {bg_cat_id}).')
 
         self._gts = defaultdict(list)       # gt for evaluation
         self._dts = defaultdict(list)       # dt for evaluation
@@ -171,7 +173,12 @@ class COCOeval:
 
     def computeIoU(self, imgId, catId):
         p = self.params
-        if p.useCats:
+        # EDIT: for gt with "other" class, we want to match and compute iou for
+        # all detections
+        if self.mode is not None and catId == self.other_catId:
+            gt = self._gts[imgId, catId]
+            dt = [_ for cId in p.catIds for _ in self._dts[imgId, cId]]
+        elif p.useCats:
             gt = self._gts[imgId, catId]
             dt = self._dts[imgId, catId]
         else:
@@ -252,7 +259,22 @@ class COCOeval:
         :return: dict (single image results)
         '''
         p = self.params
-        if p.useCats:
+        # FIXME: see how mAP is actually computed, (1) need to match "other" det
+        # to each non-other gt and (2) match non-other det and other gt within other catId rounds
+        # =================================================================== #
+        # EDIT: For catId = "other", we want to consider all detections
+        # regardless of their catId.
+        catId_is_other = catId == self.other_catId
+        if self.mode is not None and catId_is_other:
+            gt = self._gts[imgId, catId]
+            dt = [_ for cId in p.catIds for _ in self._dts[imgId, cId]]
+        elif self.mode is not None:
+            # Match non-other dt to either other or non-other dt
+            gt = self._gts[imgId, catId]
+            gt.extend(self._gts[imgId, self.other_catId])
+            dt = self._dts[imgId, catId]
+        # =================================================================== #
+        elif p.useCats:
             gt = self._gts[imgId, catId]
             dt = self._dts[imgId, catId]
         else:
@@ -285,15 +307,19 @@ class COCOeval:
         dtIg = np.zeros((T, D))
         if not len(ious) == 0:
             for tind, t in enumerate(p.iouThrs):
+                # Loop over all detections
                 for dind, d in enumerate(dt):
                     # information about best match so far (m=-1 -> unmatched)
-                    iou = min([t, 1-1e-10])
+                    iou = min([t, 1 - 1e-10])
                     m = -1
+                    # Now loop over all gt's to find the best match
                     for gind, g in enumerate(gt):
                         # if this gt already matched, and not a crowd, continue
                         if gtm[tind, gind] > 0 and not iscrowd[gind]:
                             continue
                         # if dt matched to reg gt, and on ignore gt, stop
+                        # This works because gt is sorted by ignore flag. Once
+                        # the first ignore flag is found, no need to search further.
                         if m > -1 and gtIg[m] == 0 and gtIg[gind] == 1:
                             break
                         # continue to next gt unless better match made
@@ -305,9 +331,32 @@ class COCOeval:
                     # if match made store id of match for both dt and gt
                     if m == -1:
                         continue
-                    dtIg[tind, dind] = gtIg[m]
-                    dtm[tind, dind] = gt[m]['id']
-                    gtm[tind, m] = d['id']
+                    dtIg[tind, dind] = gtIg[m]  # copy matched gtIg to dtIg
+                    dtm[tind, dind] = gt[m]['id']  # dtm contains matched gt id
+                    gtm[tind, m] = d['id']  # gtm contains matched dt id
+
+        # EDIT: When in drop mode, set ignore flag of *all* gt to 1 and set
+        # ignore flag of *matched* dt to 1
+        if self.mode == 'drop' and catId_is_other:
+            gtIg[:] = 1
+            for dind, d in enumerate(dt):
+                # Ignore any dt matched with other gt
+                is_matched = dtm[:, dind] > 0
+                dtIg[is_matched, dind] = 1
+                # Ignore the remaining unmatched other dt
+                if d['category_id'] == self.other_catId:
+                    dtIg[:, dind] = 1
+        elif self.mode == 'drop':
+            gt_other_id = []
+            for gind, g in enumerate(gt):
+                if g['category_id'] == self.other_catId:
+                    gtIg[gind] = 1
+                    gt_other_id.append(g['id'])
+            for tind, t in enumerate(p.iouThrs):
+                for dind, d in enumerate(dt):
+                    if dtm[tind, dind] in gt_other_id:
+                        dtIg[tind, dind] = 1
+
         # set unmatched detections outside of area range to ignore
         a = np.array([d['area'] < aRng[0] or d['area'] > aRng[1] for d in dt]).reshape((1, len(dt)))
         dtIg = np.logical_or(dtIg, np.logical_and(dtm == 0, np.repeat(a, T, 0)))
@@ -357,10 +406,10 @@ class COCOeval:
         setM = set(_pe.maxDets)
         setI = set(_pe.imgIds)
         # get inds to evaluate
-        k_list = [n for n, k in enumerate(p.catIds) if k in setK]
+        k_list = [n for n, k in enumerate(p.catIds) if k in setK]  # list of indices of catIds
         m_list = [m for n, m in enumerate(p.maxDets) if m in setM]
         a_list = [n for n, a in enumerate(map(lambda x: tuple(x), p.areaRng)) if a in setA]
-        i_list = [n for n, i in enumerate(p.imgIds) if i in setI]
+        i_list = [n for n, i in enumerate(p.imgIds) if i in setI]  # list of indices of image id's to eval
         I0 = len(_pe.imgIds)
         A0 = len(_pe.areaRng)
         # retrieve E at each category, area range, and max number of detections
@@ -383,8 +432,11 @@ class COCOeval:
                     dtm = np.concatenate([e['dtMatches'][:, 0:maxDet] for e in E], axis=1)[:, inds]
                     dtIg = np.concatenate([e['dtIgnore'][:, 0:maxDet] for e in E], axis=1)[:, inds]
                     gtIg = np.concatenate([e['gtIgnore'] for e in E])
+
+                    # EDIT
                     # print('dt ', dtIg)
                     # print('gt ', gtIg)
+
                     npig = np.count_nonzero(gtIg == 0)
                     if npig == 0:
                         continue

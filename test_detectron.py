@@ -9,7 +9,7 @@ from detectron2.utils.visualizer import Visualizer
 
 # Import this file to register MTSD for detectron
 from adv_patch_bench.dataloaders.mtsd_detectron import get_mtsd_dict
-from adv_patch_bench.utils.custom_coco_evaluator import CustomCOCOEvaluator
+from adv_patch_bench.utils.detectron.custom_coco_evaluator import CustomCOCOEvaluator
 
 
 def main(cfg, args):
@@ -18,7 +18,7 @@ def main(cfg, args):
                                     output_dir=cfg.OUTPUT_DIR,
                                     use_fast_impl=False)
     if args.debug:
-        sampler = list(range(100))
+        sampler = list(range(10))
     else:
         sampler = None
     val_loader = build_detection_test_loader(cfg, 'mtsd_val',
