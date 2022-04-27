@@ -566,7 +566,7 @@ def _evaluate_predictions_on_coco(
     coco_dt = coco_gt.loadRes(coco_results)
 
     # EDIT: set mode
-    coco_eval = (COCOeval_opt if use_fast_impl else COCOeval)(coco_gt, coco_dt, iou_type, mode=None)
+    coco_eval = (COCOeval_opt if use_fast_impl else COCOeval)(coco_gt, coco_dt, iou_type, mode='drop')
     if img_ids is not None:
         coco_eval.params.imgIds = img_ids
 
