@@ -178,6 +178,11 @@ class COCOeval:
         if self.mode is not None and catId == self.other_catId:
             gt = self._gts[imgId, catId]
             dt = [_ for cId in p.catIds for _ in self._dts[imgId, cId]]
+        elif self.mode is not None:
+            # Match non-other dt to either other or non-other dt
+            gt = self._gts[imgId, catId]
+            gt.extend(self._gts[imgId, self.other_catId])
+            dt = self._dts[imgId, catId]
         elif p.useCats:
             gt = self._gts[imgId, catId]
             dt = self._dts[imgId, catId]
