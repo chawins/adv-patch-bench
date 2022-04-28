@@ -107,18 +107,11 @@ class COCOeval:
             _toMask(gts, self.cocoGt)
             _toMask(dts, self.cocoDt)
         # set ignore flag
-        # bg_cat_id = max(p.catIds)
-        # num_ignore = 0
         for gt in gts:
             gt['ignore'] = gt['ignore'] if 'ignore' in gt else 0
             gt['ignore'] = 'iscrowd' in gt and gt['iscrowd']
             if p.iouType == 'keypoints':
                 gt['ignore'] = (gt['num_keypoints'] == 0) or gt['ignore']
-            # EDIT
-            # if gt['category_id'] == bg_cat_id:
-            #     gt['ignore'] = 1
-            #     num_ignore += 1
-        # print(f'=> {num_ignore} instances ignored (id: {bg_cat_id}).')
 
         self._gts = defaultdict(list)       # gt for evaluation
         self._dts = defaultdict(list)       # dt for evaluation
@@ -173,18 +166,7 @@ class COCOeval:
 
     def computeIoU(self, imgId, catId):
         p = self.params
-        # EDIT: for gt with "other" class, we want to match and compute iou for
-        # all detections
-        if self.mode is not None and catId == self.other_catId:
-            gt = self._gts[imgId, catId]
-            dt = [_ for cId in p.catIds for _ in self._dts[imgId, cId]]
-        elif self.mode is not None:
-            # FIXME: potential bug: this way, one "other" gt can be matched to
-            # multiple dt's.
-            # Match non-other dt to either other or non-other dt
-            gt = [*self._gts[imgId, catId], *self._gts[imgId, self.other_catId]]
-            dt = self._dts[imgId, catId]
-        elif p.useCats:
+        if p.useCats:
             gt = self._gts[imgId, catId]
             dt = self._dts[imgId, catId]
         else:
@@ -265,19 +247,7 @@ class COCOeval:
         :return: dict (single image results)
         '''
         p = self.params
-        # EDIT: ============================================================= #
-        catId_is_other = catId == self.other_catId
-        if self.mode is not None and catId_is_other:
-            # For other catId , we want to consider all detections regardless
-            # of their catId.
-            gt = self._gts[imgId, catId]
-            dt = [_ for cId in p.catIds for _ in self._dts[imgId, cId]]
-        elif self.mode is not None:
-            # Match non-other dt to either other or non-other dt
-            gt = [*self._gts[imgId, catId], *self._gts[imgId, self.other_catId]]
-            dt = self._dts[imgId, catId]
-        # =================================================================== #
-        elif p.useCats:
+        if p.useCats:
             gt = self._gts[imgId, catId]
             dt = self._dts[imgId, catId]
         else:
@@ -328,6 +298,9 @@ class COCOeval:
                         # continue to next gt unless better match made
                         if ious[dind, gind] < iou:
                             continue
+                        # EDIT
+                        if d['category_id'] not in (g['category_id'], self.other_catId):
+                            continue
                         # if match successful and best so far, store appropriately
                         iou = ious[dind, gind]
                         m = gind
@@ -338,34 +311,16 @@ class COCOeval:
                     dtm[tind, dind] = gt[m]['id']  # dtm contains matched gt id
                     gtm[tind, m] = d['id']  # gtm contains matched dt id
 
-        # EDIT: ============================================================= #
-        if self.mode == 'drop' and catId_is_other:
-            # When in drop mode, set ignore flag of *all* other gt to 1 and set
-            # ignore flag of *matched* dt to 1
-            gtIg[:] = 1
+        # EDIT
+        gt_other_id = []
+        for gind, g in enumerate(gt):
+            if g['category_id'] == self.other_catId:
+                gtIg[gind] = 1
+                gt_other_id.append(g['id'])
+        for tind, t in enumerate(p.iouThrs):
             for dind, d in enumerate(dt):
-                # Ignore any dt matched with "other" gt
-                is_matched = dtm[:, dind] > 0
-                dtIg[is_matched, dind] = 1
-                # Ignore the remaining unmatched "other" dt
-                if d['category_id'] == self.other_catId:
-                    dtIg[:, dind] = 1
-        elif self.mode == 'drop':
-            # Set ignore flag for other gt and any matched (non-other) dt
-            gt_other_id = []
-            for gind, g in enumerate(gt):
-                if g['category_id'] == self.other_catId:
-                    gtIg[gind] = 1
-                    gt_other_id.append(g['id'])
-            for tind, t in enumerate(p.iouThrs):
-                for dind, d in enumerate(dt):
-                    # print(tind, dind)
-                    if dtm[tind, dind] in gt_other_id:
-                        dtIg[tind, dind] = 1
-            # if len(dt) > 0:
-            #     import pdb
-            #     pdb.set_trace()
-        # =================================================================== #
+                if dtm[tind, dind] in gt_other_id:
+                    dtIg[tind, dind] = 1
 
         # set unmatched detections outside of area range to ignore
         a = np.array([d['area'] < aRng[0] or d['area'] > aRng[1] for d in dt]).reshape((1, len(dt)))
@@ -443,10 +398,6 @@ class COCOeval:
                     dtIg = np.concatenate([e['dtIgnore'][:, 0:maxDet] for e in E], axis=1)[:, inds]
                     gtIg = np.concatenate([e['gtIgnore'] for e in E])
 
-                    # EDIT
-                    # print('dt ', dtIg)
-                    # print('gt ', gtIg)
-
                     npig = np.count_nonzero(gtIg == 0)
                     if npig == 0:
                         continue
@@ -520,8 +471,6 @@ class COCOeval:
                 if iouThr is not None:
                     t = np.where(iouThr == p.iouThrs)[0]
                     s = s[t]
-                # import pdb
-                # pdb.set_trace()
                 s = s[:, :, :, aind, mind]
             else:
                 # dimension of recall: [TxKxAxM]
@@ -593,7 +542,8 @@ class Params:
         self.maxDets = [1, 10, 100]
         self.areaRng = [[0 ** 2, 1e5 ** 2], [0 ** 2, 32 ** 2], [32 ** 2, 96 ** 2], [96 ** 2, 1e5 ** 2]]
         self.areaRngLbl = ['all', 'small', 'medium', 'large']
-        self.useCats = 1
+        # EDIT
+        self.useCats = 0
 
     def setKpParams(self):
         self.imgIds = []
