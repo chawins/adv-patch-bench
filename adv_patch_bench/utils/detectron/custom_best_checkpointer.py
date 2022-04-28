@@ -22,7 +22,6 @@ class BestCheckpointer(HookBase):
         self,
         eval_period: int,
         checkpointer: Checkpointer,
-        val_metric: str,
         mode: str = "max",
         file_prefix: str = "model_best",
     ) -> None:

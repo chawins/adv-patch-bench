@@ -111,6 +111,12 @@ def setup(args):
 
 
 def main(args):
+
+    register_mtsd(
+        use_mtsd_original_labels='orig' in args.dataset,
+        use_color='no_color' not in args.dataset,
+        ignore_other=args.data_no_other)
+
     cfg = setup(args)
 
     if args.eval_only:
@@ -151,13 +157,9 @@ if __name__ == "__main__":
     parser.add_argument('--eval-mode', type=str, default='default')
     args = parser.parse_args()
 
-    print("Command Line Args:", args)
+    print('Command Line Args: ', args)
     assert args.dataset in DATASETS
 
-    register_mtsd(
-        use_mtsd_original_labels='orig' in args.dataset,
-        use_color='no_color' not in args.dataset,
-        ignore_other=args.data_no_other)
     launch(
         main,
         args.num_gpus,
