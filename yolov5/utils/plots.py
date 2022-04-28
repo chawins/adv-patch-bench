@@ -470,3 +470,48 @@ def save_one_box(xyxy, im, file='image.jpg', gain=1.02, pad=10, square=False, BG
         file.parent.mkdir(parents=True, exist_ok=True)  # make directory
         cv2.imwrite(str(increment_path(file).with_suffix('.jpg')), crop)
     return crop
+
+
+# def plot_false_positives(images, false_positives_labels, false_positives_preds, filenames, metrics_conf_thres, names, plot_folder = 'plots_false_positives/', num_images_per_row=5, num_images_per_col=10):
+def plot_false_positives(images, false_positives_preds, filenames, metrics_conf_thres, names, plot_folder = 'plots_false_positives/', num_images_per_row=5, num_images_per_col=10):
+    os.makedirs(plot_folder, exist_ok=True)
+    num_images_plotted = 0
+    for image_index, im in enumerate(images):
+        # image_false_positives_labels = false_positives_labels[image_index]
+        image_false_positives_preds = false_positives_preds[image_index]
+        filename = filenames[image_index]
+        for fp_index, fp_pred in enumerate(image_false_positives_preds):
+            # class_label = image_false_positives_labels[fp_index][0]
+            x1, y1, x2, y2, pred_conf, pred_label = fp_pred
+            if not(metrics_conf_thres and pred_conf > metrics_conf_thres):
+                continue
+            i = (num_images_plotted // num_images_per_row) % (num_images_per_col)
+            j = num_images_plotted % num_images_per_row    
+
+            if i == 0 and j == 0:
+                fig, ax = plt.subplots(num_images_per_col, num_images_per_row)
+                fig.set_figheight(5 * num_images_per_col)
+                fig.set_figwidth(4 * num_images_per_row)
+
+            if isinstance(im, torch.Tensor):
+                plot_image = im.cpu().float().numpy()
+            plot_image = plot_image.transpose(1, 2, 0)
+            
+            plot_image = plot_image[int(y1):int(y2), int(x1):int(x2), :]
+            ax[i,j].imshow(plot_image)
+            # ax[i,j].set_title(f"{filename} \n {names[class_label.item()]}|{names[pred_label.item()]}|{round(pred_conf.item(), 3)}", fontdict={'fontsize': 8})
+            ax[i,j].set_title(f"{filename} \n {names[pred_label.item()]}|{round(pred_conf.item(), 3)}", fontdict={'fontsize': 8})
+
+            num_images_plotted += 1
+            if (i == num_images_per_col - 1 and j == num_images_per_row - 1):
+                fig_num = num_images_plotted // (num_images_per_row * num_images_per_col)
+                
+                
+                fig_file_path = os.path.join(plot_folder, f'figure_{fig_num}')
+                plt.savefig(fig_file_path, facecolor='white', transparent=False)
+                plt.close(fig)
+    
+    fig_num = num_images_plotted // (num_images_per_row * num_images_per_col)
+    fig_file_path = os.path.join(plot_folder, f'figure_{fig_num}')
+    plt.savefig(fig_file_path, facecolor='white', transparent=False)
+    plt.close(fig)

@@ -20,10 +20,11 @@ def readlines(path):
 use_mtsd_original_labels = False
 
 use_mtsd_original_labels = False
-use_color = True
+use_color = False
 
-# path = '/data/shared/mtsd_v2_fully_annotated/'
-path = expanduser('~/data/mtsd_v2_fully_annotated/')
+path = '/data/shared/mtsd_v2_fully_annotated/'
+# path = expanduser('~/data/mtsd_v2_fully_annotated/')
+# os.makedirs(path, exist_ok=True)
 csv_path = './traffic_sign_dimension_v6.csv'
 similarity_df_csv_path = 'similar_files_df.csv'
 anno_path = join(path, 'annotations')
@@ -58,6 +59,8 @@ else:
             mtsd_label_to_class_index[row['sign']] = idx
         elif use_mtsd_original_labels:
             mtsd_label_to_class_index[row['sign']] = idx
+# print(mtsd_label_to_class_index)
+
 bg_idx = max(list(mtsd_label_to_class_index.values())) + 1
 
 # Save filenames and the data partition they belong to
@@ -120,9 +123,9 @@ for json_file in tqdm(json_files):
         if obj_area < MIN_OBJ_AREA:
             num_too_small += 1
             continue
-        if class_index == bg_idx:
-            num_other += 1
-            continue
+        # if class_index == bg_idx:
+        #     num_other += 1
+        #     continue
         text += f'{class_index:d} {x_center} {y_center} {obj_width} {obj_height} 0\n'
 
     if text != '':
