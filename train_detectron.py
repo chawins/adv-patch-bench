@@ -39,8 +39,8 @@ def build_evaluator(cfg, dataset_name, output_folder=None):
         dataset_name, cfg, False,
         output_dir=cfg.OUTPUT_DIR,
         use_fast_impl=False,  # Use COCO original eval code
-        eval_mode=args.eval_mode,
-        other_catId=OTHER_SIGN_CLASS[args.dataset],
+        eval_mode=cfg.eval_mode,
+        other_catId=cfg.other_catId,
     )
     # return COCOEvaluator('mtsd_val', output_dir=cfg.OUTPUT_DIR)
     return evaluator
@@ -105,6 +105,11 @@ def setup(args):
     cfg = get_cfg()
     cfg.merge_from_file(args.config_file)
     cfg.merge_from_list(args.opts)
+
+    # Set some custom cfg from args
+    cfg.eval_mode = args.eval_mode
+    cfg.other_catId = OTHER_SIGN_CLASS[args.dataset]
+
     cfg.freeze()
     default_setup(cfg, args)
     return cfg
@@ -115,7 +120,8 @@ def main(args):
     register_mtsd(
         use_mtsd_original_labels='orig' in args.dataset,
         use_color='no_color' not in args.dataset,
-        ignore_other=args.data_no_other)
+        ignore_other=args.data_no_other,
+    )
 
     cfg = setup(args)
 
@@ -156,7 +162,7 @@ if __name__ == "__main__":
                         help='If True, do not load "other" or "background" class to the dataset.')
     parser.add_argument('--eval-mode', type=str, default='default')
     args = parser.parse_args()
-
+    
     print('Command Line Args: ', args)
     assert args.dataset in DATASETS
 
