@@ -29,6 +29,7 @@ from .custom_coco_eval_api import COCOeval_opt
 # from pycocotools.cocoeval import COCOeval
 from .custom_cocoeval import COCOeval
 
+
 class CustomCOCOEvaluator(DatasetEvaluator):
     """
     Evaluate AR for object proposals, AP for instance detection/segmentation, AP
@@ -563,8 +564,9 @@ def _evaluate_predictions_on_coco(
             c.pop("bbox", None)
 
     coco_dt = coco_gt.loadRes(coco_results)
-    
-    coco_eval = (COCOeval_opt if use_fast_impl else COCOeval)(coco_gt, coco_dt, iou_type)
+
+    # EDIT: set mode
+    coco_eval = (COCOeval_opt if use_fast_impl else COCOeval)(coco_gt, coco_dt, iou_type, mode='drop')
     if img_ids is not None:
         coco_eval.params.imgIds = img_ids
 
@@ -586,10 +588,10 @@ def _evaluate_predictions_on_coco(
             "http://cocodataset.org/#keypoints-eval."
         )
 
-    # TODO: 
+    # TODO:
     # EDIT: Ignore ground truth with "other" class
     # bg_cat_id = max(catIds)
-    # bg_cat_id = 
+    # bg_cat_id =
     # num_ignore = 0
     # for imgId in img_ids:
     #     for gt in coco_gt[imgId, bg_cat_id]:
