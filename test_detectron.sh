@@ -10,6 +10,7 @@ OUTPUT_PATH=~/adv-patch-bench/detectron_output/$EXP
 CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
     --num-gpus $NUM_GPU \
     --config-file ./configs/faster_rcnn_R_50_FPN_3x.yaml \
+    --debug \
     OUTPUT_DIR $OUTPUT_PATH \
     MODEL.ROI_HEADS.NUM_CLASSES 11 \
     MODEL.WEIGHTS $OUTPUT_PATH/model_final.pth \
