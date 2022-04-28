@@ -59,11 +59,11 @@ class BestCheckpointer(HookBase):
 
     def _best_checking(self):
         # Get AP50 and AP50:95 metrics
-        map50_95_tuple = self.trainer.storage.latest().get('bbox/mAP@0.5:0.95')
-        map50_tuple = self.trainer.storage.latest().get('bbox/mAP@0.5')
+        map50_95_tuple = self.trainer.storage.latest().get('bbox/AP')
+        map50_tuple = self.trainer.storage.latest().get('bbox/AP50')
         if map50_95_tuple is None or map50_tuple is None:
             print('==============> ', self.trainer.storage.latest())
-            raise ValueError('mAP@0.5:0.95 or mAP@0.5 is not computed!')
+            raise ValueError('bbox/AP or bbox/AP50 is not computed!')
         else:
             latest_map50_95, metric_iter = map50_95_tuple
             latest_map50, _ = map50_tuple
