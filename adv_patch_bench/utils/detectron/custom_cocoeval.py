@@ -265,11 +265,11 @@ class COCOeval:
         p = self.params
         # FIXME: see how mAP is actually computed, (1) need to match "other" det
         # to each non-other gt and (2) match non-other det and other gt within other catId rounds
-        # =================================================================== #
-        # EDIT: For catId = "other", we want to consider all detections
-        # regardless of their catId.
+        # EDIT: ============================================================= #
         catId_is_other = catId == self.other_catId
         if self.mode is not None and catId_is_other:
+            # For other catId , we want to consider all detections regardless
+            # of their catId.
             gt = self._gts[imgId, catId]
             dt = [_ for cId in p.catIds for _ in self._dts[imgId, cId]]
         elif self.mode is not None:
@@ -338,9 +338,10 @@ class COCOeval:
                     dtm[tind, dind] = gt[m]['id']  # dtm contains matched gt id
                     gtm[tind, m] = d['id']  # gtm contains matched dt id
 
-        # EDIT: When in drop mode, set ignore flag of *all* gt to 1 and set
-        # ignore flag of *matched* dt to 1
+        # EDIT: ============================================================= #
         if self.mode == 'drop' and catId_is_other:
+            # When in drop mode, set ignore flag of *all* other gt to 1 and set
+            # ignore flag of *matched* dt to 1
             gtIg[:] = 1
             for dind, d in enumerate(dt):
                 # Ignore any dt matched with other gt
@@ -350,6 +351,7 @@ class COCOeval:
                 if d['category_id'] == self.other_catId:
                     dtIg[:, dind] = 1
         elif self.mode == 'drop':
+            # Set ignore flag for other gt and any matched (non-other) dt
             gt_other_id = []
             for gind, g in enumerate(gt):
                 if g['category_id'] == self.other_catId:
@@ -359,6 +361,7 @@ class COCOeval:
                 for dind, d in enumerate(dt):
                     if dtm[tind, dind] in gt_other_id:
                         dtIg[tind, dind] = 1
+        # =================================================================== #
 
         # set unmatched detections outside of area range to ignore
         a = np.array([d['area'] < aRng[0] or d['area'] > aRng[1] for d in dt]).reshape((1, len(dt)))

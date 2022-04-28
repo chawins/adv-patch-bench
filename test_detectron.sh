@@ -1,7 +1,7 @@
 # Detector train script
 GPU=1
 NUM_GPU=1
-EXP=faster_rcnn_R_50_FPN_mtsd_orig
+EXP=faster_rcnn_R_50_FPN_mtsd_orig_2
 # EXP=faster_rcnn_R_50_FPN_mtsd_color_1
 # OUTPUT_PATH=~/data/adv-patch-bench/detectron_output/$EXP
 OUTPUT_PATH=~/adv-patch-bench/detectron_output/$EXP
