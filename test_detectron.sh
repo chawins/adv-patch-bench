@@ -1,5 +1,5 @@
 # Detector train script
-GPU=1
+GPU=0
 NUM_GPU=1
 EXP=faster_rcnn_R_50_FPN_mtsd_orig_2
 # EXP=faster_rcnn_R_50_FPN_mtsd_color_1
