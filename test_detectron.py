@@ -79,13 +79,6 @@ def setup(args):
     cfg = get_cfg()
     cfg.merge_from_file(args.config_file)
     cfg.merge_from_list(args.opts)
-
-    # Additional custom setup
-    no_other = 'orig' not in args.dataset and args.data_no_other
-    num_classes = NUM_CLASSES[args.dataset] - no_other
-    cfg.MODEL.ROI_HEADS.NUM_CLASSES = num_classes
-    print(f'=> Using {args.dataset} with {num_classes} thing classes.')
-
     cfg.freeze()
     default_setup(cfg, args)
     return cfg

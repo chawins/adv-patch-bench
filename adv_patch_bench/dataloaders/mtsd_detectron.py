@@ -84,6 +84,7 @@ def register_mtsd(
     use_color: bool = False,
     ignore_other: bool = False
 ) -> Tuple:
+    print(use_mtsd_original_labels, use_color, ignore_other)
     # TODO: move path to config file
     path = expanduser('~/data/mtsd_v2_fully_annotated/')
     csv_path = expanduser('~/adv-patch-bench/traffic_sign_dimension_v6.csv')
