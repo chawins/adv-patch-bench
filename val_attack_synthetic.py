@@ -16,6 +16,7 @@ import warnings
 from ast import literal_eval
 from pathlib import Path
 from threading import Thread
+import matplotlib.pyplot as plt
 
 import numpy as np
 import pandas as pd
@@ -42,7 +43,7 @@ from yolov5.utils.general import (LOGGER, box_iou, check_dataset,
                                   print_args, scale_coords, xywh2xyxy,
                                   xyxy2xywh)
 from yolov5.utils.metrics import ConfusionMatrix, ap_per_class_custom
-from yolov5.utils.plots import output_to_target, plot_images, plot_val_study
+from yolov5.utils.plots import output_to_target, plot_images, plot_val_study, plot_false_positives
 from yolov5.utils.torch_utils import select_device, time_sync
 
 warnings.filterwarnings("ignore")
@@ -53,7 +54,6 @@ ROOT = FILE.parents[0]  # YOLOv5 root directory
 if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))  # add ROOT to PATH
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
-
 
 def save_one_txt(predn, save_conf, shape, file):
     # Save one txt result
@@ -126,6 +126,7 @@ def populate_default_metric(lbl_, min_area, filename):
     current_label_metric['sign_height'] = bbox_height
     current_label_metric['confidence'] = None
     current_label_metric['too_small'] = bbox_area < min_area
+    current_label_metric['changed_from_other_label'] = 0
     return current_label_metric
 
 @torch.no_grad()
@@ -176,6 +177,8 @@ def run(args,
     model_name = args.model_name
     other_class_label = args.other_class_label
     model_trained_without_other = args.model_trained_without_other
+    other_class_confidence_threshold = args.other_class_confidence_threshold
+    min_pred_area = args.min_pred_area
 
     # split = args.split
 
@@ -183,6 +186,11 @@ def run(args,
     relighting = not args.no_relighting
     metrics_conf_thres = args.metrics_confidence_threshold
     img_size = tuple([int(x) for x in args.padded_imgsz.split(',')])
+
+    false_positive_images = []
+    false_positives_labels = []
+    false_positives_preds = []
+    false_positives_filenames = []
 
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
@@ -644,22 +652,30 @@ def run(args,
 
                 # matching on bounding boxes, i.e, match label and pred if iou >= 0.5
                 # correct, matches = process_batch(predn, labelsn, iouv)
+                # correct, matches = process_batch(predn, labelsn, iouv, other_class_label=None)
                 correct, matches = process_batch(predn, labelsn, iouv, other_class_label=other_class_label)
 
                 if plots:
                     confusion_matrix.process_batch(predn, labelsn)
             else:
                 correct, matches = torch.zeros(pred.shape[0], niou, dtype=torch.bool), []
-                # correct_v2, matches_v2 = torch.zeros(pred.shape[0], niou, dtype=torch.bool), []
 
             # When there's no match, create a dummy match to make next steps easier
             if len(matches) == 0:
                 matches = np.zeros((1, 1)) - 1
 
-            # if len(matches_v2) == 0:
-            #     matches_v2 = np.zeros((1, 1)) - 1
-                
+            # pred (Array[N, 6]), x1, y1, x2, y2, confidence, class
+            small_preds_index = np.zeros(len(pred), dtype=np.bool)
+            for det_idx, pred_box in enumerate(pred):
+                x1, y1, x2, y2, _, _ = pred_box
+                pred_bbox_area = (x2 - x1) * (y2 - y1)
+                small_preds_index[det_idx] = pred_bbox_area < min_pred_area
+
+            matched_preds_index = np.zeros(len(pred), dtype=np.bool)
             # Collecting results
+
+            curr_false_positives_preds = []
+
             for lbl_index, lbl_ in enumerate(labels):
                 # Find a match with this object label
                 match = matches[matches[:, 0] == lbl_index]
@@ -685,6 +701,8 @@ def run(args,
                 # Find index of `pred` corresponding to this match
                 det_idx = int(match[0, 1])
                 
+                matched_preds_index[det_idx] = 1
+                
                 # Populate other metrics
                 pred_conf, pred_label = pred[det_idx, 4:6].cpu().numpy()
                 current_label_metric['confidence'] = pred_conf
@@ -695,9 +713,12 @@ def run(args,
 
                 if class_label == other_class_label:
                     # if ground truth is 'other' and there is a prediction, we count any detection as a true positive
-                    # we change the label from 'other' to the detected class so there is no false negative/false positive
-                    labels[lbl_index, 0] = pred_label.item()
-                    current_label_metric['label'] = pred_label.item()
+                    # we change the label from 'other' to the detected class so there is no false negative
+                    if other_class_confidence_threshold and pred_conf > other_class_confidence_threshold:
+                        labels[lbl_index, 0] = pred_label.item()
+                        current_label_metric['label'] = pred_label.item()
+                        current_label_metric['changed_from_other_label'] = 1
+                        targets[targets[:, 0] == si, 1:] = labels
                 
                 # Get detection boolean at iou_thres
                 iou_idx = torch.where(iouv >= iou_thres)[0][0]
@@ -707,6 +728,18 @@ def run(args,
                     current_label_metric['correct_prediction'] = 1
                 metrics_per_label_df = metrics_per_label_df.append(
                     current_label_metric, ignore_index=True)
+
+            unmatched_preds_index = ~matched_preds_index
+            false_positives_index = np.logical_and(~small_preds_index, unmatched_preds_index)
+            curr_false_positives_preds = pred[false_positives_index]
+
+            if len(false_positive_images) < 250 and len(curr_false_positives_preds) > 0:
+                false_positive_images.append(im[si].clone())
+                false_positives_preds.append(curr_false_positives_preds)
+                false_positives_filenames.append(filename)
+
+            # keep predictions that are large enough OR have a match (includes small preds matched with not small labels)
+            # pred_index_to_keep = np.logical_and(np.logical_or(matched_preds_index, ~small_preds_index), pred_index_to_keep)
 
             # Filter out predictions and labels with too small objects
             correct = correct[pred_index_to_keep]
@@ -793,14 +826,19 @@ def run(args,
     current_exp_metrics = {}
 
     if len(stats) and stats[0].any():
+        # metrics = ap_per_class_custom(*stats, plot=plots, save_dir=save_dir, names=names,
+        #                               metrics_conf_thres=metrics_conf_thres, other_class_label=other_class_label)
         metrics = ap_per_class_custom(*stats, plot=plots, save_dir=save_dir, names=names,
-                                      metrics_conf_thres=metrics_conf_thres, other_class_label=other_class_label)
+                                      metrics_conf_thres=None, other_class_label=other_class_label)
         tp, p, r, ap, ap_class, fnr, fn, max_f1_index, precision_cmb, fnr_cmb = metrics
         ap50, ap = ap[:, 0], ap.mean(1)  # AP@0.5, AP@0.5:0.95
         mp, mr, map50, map = p.mean(), r.mean(), ap50.mean(), ap.mean()
         nt = np.bincount(stats[3].astype(np.int64), minlength=nc)  # number of targets per class
     else:
         nt = torch.zeros(1)
+
+    plot_false_positives(false_positive_images, false_positives_preds, false_positives_filenames, max_f1_index/1000, names, plot_folder=f'{project}/{name}/plots_false_positives/')
+    # plot_false_positives(false_positive_images, false_positives_labels, false_positives_preds, false_positives_filenames, max_f1_index/1000, names)
 
     # Print results
     pf = '%20s' + '%11i' * 2 + '%11.3g' * 4  # print format
@@ -1009,6 +1047,8 @@ def parse_opt():
     parser.add_argument('--min-area', type=float, default=0,
                         help=('Minimum area for labels. if a label has area > min_area,'
                               'predictions correspoing to this target will be discarded'))
+    parser.add_argument('--min-pred-area', type=float, default=0,
+                    help=('Minimum area for predictions. if a predicion has area < min_area and that prediction is not matched to any label, it will be discarded'))
     # ============================== Plot / log ============================= #
     parser.add_argument('--save-exp-metrics', action='store_true', help='save metrics for this experiment to dataframe')
     parser.add_argument('--plot-single-images', action='store_true',
@@ -1016,6 +1056,7 @@ def parse_opt():
     parser.add_argument('--plot-class-examples', type=str, default='', nargs='*',
                         help='save single images containing individual classes in different folders.')
     parser.add_argument('--metrics-confidence-threshold', type=float, default=None, help='confidence threshold')
+    parser.add_argument('--other-class-confidence-threshold', type=float, default=None, help='confidence threshold at which other labels are changed if there is a match with a prediction')
 
     # TODO: remove when no bug
     # parser.add_argument('--num-bg', type=int, default=16, help='number of backgrounds to generate adversarial patch')

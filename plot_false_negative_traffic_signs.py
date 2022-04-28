@@ -195,11 +195,12 @@ def main(args):
 
     filenames.sort()
 
-    df = pd.read_csv('runs/val/exp_mapillary_none_18/results_per_label.csv')
+    df = pd.read_csv('runs/val/exp_mapillary_none_82/results_per_label.csv')
+    fn_df = df[df['changed_from_other_label'] == 1]
     # df = pd.read_csv('runs/val_yolov5/yolor_mapillary_none_0/results_per_label.csv')
     
-    df = df[df['label'] != 11]
-    fn_df = df[(df['prediction'] != df['label']) | (df['confidence'] < (300/1000))]
+    # df = df[df['label'] != 11]
+    # fn_df = df[(df['prediction'] != df['label']) | (df['confidence'] < (300/1000))]
 
     print('[INFO] running detection algorithm and plotting traffic signs')
 

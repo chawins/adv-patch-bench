@@ -175,6 +175,14 @@ def ap_per_class_custom(tp, conf, pred_cls, target_cls, plot=False, save_dir='.'
     fnr_pickle_filepath = str(save_dir) + '/fnr.pickle'
     with open(fnr_pickle_filepath, 'wb') as handle:
         pickle.dump(fnr, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    
+    precision_pickle_filepath = str(save_dir) + '/precision.pickle'
+    with open(precision_pickle_filepath, 'wb') as handle:
+        pickle.dump(p, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    
+    recall_pickle_filepath = str(save_dir) + '/recall.pickle'
+    with open(recall_pickle_filepath, 'wb') as handle:
+        pickle.dump(r, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     p, r, f1, fnr = p[:, i], r[:, i], f1[:, i], fnr[:, i]
     tp = (r * nt).round()  # true positives
