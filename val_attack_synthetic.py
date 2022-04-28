@@ -672,8 +672,8 @@ def run(args,
                 small_preds_index[det_idx] = pred_bbox_area < min_pred_area
 
             matched_preds_index = np.zeros(len(pred), dtype=np.bool)
+            
             # Collecting results
-
             curr_false_positives_preds = []
 
             for lbl_index, lbl_ in enumerate(labels):
@@ -738,9 +738,10 @@ def run(args,
                 false_positives_preds.append(curr_false_positives_preds)
                 false_positives_filenames.append(filename)
 
-            # keep predictions that are large enough OR have a match (includes small preds matched with not small labels)
-            # pred_index_to_keep = np.logical_and(np.logical_or(matched_preds_index, ~small_preds_index), pred_index_to_keep)
-
+            # TODO: this might be wrong
+            # if unmatched and small, the prediction should be removed
+            pred_index_to_keep = np.logical_and(pred_index_to_keep, ~np.logical_and(unmatched_preds_index, small_preds_index))
+            
             # Filter out predictions and labels with too small objects
             correct = correct[pred_index_to_keep]
             pred = pred[pred_index_to_keep]
@@ -830,7 +831,7 @@ def run(args,
         #                               metrics_conf_thres=metrics_conf_thres, other_class_label=other_class_label)
         metrics = ap_per_class_custom(*stats, plot=plots, save_dir=save_dir, names=names,
                                       metrics_conf_thres=None, other_class_label=other_class_label)
-        tp, p, r, ap, ap_class, fnr, fn, max_f1_index, precision_cmb, fnr_cmb = metrics
+        tp, p, r, ap, ap_class, fnr, fn, max_f1_index, precision_cmb, fnr_cmb, fp = metrics
         ap50, ap = ap[:, 0], ap.mean(1)  # AP@0.5, AP@0.5:0.95
         mp, mr, map50, map = p.mean(), r.mean(), ap50.mean(), ap.mean()
         nt = np.bincount(stats[3].astype(np.int64), minlength=nc)  # number of targets per class
@@ -858,6 +859,10 @@ def run(args,
     current_exp_metrics['precision_cmb'] = precision_cmb
     metrics_df_column_names.append('fnr_cmb')
     current_exp_metrics['fnr_cmb'] = fnr_cmb
+    metrics_df_column_names.append('fp_cmb')
+    current_exp_metrics['fp_cmb'] = sum(fp)
+
+    
     LOGGER.info(pf % ('all', seen, nt.sum(), mp, mr, map50, map))
 
     metrics_df_column_names.append('min_area')
@@ -893,6 +898,8 @@ def run(args,
         current_exp_metrics[f'ap_50_{names[c]}'] = ap50[i]
         metrics_df_column_names.append(f'ap_50_95_{names[c]}')
         current_exp_metrics[f'ap_50_95_{names[c]}'] = ap[i]
+        metrics_df_column_names.append(f'fp_{names[c]}')
+        current_exp_metrics[f'fp_{names[c]}'] = fp[i]
 
         LOGGER.info(pf % (names[c], seen, nt[c], p[i], r[i], ap50[i], ap[i]))
     metrics_df_column_names.append('dataset')

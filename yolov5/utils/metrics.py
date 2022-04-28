@@ -201,7 +201,7 @@ def ap_per_class_custom(tp, conf, pred_cls, target_cls, plot=False, save_dir='.'
     precision_cmb = tp.sum() / (tp.sum() + fp.sum())
     fnr_cmb = fn.sum() / nt.sum()
     return (tp, p, r, ap, unique_classes.astype('int32'), fnr, fn, i,
-            precision_cmb, fnr_cmb)
+            precision_cmb, fnr_cmb, fp)
 
 
 def compute_ap(recall, precision):
