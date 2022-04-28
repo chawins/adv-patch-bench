@@ -28,6 +28,7 @@ from tabulate import tabulate
 from .custom_coco_eval_api import COCOeval_opt
 # from pycocotools.cocoeval import COCOeval
 from .custom_cocoeval import COCOeval
+# from .custom_cocoeval_2 import COCOeval
 
 
 class CustomCOCOEvaluator(DatasetEvaluator):
@@ -587,17 +588,6 @@ def _evaluate_predictions_on_coco(
             "They have to agree with each other. For meaning of OKS, please refer to "
             "http://cocodataset.org/#keypoints-eval."
         )
-
-    # TODO:
-    # EDIT: Ignore ground truth with "other" class
-    # bg_cat_id = max(catIds)
-    # bg_cat_id =
-    # num_ignore = 0
-    # for imgId in img_ids:
-    #     for gt in coco_gt[imgId, bg_cat_id]:
-    #         gt['ignore'] = 1
-    #         num_ignore += 1
-    # print(f'=> {num_ignore} instances ignored (id: {bg_cat_id}).')
 
     coco_eval.evaluate()
     coco_eval.accumulate()

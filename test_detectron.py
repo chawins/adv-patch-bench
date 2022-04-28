@@ -26,10 +26,10 @@ def main(cfg, args):
                                              batch_size=1,
                                              num_workers=cfg.DATALOADER.NUM_WORKERS,
                                              sampler=sampler)
-    val_iter = iter(val_loader)
+    # val_iter = iter(val_loader)
     # print(max([next(val_iter)[0]['image'].shape[0] for _ in range(5000)]))
-    import pdb
-    pdb.set_trace()
+    # import pdb
+    # pdb.set_trace()
     predictor = DefaultPredictor(cfg)
     print(inference_on_dataset(predictor.model, val_loader, evaluator))
 
