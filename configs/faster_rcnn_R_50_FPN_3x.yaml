@@ -42,4 +42,4 @@ DATASETS:
   TRAIN: ('mtsd_train', )  # EDIT
   TEST: ('mtsd_val', )  # EDIT
 TEST:
-  EVAL_PERIOD: 1000
+  EVAL_PERIOD: 2000

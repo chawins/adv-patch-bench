@@ -17,6 +17,7 @@ CUDA_VISIBLE_DEVICES=$GPU python train_detectron.py \
     --num-gpus $NUM_GPU \
     --config-file ./configs/faster_rcnn_R_50_FPN_3x.yaml \
     --dataset mtsd_no_color --eval-mode drop \
+    --resume \
     OUTPUT_DIR ./detectron_output/faster_rcnn_R_50_FPN_mtsd_no_color_2 \
     MODEL.ROI_HEADS.NUM_CLASSES 12
 # MODEL.ROI_HEADS.NUM_CLASSES 11 # 11, 15, 401
