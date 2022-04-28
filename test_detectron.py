@@ -26,6 +26,8 @@ def main(cfg, args):
                                              batch_size=1,
                                              num_workers=cfg.DATALOADER.NUM_WORKERS,
                                              sampler=sampler)
+    # val_iter = iter(val_loader)
+    # max([next(val_iter)[0]['image'].shape[0] for _ in range(5000)])
     predictor = DefaultPredictor(cfg)
     print(inference_on_dataset(predictor.model, val_loader, evaluator))
 
@@ -41,13 +43,13 @@ def main_single(cfg, args):
     # val_loader = build_detection_train_loader(cfg)
     val_loader = get_mtsd_dict('val')
     for i, inpt in enumerate(val_loader):
+        print(inpt['file_name'])
         import pdb
         pdb.set_trace()
         # img = inpt[0]['image'].permute(1, 2, 0).numpy()
         # prediction = model(img)
         # visualizer = Visualizer(img[:, :, ::-1], metadata=metadata, scale=0.5)
         # out_gt = visualizer.draw_dataset_dict(inpt[0])
-        print(inpt['file_name'])
         img = cv2.imread(inpt['file_name'])
         prediction = model(img)
         visualizer = Visualizer(img[:, :, ::-1], metadata=metadata, scale=0.5)
@@ -56,9 +58,6 @@ def main_single(cfg, args):
         visualizer = Visualizer(img[:, :, ::-1], metadata=metadata, scale=0.5)
         out_pred = visualizer.draw_instance_predictions(prediction['instances'].to('cpu'))
         out_pred.save('pred.png')
-        import pdb
-        pdb.set_trace()
-        # HVPLEUNAPVajL8gJaM-sSw.txt
 
 
 def setup(args):
