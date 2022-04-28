@@ -10,7 +10,6 @@ CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
     --num-gpus $NUM_GPU \
     --config-file ./configs/faster_rcnn_R_50_FPN_3x.yaml \
     --dataset mtsd_no_color --eval-mode drop \
-    --debug \
     MODEL.ROI_HEADS.NUM_CLASSES 11 \
     OUTPUT_DIR $OUTPUT_PATH \
     MODEL.WEIGHTS $OUTPUT_PATH/model_final.pth \
