@@ -32,8 +32,8 @@ INPUT:
     SIZE: (1000, 1000)
   # EDIT: Test with max size 2048. This is slightly different from MTSD paper 
   # where images smaller than 2048 are not saled up.
-  MIN_SIZE_TEST: 4000   
-  MAX_SIZE_TEST: 4000
+  MIN_SIZE_TEST: 2048   
+  MAX_SIZE_TEST: 2048
 DATALOADER:
   NUM_WORKERS: 48
   SAMPLER_TRAIN: 'RepeatFactorTrainingSampler'  # EDIT: default: 'TrainingSampler'
