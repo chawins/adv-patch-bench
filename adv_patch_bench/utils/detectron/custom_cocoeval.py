@@ -115,11 +115,6 @@ class COCOeval:
             gt['ignore'] = 'iscrowd' in gt and gt['iscrowd']
             if p.iouType == 'keypoints':
                 gt['ignore'] = (gt['num_keypoints'] == 0) or gt['ignore']
-            # EDIT
-            # if gt['category_id'] == bg_cat_id:
-            #     gt['ignore'] = 1
-            #     num_ignore += 1
-        # print(f'=> {num_ignore} instances ignored (id: {bg_cat_id}).')
 
         self._gts = defaultdict(list)       # gt for evaluation
         self._dts = defaultdict(list)       # dt for evaluation

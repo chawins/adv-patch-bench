@@ -10,7 +10,7 @@ from detectron2.utils.visualizer import Visualizer
 import adv_patch_bench.utils.detectron.custom_coco_evaluator as cocoeval
 from adv_patch_bench.dataloaders.mtsd_detectron import (get_mtsd_dict,
                                                         register_mtsd)
-from hparams import DATASETS, NUM_CLASSES, OTHER_SIGN_CLASS
+from hparams import DATASETS, OTHER_SIGN_CLASS
 
 
 def main(cfg, args):
