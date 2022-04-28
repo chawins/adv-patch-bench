@@ -58,7 +58,8 @@ class COCOeval:
     # Data, paper, and tutorials available at:  http://mscoco.org/
     # Code written by Piotr Dollar and Tsung-Yi Lin, 2015.
     # Licensed under the Simplified BSD License [see coco/license.txt]
-    def __init__(self, cocoGt=None, cocoDt=None, iouType='segm', mode=None):
+    def __init__(self, cocoGt=None, cocoDt=None, iouType='segm', mode=None,
+                 other_catId=None):
         '''
         Initialize CocoEval using coco APIs for gt and dt
         :param cocoGt: coco object with ground truth annotations
@@ -82,7 +83,7 @@ class COCOeval:
             self.params.catIds = sorted(cocoGt.getCatIds())
         # EDIT: set mode (None, 'drop', 'match')
         self.mode = mode
-        self.other_catId = 89
+        self.other_catId = other_catId
 
     def _prepare(self):
         '''
@@ -179,7 +180,7 @@ class COCOeval:
             gt = self._gts[imgId, catId]
             dt = [_ for cId in p.catIds for _ in self._dts[imgId, cId]]
         elif self.mode is not None:
-            # TODO: potential bug (low impact): this way, one "other" gt can be 
+            # TODO: potential bug (low impact): this way, one "other" gt can be
             # matched to multiple dt's.
             # Match non-other dt to either other or non-other dt
             gt = [*self._gts[imgId, catId], *self._gts[imgId, self.other_catId]]
