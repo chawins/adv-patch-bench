@@ -167,7 +167,7 @@ class COCOeval:
                          for areaRng in p.areaRng
                          for imgId in p.imgIds
                          ]
-        self._paramsEval = copy.deepcopy(R)
+        self._paramsEval = copy.deepcopy(self.params)
         toc = time.time()
         print('DONE (t={:0.2f}s).'.format(toc-tic))
 
