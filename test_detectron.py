@@ -27,7 +27,7 @@ def main(cfg, args):
                                              num_workers=cfg.DATALOADER.NUM_WORKERS,
                                              sampler=sampler)
     val_iter = iter(val_loader)
-    print(max([next(val_iter)[0]['image'].shape[0] for _ in range(5000)]))
+    # print(max([next(val_iter)[0]['image'].shape[0] for _ in range(5000)]))
     import pdb
     pdb.set_trace()
     predictor = DefaultPredictor(cfg)
