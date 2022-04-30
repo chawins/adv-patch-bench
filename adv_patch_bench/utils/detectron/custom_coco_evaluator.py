@@ -24,8 +24,7 @@ from pycocotools.coco import COCO
 from tabulate import tabulate
 
 # EDIT
-# from detectron2.evaluation.fast_eval_api import COCOeval_opt
-from .custom_coco_eval_api import COCOeval_opt
+from detectron2.evaluation.fast_eval_api import COCOeval_opt
 # from pycocotools.cocoeval import COCOeval
 from .custom_cocoeval import COCOeval
 # from .custom_cocoeval_2 import COCOeval

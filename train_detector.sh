@@ -14,10 +14,8 @@ NUM_GPU=4
 
 # Train a detector on Detectron2
 CUDA_VISIBLE_DEVICES=$GPU python train_detectron.py \
-    --num-gpus $NUM_GPU \
-    --config-file ./configs/faster_rcnn_R_50_FPN_3x.yaml \
-    --dataset mtsd_no_color --eval-mode drop \
-    --resume \
+    --num-gpus $NUM_GPU --config-file ./configs/faster_rcnn_R_50_FPN_3x.yaml \
+    --dataset mtsd_no_color --eval-mode drop --resume \
     OUTPUT_DIR ./detectron_output/faster_rcnn_R_50_FPN_mtsd_no_color_2 \
     MODEL.ROI_HEADS.NUM_CLASSES 12
 # MODEL.ROI_HEADS.NUM_CLASSES 11 # 11, 15, 401
@@ -26,3 +24,9 @@ CUDA_VISIBLE_DEVICES=$GPU python train_detectron.py \
 # MODEL.WEIGHTS
 # --resume --eval-only
 # --eval-only MODEL.WEIGHTS /path/to/checkpoint_file
+
+# CUDA_VISIBLE_DEVICES=$GPU python train_detectron.py \
+#     --num-gpus $NUM_GPU --config-file ./configs/faster_rcnn_R_50_FPN_3x.yaml \
+#     --dataset mtsd_orig --eval-mode drop \
+#     OUTPUT_DIR ./detectron_output/temp \
+#     MODEL.ROI_HEADS.NUM_CLASSES 401
