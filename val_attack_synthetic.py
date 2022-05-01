@@ -77,7 +77,7 @@ def save_one_json(predn, jdict, path, class_map):
                       'score': round(p[4], 5)})
 
 
-def process_batch(detections, labels, iouv, other_class_label=None):
+def process_batch(detections, labels, iouv, other_class_label=None, other_class_confidence_threshold=0):
     """
     Return correct predictions matrix. Both sets of boxes are in (x1, y1, x2, y2) format.
     Arguments:
@@ -90,8 +90,7 @@ def process_batch(detections, labels, iouv, other_class_label=None):
     iou = box_iou(labels[:, 1:5], detections[:, :4])
 
     if other_class_label:
-        # x = torch.where((iou >= iouv[0]) & (labels[:, 0:1] == detections[:, 5]))  # IoU above threshold and classes match
-        x = torch.where((iou >= iouv[0]) & ((labels[:, 0:1] == detections[:, 5]) | (labels[:, 0:1] == other_class_label)))  # IoU above threshold and classes match        
+        x = torch.where((iou >= iouv[0]) & ((labels[:, 0:1] == detections[:, 5]) | ((labels[:, 0:1] == other_class_label) & (detections[:, 4] > other_class_confidence_threshold))))  # IoU above threshold and classes match        
     else:
         x = torch.where((iou >= iouv[0]) & (labels[:, 0:1] == detections[:, 5]))  # IoU above threshold and classes match
     # else:
@@ -552,16 +551,10 @@ def run(args,
         targets[:, 2:6] *= torch.Tensor([width, height, width, height]).to(device)  # to pixels
         lb = [targets[targets[:, 0] == i, 1:] for i in range(nb)] if save_hybrid else []  # for autolabelling
         t3 = time_sync()
-        # print(out.shape)
-        # print(out, '\n')
         from yolor.utils.general import non_max_suppression
-        # print(conf_thres, iou_thres)
-        # qqq
         out = non_max_suppression(out, conf_thres=conf_thres, iou_thres=iou_thres)
         # out = non_max_suppression(out, conf_thres, iou_thres, labels=lb,
         #                           multi_label=True, agnostic=single_cls)
-        # print(out, '\n\n')
-            # qqq
 
         dt[2] += time_sync() - t3
 
@@ -647,13 +640,10 @@ def run(args,
                 # `label_idx`: idx of object in `labels`
                 # `pred_idx`: idx of object in `predn`
 
-                # correct, _ = process_batch(predn, labelsn, iouv)
-                # _, matches = process_batch(predn, labelsn, iouv, keep_correct_predictions_only=False)
-
-                # matching on bounding boxes, i.e, match label and pred if iou >= 0.5
-                # correct, matches = process_batch(predn, labelsn, iouv)
+                # matching on bounding boxes and correct predictions, i.e, match label and pred if iou >= 0.5 and label == pred
+                # or match on whether label == 'other' class and iou(label, pred) >= 0.5 
                 # correct, matches = process_batch(predn, labelsn, iouv, other_class_label=None)
-                correct, matches = process_batch(predn, labelsn, iouv, other_class_label=other_class_label)
+                correct, matches = process_batch(predn, labelsn, iouv, other_class_label=other_class_label, other_class_confidence_threshold=other_class_confidence_threshold)
 
                 if plots:
                     confusion_matrix.process_batch(predn, labelsn)
@@ -740,12 +730,27 @@ def run(args,
 
             # TODO: this might be wrong
             # if unmatched and small, the prediction should be removed
+            # print(pred_index_to_keep)
+            # print(unmatched_preds_index)
+            # print(small_preds_index)
             pred_index_to_keep = np.logical_and(pred_index_to_keep, ~np.logical_and(unmatched_preds_index, small_preds_index))
-            
+            # print(pred_index_to_keep)
+            # print()
+
             # Filter out predictions and labels with too small objects
+
+            # print(correct.shape)
+            # print(pred.shape)
+            # print(labels.shape)
             correct = correct[pred_index_to_keep]
             pred = pred[pred_index_to_keep]
             labels = labels[lbl_index_to_keep]
+            # print(correct.shape)
+            # print(pred.shape)
+            # print(labels.shape)
+            # print()
+            # print()
+
             tcls = labels[:, 0].tolist() if nl else []  # target class
             
             labels_kept += lbl_index_to_keep.sum()
