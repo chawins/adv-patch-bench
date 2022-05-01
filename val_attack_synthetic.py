@@ -46,6 +46,8 @@ from yolov5.utils.metrics import ConfusionMatrix, ap_per_class_custom
 from yolov5.utils.plots import output_to_target, plot_images, plot_val_study, plot_false_positives
 from yolov5.utils.torch_utils import select_device, time_sync
 
+from yolor.models.models import Darknet
+
 warnings.filterwarnings("ignore")
 
 
@@ -230,9 +232,6 @@ def run(args,
         save_dir = increment_path(Path(project) / name, exist_ok=exist_ok)  # increment run
         (save_dir / 'labels' if save_txt else save_dir).mkdir(parents=True, exist_ok=True)  # make dir
 
-        # TODO: add as arg
-
-        # model_name = 'yolov5'
         if model_name == 'yolov5':
             # Load model
             model = DetectMultiBackend(weights, device=device, dnn=dnn)
@@ -249,8 +248,6 @@ def run(args,
                 device = torch.device('cpu')
                 LOGGER.info(f'Forcing --batch-size 1 square inference shape(1,3,{imgsz},{imgsz}) for non-PyTorch backends')
         elif model_name == 'yolor':
-            # TODO: move to imports above
-            from yolor.models.models import Darknet
             # Load model
             cfg = 'yolor/cfg/yolor_p6.cfg'
             model = Darknet(cfg, imgsz).cuda()
@@ -728,28 +725,12 @@ def run(args,
                 false_positives_preds.append(curr_false_positives_preds)
                 false_positives_filenames.append(filename)
 
-            # TODO: this might be wrong
             # if unmatched and small, the prediction should be removed
-            # print(pred_index_to_keep)
-            # print(unmatched_preds_index)
-            # print(small_preds_index)
             pred_index_to_keep = np.logical_and(pred_index_to_keep, ~np.logical_and(unmatched_preds_index, small_preds_index))
-            # print(pred_index_to_keep)
-            # print()
 
-            # Filter out predictions and labels with too small objects
-
-            # print(correct.shape)
-            # print(pred.shape)
-            # print(labels.shape)
             correct = correct[pred_index_to_keep]
             pred = pred[pred_index_to_keep]
             labels = labels[lbl_index_to_keep]
-            # print(correct.shape)
-            # print(pred.shape)
-            # print(labels.shape)
-            # print()
-            # print()
 
             tcls = labels[:, 0].tolist() if nl else []  # target class
             
