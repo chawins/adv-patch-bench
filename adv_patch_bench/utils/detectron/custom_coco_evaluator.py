@@ -24,8 +24,7 @@ from pycocotools.coco import COCO
 from tabulate import tabulate
 
 # EDIT
-# from detectron2.evaluation.fast_eval_api import COCOeval_opt
-from .custom_coco_eval_api import COCOeval_opt
+from detectron2.evaluation.fast_eval_api import COCOeval_opt
 # from pycocotools.cocoeval import COCOeval
 from .custom_cocoeval import COCOeval
 # from .custom_cocoeval_2 import COCOeval
@@ -51,6 +50,8 @@ class CustomCOCOEvaluator(DatasetEvaluator):
         *,
         use_fast_impl=True,
         kpt_oks_sigmas=(),
+        eval_mode='drop',
+        other_catId=None,
     ):
         """
         Args:
@@ -121,6 +122,9 @@ class CustomCOCOEvaluator(DatasetEvaluator):
         # Test set json files do not contain annotations (evaluation must be
         # performed using the COCO evaluation server).
         self._do_evaluation = "annotations" in self._coco_api.dataset
+        # EDIT:
+        self.eval_mode = eval_mode
+        self.other_catId = other_catId
 
     def reset(self):
         self._predictions = []
@@ -238,6 +242,8 @@ class CustomCOCOEvaluator(DatasetEvaluator):
                     kpt_oks_sigmas=self._kpt_oks_sigmas,
                     use_fast_impl=self._use_fast_impl,
                     img_ids=img_ids,
+                    eval_mode=self.eval_mode,
+                    other_catId=self.other_catId,
                 )
                 if len(coco_results) > 0
                 else None  # cocoapi does not handle empty results very well
@@ -347,13 +353,13 @@ class CustomCOCOEvaluator(DatasetEvaluator):
             ap_50.append(ap if not np.isnan(ap) else 0)
 
         # EDIT
-        print('=================== HERE ===================')
-        map_50_95 = np.mean(ap_50_95)
-        map_50 = np.mean(ap_50)
-        results.update({'mAP@0.5:0.95': map_50_95})
-        results.update({'mAP@0.5': map_50})
-        print(f'mAP@0.5: {map_50:.4f}')
-        print(f'mAP@0.5:0.95: {map_50_95:.4f}')
+        # print('=================== HERE ===================')
+        # map_50_95 = np.mean(ap_50_95)
+        # map_50 = np.mean(ap_50)
+        # results.update({'mAP@0.5:0.95': map_50_95})
+        # results.update({'mAP@0.5': map_50})
+        # print(f'mAP@0.5: {map_50:.4f}')
+        # print(f'mAP@0.5:0.95: {map_50_95:.4f}')
 
         # tabulate it
         N_COLS = min(6, len(results_per_category) * 2)
@@ -548,7 +554,8 @@ def _evaluate_box_proposals(dataset_predictions, coco_api, thresholds=None, area
 
 
 def _evaluate_predictions_on_coco(
-    coco_gt, coco_results, iou_type, kpt_oks_sigmas=None, use_fast_impl=True, img_ids=None
+    coco_gt, coco_results, iou_type, kpt_oks_sigmas=None, use_fast_impl=True,
+    img_ids=None, eval_mode='drop', other_catId=None,
 ):
     """
     Evaluate the coco results using COCOEval API.
@@ -567,7 +574,9 @@ def _evaluate_predictions_on_coco(
     coco_dt = coco_gt.loadRes(coco_results)
 
     # EDIT: set mode
-    coco_eval = (COCOeval_opt if use_fast_impl else COCOeval)(coco_gt, coco_dt, iou_type, mode='drop')
+    coco_eval = (COCOeval_opt if use_fast_impl else COCOeval)(coco_gt, coco_dt, iou_type,
+                                                              mode=eval_mode,
+                                                              other_catId=other_catId)
     if img_ids is not None:
         coco_eval.params.imgIds = img_ids
 

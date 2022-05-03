@@ -1,6 +1,7 @@
 import json
 import os
 from os.path import expanduser, join
+from typing import Any, Dict, List, Tuple
 
 import pandas as pd
 from detectron2.data import DatasetCatalog, MetadataCatalog
@@ -10,54 +11,21 @@ from hparams import (MIN_OBJ_AREA, TS_COLOR_DICT, TS_COLOR_LABEL_LIST,
 from tqdm import tqdm
 
 
-def readlines(path):
+def readlines(path: str) -> List:
     with open(path, 'r') as f:
         lines = f.readlines()
     return [line.strip() for line in lines]
 
 
-path = expanduser('~/data/mtsd_v2_fully_annotated/')
-csv_path = expanduser('~/adv-patch-bench/traffic_sign_dimension_v6.csv')
-anno_path = expanduser(join(path, 'annotations'))
-data = pd.read_csv(csv_path)
-
-# TODO: include in config file
-use_mtsd_original_labels = True
-# use_color = False
-# ignore_other = True
-use_color = True
-ignore_other = False
-
-similarity_df_csv_path = 'similar_files_df.csv'
-similar_files_df = pd.read_csv(similarity_df_csv_path)
-
-if use_color:
-    label_dict = TS_COLOR_OFFSET_DICT
-else:
-    label_dict = TS_COLOR_DICT
-
-selected_labels = list(label_dict.keys())
-mtsd_label_to_class_index = {}
-for idx, row in data.iterrows():
-    if use_mtsd_original_labels:
-        mtsd_label_to_class_index[row['sign']] = idx
-    elif row['target'] in label_dict:
-        if use_color:
-            cat_idx = TS_COLOR_OFFSET_DICT[row['target']]
-            color_list = TS_COLOR_DICT[row['target']]
-            if len(color_list) > 0:
-                cat_idx += color_list.index(row['color'])
-        else:
-            cat_idx = selected_labels.index(row['target'])
-        mtsd_label_to_class_index[row['sign']] = cat_idx
-bg_idx = max(list(mtsd_label_to_class_index.values())) + 1
-
-# Get all JSON files
-json_files = [join(anno_path, f) for f in os.listdir(anno_path)
-              if os.path.isfile(join(anno_path, f)) and f.endswith('.json')]
-
-
-def get_mtsd_dict(split):
+def get_mtsd_dict(
+    split: str,
+    path: str,
+    json_files: List[str],
+    similar_files_df: Any,
+    mtsd_label_to_class_index: Dict,
+    bg_idx: int,
+    ignore_other: bool = False,
+) -> List:
 
     filenames = readlines(expanduser(join(path, 'splits', split + '.txt')))
     filenames = set(filenames)
@@ -111,13 +79,56 @@ def get_mtsd_dict(split):
     return dataset_dicts
 
 
-splits = ['train', 'test', 'val']
-for split in splits:
-    DatasetCatalog.register(f'mtsd_{split}', lambda s=split: get_mtsd_dict(s))
-    if use_mtsd_original_labels:
-        thing_classes = data['sign'].tolist()
+def register_mtsd(
+    use_mtsd_original_labels: bool = False,
+    use_color: bool = False,
+    ignore_other: bool = False
+) -> Tuple:
+    # TODO: move path to config file
+    path = expanduser('~/data/mtsd_v2_fully_annotated/')
+    csv_path = expanduser('~/adv-patch-bench/traffic_sign_dimension_v6.csv')
+    anno_path = expanduser(join(path, 'annotations'))
+    data = pd.read_csv(csv_path)
+
+    similarity_df_csv_path = 'similar_files_df.csv'
+    similar_files_df = pd.read_csv(similarity_df_csv_path)
+
+    if use_color:
+        label_dict = TS_COLOR_OFFSET_DICT
     else:
-        thing_classes = TS_COLOR_LABEL_LIST if use_color else TS_NO_COLOR_LABEL_LIST
-        if ignore_other:
-            thing_classes = thing_classes[:-1]
-    MetadataCatalog.get(f'mtsd_{split}').set(thing_classes=thing_classes)
+        label_dict = TS_COLOR_DICT
+
+    selected_labels = list(label_dict.keys())
+    mtsd_label_to_class_index = {}
+    for idx, row in data.iterrows():
+        if use_mtsd_original_labels:
+            mtsd_label_to_class_index[row['sign']] = idx
+        elif row['target'] in label_dict:
+            if use_color:
+                cat_idx = TS_COLOR_OFFSET_DICT[row['target']]
+                color_list = TS_COLOR_DICT[row['target']]
+                if len(color_list) > 0:
+                    cat_idx += color_list.index(row['color'])
+            else:
+                cat_idx = selected_labels.index(row['target'])
+            mtsd_label_to_class_index[row['sign']] = cat_idx
+    bg_idx = max(list(mtsd_label_to_class_index.values())) + 1
+
+    # Get all JSON files
+    json_files = [join(anno_path, f) for f in os.listdir(anno_path)
+                  if os.path.isfile(join(anno_path, f)) and f.endswith('.json')]
+
+    splits = ['train', 'test', 'val']
+    for split in splits:
+        DatasetCatalog.register(f'mtsd_{split}', lambda s=split: get_mtsd_dict(
+            s, path, json_files, similar_files_df, mtsd_label_to_class_index,
+            bg_idx, ignore_other=ignore_other))
+        if use_mtsd_original_labels:
+            thing_classes = data['sign'].tolist()
+        else:
+            thing_classes = TS_COLOR_LABEL_LIST if use_color else TS_NO_COLOR_LABEL_LIST
+            if ignore_other:
+                thing_classes = thing_classes[:-1]
+        MetadataCatalog.get(f'mtsd_{split}').set(thing_classes=thing_classes)
+
+    return path, json_files, similar_files_df, mtsd_label_to_class_index, bg_idx, ignore_other

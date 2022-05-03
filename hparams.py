@@ -45,3 +45,16 @@ TS_NO_COLOR_LABEL_LIST = list(TS_COLOR_DICT.keys())
 
 MIN_OBJ_AREA = 0
 NUM_CLASSES = len(TS_COLOR_LABEL_LIST)
+
+DATASETS = ('mtsd_orig', 'mtsd_no_color', 'mtsd_color')
+OTHER_SIGN_CLASS = {
+    'mtsd_orig': 89,
+    'mtsd_no_color': len(TS_NO_COLOR_LABEL_LIST) - 1,
+    'mtsd_color': len(TS_COLOR_LABEL_LIST) - 1,
+}
+
+NUM_CLASSES = {
+    'mtsd_orig': 401,
+    'mtsd_no_color': len(TS_NO_COLOR_LABEL_LIST),
+    'mtsd_color': len(TS_COLOR_LABEL_LIST),
+}

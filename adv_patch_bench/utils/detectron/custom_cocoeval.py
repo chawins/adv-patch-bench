@@ -58,7 +58,8 @@ class COCOeval:
     # Data, paper, and tutorials available at:  http://mscoco.org/
     # Code written by Piotr Dollar and Tsung-Yi Lin, 2015.
     # Licensed under the Simplified BSD License [see coco/license.txt]
-    def __init__(self, cocoGt=None, cocoDt=None, iouType='segm', mode=None):
+    def __init__(self, cocoGt=None, cocoDt=None, iouType='segm', mode=None,
+                 other_catId=None):
         '''
         Initialize CocoEval using coco APIs for gt and dt
         :param cocoGt: coco object with ground truth annotations
@@ -82,7 +83,7 @@ class COCOeval:
             self.params.catIds = sorted(cocoGt.getCatIds())
         # EDIT: set mode (None, 'drop', 'match')
         self.mode = mode
-        self.other_catId = 89
+        self.other_catId = other_catId
 
     def _prepare(self):
         '''
@@ -114,11 +115,6 @@ class COCOeval:
             gt['ignore'] = 'iscrowd' in gt and gt['iscrowd']
             if p.iouType == 'keypoints':
                 gt['ignore'] = (gt['num_keypoints'] == 0) or gt['ignore']
-            # EDIT
-            # if gt['category_id'] == bg_cat_id:
-            #     gt['ignore'] = 1
-            #     num_ignore += 1
-        # print(f'=> {num_ignore} instances ignored (id: {bg_cat_id}).')
 
         self._gts = defaultdict(list)       # gt for evaluation
         self._dts = defaultdict(list)       # dt for evaluation
@@ -179,8 +175,8 @@ class COCOeval:
             gt = self._gts[imgId, catId]
             dt = [_ for cId in p.catIds for _ in self._dts[imgId, cId]]
         elif self.mode is not None:
-            # FIXME: potential bug: this way, one "other" gt can be matched to
-            # multiple dt's.
+            # TODO: potential bug (low impact): this way, one "other" gt can be
+            # matched to multiple dt's.
             # Match non-other dt to either other or non-other dt
             gt = [*self._gts[imgId, catId], *self._gts[imgId, self.other_catId]]
             dt = self._dts[imgId, catId]
@@ -359,12 +355,8 @@ class COCOeval:
                     gt_other_id.append(g['id'])
             for tind, t in enumerate(p.iouThrs):
                 for dind, d in enumerate(dt):
-                    # print(tind, dind)
                     if dtm[tind, dind] in gt_other_id:
                         dtIg[tind, dind] = 1
-            # if len(dt) > 0:
-            #     import pdb
-            #     pdb.set_trace()
         # =================================================================== #
 
         # set unmatched detections outside of area range to ignore
@@ -443,10 +435,6 @@ class COCOeval:
                     dtIg = np.concatenate([e['dtIgnore'][:, 0:maxDet] for e in E], axis=1)[:, inds]
                     gtIg = np.concatenate([e['gtIgnore'] for e in E])
 
-                    # EDIT
-                    # print('dt ', dtIg)
-                    # print('gt ', gtIg)
-
                     npig = np.count_nonzero(gtIg == 0)
                     if npig == 0:
                         continue
@@ -520,8 +508,6 @@ class COCOeval:
                 if iouThr is not None:
                     t = np.where(iouThr == p.iouThrs)[0]
                     s = s[t]
-                # import pdb
-                # pdb.set_trace()
                 s = s[:, :, :, aind, mind]
             else:
                 # dimension of recall: [TxKxAxM]
