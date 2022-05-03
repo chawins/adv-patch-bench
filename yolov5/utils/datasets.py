@@ -29,6 +29,7 @@ from yolov5.utils.augmentations import Albumentations, augment_hsv, copy_paste, 
 from yolov5.utils.general import (LOGGER, check_dataset, check_requirements, check_yaml, clean_str, segments2boxes,
                                   xyn2xy, xywh2xyxy, xywhn2xyxy, xyxy2xywhn)
 from yolov5.utils.torch_utils import torch_distributed_zero_first
+from yolov5.utils.custom_sampler import RepeatFactorTrainingSampler
 
 # Parameters
 HELP_URL = 'https://github.com/ultralytics/yolov5/wiki/Train-Custom-Data'
@@ -111,8 +112,57 @@ def create_dataloader(path, imgsz, batch_size, stride, single_cls=False, hyp=Non
 
     batch_size = min(batch_size, len(dataset))
     nw = min([os.cpu_count() // WORLD_SIZE, batch_size if batch_size > 1 else 0, workers])  # number of workers
-    sampler = None if rank == -1 else distributed.DistributedSampler(dataset, shuffle=shuffle)
-    loader = DataLoader if image_weights else InfiniteDataLoader  # only DataLoader allows for attribute updates
+
+    # EDIT
+    # sampler = None if rank == -1 else distributed.DistributedSampler(dataset, shuffle=shuffle)
+    # loader = DataLoader if image_weights else InfiniteDataLoader  # only DataLoader allows for attribute updates
+    
+    # check sample from original dataloader
+    # label_counter = {}
+    # print('batch_size', batch_size)
+    # for i, data in tqdm(enumerate(loader(dataset,
+    #     batch_size=batch_size,
+    #     shuffle=shuffle and sampler is None,
+    #     num_workers=nw,
+    #     sampler=sampler,
+    #     pin_memory=True,
+    #     collate_fn=LoadImagesAndLabels.collate_fn4 if quad else LoadImagesAndLabels.collate_fn))):        
+    #     _, labels, _, _ = data
+    #     for lbl in labels[:, 1]:
+    #         label_counter[lbl.item()] = label_counter.get(lbl.item(), 0) + 1
+    #     if i == 200:
+    #         break
+        
+    # print()
+    # print('WITHOUT SAMPLING')
+    # print(sorted(label_counter.items()))
+    # print()
+        
+    repeat_threshold = 1
+    repeat_factors = RepeatFactorTrainingSampler.repeat_factors_from_category_frequency(dataset.img_to_labels, repeat_threshold)
+    sampler = RepeatFactorTrainingSampler(repeat_factors)
+    loader = DataLoader if sampler else InfiniteDataLoader
+
+    # check sample from new dataloader
+    # label_counter = {}
+    # for i, data in tqdm(enumerate(loader(dataset,
+    #     batch_size=batch_size,
+    #     shuffle=shuffle and sampler is None,
+    #     num_workers=nw,
+    #     sampler=sampler,
+    #     pin_memory=True,
+    #     collate_fn=LoadImagesAndLabels.collate_fn4 if quad else LoadImagesAndLabels.collate_fn))):        
+    #     _, labels, _, _ = data
+    #     for lbl in labels[:, 1]:
+    #         label_counter[lbl.item()] = label_counter.get(lbl.item(), 0) + 1
+    #     if i == 200:
+    #         break
+        
+    # print()
+    # print('WITH SAMPLING')
+    # print(sorted(label_counter.items()))
+    # print()
+    
     return loader(dataset,
                   batch_size=batch_size,
                   shuffle=shuffle and sampler is None,
@@ -390,6 +440,7 @@ class LoadImagesAndLabels(Dataset):
         self.stride = stride
         self.path = path
         self.albumentations = Albumentations() if augment else None
+        self.img_to_labels = {}
 
         try:
             f = []  # image files
@@ -508,6 +559,16 @@ class LoadImagesAndLabels(Dataset):
                 pbar.desc = f'{prefix}Caching images ({gb / 1E9:.1f}GB {cache_images})'
             pbar.close()
 
+        # EDIT
+        # print(len(self.img_files))
+        # print(len(self.labels))
+        for (img_file, label) in zip(self.img_files, self.labels):
+            self.img_to_labels[img_file] = label[:, 0]
+            # print(label[:, 0])
+            # print(img_file)
+            # print()
+            # qqq
+
     def cache_labels(self, path=Path('./labels.cache'), prefix=''):
         # Cache dataset labels, check images and read shapes
         x = {}  # dict
@@ -579,14 +640,15 @@ class LoadImagesAndLabels(Dataset):
             labels = self.labels[index].copy()
             if labels.size:  # normalized xywh to pixel xyxy format
                 labels[:, 1:] = xywhn2xyxy(labels[:, 1:], ratio[0] * w, ratio[1] * h, padw=pad[0], padh=pad[1])
-
+            
             if self.augment:
                 img, labels = random_perspective(img, labels,
                                                  degrees=hyp['degrees'],
                                                  translate=hyp['translate'],
                                                  scale=hyp['scale'],
                                                  shear=hyp['shear'],
-                                                 perspective=hyp['perspective'])
+                                                 perspective=hyp['perspective'],
+                                                 random_crop=hyp['random_crop'])
 
         nl = len(labels)  # number of labels
         if nl:

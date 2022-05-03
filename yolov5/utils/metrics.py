@@ -128,8 +128,17 @@ def ap_per_class_custom(tp, conf, pred_cls, target_cls, plot=False, save_dir='.'
             # Recall / True Positive Rate
             recall = tpc / (n_l + eps)  # recall curve
             
-            # print(recall)
-            recall_per_class.append(recall[:, 0])
+            recall_per_class.append(recall[:, 0])            
+            
+            if any([x > 1 for x in recall[:, 0]]):
+                print('c', c)
+                print('tpc', tpc)
+                print('n_l', n_l)
+                print(recall[:,0])
+                import pdb
+                pdb.set_trace()
+            assert all([x <= 1 for x in recall[:, 0]])
+
             r[ci] = np.interp(-px, -conf[i], recall[:, 0], left=0)  # negative x, xp because xp decreases
             fnr[ci] = 1 - r[ci]
 

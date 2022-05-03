@@ -113,7 +113,7 @@ def process_batch(detections, labels, iouv, other_class_label=None, other_class_
     return correct, matches
 
 
-def populate_default_metric(lbl_, min_area, filename):
+def populate_default_metric(lbl_, min_area, filename, other_class_label):
     lbl_ = lbl_.cpu().numpy()
     class_label, _, _, bbox_width, bbox_height, obj_id = lbl_
     bbox_area = bbox_width * bbox_height
@@ -127,6 +127,7 @@ def populate_default_metric(lbl_, min_area, filename):
     current_label_metric['sign_height'] = bbox_height
     current_label_metric['confidence'] = None
     current_label_metric['too_small'] = bbox_area < min_area
+    # current_label_metric['too_small'] = bbox_area < min_area or class_label == other_class_label
     current_label_metric['changed_from_other_label'] = 0
     return current_label_metric
 
@@ -581,7 +582,7 @@ def run(args,
             # If there's no prediction at all, we can collect the targets and continue to the next image.
             if len(pred) == 0:
                 for lbl_index, lbl_ in enumerate(labels):
-                    current_label_metric = populate_default_metric(lbl_, min_area, filename)
+                    current_label_metric = populate_default_metric(lbl_, min_area, filename, other_class_label)
                     lbl_index_to_keep[lbl_index] = ~current_label_metric['too_small']
                     metrics_per_label_df = metrics_per_label_df.append(
                         current_label_metric, ignore_index=True)
@@ -669,7 +670,7 @@ def run(args,
 
                 assert len(match) <= 1  # There can only be one match per object
 
-                current_label_metric = populate_default_metric(lbl_, min_area, filename)
+                current_label_metric = populate_default_metric(lbl_, min_area, filename, other_class_label)
                 lbl_index_to_keep[lbl_index] = ~current_label_metric['too_small']
 
                 class_label = lbl_[0]
@@ -706,6 +707,11 @@ def run(args,
                         current_label_metric['label'] = pred_label.item()
                         current_label_metric['changed_from_other_label'] = 1
                         targets[targets[:, 0] == si, 1:] = labels
+
+                # if pred_label == other_class_label:
+                #     # as in the mtsd paper, we drop both label and prediction if any of them is 'other'
+                #     lbl_index_to_keep[lbl_index] = 0
+                #     pred_index_to_keep[det_idx] = 0
                 
                 # Get detection boolean at iou_thres
                 iou_idx = torch.where(iouv >= iou_thres)[0][0]
