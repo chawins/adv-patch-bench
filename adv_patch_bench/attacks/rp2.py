@@ -21,7 +21,8 @@ EPS = 1e-6
 class RP2AttackModule(DetectorAttackModule):
 
     def __init__(self, attack_config, core_model, loss_fn, norm, eps,
-                 rescaling=False, verbose=False, interp=None, **kwargs):
+                 rescaling=False, verbose=False, interp=None,
+                 is_detectron=False, **kwargs):
         super(RP2AttackModule, self).__init__(
             attack_config, core_model, loss_fn, norm, eps, **kwargs)
         self.num_steps = attack_config['rp2_num_steps']
@@ -42,10 +43,11 @@ class RP2AttackModule(DetectorAttackModule):
 
         self.num_restarts = 1
         self.verbose = verbose
-        self.is_detectron = True  # FIXME
+        self.is_detectron = is_detectron
 
         # Defind EoT data augmentation when generating adversarial examples
-        bg_size = (self.input_size[0] - 32, self.input_size[1] - 32)
+        # bg_size = (self.input_size[0] - 32, self.input_size[1] - 32)
+        bg_size = self.input_size
         self.bg_transforms = K.RandomResizedCrop(bg_size, scale=(0.8, 1), p=1.0,
                                                  resample=self.interp)
         self.obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0,
@@ -100,12 +102,12 @@ class RP2AttackModule(DetectorAttackModule):
     # ==================== Faster R-CNN-specific methods ==================== #
     def _compute_loss_rcnn(self, adv_img, obj_class):
         target_boxes, target_labels, target_logits, obj_logits = get_targets(
-            self.core_model, adv_img, device=self.device)
+            self.core_model, adv_img, device=self.core_model.device)
         # features = self.core_model.backbone(adv_img)
         # # Get classification logits
         # logits, _ = get_roi_heads_predictions(features, target_boxes)
         target_loss = F.cross_entropy(target_logits, target_labels, reduction='sum')
-        obj_labels = torch.ones(len(obj_logits), device=self.device, dtype=torch.long)
+        obj_labels = torch.ones(len(obj_logits), device=self.core_model.device, dtype=torch.long)
         obj_loss = F.cross_entropy(obj_logits, obj_labels, reduction='sum')
         # TODO: constant?
         return target_loss + obj_loss

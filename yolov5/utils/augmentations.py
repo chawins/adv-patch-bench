@@ -7,15 +7,15 @@ import math
 import random
 
 import cv2
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 
 from yolov5.utils.general import LOGGER, check_version, colorstr, resample_segments, segment2box
 from yolov5.utils.metrics import bbox_ioa
 
-    
-BOX_COLOR = (255, 0, 0) # Red
-TEXT_COLOR = (255, 255, 255) # White
+BOX_COLOR = (255, 0, 0)  # Red
+TEXT_COLOR = (255, 255, 255)  # White
+
 
 class Albumentations:
     # YOLOv5 Albumentations class (optional, only used if package is installed)
@@ -125,8 +125,9 @@ def letterbox(im, new_shape=(640, 640), color=(114, 114, 114), auto=True, scaleF
     return im, ratio, (dw, dh)
 
 
-def random_perspective(im, targets=(), segments=(), degrees=10, translate=.1, scale=.1, shear=10, perspective=0.0,
-                       border=(0, 0), random_crop=False):
+def random_perspective(
+        im, targets=(), segments=(), degrees=10, translate=.1, scale=.1, shear=10,
+        perspective=0.0, border=(0, 0), random_crop=False):
     # torchvision.transforms.RandomAffine(degrees=(-10, 10), translate=(0.1, 0.1), scale=(0.9, 1.1), shear=(-10, 10))
     # targets = [cls, xyxy]
 
@@ -214,13 +215,14 @@ def random_perspective(im, targets=(), segments=(), degrees=10, translate=.1, sc
 
         transformed = transform(image=im[:, :, ::-1], bboxes=targets[:, 1:5], category_ids=targets[:, 0])
 
+        # DEBUG
         # visualize before and after random crop
         # visualize(im[:, :, ::-1], targets[:, 1:5], 'test_augmentation_before.png')
         # visualize(transformed['image'], transformed['bboxes'], 'test_augmentation_after.png')
 
         im[:, :, ::-1] = transformed['image']
         targets[:, 1:5] = np.array(transformed['bboxes'])
-    
+
     return im, targets
 
 
@@ -290,6 +292,7 @@ def box_candidates(box1, box2, wh_thr=2, ar_thr=20, area_thr=0.1, eps=1e-16):  #
     ar = np.maximum(w2 / (h2 + eps), h2 / (w2 + eps))  # aspect ratio
     return (w2 > wh_thr) & (h2 > wh_thr) & (w2 * h2 / (w1 * h1 + eps) > area_thr) & (ar < ar_thr)  # candidates
 
+
 def visualize_bbox(img, bbox, class_name, color=BOX_COLOR, thickness=2):
     """Visualizes a single bounding box on the image"""
     x_min, y_min, x_max, y_max = bbox
@@ -299,16 +302,16 @@ def visualize_bbox(img, bbox, class_name, color=BOX_COLOR, thickness=2):
     y_max = int(y_max)
 
     cv2.rectangle(img, (x_min, y_min), (x_max, y_max), color=color, thickness=thickness)
-    
-    ((text_width, text_height), _) = cv2.getTextSize(class_name, cv2.FONT_HERSHEY_SIMPLEX, 0.35, 1)    
+
+    ((text_width, text_height), _) = cv2.getTextSize(class_name, cv2.FONT_HERSHEY_SIMPLEX, 0.35, 1)
     cv2.rectangle(img, (x_min, y_min - int(1.3 * text_height)), (x_min + text_width, y_min), BOX_COLOR, -1)
     cv2.putText(
         img,
         text=class_name,
         org=(x_min, y_min - int(0.3 * text_height)),
         fontFace=cv2.FONT_HERSHEY_SIMPLEX,
-        fontScale=0.35, 
-        color=TEXT_COLOR, 
+        fontScale=0.35,
+        color=TEXT_COLOR,
         lineType=cv2.LINE_AA,
     )
     return img

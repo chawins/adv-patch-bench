@@ -14,6 +14,7 @@ from itertools import repeat
 from multiprocessing.pool import Pool, ThreadPool
 from pathlib import Path
 from threading import Thread
+from typing import Dict
 from zipfile import ZipFile
 
 import cv2
@@ -26,10 +27,10 @@ from torch.utils.data import DataLoader, Dataset, dataloader, distributed
 from tqdm import tqdm
 
 from yolov5.utils.augmentations import Albumentations, augment_hsv, copy_paste, letterbox, mixup, random_perspective
+from yolov5.utils.custom_sampler import RepeatFactorTrainingSampler
 from yolov5.utils.general import (LOGGER, check_dataset, check_requirements, check_yaml, clean_str, segments2boxes,
                                   xyn2xy, xywh2xyxy, xywhn2xyxy, xyxy2xywhn)
 from yolov5.utils.torch_utils import torch_distributed_zero_first
-from yolov5.utils.custom_sampler import RepeatFactorTrainingSampler
 
 # Parameters
 HELP_URL = 'https://github.com/ultralytics/yolov5/wiki/Train-Custom-Data'
@@ -93,8 +94,10 @@ def exif_transpose(image):
     return image
 
 
-def create_dataloader(path, imgsz, batch_size, stride, single_cls=False, hyp=None, augment=False, cache=False, pad=0.0,
-                      rect=False, rank=-1, workers=8, image_weights=False, quad=False, prefix='', shuffle=False):
+def create_dataloader(
+        path, imgsz, batch_size, stride, single_cls=False, hyp=None, augment=False,
+        cache=False, pad=0.0, rect=False, rank=-1, workers=8, image_weights=False,
+        quad=False, prefix='', shuffle=False, repeat_sampler=False):
     if rect and shuffle:
         LOGGER.warning('WARNING: --rect is incompatible with DataLoader shuffle, setting shuffle=False')
         shuffle = False
@@ -116,7 +119,17 @@ def create_dataloader(path, imgsz, batch_size, stride, single_cls=False, hyp=Non
     # EDIT
     # sampler = None if rank == -1 else distributed.DistributedSampler(dataset, shuffle=shuffle)
     # loader = DataLoader if image_weights else InfiniteDataLoader  # only DataLoader allows for attribute updates
-    
+    # EDIT: Use RepeatFactorTrainingSampler similar to detectron2 to deal with
+    # the class imbalance problem
+    sampler = None
+    if repeat_sampler:
+        repeat_threshold = 1
+        repeat_factors = RepeatFactorTrainingSampler.repeat_factors_from_category_frequency(
+            dataset.img_to_labels, repeat_threshold)
+        sampler = RepeatFactorTrainingSampler(repeat_factors, shuffle=shuffle)
+    loader = DataLoader if sampler else InfiniteDataLoader
+
+    # DEBUG
     # check sample from original dataloader
     # label_counter = {}
     # print('batch_size', batch_size)
@@ -126,23 +139,16 @@ def create_dataloader(path, imgsz, batch_size, stride, single_cls=False, hyp=Non
     #     num_workers=nw,
     #     sampler=sampler,
     #     pin_memory=True,
-    #     collate_fn=LoadImagesAndLabels.collate_fn4 if quad else LoadImagesAndLabels.collate_fn))):        
+    #     collate_fn=LoadImagesAndLabels.collate_fn4 if quad else LoadImagesAndLabels.collate_fn))):
     #     _, labels, _, _ = data
     #     for lbl in labels[:, 1]:
     #         label_counter[lbl.item()] = label_counter.get(lbl.item(), 0) + 1
     #     if i == 200:
     #         break
-        
     # print()
     # print('WITHOUT SAMPLING')
     # print(sorted(label_counter.items()))
     # print()
-        
-    repeat_threshold = 1
-    repeat_factors = RepeatFactorTrainingSampler.repeat_factors_from_category_frequency(dataset.img_to_labels, repeat_threshold)
-    sampler = RepeatFactorTrainingSampler(repeat_factors)
-    loader = DataLoader if sampler else InfiniteDataLoader
-
     # check sample from new dataloader
     # label_counter = {}
     # for i, data in tqdm(enumerate(loader(dataset,
@@ -151,25 +157,26 @@ def create_dataloader(path, imgsz, batch_size, stride, single_cls=False, hyp=Non
     #     num_workers=nw,
     #     sampler=sampler,
     #     pin_memory=True,
-    #     collate_fn=LoadImagesAndLabels.collate_fn4 if quad else LoadImagesAndLabels.collate_fn))):        
+    #     collate_fn=LoadImagesAndLabels.collate_fn4 if quad else LoadImagesAndLabels.collate_fn))):
     #     _, labels, _, _ = data
     #     for lbl in labels[:, 1]:
     #         label_counter[lbl.item()] = label_counter.get(lbl.item(), 0) + 1
     #     if i == 200:
     #         break
-        
+
     # print()
     # print('WITH SAMPLING')
     # print(sorted(label_counter.items()))
     # print()
-    
-    return loader(dataset,
-                  batch_size=batch_size,
-                  shuffle=shuffle and sampler is None,
-                  num_workers=nw,
-                  sampler=sampler,
-                  pin_memory=True,
-                  collate_fn=LoadImagesAndLabels.collate_fn4 if quad else LoadImagesAndLabels.collate_fn), dataset
+
+    return loader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=shuffle and sampler is None,
+        num_workers=nw,
+        sampler=sampler,
+        pin_memory=True,
+        collate_fn=LoadImagesAndLabels.collate_fn4 if quad else LoadImagesAndLabels.collate_fn), dataset
 
 
 class InfiniteDataLoader(dataloader.DataLoader):
@@ -428,8 +435,21 @@ class LoadImagesAndLabels(Dataset):
     # YOLOv5 train_loader/val_loader, loads images and labels for training and validation
     cache_version = 0.6  # dataset labels *.cache version
 
-    def __init__(self, path, img_size=640, batch_size=16, augment=False, hyp=None, rect=False, image_weights=False,
-                 cache_images=False, single_cls=False, stride=32, pad=0.0, prefix=''):
+    def __init__(
+            self,
+            path: str,
+            img_size: int = 640,
+            batch_size: int = 16,
+            augment: bool = False,
+            hyp: Dict = None,
+            rect: bool = False,
+            image_weights: bool = False,
+            cache_images: bool = False,
+            single_cls: bool = False,
+            stride: int = 32,
+            pad: float = 0.0,
+            prefix: str = '',
+    ) -> None:
         self.img_size = img_size
         self.augment = augment
         self.hyp = hyp
@@ -640,7 +660,7 @@ class LoadImagesAndLabels(Dataset):
             labels = self.labels[index].copy()
             if labels.size:  # normalized xywh to pixel xyxy format
                 labels[:, 1:] = xywhn2xyxy(labels[:, 1:], ratio[0] * w, ratio[1] * h, padw=pad[0], padh=pad[1])
-            
+
             if self.augment:
                 img, labels = random_perspective(img, labels,
                                                  degrees=hyp['degrees'],

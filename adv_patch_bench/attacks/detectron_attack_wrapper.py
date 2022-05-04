@@ -150,6 +150,13 @@ class DAGAttacker:
                 vis_gt.save(os.path.join(vis_save_dir, f'gt_{i}.jpg'))
 
             images = batch[0]['image'].float().to(self.device) / 255
+
+            # TODO
+            # h0, w0, h_ratio, w_ratio, w_pad, h_pad
+            img_data = (h0, w0, h_ratio, w_ratio, 0, 0)
+            predicted_class = row['final_shape']
+            data = [predicted_class, row, *img_data]
+            attack_images = [[im[image_i], data, str(filename)]]
             perturbed_image = self.attack.transform_and_attack(
                 images, patch_mask, obj_class)
 

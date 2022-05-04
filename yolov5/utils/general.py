@@ -379,6 +379,7 @@ def check_dataset(data, autodownload=True):
 
     # Parse yaml
     path = extract_dir or Path(data.get('path') or '')  # optional 'path' default to '.'
+    path = path.expanduser()
     for k in 'train', 'val', 'test':
         if data.get(k):  # prepend path
             data[k] = str(path / data[k]) if isinstance(data[k], str) else [str(path / x) for x in data[k]]

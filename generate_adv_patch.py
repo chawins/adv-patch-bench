@@ -42,12 +42,10 @@ def load_yolov5(weights, device, imgsz, img_size, data, dnn, half):
     half &= (pt or jit or engine) and device.type != 'cpu'  # half precision only supported by PyTorch on CUDA
     if pt or jit:
         model.model.half() if half else model.model.float()
-    elif engine:
-        batch_size = model.batch_size
     else:
         LOGGER.info(f'Forcing --batch-size 1 square inference shape(1,3,{imgsz},{imgsz}) for non-PyTorch backends')
 
-    model.warmup(imgsz=(1, 3) + img_size, half=half)  # warmup
+    # model.warmup(imgsz=(1, 3) + img_size, half=half)  # warmup
     data = check_yaml(data)  # check YAML
     data = check_dataset(data)
     imgsz = check_img_size(imgsz, s=stride)
@@ -56,11 +54,12 @@ def load_yolov5(weights, device, imgsz, img_size, data, dnn, half):
     return model, data
 
 
-def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda', task='train',
+def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
                        img_size=(992, 1312), obj_class=0, obj_size=None,
                        bg_dir='./', num_bg=16, save_images=False, save_dir='./',
                        generate_patch='synthetic', rescaling=False,
-                       csv_path='mapillary.csv', dataloader=None, attack_config_path=None):
+                       csv_path='mapillary.csv', dataloader=None,
+                       attack_config_path=None):
     """Generate adversarial patch
 
     Args:
@@ -85,7 +84,8 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda', task='train'
     print(f'There are {len(all_bgs)} background images in {bg_dir}.')
     idx = np.arange(len(all_bgs))
     np.random.shuffle(idx)
-    bg_size = (img_size[0] - 32, img_size[1] - 32)
+    # bg_size = (img_size[0] - 32, img_size[1] - 32)
+    bg_size = img_size
     backgrounds = torch.zeros((num_bg, 3) + bg_size, )
     for i, index in enumerate(idx[:num_bg]):
         bg = torchvision.io.read_image(join(bg_dir, all_bgs[index])) / 255
@@ -212,7 +212,7 @@ def main(
     save_txt=False,  # save results to *.txt
     obj_class=0,
     obj_size=-1,
-    obj_path='',
+    syn_obj_path='',
     bg_dir='./',
     num_bg=16,
     save_images=False,
@@ -223,7 +223,7 @@ def main(
     csv_path='',
     data=None,
     attack_config_path=None,
-    task=None
+    task='test'
 ):
     cudnn.benchmark = True
     torch.manual_seed(seed)
@@ -244,7 +244,7 @@ def main(
     # that we generate canonical masks (e.g., largest inscribed circle, octagon,
     # etc. in a square). Patch and patch mask are defined with respect to this
     # object tensor, and they should all have the same width and height.
-    obj_numpy = np.array(Image.open(obj_path).convert('RGBA')) / 255
+    obj_numpy = np.array(Image.open(syn_obj_path).convert('RGBA')) / 255
     h_w_ratio = obj_numpy.shape[0] / obj_numpy.shape[1]
 
     if obj_size == -1:
@@ -279,14 +279,13 @@ def main(
 
     dataloader = None
     if generate_patch == 'real':
-        task = 'train'  # Use transform-annotated images from training set
         stride, pt = model.stride, model.pt
         dataloader = create_dataloader(data[task], imgsz, batch_size, stride,
                                        single_cls=False, pad=0.5, rect=pt, shuffle=True,
                                        workers=8, prefix=colorstr(f'{task}: '))[0]
 
     adv_patch = generate_adv_patch(
-        model, obj_numpy, patch_mask, device=device, task=task, img_size=img_size,
+        model, obj_numpy, patch_mask, device=device, img_size=img_size,
         obj_class=obj_class, obj_size=obj_size, bg_dir=bg_dir, num_bg=num_bg,
         save_images=save_images, save_dir=save_dir, generate_patch=generate_patch,
         rescaling=rescaling, csv_path=csv_path, dataloader=dataloader,
@@ -311,7 +310,6 @@ if __name__ == "__main__":
     parser.add_argument('--device', type=str, default='0', help='set device, e.g., "0,1,3"')
     parser.add_argument('--data', type=str, default=ROOT / 'data/coco128.yaml', help='dataset.yaml path')
     parser.add_argument('--weights', nargs='+', type=str, default=ROOT / 'yolov5s.pt', help='model.pt path(s)')
-    parser.add_argument('--task', default='train', help='train or val')
     parser.add_argument('--batch-size', type=int, default=32, help='batch size')
     parser.add_argument('--imgsz', type=int, default=1280, help='inference size (width)')
     parser.add_argument('--save-txt', action='store_true', help='save results to *.txt')
@@ -328,7 +326,7 @@ if __name__ == "__main__":
                         help='name of pickle file to save the generated patch')
     parser.add_argument('--obj-class', type=int, default=0, help='class of object to attack')
     parser.add_argument('--obj-size', type=int, default=-1, help='object width in pixels')
-    parser.add_argument('--obj-path', type=str, default='', help='path to synthetic image of the object')
+    parser.add_argument('--syn-obj-path', type=str, default='', help='path to synthetic image of the object')
     parser.add_argument('--bg-dir', type=str, default='', help='path to background directory')
     parser.add_argument('--num-bg', type=int, default=16, help='number of backgrounds to generate adversarial patch')
     parser.add_argument('--save-images', action='store_true', help='save generated patch')
