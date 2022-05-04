@@ -46,6 +46,8 @@ from yolov5.utils.metrics import ConfusionMatrix, ap_per_class_custom
 from yolov5.utils.plots import output_to_target, plot_images, plot_val_study, plot_false_positives
 from yolov5.utils.torch_utils import select_device, time_sync
 
+from yolor.models.models import Darknet
+
 warnings.filterwarnings("ignore")
 
 
@@ -77,7 +79,7 @@ def save_one_json(predn, jdict, path, class_map):
                       'score': round(p[4], 5)})
 
 
-def process_batch(detections, labels, iouv, other_class_label=None):
+def process_batch(detections, labels, iouv, other_class_label=None, other_class_confidence_threshold=0):
     """
     Return correct predictions matrix. Both sets of boxes are in (x1, y1, x2, y2) format.
     Arguments:
@@ -90,8 +92,7 @@ def process_batch(detections, labels, iouv, other_class_label=None):
     iou = box_iou(labels[:, 1:5], detections[:, :4])
 
     if other_class_label:
-        # x = torch.where((iou >= iouv[0]) & (labels[:, 0:1] == detections[:, 5]))  # IoU above threshold and classes match
-        x = torch.where((iou >= iouv[0]) & ((labels[:, 0:1] == detections[:, 5]) | (labels[:, 0:1] == other_class_label)))  # IoU above threshold and classes match        
+        x = torch.where((iou >= iouv[0]) & ((labels[:, 0:1] == detections[:, 5]) | ((labels[:, 0:1] == other_class_label) & (detections[:, 4] > other_class_confidence_threshold))))  # IoU above threshold and classes match        
     else:
         x = torch.where((iou >= iouv[0]) & (labels[:, 0:1] == detections[:, 5]))  # IoU above threshold and classes match
     # else:
@@ -112,7 +113,7 @@ def process_batch(detections, labels, iouv, other_class_label=None):
     return correct, matches
 
 
-def populate_default_metric(lbl_, min_area, filename):
+def populate_default_metric(lbl_, min_area, filename, other_class_label):
     lbl_ = lbl_.cpu().numpy()
     class_label, _, _, bbox_width, bbox_height, obj_id = lbl_
     bbox_area = bbox_width * bbox_height
@@ -126,6 +127,7 @@ def populate_default_metric(lbl_, min_area, filename):
     current_label_metric['sign_height'] = bbox_height
     current_label_metric['confidence'] = None
     current_label_metric['too_small'] = bbox_area < min_area
+    # current_label_metric['too_small'] = bbox_area < min_area or class_label == other_class_label
     current_label_metric['changed_from_other_label'] = 0
     return current_label_metric
 
@@ -231,9 +233,6 @@ def run(args,
         save_dir = increment_path(Path(project) / name, exist_ok=exist_ok)  # increment run
         (save_dir / 'labels' if save_txt else save_dir).mkdir(parents=True, exist_ok=True)  # make dir
 
-        # TODO: add as arg
-
-        # model_name = 'yolov5'
         if model_name == 'yolov5':
             # Load model
             model = DetectMultiBackend(weights, device=device, dnn=dnn)
@@ -250,8 +249,6 @@ def run(args,
                 device = torch.device('cpu')
                 LOGGER.info(f'Forcing --batch-size 1 square inference shape(1,3,{imgsz},{imgsz}) for non-PyTorch backends')
         elif model_name == 'yolor':
-            # TODO: move to imports above
-            from yolor.models.models import Darknet
             # Load model
             cfg = 'yolor/cfg/yolor_p6.cfg'
             model = Darknet(cfg, imgsz).cuda()
@@ -552,16 +549,10 @@ def run(args,
         targets[:, 2:6] *= torch.Tensor([width, height, width, height]).to(device)  # to pixels
         lb = [targets[targets[:, 0] == i, 1:] for i in range(nb)] if save_hybrid else []  # for autolabelling
         t3 = time_sync()
-        # print(out.shape)
-        # print(out, '\n')
         from yolor.utils.general import non_max_suppression
-        # print(conf_thres, iou_thres)
-        # qqq
         out = non_max_suppression(out, conf_thres=conf_thres, iou_thres=iou_thres)
         # out = non_max_suppression(out, conf_thres, iou_thres, labels=lb,
         #                           multi_label=True, agnostic=single_cls)
-        # print(out, '\n\n')
-            # qqq
 
         dt[2] += time_sync() - t3
 
@@ -591,7 +582,7 @@ def run(args,
             # If there's no prediction at all, we can collect the targets and continue to the next image.
             if len(pred) == 0:
                 for lbl_index, lbl_ in enumerate(labels):
-                    current_label_metric = populate_default_metric(lbl_, min_area, filename)
+                    current_label_metric = populate_default_metric(lbl_, min_area, filename, other_class_label)
                     lbl_index_to_keep[lbl_index] = ~current_label_metric['too_small']
                     metrics_per_label_df = metrics_per_label_df.append(
                         current_label_metric, ignore_index=True)
@@ -647,13 +638,10 @@ def run(args,
                 # `label_idx`: idx of object in `labels`
                 # `pred_idx`: idx of object in `predn`
 
-                # correct, _ = process_batch(predn, labelsn, iouv)
-                # _, matches = process_batch(predn, labelsn, iouv, keep_correct_predictions_only=False)
-
-                # matching on bounding boxes, i.e, match label and pred if iou >= 0.5
-                # correct, matches = process_batch(predn, labelsn, iouv)
+                # matching on bounding boxes and correct predictions, i.e, match label and pred if iou >= 0.5 and label == pred
+                # or match on whether label == 'other' class and iou(label, pred) >= 0.5 
                 # correct, matches = process_batch(predn, labelsn, iouv, other_class_label=None)
-                correct, matches = process_batch(predn, labelsn, iouv, other_class_label=other_class_label)
+                correct, matches = process_batch(predn, labelsn, iouv, other_class_label=other_class_label, other_class_confidence_threshold=other_class_confidence_threshold)
 
                 if plots:
                     confusion_matrix.process_batch(predn, labelsn)
@@ -682,7 +670,7 @@ def run(args,
 
                 assert len(match) <= 1  # There can only be one match per object
 
-                current_label_metric = populate_default_metric(lbl_, min_area, filename)
+                current_label_metric = populate_default_metric(lbl_, min_area, filename, other_class_label)
                 lbl_index_to_keep[lbl_index] = ~current_label_metric['too_small']
 
                 class_label = lbl_[0]
@@ -719,6 +707,11 @@ def run(args,
                         current_label_metric['label'] = pred_label.item()
                         current_label_metric['changed_from_other_label'] = 1
                         targets[targets[:, 0] == si, 1:] = labels
+
+                # if pred_label == other_class_label:
+                #     # as in the mtsd paper, we drop both label and prediction if any of them is 'other'
+                #     lbl_index_to_keep[lbl_index] = 0
+                #     pred_index_to_keep[det_idx] = 0
                 
                 # Get detection boolean at iou_thres
                 iou_idx = torch.where(iouv >= iou_thres)[0][0]
@@ -738,14 +731,13 @@ def run(args,
                 false_positives_preds.append(curr_false_positives_preds)
                 false_positives_filenames.append(filename)
 
-            # TODO: this might be wrong
             # if unmatched and small, the prediction should be removed
             pred_index_to_keep = np.logical_and(pred_index_to_keep, ~np.logical_and(unmatched_preds_index, small_preds_index))
-            
-            # Filter out predictions and labels with too small objects
+
             correct = correct[pred_index_to_keep]
             pred = pred[pred_index_to_keep]
             labels = labels[lbl_index_to_keep]
+
             tcls = labels[:, 0].tolist() if nl else []  # target class
             
             labels_kept += lbl_index_to_keep.sum()

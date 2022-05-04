@@ -8,10 +8,14 @@ import random
 
 import cv2
 import numpy as np
+import matplotlib.pyplot as plt
 
 from yolov5.utils.general import LOGGER, check_version, colorstr, resample_segments, segment2box
 from yolov5.utils.metrics import bbox_ioa
 
+    
+BOX_COLOR = (255, 0, 0) # Red
+TEXT_COLOR = (255, 255, 255) # White
 
 class Albumentations:
     # YOLOv5 Albumentations class (optional, only used if package is installed)
@@ -122,7 +126,7 @@ def letterbox(im, new_shape=(640, 640), color=(114, 114, 114), auto=True, scaleF
 
 
 def random_perspective(im, targets=(), segments=(), degrees=10, translate=.1, scale=.1, shear=10, perspective=0.0,
-                       border=(0, 0)):
+                       border=(0, 0), random_crop=False):
     # torchvision.transforms.RandomAffine(degrees=(-10, 10), translate=(0.1, 0.1), scale=(0.9, 1.1), shear=(-10, 10))
     # targets = [cls, xyxy]
 
@@ -165,12 +169,6 @@ def random_perspective(im, targets=(), segments=(), degrees=10, translate=.1, sc
         else:  # affine
             im = cv2.warpAffine(im, M[:2], dsize=(width, height), borderValue=(114, 114, 114))
 
-    # Visualize
-    # import matplotlib.pyplot as plt
-    # ax = plt.subplots(1, 2, figsize=(12, 6))[1].ravel()
-    # ax[0].imshow(im[:, :, ::-1])  # base
-    # ax[1].imshow(im2[:, :, ::-1])  # warped
-
     # Transform label coordinates
     n = len(targets)
     if n:
@@ -207,6 +205,22 @@ def random_perspective(im, targets=(), segments=(), degrees=10, translate=.1, sc
         targets = targets[i]
         targets[:, 1:5] = new[i]
 
+    # EDIT
+    if random_crop:
+        import albumentations as A
+        transform = A.Compose(
+            [A.RandomSizedBBoxSafeCrop(width=width, height=height, erosion_rate=0.0)],
+            bbox_params=A.BboxParams(format='pascal_voc', label_fields=['category_ids']))
+
+        transformed = transform(image=im[:, :, ::-1], bboxes=targets[:, 1:5], category_ids=targets[:, 0])
+
+        # visualize before and after random crop
+        # visualize(im[:, :, ::-1], targets[:, 1:5], 'test_augmentation_before.png')
+        # visualize(transformed['image'], transformed['bboxes'], 'test_augmentation_after.png')
+
+        im[:, :, ::-1] = transformed['image']
+        targets[:, 1:5] = np.array(transformed['bboxes'])
+    
     return im, targets
 
 
@@ -275,3 +289,35 @@ def box_candidates(box1, box2, wh_thr=2, ar_thr=20, area_thr=0.1, eps=1e-16):  #
     w2, h2 = box2[2] - box2[0], box2[3] - box2[1]
     ar = np.maximum(w2 / (h2 + eps), h2 / (w2 + eps))  # aspect ratio
     return (w2 > wh_thr) & (h2 > wh_thr) & (w2 * h2 / (w1 * h1 + eps) > area_thr) & (ar < ar_thr)  # candidates
+
+def visualize_bbox(img, bbox, class_name, color=BOX_COLOR, thickness=2):
+    """Visualizes a single bounding box on the image"""
+    x_min, y_min, x_max, y_max = bbox
+    x_min = int(x_min)
+    x_max = int(x_max)
+    y_min = int(y_min)
+    y_max = int(y_max)
+
+    cv2.rectangle(img, (x_min, y_min), (x_max, y_max), color=color, thickness=thickness)
+    
+    ((text_width, text_height), _) = cv2.getTextSize(class_name, cv2.FONT_HERSHEY_SIMPLEX, 0.35, 1)    
+    cv2.rectangle(img, (x_min, y_min - int(1.3 * text_height)), (x_min + text_width, y_min), BOX_COLOR, -1)
+    cv2.putText(
+        img,
+        text=class_name,
+        org=(x_min, y_min - int(0.3 * text_height)),
+        fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+        fontScale=0.35, 
+        color=TEXT_COLOR, 
+        lineType=cv2.LINE_AA,
+    )
+    return img
+
+
+def visualize(image, bboxes, filename):
+    img = image.copy()
+    for bbox in bboxes:
+        img = visualize_bbox(img, bbox, 'label')
+    fig = plt.figure(figsize=(20, 20))
+    plt.imshow(img)
+    fig.savefig(filename)
