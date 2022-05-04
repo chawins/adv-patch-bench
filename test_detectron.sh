@@ -1,20 +1,23 @@
 # Detector train script
-GPU=1
+GPU=0
 NUM_GPU=1
-EXP=faster_rcnn_R_50_FPN_mtsd_no_color_1
+EXP=faster_rcnn_R_50_FPN_mtsd_no_color_2
 # EXP=faster_rcnn_R_50_FPN_mtsd_color_1
 OUTPUT_PATH=~/adv-patch-bench/detectron_output/$EXP
+PATCH_NAME=test
+CSV_PATH=mapillary_vistas_training_final_merged.csv
+SYN_OBJ_PATH=attack_assets/octagon-915.0.png
+OBJ_CLASS=10
 
 # Test a detector on Detectron2
-CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
-    --num-gpus $NUM_GPU \
-    --config-file ./configs/faster_rcnn_R_50_FPN_3x.yaml \
-    --dataset mtsd_no_color --eval-mode drop \
-    --debug \
-    MODEL.ROI_HEADS.NUM_CLASSES 11 \
-    OUTPUT_DIR $OUTPUT_PATH \
-    MODEL.WEIGHTS $OUTPUT_PATH/model_final.pth \
-    DATALOADER.NUM_WORKERS 8
+# CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
+#     --num-gpus $NUM_GPU \
+#     --config-file ./configs/faster_rcnn_R_50_FPN_3x.yaml \
+#     --dataset mtsd_no_color --eval-mode drop \
+#     MODEL.ROI_HEADS.NUM_CLASSES 12 \
+#     OUTPUT_DIR $OUTPUT_PATH \
+#     MODEL.WEIGHTS $OUTPUT_PATH/model_final.pth \
+#     DATALOADER.NUM_WORKERS 8
 # --debug \
 # --single-image \
 # --data-no-other \
@@ -25,3 +28,15 @@ CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
 # MODEL.WEIGHTS
 # --resume --eval-only
 # --eval-only MODEL.WEIGHTS /path/to/checkpoint_file
+
+CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
+    --num-gpus $NUM_GPU --config-file ./configs/faster_rcnn_R_50_FPN_3x.yaml \
+    --dataset mapillary_no_color --eval-mode drop \
+    --tgt-csv-filepath $CSV_PATH --attack-config-path attack_config.yaml \
+    --adv-patch-path ./runs/val/exp$EXP/$PATCH_NAME.pkl --name $PATCH_NAME \
+    --obj-class $OBJ_CLASS --syn-obj-path $SYN_OBJ_PATH \
+    --attack-type per-sign --interp bilinear --min-area 600 --debug --verbose \
+    MODEL.ROI_HEADS.NUM_CLASSES 12 \
+    OUTPUT_DIR $OUTPUT_PATH \
+    MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
+    DATALOADER.NUM_WORKERS 8

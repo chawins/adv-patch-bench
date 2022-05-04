@@ -24,7 +24,7 @@ from detectron2.modeling import GeneralizedRCNNWithTTA
 
 import adv_patch_bench.utils.detectron.custom_coco_evaluator as cocoeval
 # Import this file to register MTSD for detectron
-from adv_patch_bench.dataloaders.mtsd_detectron import register_mtsd
+from adv_patch_bench.dataloaders.detectron.mtsd import register_mtsd
 from adv_patch_bench.utils.detectron.custom_best_checkpointer import \
     BestCheckpointer
 from adv_patch_bench.utils.detectron.custom_sampler import \
@@ -145,9 +145,9 @@ def main(args):
     trainer = Trainer(cfg)
     trainer.resume_or_load(resume=args.resume)
     # Register hook for our custom checkpointer every `eval_period` steps
-    trainer.register_hooks([
-        BestCheckpointer(cfg.TEST.EVAL_PERIOD, trainer.checkpointer),
-    ])
+    # trainer.register_hooks([
+    #     BestCheckpointer(cfg.TEST.EVAL_PERIOD, trainer.checkpointer),
+    # ])
     # if cfg.TEST.AUG.ENABLED:
     #     trainer.register_hooks(
     #         [hooks.EvalHook(0, lambda: trainer.test_with_TTA(cfg, trainer.model))]
@@ -162,7 +162,7 @@ if __name__ == "__main__":
                         help='If True, do not load "other" or "background" class to the dataset.')
     parser.add_argument('--eval-mode', type=str, default='default')
     args = parser.parse_args()
-    
+
     print('Command Line Args: ', args)
     assert args.dataset in DATASETS
 

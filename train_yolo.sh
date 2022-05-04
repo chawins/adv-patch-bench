@@ -1,6 +1,6 @@
 # Train
-GPU=0,1,2,3,4,5,6,7
-NUM_GPU=8
+GPU=0,1
+NUM_GPU=2
 
 # CUDA_VISIBLE_DEVICES=$GPU torchrun \
 #     --standalone --nnodes=1 --max_restarts 0 --nproc_per_node $NUM_GPU \
@@ -21,11 +21,11 @@ CUDA_VISIBLE_DEVICES=$GPU torchrun \
     train_yolov5.py \
     --hyp yolov5/data/hyps/hyp.scratch.yaml \
     --img 1280 \
-    --batch 112 \
+    --batch 2 \
     --data yolov5/data/mtsd_no_color.yaml \
     --weights yolov5/yolov5s.pt \
     --exist-ok \
-    --workers 64 \
+    --workers 8 \
     --device $GPU \
     --save-period 15 \
     --epochs 200

@@ -1,3 +1,6 @@
+from .detectron.mapillary import get_mapillary_dict, register_mapillary
+from .detectron.mapper import BenignMapper
+from .detectron.mtsd import get_mtsd_dict, register_mtsd
 from .image_only_dataset import ImageOnlyFolder
 from .mtsd import MTSD
 

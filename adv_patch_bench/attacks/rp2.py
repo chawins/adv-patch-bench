@@ -2,6 +2,7 @@ import time
 
 import numpy as np
 import torch
+import torch.functional as F
 import torch.optim as optim
 import torchvision
 from adv_patch_bench.transforms import apply_transform, get_transform
@@ -12,6 +13,7 @@ from yolov5.utils.plots import output_to_target, plot_images
 
 from ..utils.image import letterbox, mask_to_box
 from .base_detector import DetectorAttackModule
+from .detectron_utils import get_targets
 
 EPS = 1e-6
 
@@ -40,16 +42,12 @@ class RP2AttackModule(DetectorAttackModule):
 
         self.num_restarts = 1
         self.verbose = verbose
+        self.is_detectron = True  # FIXME
 
+        # Defind EoT data augmentation when generating adversarial examples
         bg_size = (self.input_size[0] - 32, self.input_size[1] - 32)
         self.bg_transforms = K.RandomResizedCrop(bg_size, scale=(0.8, 1), p=1.0,
                                                  resample=self.interp)
-        # self.obj_transforms = K.container.AugmentationSequential(
-        #     K.RandomAffine(30, translate=(0.5, 0.5)),      # Only translate and rotate as in Eykholt et al.
-        #     # RandomAffine(30, translate=(0.5, 0.5), scale=(0.25, 4), shear=(0.1, 0.1), p=1.0),
-        #     # TODO: add more transforms in the future
-        #     return_transform=True,
-        # )
         self.obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0,
                                              return_transform=True, resample=self.interp)
         self.mask_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0,
@@ -74,6 +72,14 @@ class RP2AttackModule(DetectorAttackModule):
         return opt
 
     def compute_loss(self, adv_img, obj_class):
+        if self.is_detectron:
+            loss = self._compute_loss_rcnn(adv_img, obj_class)
+        else:
+            loss = self._compute_loss_yolo(adv_img, obj_class)
+        return loss
+
+    # ======================== YOLO-specific methods ======================== #
+    def _compute_loss_yolo(self, adv_img, obj_class):
         # Compute logits, loss, gradients
         out, _ = self.core_model(adv_img, val=True)
         conf = out[:, :, 4:5] * out[:, :, 5:]
@@ -91,13 +97,28 @@ class RP2AttackModule(DetectorAttackModule):
             loss = conf.max(1)[0].clamp_min(self.min_conf).mean()
         return loss
 
-    def attack(self,
-               obj: torch.Tensor,
-               obj_mask: torch.Tensor,
-               patch_mask: torch.Tensor,
-               backgrounds: torch.Tensor,
-               obj_class: int = None,
-               obj_size: tuple = None) -> torch.Tensor:
+    # ==================== Faster R-CNN-specific methods ==================== #
+    def _compute_loss_rcnn(self, adv_img, obj_class):
+        target_boxes, target_labels, target_logits, obj_logits = get_targets(
+            self.core_model, adv_img, device=self.device)
+        # features = self.core_model.backbone(adv_img)
+        # # Get classification logits
+        # logits, _ = get_roi_heads_predictions(features, target_boxes)
+        target_loss = F.cross_entropy(target_logits, target_labels, reduction='sum')
+        obj_labels = torch.ones(len(obj_logits), device=self.device, dtype=torch.long)
+        obj_loss = F.cross_entropy(obj_logits, obj_labels, reduction='sum')
+        # TODO: constant?
+        return target_loss + obj_loss
+
+    def attack(
+        self,
+        obj: torch.Tensor,
+        obj_mask: torch.Tensor,
+        patch_mask: torch.Tensor,
+        backgrounds: torch.Tensor,
+        obj_class: int = None,
+        obj_size: tuple = None,
+    ) -> torch.Tensor:
         """Run RP2 Attack.
 
         Args:
@@ -151,8 +172,9 @@ class RP2AttackModule(DetectorAttackModule):
                 bg_idx = all_bg_idx[:self.num_eot]
                 bgs = backgrounds[bg_idx]
                 bgs = self.bg_transforms(bgs)
-                # Patch image the same way as YOLO
-                bgs = letterbox(bgs, new_shape=self.input_size, color=114/255)[0]
+                if not self.is_detectron:
+                    # Patch image the same way as YOLO
+                    bgs = letterbox(bgs, new_shape=self.input_size, color=114/255)[0]
                 synthetic_sign_size = obj_size[0]
 
                 if self.rescaling:

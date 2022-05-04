@@ -1,6 +1,11 @@
+from os.path import expanduser, join
+
 # Set paths
 PATH_MAPILLARY_ANNO_TRAIN = './mapillary_vistas_training_final_merged.csv'
 PATH_MAPILLARY_ANNO_VAL = './mapillary_vistas_validation_final_merged.csv'
+PATH_MAPILLARY_BASE = expanduser('~/data/mapillary_vistas/')
+PATH_APB_ANNO = expanduser('~/adv-patch-bench/traffic_sign_dimension_v6.csv')
+PATH_SIMILAR_FILES = './similar_files_df.csv'
 
 
 # Traffic sign classes and colors
@@ -46,7 +51,7 @@ TS_NO_COLOR_LABEL_LIST = list(TS_COLOR_DICT.keys())
 MIN_OBJ_AREA = 0
 NUM_CLASSES = len(TS_COLOR_LABEL_LIST)
 
-DATASETS = ('mtsd_orig', 'mtsd_no_color', 'mtsd_color')
+DATASETS = ('mtsd_orig', 'mtsd_no_color', 'mtsd_color', 'mapillary_no_color', 'mapillary_color')
 OTHER_SIGN_CLASS = {
     'mtsd_orig': 89,
     'mtsd_no_color': len(TS_NO_COLOR_LABEL_LIST) - 1,
