@@ -769,9 +769,10 @@ def load_image(self, i, mosaic=False):
             im = cv2.imread(path)  # BGR
             assert im is not None, f'Image Not Found {path}'
         h0, w0 = im.shape[:2]  # orig hw
-        # EDIT: When mosaic is used (i.e., during training), don't resize
+        # EDIT: When mosaic is used (i.e., during training), don't resize if
+        # the original image is smaller than 4000px
         # r = self.img_size / max(h0, w0)  # ratio
-        r = self.img_size / max(h0, w0) if not mosaic else 1  # ratio
+        r = self.img_size / max(h0, w0) if not mosaic else min(1, 4000 / max(h0, w0))
         if r != 1:  # if sizes are not equal
             im = cv2.resize(im, (int(w0 * r), int(h0 * r)),
                             interpolation=cv2.INTER_AREA if r < 1 and not self.augment else cv2.INTER_LINEAR)

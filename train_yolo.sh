@@ -21,7 +21,7 @@ CUDA_VISIBLE_DEVICES=$GPU torchrun \
     train_yolov5.py \
     --hyp yolov5/data/hyps/hyp.scratch.yaml --weights yolov5/yolov5s.pt --exist-ok \
     --data yolov5/data/mtsd_no_color.yaml --img 1000 --batch 128 \
-    --workers 16 --device $GPU --save-period 5 --epochs 100 --sync-bn
+    --workers 16 --device $GPU --save-period 5 --epochs 100 --sync-bn --cache
 # NOTE: --cache uses a lot of memeory (~80G)
 
 # CUDA_VISIBLE_DEVICES=$GPU torchrun \
