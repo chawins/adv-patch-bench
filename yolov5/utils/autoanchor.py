@@ -117,8 +117,8 @@ def kmean_anchors(dataset='./data/coco128.yaml', n=9, img_size=640, thr=4.0, gen
     wh0 = np.concatenate([l[:, 3:5] * s for s, l in zip(shapes, dataset.labels)])  # wh
 
     # Filter
-    # TODO
-    MIN_OBJ_SIZE = 25.0
+    # EDIT
+    MIN_OBJ_SIZE = 3.0
     i = (wh0 < MIN_OBJ_SIZE).any(1).sum()
     if i:
         LOGGER.info(f'{PREFIX}WARNING: Extremely small objects found. {i} of '
