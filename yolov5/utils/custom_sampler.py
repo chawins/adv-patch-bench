@@ -34,7 +34,8 @@ class RepeatFactorTrainingSampler(Sampler):
         # Split into whole number (_int_part) and fractional (_frac_part) parts.
         self._int_part = torch.trunc(repeat_factors)
         self._frac_part = repeat_factors - self._int_part
-        self.num_images = len(repeat_factors)
+        # self.num_images = len(repeat_factors)
+        self.num_images = 300
         self.epoch = None
 
     @staticmethod
@@ -115,7 +116,7 @@ class RepeatFactorTrainingSampler(Sampler):
 
     def __iter__(self):
         start = self._rank
-        yield from itertools.islice(self._infinite_indices(), start, None, self._world_size)
+        yield from itertools.islice(self._infinite_indices(), start, self.num_images, self._world_size)
 
     def _infinite_indices(self):
         g = torch.Generator()
@@ -131,8 +132,7 @@ class RepeatFactorTrainingSampler(Sampler):
                 yield from indices.tolist()
 
     def __len__(self) -> int:
-        # return self.num_images
-        return 20
+        return self.num_images
 
     def set_epoch(self, epoch: int) -> None:
         r"""
