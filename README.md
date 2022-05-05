@@ -70,20 +70,15 @@ cd ./yolor/scripts && gdown 1Tdn3yqpZ79X7R1Ql0zNlNScB1Dv9Fp76
 # Prepare MTSD path
 # Dataset should be extracted to ~/data/mtsd_v2_fully_annotated
 # FIXME: change yolo_data
-LABEL_NAME=labels
+LABEL_NAME=labels_no_color
 cd ~/data/ && mkdir yolo_data && mkdir yolo_data/images yolo_data/labels
-mkdir yolo_data/images/train yolo_data/images/val yolo_data/images/test
-mkdir yolo_data/labels/train yolo_data/labels/val yolo_data/labels/test
 
-cd ~/data/yolo_data/images/train
-ln -s ~/data/mtsd_v2_fully_annotated/images/train/* .
-cd ~/data/yolo_data/images/val
-ln -s ~/data/mtsd_v2_fully_annotated/images/val/* .
-
-cd ~/data/yolo_data/labels/train
-ln -s ~/data/mtsd_v2_fully_annotated/$LABEL_NAME/train/* .
-cd ~/data/yolo_data/labels/val
-ln -s ~/data/mtsd_v2_fully_annotated/$LABEL_NAME/val/* .
+cd ~/data/yolo_data/images/
+ln -s ~/data/mtsd_v2_fully_annotated/images/train train
+ln -s ~/data/mtsd_v2_fully_annotated/images/val val
+cd ~/data/yolo_data/labels/
+ln -s ~/data/mtsd_v2_fully_annotated/$LABEL_NAME/train train
+ln -s ~/data/mtsd_v2_fully_annotated/$LABEL_NAME/val val
 
 # Prepare Mapillary path
 # Dataset should be extracted to ~/data/mapillary_vistas
