@@ -706,6 +706,8 @@ class LoadImagesAndLabels(Dataset):
         #     orig_labels[:, :-1] = labels
         if orig_labels.shape[0] == 0:
             print('====== saving =======')
+            print(img)
+            print(img.shape)
             import torchvision
             torchvision.utils.save_image(torch.from_numpy(img).float(), 'debug.png')
         orig_labels[:, :-1] = labels

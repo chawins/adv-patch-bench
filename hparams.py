@@ -3,6 +3,7 @@ from os.path import expanduser, join
 # Set paths
 PATH_MAPILLARY_ANNO_TRAIN = './mapillary_vistas_training_final_merged.csv'
 PATH_MAPILLARY_ANNO_VAL = './mapillary_vistas_validation_final_merged.csv'
+PATH_MTSD_BASE = expanduser('~/data/mtsd_v2_fully_annotated/')
 PATH_MAPILLARY_BASE = expanduser('~/data/mapillary_vistas/')
 PATH_APB_ANNO = expanduser('~/adv-patch-bench/traffic_sign_dimension_v6.csv')
 PATH_SIMILAR_FILES = './similar_files_df.csv'

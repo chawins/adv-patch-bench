@@ -4,12 +4,12 @@ import pdb
 import shutil
 from os.path import expanduser, join
 
-import matplotlib.pyplot as plt
 import pandas as pd
 from tqdm import tqdm
 
-from hparams import (MIN_OBJ_AREA, NUM_CLASSES, TS_COLOR_DICT,
-                     TS_COLOR_OFFSET_DICT)
+from hparams import (MIN_OBJ_AREA, PATH_APB_ANNO, PATH_MTSD_BASE,
+                     PATH_SIMILAR_FILES, TS_COLOR_DICT, TS_COLOR_OFFSET_DICT,
+                     OTHER_SIGN_CLASS)
 
 
 def readlines(path):
@@ -17,24 +17,25 @@ def readlines(path):
         lines = f.readlines()
     return [line.strip() for line in lines]
 
-use_mtsd_original_labels = False
 
 use_mtsd_original_labels = False
+ignore_other = False
 use_color = False
 
-path = '/data/shared/mtsd_v2_fully_annotated/'
-# path = expanduser('~/data/mtsd_v2_fully_annotated/')
-# os.makedirs(path, exist_ok=True)
-csv_path = './traffic_sign_dimension_v6.csv'
-similarity_df_csv_path = 'similar_files_df.csv'
+path = PATH_MTSD_BASE
+csv_path = PATH_APB_ANNO
+similarity_df_csv_path = PATH_SIMILAR_FILES
 anno_path = join(path, 'annotations')
 
 if use_mtsd_original_labels:
     label_path = 'labels_original'
+    dataset = 'mtsd_orig'
 elif use_color:
     label_path = 'labels_color'
+    dataset = 'mtsd_color'
 else:
     label_path = 'labels_no_color'
+    dataset = 'mtsd_no_color'
 label_path = join(path, label_path)
 data = pd.read_csv(csv_path)
 similar_files_df = pd.read_csv(similarity_df_csv_path)
@@ -61,7 +62,8 @@ else:
             mtsd_label_to_class_index[row['sign']] = idx
 # print(mtsd_label_to_class_index)
 
-bg_idx = max(list(mtsd_label_to_class_index.values())) + 1
+# bg_idx = max(list(mtsd_label_to_class_index.values())) + 1
+bg_idx = OTHER_SIGN_CLASS[dataset]
 
 # Save filenames and the data partition they belong to
 splits = ['train', 'test', 'val']
@@ -109,10 +111,6 @@ for json_file in tqdm(json_files):
         obj_width = (obj['bbox']['xmax'] - obj['bbox']['xmin']) / width
         obj_height = (obj['bbox']['ymax'] - obj['bbox']['ymin']) / height
 
-        # import pdb
-        # pdb.set_trace()
-        # mtsd_label_to_class_index
-
         class_index = mtsd_label_to_class_index.get(obj['label'], bg_idx)
         # Compute object area if the image were to be resized to have width of 1280 pixels
         obj_area = (obj_width * 1280) * (obj_height * height / width * 1280)
@@ -123,9 +121,9 @@ for json_file in tqdm(json_files):
         if obj_area < MIN_OBJ_AREA:
             num_too_small += 1
             continue
-        # if class_index == bg_idx:
-        #     num_other += 1
-        #     continue
+        if ignore_other and class_index == bg_idx:
+            num_other += 1
+            continue
         text += f'{class_index:d} {x_center} {y_center} {obj_width} {obj_height} 0\n'
 
     if text != '':

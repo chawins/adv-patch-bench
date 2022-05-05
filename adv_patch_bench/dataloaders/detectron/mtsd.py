@@ -6,7 +6,8 @@ from typing import Any, Dict, List, Tuple
 import pandas as pd
 from detectron2.data import DatasetCatalog, MetadataCatalog
 from detectron2.structures import BoxMode
-from hparams import (MIN_OBJ_AREA, TS_COLOR_DICT, TS_COLOR_LABEL_LIST,
+from hparams import (MIN_OBJ_AREA, PATH_APB_ANNO, PATH_MTSD_BASE,
+                     PATH_SIMILAR_FILES, TS_COLOR_DICT, TS_COLOR_LABEL_LIST,
                      TS_COLOR_OFFSET_DICT, TS_NO_COLOR_LABEL_LIST)
 from tqdm import tqdm
 
@@ -84,13 +85,12 @@ def register_mtsd(
     use_color: bool = False,
     ignore_other: bool = False
 ) -> Tuple:
-    # TODO: move path to config file
-    path = expanduser('~/data/mtsd_v2_fully_annotated/')
-    csv_path = expanduser('~/adv-patch-bench/traffic_sign_dimension_v6.csv')
+    path = PATH_MTSD_BASE
+    csv_path = PATH_APB_ANNO
+    similarity_df_csv_path = PATH_SIMILAR_FILES
+    
     anno_path = expanduser(join(path, 'annotations'))
     data = pd.read_csv(csv_path)
-
-    similarity_df_csv_path = 'similar_files_df.csv'
     similar_files_df = pd.read_csv(similarity_df_csv_path)
 
     if use_color:
