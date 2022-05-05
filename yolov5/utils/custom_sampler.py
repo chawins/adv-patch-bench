@@ -84,7 +84,6 @@ class RepeatFactorTrainingSampler(Sampler):
         #    r(I) = max_{c in I} r(c)
         rep_factors = []
         for image_filename in img_to_labels:
-
             cat_ids = set(img_to_labels[image_filename])
             rep_factor = max({category_rep[cat_id] for cat_id in cat_ids}, default=1.0)
             rep_factors.append(rep_factor)
@@ -116,7 +115,12 @@ class RepeatFactorTrainingSampler(Sampler):
 
     def __iter__(self):
         start = self._rank
-        yield from itertools.islice(self._infinite_indices(), start, self.num_images, self._world_size)
+        # EDIT: Set a stopping index
+        # yield from itertools.islice(self._infinite_indices(), start, None, self._world_size)
+        yield from itertools.islice(self._infinite_indices(),
+                                    start,
+                                    int(self.num_images * self._world_size),
+                                    self._world_size)
 
     def _infinite_indices(self):
         g = torch.Generator()
