@@ -757,7 +757,7 @@ class LoadImagesAndLabels(Dataset):
 
 
 # Ancillary functions --------------------------------------------------------------------------------------------------
-def load_image(self, i):
+def load_image(self, i, mosaic=False):
     # loads 1 image from dataset index 'i', returns im, original hw, resized hw
     im = self.imgs[i]
     if im is None:  # not cached in ram
@@ -769,7 +769,9 @@ def load_image(self, i):
             im = cv2.imread(path)  # BGR
             assert im is not None, f'Image Not Found {path}'
         h0, w0 = im.shape[:2]  # orig hw
-        r = self.img_size / max(h0, w0)  # ratio
+        # EDIT: When mosaic is used (i.e., during training), don't resize
+        # r = self.img_size / max(h0, w0)  # ratio
+        r = self.img_size / max(h0, w0) if not mosaic else 1  # ratio
         if r != 1:  # if sizes are not equal
             im = cv2.resize(im, (int(w0 * r), int(h0 * r)),
                             interpolation=cv2.INTER_AREA if r < 1 and not self.augment else cv2.INTER_LINEAR)
@@ -787,7 +789,7 @@ def load_mosaic(self, index):
     random.shuffle(indices)
     for i, index in enumerate(indices):
         # Load image
-        img, _, (h, w) = load_image(self, index)
+        img, _, (h, w) = load_image(self, index, mosaic=True)
 
         # place img in img4
         if i == 0:  # top left
