@@ -131,7 +131,8 @@ class RepeatFactorTrainingSampler(Sampler):
                 yield from indices.tolist()
 
     def __len__(self) -> int:
-        return self.num_images
+        # return self.num_images
+        return 20
 
     def set_epoch(self, epoch: int) -> None:
         r"""
