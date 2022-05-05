@@ -18,6 +18,6 @@ rp2_lambda: 1.0e-2
 rp2_min_conf: 0
 rp2_augment_real: False
 attack_mode: ''
-no_transform: False
-relighting: True
+use_patch_transform: False
+use_patch_relight: True
 interp: 'bilinear'

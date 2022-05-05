@@ -13,26 +13,20 @@ import pdb
 import pickle
 import sys
 import warnings
-from ast import literal_eval
 from pathlib import Path
 from threading import Thread
-import matplotlib.pyplot as plt
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import torch
-import torchvision
-import torchvision.transforms.functional as T
 import yaml
-from kornia import augmentation as K
-from kornia.constants import Resample
-from kornia.geometry.transform import resize
 from tqdm import tqdm
 
 from adv_patch_bench.attacks.rp2 import RP2AttackModule
+from adv_patch_bench.attacks.utils import prep_attack, prep_synthetic_eval
 from adv_patch_bench.transforms import transform_and_apply_patch
-from adv_patch_bench.utils.image import (mask_to_box, pad_and_center,
-                                         prepare_obj)
+from yolor.models.models import Darknet
 from yolov5.models.common import DetectMultiBackend
 from yolov5.utils.callbacks import Callbacks
 from yolov5.utils.datasets import create_dataloader
@@ -43,10 +37,9 @@ from yolov5.utils.general import (LOGGER, box_iou, check_dataset,
                                   print_args, scale_coords, xywh2xyxy,
                                   xyxy2xywh)
 from yolov5.utils.metrics import ConfusionMatrix, ap_per_class_custom
-from yolov5.utils.plots import output_to_target, plot_images, plot_val_study, plot_false_positives
+from yolov5.utils.plots import (output_to_target, plot_false_positives,
+                                plot_images, plot_val_study)
 from yolov5.utils.torch_utils import select_device, time_sync
-
-from yolor.models.models import Darknet
 
 warnings.filterwarnings("ignore")
 
@@ -192,6 +185,7 @@ def run(args,
     relighting = not args.no_relighting
     metrics_conf_thres = args.metrics_confidence_threshold
     img_size = tuple([int(x) for x in args.padded_imgsz.split(',')])
+    img_height, img_width = img_size
 
     false_positive_images = []
     false_positives_labels = []
@@ -297,8 +291,11 @@ def run(args,
 
     try:
         names = {k: v for k, v in enumerate(model.names if hasattr(model, 'names') else model.module.names)}
-        # TODO: temporary fix
+        # TODO: temporary fix  # FIXME
         names[11] = 'other'
+        print('figure out names')
+        import pdb
+        pdb.set_trace()
     except:
         names = {k: v for k, v in enumerate(data['names'])}
 
@@ -324,64 +321,13 @@ def run(args,
     #     torchvision.utils.save_image(demo_patch, f)
 
     if synthetic_eval:
-        # Testing with synthetic signs
-        syn_sign_class = len(names)
-        names[syn_sign_class] = 'synthetic'
-        nc += 1
-        # Set up random transforms for synthetic sign
-        img_height, img_width = img_size
-        obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True)
-        mask_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, resample=Resample.NEAREST)
-
-        # Load synthetic object/sign from file
-        adv_patch, patch_mask = pickle.load(open(adv_patch_path, 'rb'))
-        patch_mask = patch_mask.to(device)
-        obj_size = patch_mask.shape[1]
-        obj, obj_mask = prepare_obj(syn_obj_path, img_size, (obj_size, obj_size))
-        obj = obj.to(device)
-        obj_mask = obj_mask.to(device).unsqueeze(0)
+        # Prepare evaluation with synthetic signs
+        obj, obj_mask, obj_transforms, mask_transforms, syn_sign_class = \
+            prep_synthetic_eval(args, img_size, names, device=device)
 
     if use_attack:
-        # Load patch from a pickle file if specified
-        # TODO: make script to generate dummy patch
-        adv_patch, patch_mask = pickle.load(open(adv_patch_path, 'rb'))
-        patch_mask = patch_mask.to(device)
-        patch_height, patch_width = adv_patch.shape[1:]
-        patch_loc = mask_to_box(patch_mask)
-
-        if attack_type == 'debug':
-            # Load 'arrow on checkboard' patch if specified (for debug)
-            adv_patch = torchvision.io.read_image('demo.png').float()[:3, :, :] / 255
-            adv_patch = resize(adv_patch, (patch_height, patch_width))
-        elif attack_type == 'random':
-            # Patch with uniformly random pixels
-            adv_patch = torch.rand(3, patch_height, patch_width)
-
-        if synthetic_eval:
-            # Adv patch and mask have to be made compatible with random
-            # transformation for synthetic signs
-            _, patch_mask = pad_and_center(None, patch_mask, img_size, (obj_size, obj_size))
-            patch_loc = mask_to_box(patch_mask)
-            # Pad adv patch
-            pad_size = [
-                patch_loc[1],  # left
-                patch_loc[0],  # right
-                img_size[1] - patch_loc[1] - patch_loc[3],  # top
-                img_size[0] - patch_loc[0] - patch_loc[2],  # bottom
-            ]
-            adv_patch = T.pad(adv_patch, pad_size)
-            patch_mask = patch_mask.to(device)
-            adv_patch = adv_patch.to(device)
-            obj = obj.to(device)
-        else:
-            # load csv file containing target points for transform
-            df = pd.read_csv(tgt_csv_filepath)
-            # converts 'tgt_final' from string to list format
-            df['tgt_final'] = df['tgt_final'].apply(literal_eval)
-            # exclude shapes to which we do not apply the transform to
-            df = df[df['final_shape'] != 'other-0.0-0.0']
-            print(df.shape)
-            print(df.groupby(by=['final_shape']).count())
+        # Prepare attack data
+        df, adv_patch, patch_mask, patch_loc = prep_attack(args, device)
 
     # Initialize attack
     if attack_type == 'per-sign':
@@ -478,13 +424,12 @@ def run(args,
                                 attack_images, patch_mask=patch_mask,
                                 obj_class=adv_sign_class)[0]
 
-                    # # Transform and apply patch on the image. `im` has range [0, 255]
+                    # Transform and apply patch on the image. `im` has range [0, 255]
                     im[image_i] = transform_and_apply_patch(
                         im[image_i].to(device), adv_patch.to(device),
                         patch_mask, patch_loc, predicted_class, row, img_data,
-                        no_transform=no_transform, relighting=relighting,
-                        interp=args.interp) * 255
-                    # num_patches_applied_to_image += 1
+                        use_transform=not args.no_patch_transform,
+                        use_relight=not args.no_patch_relight, interp=args.interp) * 255
                     total_num_patches += 1
 
                 # set targets[6] to #patches_applied_to_image
@@ -1022,7 +967,7 @@ def parse_opt():
 
     # ========================== Our misc arguments ========================= #
     parser.add_argument('--seed', type=int, default=0, help='set random seed')
-    parser.add_argument('--padded_imgsz', type=str, default='992,1312',
+    parser.add_argument('--padded-imgsz', type=str, default='992,1312',
                         help='final image size including padding (height,width). Default: 992,1312')
     parser.add_argument('--interp', type=str, default='bilinear',
                         help='interpolation method (nearest, bilinear, bicubic)')
@@ -1045,10 +990,10 @@ def parse_opt():
                         help='path to a text file containing image filenames')
     parser.add_argument('--run-only-img-txt', action='store_true',
                         help='run evaluation on images listed in img-txt-path. Otherwise, exclude these images.')
-    parser.add_argument('--no-transform', action='store_true',
+    parser.add_argument('--no-patch-transform', action='store_true',
                         help=('If True, do not apply patch to signs using '
                               '3D-transform. Patch will directly face camera.'))
-    parser.add_argument('--no-relighting', action='store_true',
+    parser.add_argument('--no-patch-relighting', action='store_true',
                         help=('If True, do not apply relighting transform to patch'))
     parser.add_argument('--min-area', type=float, default=0,
                         help=('Minimum area for labels. if a label has area > min_area,'
