@@ -34,8 +34,7 @@ class RepeatFactorTrainingSampler(Sampler):
         # Split into whole number (_int_part) and fractional (_frac_part) parts.
         self._int_part = torch.trunc(repeat_factors)
         self._frac_part = repeat_factors - self._int_part
-        # self.num_images = len(repeat_factors)
-        self.num_images = 300
+        self.num_images = len(repeat_factors)
         self.epoch = None
 
     @staticmethod
