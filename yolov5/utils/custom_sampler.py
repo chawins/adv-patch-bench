@@ -35,6 +35,7 @@ class RepeatFactorTrainingSampler(Sampler):
         self._int_part = torch.trunc(repeat_factors)
         self._frac_part = repeat_factors - self._int_part
         self.num_images = len(repeat_factors)
+        self.epoch = None
 
     @staticmethod
     # def repeat_factors_from_category_frequency(dataset_dicts, repeat_thresh):
@@ -65,7 +66,7 @@ class RepeatFactorTrainingSampler(Sampler):
             # cat_ids = {ann["category_id"] for ann in dataset_dict["annotations"]}
             for cat_id in img_labels:
                 category_freq[cat_id] += 1
-                
+
         num_images = len(img_to_labels)
         for k, v in category_freq.items():
             category_freq[k] = v / num_images
@@ -131,3 +132,13 @@ class RepeatFactorTrainingSampler(Sampler):
 
     def __len__(self) -> int:
         return self.num_images
+
+    def set_epoch(self, epoch: int) -> None:
+        r"""
+        Sets the epoch for this sampler. When :attr:`shuffle=True`, this ensures all replicas
+        use a different random ordering for each epoch. Otherwise, the next iteration of this
+        sampler will yield the same ordering.
+        Args:
+            epoch (int): Epoch number.
+        """
+        self.epoch = epoch
