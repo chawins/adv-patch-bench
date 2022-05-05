@@ -21,7 +21,7 @@ CUDA_VISIBLE_DEVICES=$GPU torchrun \
     train_yolov5.py \
     --hyp yolov5/data/hyps/hyp.scratch.yaml --weights yolov5/yolov5s.pt --exist-ok \
     --data yolov5/data/mtsd_no_color.yaml --img 1000 --batch 128 \
-    --workers 24 --device $GPU --save-period 10 --epochs 200 --sync-bn --cache
+    --workers 24 --device $GPU --save-period 10 --epochs 200 --sync-bn --name exp2
 # NOTE: --cache uses a lot of memeory (~340G) but significantly speed up training
 
 # CUDA_VISIBLE_DEVICES=$GPU torchrun \
@@ -71,3 +71,4 @@ CUDA_VISIBLE_DEVICES=$GPU torchrun \
 #     val.py \
 #     --img 1280 --batch 8 --data mtsd.yaml --workers 24 --device $GPU --exist-ok \
 #     --weights /data/shared/adv-patch-bench/yolov5/runs/train/exp5/weights/best.pt
+#

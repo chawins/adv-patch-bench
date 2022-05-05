@@ -26,7 +26,8 @@ from PIL import ExifTags, Image, ImageOps
 from torch.utils.data import DataLoader, Dataset, dataloader, distributed
 from tqdm import tqdm
 
-from yolov5.utils.augmentations import Albumentations, augment_hsv, copy_paste, letterbox, mixup, random_perspective
+from yolov5.utils.augmentations import (Albumentations, augment_hsv, copy_paste, letterbox, mixup, random_crop,
+                                        random_perspective)
 from yolov5.utils.custom_sampler import RepeatFactorTrainingSampler
 from yolov5.utils.general import (LOGGER, check_dataset, check_requirements, check_yaml, clean_str, segments2boxes,
                                   xyn2xy, xywh2xyxy, xywhn2xyxy, xyxy2xywhn)
@@ -116,11 +117,10 @@ def create_dataloader(
     batch_size = min(batch_size, len(dataset))
     nw = min([os.cpu_count() // WORLD_SIZE, batch_size if batch_size > 1 else 0, workers])  # number of workers
 
-    # EDIT
-    # sampler = None if rank == -1 else distributed.DistributedSampler(dataset, shuffle=shuffle)
-    # loader = DataLoader if image_weights else InfiniteDataLoader  # only DataLoader allows for attribute updates
     # EDIT: Use RepeatFactorTrainingSampler similar to detectron2 to deal with
     # the class imbalance problem
+    # sampler = None if rank == -1 else distributed.DistributedSampler(dataset, shuffle=shuffle)
+    # loader = DataLoader if image_weights else InfiniteDataLoader  # only DataLoader allows for attribute updates
     sampler = None
     if repeat_sampler:
         repeat_threshold = 1
@@ -436,19 +436,19 @@ class LoadImagesAndLabels(Dataset):
     cache_version = 0.6  # dataset labels *.cache version
 
     def __init__(
-            self,
-            path: str,
-            img_size: int = 640,
-            batch_size: int = 16,
-            augment: bool = False,
-            hyp: Dict = None,
-            rect: bool = False,
-            image_weights: bool = False,
-            cache_images: bool = False,
-            single_cls: bool = False,
-            stride: int = 32,
-            pad: float = 0.0,
-            prefix: str = '',
+        self,
+        path: str,
+        img_size: int = 640,
+        batch_size: int = 16,
+        augment: bool = False,
+        hyp: Dict = None,
+        rect: bool = False,
+        image_weights: bool = False,
+        cache_images: bool = False,
+        single_cls: bool = False,
+        stride: int = 32,
+        pad: float = 0.0,
+        prefix: str = '',
     ) -> None:
         self.img_size = img_size
         self.augment = augment
@@ -579,15 +579,9 @@ class LoadImagesAndLabels(Dataset):
                 pbar.desc = f'{prefix}Caching images ({gb / 1E9:.1f}GB {cache_images})'
             pbar.close()
 
-        # EDIT
-        # print(len(self.img_files))
-        # print(len(self.labels))
+        # EDIT: Gather labels in each image to be used for RepeatFactorTrainingSampler
         for (img_file, label) in zip(self.img_files, self.labels):
             self.img_to_labels[img_file] = label[:, 0]
-            # print(label[:, 0])
-            # print(img_file)
-            # print()
-            # qqq
 
     def cache_labels(self, path=Path('./labels.cache'), prefix=''):
         # Cache dataset labels, check images and read shapes
@@ -649,32 +643,43 @@ class LoadImagesAndLabels(Dataset):
 
         else:
             # Load image
-            img, (h0, w0), (h, w) = load_image(self, index)
+            img, (h0, w0), (h, w) = load_image(self, index, augment=True)
+            labels = self.labels[index].copy()
 
             # Letterbox
-            shape = self.batch_shapes[self.batch[index]] if self.rect else self.img_size  # final letterboxed shape
+
             # EDIT
-            img, ratio, pad = letterbox(img, shape, auto=False, scaleup=self.augment)
+
+            if hyp['random_crop']:
+                crop_size = (1024, 1024)
+                (h0, w0), (h, w) = crop_size, crop_size
+                ratio = (1, 1)
+                pad = (0, 0)
+                # img, ratio, pad = letterbox(img, shape, auto=False, scaleup=self.augment)
+                if labels.size:  # normalized xywh to pixel xyxy format
+                    labels[:, 1:] = xywhn2xyxy(labels[:, 1:], crop_size[0], crop_size[1], padw=pad[0], padh=pad[1])
+                img, labels = random_crop(crop_size, img, labels)
+            else:
+                shape = self.batch_shapes[self.batch[index]] if self.rect else self.img_size  # final letterboxed shape
+                img, ratio, pad = letterbox(img, shape, auto=False, scaleup=self.augment)
+                if labels.size:  # normalized xywh to pixel xyxy format
+                    labels[:, 1:] = xywhn2xyxy(labels[:, 1:], ratio[0] * w, ratio[1] * h, padw=pad[0], padh=pad[1])
+                if self.augment:
+                    img, labels = random_perspective(
+                        img, labels,
+                        degrees=hyp['degrees'],
+                        translate=hyp['translate'],
+                        scale=hyp['scale'],
+                        shear=hyp['shear'],
+                        perspective=hyp['perspective'],
+                    )
             shapes = (h0, w0), ((h / h0, w / w0), pad)  # for COCO mAP rescaling
-
-            labels = self.labels[index].copy()
-            if labels.size:  # normalized xywh to pixel xyxy format
-                labels[:, 1:] = xywhn2xyxy(labels[:, 1:], ratio[0] * w, ratio[1] * h, padw=pad[0], padh=pad[1])
-
-            if self.augment:
-                img, labels = random_perspective(img, labels,
-                                                 degrees=hyp['degrees'],
-                                                 translate=hyp['translate'],
-                                                 scale=hyp['scale'],
-                                                 shear=hyp['shear'],
-                                                 perspective=hyp['perspective'],
-                                                 random_crop=hyp['random_crop'])
 
         nl = len(labels)  # number of labels
         if nl:
             labels[:, 1:5] = xyxy2xywhn(labels[:, 1:5], w=img.shape[1], h=img.shape[0], clip=True, eps=1E-3)
 
-        # EDIT: copy label before augmentation and exclude the last column
+        # EDIT: Copy label before augmentation and exclude the last column
         orig_labels = labels.copy()
         labels = labels[:, :-1]
         if self.augment:
@@ -701,16 +706,9 @@ class LoadImagesAndLabels(Dataset):
             # labels = cutout(img, labels, p=0.5)
             # nl = len(labels)  # update after cutout
 
-        # EDIT: copy labels back after augmentation
+        # EDIT: Copy labels back after augmentation
         if orig_labels.shape[0] > 0:
             orig_labels[:, :-1] = labels
-        # DEBUG
-        # if orig_labels.shape[0] == 0:
-        #     print('====== saving =======')
-        #     import torchvision
-        #     torchvision.utils.save_image(
-        #         torch.from_numpy(img).permute(2, 0, 1).float() / 255, 'debug.png')
-        # orig_labels[:, :-1] = labels
         labels_out = torch.zeros((nl, orig_labels.shape[-1] + 1))
         if nl:
             # labels_out[:, 1:] = torch.from_numpy(labels)
@@ -757,7 +755,8 @@ class LoadImagesAndLabels(Dataset):
 
 
 # Ancillary functions --------------------------------------------------------------------------------------------------
-def load_image(self, i, mosaic=False):
+def load_image(self, i, augment=None):
+    augment = self.augment if augment is None else augment
     # loads 1 image from dataset index 'i', returns im, original hw, resized hw
     im = self.imgs[i]
     if im is None:  # not cached in ram
@@ -772,7 +771,7 @@ def load_image(self, i, mosaic=False):
         # EDIT: When mosaic is used (i.e., during training), don't resize if
         # the original image is smaller than 4000px
         # r = self.img_size / max(h0, w0)  # ratio
-        r = self.img_size / max(h0, w0) if not mosaic else min(1, 4000 / max(h0, w0))
+        r = self.img_size / max(h0, w0) if not augment else min(1, 4000 / max(h0, w0))
         if r != 1:  # if sizes are not equal
             im = cv2.resize(im, (int(w0 * r), int(h0 * r)),
                             interpolation=cv2.INTER_AREA if r < 1 and not self.augment else cv2.INTER_LINEAR)
@@ -790,7 +789,7 @@ def load_mosaic(self, index):
     random.shuffle(indices)
     for i, index in enumerate(indices):
         # Load image
-        img, _, (h, w) = load_image(self, index, mosaic=True)
+        img, _, (h, w) = load_image(self, index)
 
         # place img in img4
         if i == 0:  # top left

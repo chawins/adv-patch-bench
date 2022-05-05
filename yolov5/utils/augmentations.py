@@ -9,6 +9,8 @@ import random
 import cv2
 import matplotlib.pyplot as plt
 import numpy as np
+import albumentations as A
+
 
 from yolov5.utils.general import LOGGER, check_version, colorstr, resample_segments, segment2box
 from yolov5.utils.metrics import bbox_ioa
@@ -92,7 +94,8 @@ def replicate(im, labels):
     return im, labels
 
 
-def letterbox(im, new_shape=(640, 640), color=(114, 114, 114), auto=True, scaleFill=False, scaleup=True, stride=32):
+def letterbox(im, new_shape=(640, 640), color=(114, 114, 114), auto=True,
+              scaleFill=False, scaleup=True, stride=32):
     # Resize and pad image while meeting stride-multiple constraints
     shape = im.shape[:2]  # current shape [height, width]
     if isinstance(new_shape, int):
@@ -125,9 +128,9 @@ def letterbox(im, new_shape=(640, 640), color=(114, 114, 114), auto=True, scaleF
     return im, ratio, (dw, dh)
 
 
-def random_perspective(
-        im, targets=(), segments=(), degrees=10, translate=.1, scale=.1, shear=10,
-        perspective=0.0, border=(0, 0), random_crop=False):
+def random_perspective(im, targets=(), segments=(), degrees=10, translate=.1,
+                       scale=.1, shear=10, perspective=0.0, border=(0, 0),
+                       random_crop=False):
     # torchvision.transforms.RandomAffine(degrees=(-10, 10), translate=(0.1, 0.1), scale=(0.9, 1.1), shear=(-10, 10))
     # targets = [cls, xyxy]
 
@@ -206,23 +209,65 @@ def random_perspective(
         targets = targets[i]
         targets[:, 1:5] = new[i]
 
-    # EDIT
-    if random_crop:
-        import albumentations as A
-        transform = A.Compose(
-            [A.RandomSizedBBoxSafeCrop(width=width, height=height, erosion_rate=0.0)],
-            bbox_params=A.BboxParams(format='pascal_voc', label_fields=['category_ids']))
+    # EDIT: add random crop to immitate detectron training
+    # if random_crop:
+    #     transform = A.Compose(
+    #         [A.RandomSizedBBoxSafeCrop(width=width, height=height, erosion_rate=0.0)],
+    #         bbox_params=A.BboxParams(format='pascal_voc', label_fields=['category_ids']))
 
-        transformed = transform(image=im[:, :, ::-1], bboxes=targets[:, 1:5], category_ids=targets[:, 0])
+    #     transformed = transform(image=im[:, :, ::-1],
+    #                             bboxes=targets[:, 1:5],
+    #                             category_ids=targets[:, 0])
 
-        # DEBUG
-        # visualize before and after random crop
-        # visualize(im[:, :, ::-1], targets[:, 1:5], 'test_augmentation_before.png')
-        # visualize(transformed['image'], transformed['bboxes'], 'test_augmentation_after.png')
+    #     # DEBUG
+    #     # visualize before and after random crop
+    #     # visualize(im[:, :, ::-1], targets[:, 1:5], 'test_augmentation_before.png')
+    #     # visualize(transformed['image'], transformed['bboxes'], 'test_augmentation_after.png')
 
-        im[:, :, ::-1] = transformed['image']
+    #     im[:, :, ::-1] = transformed['image']
+    #     if len(targets) > 0:
+    #         targets[:, 1:5] = np.array(transformed['bboxes'])
+
+    return im, targets
+
+
+def random_crop(crop_size, im, targets):
+
+    n = len(targets)
+    if n:
+        xy = np.ones((n * 4, 3))
+        xy[:, :2] = targets[:, [1, 2, 3, 4, 1, 4, 3, 2]].reshape(n * 4, 2)  # x1y1, x2y2, x1y2, x2y1
+        xy = (xy[:, :2] / xy[:, :2]).reshape(n, 8)  # perspective rescale or affine
+        # create new boxes
+        x = xy[:, [0, 2, 4, 6]]
+        y = xy[:, [1, 3, 5, 7]]
+        new = np.concatenate((x.min(1), y.min(1), x.max(1), y.max(1))).reshape(4, n).T
+        # clip
+        new[:, [0, 2]] = new[:, [0, 2]].clip(0, im.shape[1])
+        new[:, [1, 3]] = new[:, [1, 3]].clip(0, im.shape[0])
+        # filter candidates
+        i = box_candidates(box1=targets[:, 1:5].T, box2=new.T, area_thr=0.10)
+        targets = targets[i]
+        targets[:, 1:5] = new[i]
+
+    width, height = crop_size
+    transform = A.Compose(
+        [A.RandomSizedBBoxSafeCrop(width=width, height=height, erosion_rate=0.0)],
+        bbox_params=A.BboxParams(format='pascal_voc', label_fields=['category_ids']))
+
+    transformed = transform(image=im[:, :, ::-1],
+                            bboxes=targets[:, 1:5],
+                            category_ids=targets[:, 0])
+
+    # DEBUG
+    # visualize before and after random crop
+    # visualize(im[:, :, ::-1], targets[:, 1:5], 'test_augmentation_before.png')
+    # visualize(transformed['image'], transformed['bboxes'], 'test_augmentation_after.png')
+
+    im = np.array(transformed['image'][:, :, ::-1])
+    # im[:, :, ::-1] = transformed['image']
+    if len(targets) > 0:
         targets[:, 1:5] = np.array(transformed['bboxes'])
-
     return im, targets
 
 

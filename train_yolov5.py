@@ -219,10 +219,11 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
     # Trainloader
     # EDIT: Use RepeatFactorTrainingSampler similar to detectron2 to deal with
     # the class imbalance problem by setting `repeat_sampler=True`
-    train_loader, dataset = create_dataloader(train_path, imgsz, batch_size // WORLD_SIZE, gs, single_cls,
-                                              hyp=hyp, augment=True, cache=opt.cache, rect=opt.rect, rank=LOCAL_RANK,
-                                              workers=workers, image_weights=opt.image_weights, quad=opt.quad,
-                                              prefix=colorstr('train: '), shuffle=True, repeat_sampler=True)
+    train_loader, dataset = create_dataloader(
+        train_path, imgsz, batch_size // WORLD_SIZE, gs, single_cls,
+        hyp=hyp, augment=True, cache=opt.cache, rect=opt.rect, rank=LOCAL_RANK,
+        workers=workers, image_weights=opt.image_weights, quad=opt.quad,
+        prefix=colorstr('train: '), shuffle=True, repeat_sampler=True)
     mlc = int(np.concatenate(dataset.labels, 0)[:, 0].max())  # max label class
     nb = len(train_loader)  # number of batches
     assert mlc < nc, f'Label class {mlc} exceeds nc={nc} in {data}. Possible class labels are 0-{nc - 1}'
