@@ -47,7 +47,12 @@ for k in TS_COLOR_DICT:
 # Make sure that ordering is correct
 TS_COLOR_LABEL_LIST = list(TS_COLOR_LABEL_DICT.keys())
 TS_NO_COLOR_LABEL_LIST = list(TS_COLOR_DICT.keys())
-# print('TS_COLOR_LABEL_LIST: ', TS_COLOR_LABEL_LIST)
+LABEL_LIST = {
+    'mtsd_color': TS_COLOR_LABEL_LIST,
+    'mapillary_color': TS_COLOR_LABEL_LIST,
+    'mtsd_no_color': TS_NO_COLOR_LABEL_LIST,
+    'mapillary_no_color': TS_NO_COLOR_LABEL_LIST,
+}
 
 MIN_OBJ_AREA = 0
 NUM_CLASSES = len(TS_COLOR_LABEL_LIST)

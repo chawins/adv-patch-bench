@@ -35,8 +35,8 @@ class RP2AttackModule(DetectorAttackModule):
         self.attack_mode = attack_config['attack_mode']
 
         # TODO: rename a lot of these to be less confusing
-        self.no_transform = attack_config['no_transform']
-        self.relighting = attack_config['relighting']
+        self.use_transform = attack_config['use_patch_transform']
+        self.use_relight = attack_config['use_patch_relight']
         self.rescaling = rescaling
         self.augment_real = attack_config['rp2_augment_real']
         self.interp = attack_config['interp'] if interp is None else interp
@@ -100,9 +100,9 @@ class RP2AttackModule(DetectorAttackModule):
         return loss
 
     # ==================== Faster R-CNN-specific methods ==================== #
-    def _compute_loss_rcnn(self, adv_img, obj_class):
+    def _compute_loss_rcnn(self, adv_img, instances):
         target_boxes, target_labels, target_logits, obj_logits = get_targets(
-            self.core_model, adv_img, device=self.core_model.device)
+            self.core_model, adv_img, instances, device=self.core_model.device)
         # features = self.core_model.backbone(adv_img)
         # # Get classification logits
         # logits, _ = get_roi_heads_predictions(features, target_boxes)
@@ -199,7 +199,7 @@ class RP2AttackModule(DetectorAttackModule):
 
                 # Apply random transformations to both sign and patch
                 adv_obj = adv_obj.expand(self.num_eot, -1, -1, -1)
-                if self.relighting:
+                if self.use_relight:
                     adv_obj = self.jitter_transform(adv_obj)
                 adv_obj, tf_params = self.obj_transforms(adv_obj)
                 o_mask = self.mask_transforms.apply_transform(
@@ -252,7 +252,7 @@ class RP2AttackModule(DetectorAttackModule):
         self.core_model.train(mode)
         return delta.detach()
 
-    def transform_and_attack(self, objs, patch_mask, obj_class):
+    def transform_and_attack(self, objs, patch_mask, obj_class, instances=None):
         """Run RP2 Attack.
 
         Args:
@@ -276,8 +276,10 @@ class RP2AttackModule(DetectorAttackModule):
         sign_size_in_pixel = patch_mask.size(-1)
         # TODO: Assume that every signs use the same transform function
         # i.e., warp_perspetive. Have to fix this for triangles
-        tf_function = get_transform(sign_size_in_pixel, *objs[0][1], no_transform=self.no_transform)[0]
-        tf_data_temp = [get_transform(sign_size_in_pixel, *obj[1], no_transform=self.no_transform)[1:] for obj in objs]
+        tf_function = get_transform(sign_size_in_pixel, *objs[0][1],
+                                    use_transform=self.use_transform)[0]
+        tf_data_temp = [get_transform(sign_size_in_pixel, *obj[1],
+                                      use_transform=self.use_transform)[1:] for obj in objs]
         # tf_data contains [sign_canonical, sign_mask, M, alpha, beta]
         tf_data = []
         for i in range(5):
@@ -320,14 +322,14 @@ class RP2AttackModule(DetectorAttackModule):
                 adv_img = apply_transform(
                     backgrounds[bg_idx].clone(), delta.clone(), patch_mask, patch_loc,
                     tf_function, curr_tf_data, interp=self.interp,
-                    **self.real_transform, relighting=self.relighting)
+                    **self.real_transform, use_relight=self.use_relight)
 
                 # DEBUG
                 # torchvision.utils.save_image(adv_img, 'temp.png')
                 # import pdb
                 # pdb.set_trace()
 
-                loss = self.compute_loss(adv_img, obj_class)
+                loss = self.compute_loss(adv_img, instances if self.is_detectron else obj_class)
                 tv = ((delta[:, :, :-1, :] - delta[:, :, 1:, :]).abs().mean() +
                       (delta[:, :, :, :-1] - delta[:, :, :, 1:]).abs().mean())
                 # loss = out[:, :, 4].mean() + self.lmbda * tv

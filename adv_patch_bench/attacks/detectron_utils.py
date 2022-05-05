@@ -9,6 +9,7 @@ from detectron2.structures import Boxes, pairwise_iou
 def get_targets(
     model,
     batched_inputs: List[Dict[Any, Any]],
+    instances: Any,
     device: str = 'cuda',
 ) -> Tuple[Boxes, torch.Tensor]:
     """Select a set of initial targets for the DAG algo.
@@ -23,10 +24,11 @@ def get_targets(
     Tuple[Boxes, torch.Tensor]
         target_boxes, target_labels
     """
-    instances = batched_inputs[0]["instances"]
+    # instances = batched_inputs[0]["instances"]
     gt_boxes = instances.gt_boxes.to(device)
     gt_classes = instances.gt_classes
 
+    inputs = [{}]
     images = model.preprocess_image(batched_inputs)
 
     # Get features

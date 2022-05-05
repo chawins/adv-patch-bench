@@ -15,7 +15,7 @@ import adv_patch_bench.utils.detectron.custom_coco_evaluator as cocoeval
 from adv_patch_bench.attacks.detectron_attack_wrapper import DAGAttacker
 from adv_patch_bench.dataloaders import (BenignMapper, get_mtsd_dict,
                                          register_mapillary, register_mtsd)
-from hparams import DATASETS, OTHER_SIGN_CLASS
+from hparams import DATASETS, OTHER_SIGN_CLASS, LABEL_LIST
 
 
 def main(cfg, args):
@@ -104,7 +104,8 @@ def main_attack(cfg, args, dataset_params):
     # TODO: To generate more dense proposals
     # cfg.MODEL.RPN.NMS_THRESH = nms_thresh
     # cfg.MODEL.RPN.POST_NMS_TOPK_TEST = 5000
-    attack = DAGAttacker(cfg, args, attack_config, model, val_loader)
+    attack = DAGAttacker(cfg, args, attack_config, model, val_loader,
+                         class_names=LABEL_LIST[args.dataset])
     adv_patch, patch_mask = pickle.load(open(args.adv_patch_path, 'rb'))
     out = attack.run(
         args.obj_class,
@@ -177,6 +178,9 @@ if __name__ == "__main__":
                         help='evaluate with pasted synthetic signs')
     parser.add_argument('--name', default='exp', help='save to project/name')
     parser.add_argument('--verbose', action='store_true')
+    parser.add_argument('--seed', type=int, default=0, help='set random seed')
+    parser.add_argument('--padded-imgsz', type=str, default='3000,4000',
+                        help='final image size including padding (height,width). Default: 3000,4000')
 
     # =========================== Attack arguments ========================== #
     parser.add_argument('--attack-type', type=str, required=True,
@@ -194,10 +198,10 @@ if __name__ == "__main__":
                         help='path to a text file containing image filenames')
     parser.add_argument('--run-only-img-txt', action='store_true',
                         help='run evaluation on images listed in img-txt-path. Otherwise, exclude these images.')
-    parser.add_argument('--no-transform', action='store_true',
+    parser.add_argument('--no-patch-transform', action='store_true',
                         help=('If True, do not apply patch to signs using '
                               '3D-transform. Patch will directly face camera.'))
-    parser.add_argument('--no-relighting', action='store_true',
+    parser.add_argument('--no-patch-relight', action='store_true',
                         help=('If True, do not apply relighting transform to patch'))
     parser.add_argument('--min-area', type=float, default=0,
                         help=('Minimum area for labels. if a label has area > min_area,'
@@ -208,6 +212,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     print('Command Line Args:', args)
+    args.img_size = args.padded_imgsz
 
     # Verify some args
     assert args.dataset in DATASETS

@@ -5,31 +5,34 @@ https://github.com/yizhe-ang/detectron2-1/blob/master/detectron2_1/adv.py
 import json
 import os
 import random
+from argparse import Namespace
 from typing import Any, Callable, Dict, List, Tuple
 
 import cv2
 import detectron2.data.transforms as T
 import numpy as np
+import pandas as pd
 import torch
+from adv_patch_bench.attacks.utils import prep_attack, prep_synthetic_eval
+from adv_patch_bench.transforms import transform_and_apply_patch
 from detectron2.checkpoint import DetectionCheckpointer
 from detectron2.config import CfgNode
 from detectron2.data import (DatasetMapper, MetadataCatalog,
                              build_detection_test_loader)
 from detectron2.modeling import build_model
-from detectron2.structures import Boxes, pairwise_iou
+from detectron2.structures import Boxes, BoxMode, pairwise_iou
 from detectron2.utils.visualizer import Visualizer
 from torch.nn import functional as F
 from tqdm import tqdm
 
 from .rp2 import RP2AttackModule
-from detectron2.structures import BoxMode
 
 
 class DAGAttacker:
     def __init__(
         self,
         cfg: CfgNode,
-        args,
+        args: Namespace,
         attack_config: Dict,
         model,
         dataloader,
@@ -38,6 +41,7 @@ class DAGAttacker:
         # nms_thresh: float = 0.9,
         # mapper: Callable = DatasetMapper,
         # verbose: bool = False
+        class_names: List,
     ) -> None:
         """Implements the DAG algorithm
 
@@ -56,10 +60,12 @@ class DAGAttacker:
         """
         # self.n_iter = n_iter
         # self.gamma = gamma
+        self.args = args
         self.verbose = args.verbose
         self.debug = args.debug
         self.model = model
         self.num_vis = 30
+        self.img_size = args.img_size
 
         # Modify config
         self.cfg = cfg.clone()  # cfg can be modified by model
@@ -99,7 +105,12 @@ class DAGAttacker:
 
         self.attack = RP2AttackModule(attack_config, model, None, None, None,
                                       rescaling=False, interp=args.interp,
-                                      verbose=self.verbose)
+                                      verbose=self.verbose, is_detectron=True)
+        self.attack_type = args.attack_type
+        self.adv_sign_class = args.obj_class
+        self.df = pd.read_csv(args.tgt_csv_filepath)
+        self.class_names = class_names
+        self.synthetic_eval = args.synthetic_eval
 
     def log(self, *args, **kwargs):
         if self.verbose:
@@ -132,11 +143,23 @@ class DAGAttacker:
         # Save predictions in coco format
         coco_instances_results = []
 
+        if self.synthetic_eval:
+            # Prepare evaluation with synthetic signs
+            obj, obj_mask, obj_transforms, mask_transforms, syn_sign_class = \
+                prep_synthetic_eval(self.args, self.img_size, self.class_names, device=self.device)
+
+        # Prepare attack data
+        _, adv_patch, patch_mask, patch_loc = prep_attack(self.args, self.device)
+
         for i, batch in tqdm(enumerate(self.data_loader)):
             original_image = batch[0]['image'].permute(1, 2, 0).numpy()
             file_name = batch[0]['file_name']
+            filename = file_name.split('/')[-1]
             basename = os.path.basename(file_name)
             image_id = batch[0]['image_id']
+            instances = batch[0]['instances']
+            h0, w0 = batch[0]['height'], batch[0]['height']
+            img_df = self.df[self.df['filename'] == filename]
 
             # Peform DAG attack
             self.log(f'[{i}/{len(self.data_loader)}] Attacking {file_name} ...')
@@ -150,15 +173,61 @@ class DAGAttacker:
                 vis_gt.save(os.path.join(vis_save_dir, f'gt_{i}.jpg'))
 
             images = batch[0]['image'].float().to(self.device) / 255
+            perturbed_image = images.clone()
+            _, h, w = images.shape
+            img_data = (h0, w0, h / h0, w / w0, 0, 0)
 
-            # TODO
-            # h0, w0, h_ratio, w_ratio, w_pad, h_pad
-            img_data = (h0, w0, h_ratio, w_ratio, 0, 0)
-            predicted_class = row['final_shape']
-            data = [predicted_class, row, *img_data]
-            attack_images = [[im[image_i], data, str(filename)]]
-            perturbed_image = self.attack.transform_and_attack(
-                images, patch_mask, obj_class)
+            if not self.synthetic_eval:
+                # Iterate through objects in the current image
+                for _, obj in img_df.iterrows():
+                    obj_label = obj['final_shape']
+                    if obj_label != self.class_names[self.adv_sign_class]:
+                        continue
+
+                    # Run attack for each sign
+                    if self.attack_type == 'per-sign':
+                        data = [obj_label, obj, *img_data]
+                        attack_images = [[images, data, str(file_name)]]
+                        with torch.enable_grad():
+                            adv_patch = self.attack.transform_and_attack(
+                                attack_images, patch_mask, obj_class, instances=instances)
+
+                    # Transform and apply patch on the image. `im` has range [0, 255]
+                    perturbed_image = transform_and_apply_patch(
+                        perturbed_image, adv_patch.to(self.device),
+                        patch_mask, patch_loc, obj_label, obj, img_data,
+                        use_transform=not self.no_patch_transform,
+                        use_relight=not self.no_patch_relight, interp=self.args.interp)
+                    total_num_patches += 1
+            else:
+                adv_obj = patch_mask * adv_patch + (1 - patch_mask) * obj
+                adv_obj, tf_params = obj_transforms(adv_obj)
+                adv_obj.clamp_(0, 1)
+                o_mask = mask_transforms.apply_transform(
+                    obj_mask, None, transform=tf_params.to(self.device))
+
+                # get top left and bottom right points
+                # TODO: can we use mask_to_box here?
+                indices = np.where(o_mask.cpu()[0][0] == 1)
+                x_min, x_max = min(indices[1]), max(indices[1])
+                y_min, y_max = min(indices[0]), max(indices[0])
+
+                # Since we paste a new synthetic sign on image, we have to add
+                # in a new synthetic label/target to compute the metrics
+                label = [
+                    perturbed_image,
+                    syn_sign_class,
+                    (x_min + x_max) / (2 * w),
+                    (y_min + y_max) / (2 * h),
+                    (x_max - x_min) / w,
+                    (y_max - y_min) / h,
+                    1,
+                    -1
+                ]
+                targets = torch.cat((targets, torch.tensor(label).unsqueeze(0)))
+
+                adv_img = o_mask * adv_obj + (1 - o_mask) * perturbed_image.to(self.device) / 255
+                perturbed_image = adv_img.squeeze() * 255
 
             # Perform inference on perturbed image
             perturbed_image = self._post_process_image(perturbed_image)
@@ -209,91 +278,91 @@ class DAGAttacker:
 
         return coco_instances_results
 
-    def attack_image(self, batched_inputs: List[Dict[str, Any]]) -> torch.Tensor:
-        """Attack an image from the test dataloader
+    # def attack_image(self, batched_inputs: List[Dict[str, Any]]) -> torch.Tensor:
+    #     """Attack an image from the test dataloader
 
-        Parameters
-        ----------
-        batched_inputs : List[Dict[str, Any]]
-            A list containing a single element, the dataset_dict from the test dataloader
+    #     Parameters
+    #     ----------
+    #     batched_inputs : List[Dict[str, Any]]
+    #         A list containing a single element, the dataset_dict from the test dataloader
 
-        Returns
-        -------
-        torch.Tensor
-            [C, H, W], Perturbed image
-        """
-        images = self.model.preprocess_image(batched_inputs)
+    #     Returns
+    #     -------
+    #     torch.Tensor
+    #         [C, H, W], Perturbed image
+    #     """
+    #     images = self.model.preprocess_image(batched_inputs)
 
-        instances = batched_inputs[0]["instances"]
-        # If no ground truth annotations, no choice but to skip
-        if len(instances.gt_boxes) == 0:
-            return self._post_process_image(images.tensor[0])
+    #     instances = batched_inputs[0]["instances"]
+    #     # If no ground truth annotations, no choice but to skip
+    #     if len(instances.gt_boxes) == 0:
+    #         return self._post_process_image(images.tensor[0])
 
-        # Acquire targets and corresponding labels to attack
-        # FIXME What if no target_boxes?
-        target_boxes, target_labels = self._get_targets(batched_inputs)
+    #     # Acquire targets and corresponding labels to attack
+    #     # FIXME What if no target_boxes?
+    #     target_boxes, target_labels = self._get_targets(batched_inputs)
 
-        # Record gradients for image
-        images.tensor.requires_grad = True
+    #     # Record gradients for image
+    #     images.tensor.requires_grad = True
 
-        # if len(target_boxes) == 0:
-        #     return self._post_process_image(images.tensor[0])
+    #     # if len(target_boxes) == 0:
+    #     #     return self._post_process_image(images.tensor[0])
 
-        # Start DAG
-        for i in range(self.n_iter):
-            # Get features
-            features = self.model.backbone(images.tensor)
+    #     # Start DAG
+    #     for i in range(self.n_iter):
+    #         # Get features
+    #         features = self.model.backbone(images.tensor)
 
-            # Get classification logits
-            logits, _ = self._get_roi_heads_predictions(features, target_boxes)
+    #         # Get classification logits
+    #         logits, _ = self._get_roi_heads_predictions(features, target_boxes)
 
-            # FIXME
-            if len(logits) == 0:
-                break
+    #         # FIXME
+    #         if len(logits) == 0:
+    #             break
 
-            # Update active target set,
-            # i.e. filter for correctly predicted targets;
-            # only attack targets that are still correctly predicted so far
-            # FIXME
-            active_cond = logits.argmax(dim=1) == target_labels
-            # active_cond = logits.argmax(dim=1) != adv_labels
+    #         # Update active target set,
+    #         # i.e. filter for correctly predicted targets;
+    #         # only attack targets that are still correctly predicted so far
+    #         # FIXME
+    #         active_cond = logits.argmax(dim=1) == target_labels
+    #         # active_cond = logits.argmax(dim=1) != adv_labels
 
-            target_boxes = target_boxes[active_cond]
-            logits = logits[active_cond]
-            target_labels = target_labels[active_cond]
-            # adv_labels = adv_labels[active_cond]
+    #         target_boxes = target_boxes[active_cond]
+    #         logits = logits[active_cond]
+    #         target_labels = target_labels[active_cond]
+    #         # adv_labels = adv_labels[active_cond]
 
-            # If active set is empty, end algo;
-            # All targets are already wrongly predicted
-            if len(target_boxes) == 0:
-                break
+    #         # If active set is empty, end algo;
+    #         # All targets are already wrongly predicted
+    #         if len(target_boxes) == 0:
+    #             break
 
-            # Compute total loss
-            # FIXME Use before or after softmax?
-            target_loss = F.cross_entropy(logits, target_labels, reduction="sum")
-            adv_loss = F.cross_entropy(logits, adv_labels, reduction="sum")
-            # Make every target incorrectly predicted as the adversarial label
-            total_loss = target_loss - adv_loss
+    #         # Compute total loss
+    #         # FIXME Use before or after softmax?
+    #         target_loss = F.cross_entropy(logits, target_labels, reduction="sum")
+    #         adv_loss = F.cross_entropy(logits, adv_labels, reduction="sum")
+    #         # Make every target incorrectly predicted as the adversarial label
+    #         total_loss = target_loss - adv_loss
 
-            # Backprop and compute gradient wrt image
-            total_loss.backward()
-            image_grad = images.tensor.grad.detach()
+    #         # Backprop and compute gradient wrt image
+    #         total_loss.backward()
+    #         image_grad = images.tensor.grad.detach()
 
-            # Apply perturbation on image
-            with torch.no_grad():
-                # Normalize grad
-                image_perturb = (
-                    self.gamma / image_grad.norm(float("inf"))
-                ) * image_grad
-                images.tensor += image_perturb
+    #         # Apply perturbation on image
+    #         with torch.no_grad():
+    #             # Normalize grad
+    #             image_perturb = (
+    #                 self.gamma / image_grad.norm(float("inf"))
+    #             ) * image_grad
+    #             images.tensor += image_perturb
 
-            # Zero gradients
-            image_grad.zero_()
-            self.model.zero_grad()
+    #         # Zero gradients
+    #         image_grad.zero_()
+    #         self.model.zero_grad()
 
-        self.log(f"Done with attack. Total Iterations {i}")
+    #     self.log(f"Done with attack. Total Iterations {i}")
 
-        return self._post_process_image(images.tensor[0])
+    #     return self._post_process_image(images.tensor[0])
 
     def _create_instance_dicts(
         self, outputs: Dict[str, Any], image_id: int
