@@ -702,15 +702,15 @@ class LoadImagesAndLabels(Dataset):
             # nl = len(labels)  # update after cutout
 
         # EDIT: copy labels back after augmentation
-        # if orig_labels.shape[0] > 0:
-        #     orig_labels[:, :-1] = labels
-        if orig_labels.shape[0] == 0:
-            print('====== saving =======')
-            print(img)
-            print(img.shape)
-            import torchvision
-            torchvision.utils.save_image(torch.from_numpy(img).float(), 'debug.png')
-        orig_labels[:, :-1] = labels
+        if orig_labels.shape[0] > 0:
+            orig_labels[:, :-1] = labels
+        # DEBUG
+        # if orig_labels.shape[0] == 0:
+        #     print('====== saving =======')
+        #     import torchvision
+        #     torchvision.utils.save_image(
+        #         torch.from_numpy(img).permute(2, 0, 1).float() / 255, 'debug.png')
+        # orig_labels[:, :-1] = labels
         labels_out = torch.zeros((nl, orig_labels.shape[-1] + 1))
         if nl:
             # labels_out[:, 1:] = torch.from_numpy(labels)

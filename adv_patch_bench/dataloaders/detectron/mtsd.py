@@ -6,9 +6,10 @@ from typing import Any, Dict, List, Tuple
 import pandas as pd
 from detectron2.data import DatasetCatalog, MetadataCatalog
 from detectron2.structures import BoxMode
-from hparams import (MIN_OBJ_AREA, PATH_APB_ANNO, PATH_MTSD_BASE,
-                     PATH_SIMILAR_FILES, TS_COLOR_DICT, TS_COLOR_LABEL_LIST,
-                     TS_COLOR_OFFSET_DICT, TS_NO_COLOR_LABEL_LIST)
+from hparams import (MIN_OBJ_AREA, OTHER_SIGN_CLASS, PATH_APB_ANNO,
+                     PATH_MTSD_BASE, PATH_SIMILAR_FILES, TS_COLOR_DICT,
+                     TS_COLOR_LABEL_LIST, TS_COLOR_OFFSET_DICT,
+                     TS_NO_COLOR_LABEL_LIST)
 from tqdm import tqdm
 
 
@@ -88,17 +89,22 @@ def register_mtsd(
     path = PATH_MTSD_BASE
     csv_path = PATH_APB_ANNO
     similarity_df_csv_path = PATH_SIMILAR_FILES
-    
+
     anno_path = expanduser(join(path, 'annotations'))
     data = pd.read_csv(csv_path)
     similar_files_df = pd.read_csv(similarity_df_csv_path)
 
-    if use_color:
-        label_dict = TS_COLOR_OFFSET_DICT
+    if mtsd_label_to_class_index:
+        dataset = 'mtsd_original'
     else:
-        label_dict = TS_COLOR_DICT
+        if use_color:
+            label_dict = TS_COLOR_OFFSET_DICT
+            dataset = 'mtsd_color'
+        else:
+            label_dict = TS_COLOR_DICT
+            dataset = 'mtsd_no_color'
+        selected_labels = list(label_dict.keys())
 
-    selected_labels = list(label_dict.keys())
     mtsd_label_to_class_index = {}
     for idx, row in data.iterrows():
         if use_mtsd_original_labels:
@@ -112,7 +118,7 @@ def register_mtsd(
             else:
                 cat_idx = selected_labels.index(row['target'])
             mtsd_label_to_class_index[row['sign']] = cat_idx
-    bg_idx = max(list(mtsd_label_to_class_index.values())) + 1
+    bg_idx = OTHER_SIGN_CLASS[dataset]
 
     # Get all JSON files
     json_files = [join(anno_path, f) for f in os.listdir(anno_path)
