@@ -13,20 +13,26 @@ import pdb
 import pickle
 import sys
 import warnings
+from ast import literal_eval
 from pathlib import Path
 from threading import Thread
-
 import matplotlib.pyplot as plt
+
 import numpy as np
 import pandas as pd
 import torch
+import torchvision
+import torchvision.transforms.functional as T
 import yaml
+from kornia import augmentation as K
+from kornia.constants import Resample
+from kornia.geometry.transform import resize
 from tqdm import tqdm
 
 from adv_patch_bench.attacks.rp2 import RP2AttackModule
-from adv_patch_bench.attacks.utils import prep_attack, prep_synthetic_eval
 from adv_patch_bench.transforms import transform_and_apply_patch
-from yolor.models.models import Darknet
+from adv_patch_bench.utils.image import (mask_to_box, pad_and_center,
+                                         prepare_obj)
 from yolov5.models.common import DetectMultiBackend
 from yolov5.utils.callbacks import Callbacks
 from yolov5.utils.datasets import create_dataloader
@@ -37,9 +43,10 @@ from yolov5.utils.general import (LOGGER, box_iou, check_dataset,
                                   print_args, scale_coords, xywh2xyxy,
                                   xyxy2xywh)
 from yolov5.utils.metrics import ConfusionMatrix, ap_per_class_custom
-from yolov5.utils.plots import (output_to_target, plot_false_positives,
-                                plot_images, plot_val_study)
+from yolov5.utils.plots import output_to_target, plot_images, plot_val_study, plot_false_positives
 from yolov5.utils.torch_utils import select_device, time_sync
+
+from yolor.models.models import Darknet
 
 warnings.filterwarnings("ignore")
 
@@ -49,7 +56,6 @@ ROOT = FILE.parents[0]  # YOLOv5 root directory
 if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))  # add ROOT to PATH
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
-
 
 def save_one_txt(predn, save_conf, shape, file):
     # Save one txt result
@@ -73,7 +79,7 @@ def save_one_json(predn, jdict, path, class_map):
                       'score': round(p[4], 5)})
 
 
-def process_batch(detections, labels, iouv, other_class_label=None, other_class_confidence_threshold=0):
+def process_batch(detections, labels, iouv, other_class_label=None, other_class_confidence_threshold=0, match_on_iou_only=False):
     """
     Return correct predictions matrix. Both sets of boxes are in (x1, y1, x2, y2) format.
     Arguments:
@@ -85,12 +91,13 @@ def process_batch(detections, labels, iouv, other_class_label=None, other_class_
     correct = torch.zeros(detections.shape[0], iouv.shape[0], dtype=torch.bool, device=iouv.device)
     iou = box_iou(labels[:, 1:5], detections[:, :4])
 
-    if other_class_label:
-        x = torch.where((iou >= iouv[0]) & ((labels[:, 0:1] == detections[:, 5]) | ((labels[:, 0:1] == other_class_label) & (
-            detections[:, 4] > other_class_confidence_threshold))))  # IoU above threshold and classes match
+    if match_on_iou_only:
+        x = torch.where((iou >= iouv[0]))  # IoU above threshold
+    elif other_class_label:
+        x = torch.where((iou >= iouv[0]) & ((labels[:, 0:1] == detections[:, 5]) | ((labels[:, 0:1] == other_class_label) & (detections[:, 4] > other_class_confidence_threshold))))  # IoU above threshold and classes match        
+        # x = torch.where((iou >= iouv[0]))  # IoU above threshold
     else:
-        # IoU above threshold and classes match
-        x = torch.where((iou >= iouv[0]) & (labels[:, 0:1] == detections[:, 5]))
+        x = torch.where((iou >= iouv[0]) & (labels[:, 0:1] == detections[:, 5]))  # IoU above threshold and classes match
     # else:
     #     x = torch.where((iou >= iouv[0]))  # IoU above threshold
 
@@ -126,7 +133,6 @@ def populate_default_metric(lbl_, min_area, filename, other_class_label):
     # current_label_metric['too_small'] = bbox_area < min_area or class_label == other_class_label
     current_label_metric['changed_from_other_label'] = 0
     return current_label_metric
-
 
 @torch.no_grad()
 def run(args,
@@ -185,7 +191,6 @@ def run(args,
     relighting = not args.no_relighting
     metrics_conf_thres = args.metrics_confidence_threshold
     img_size = tuple([int(x) for x in args.padded_imgsz.split(',')])
-    img_height, img_width = img_size
 
     false_positive_images = []
     false_positives_labels = []
@@ -245,8 +250,7 @@ def run(args,
                 half = False
                 batch_size = 1  # export.py models default to batch-size 1
                 device = torch.device('cpu')
-                LOGGER.info(
-                    f'Forcing --batch-size 1 square inference shape(1,3,{imgsz},{imgsz}) for non-PyTorch backends')
+                LOGGER.info(f'Forcing --batch-size 1 square inference shape(1,3,{imgsz},{imgsz}) for non-PyTorch backends')
         elif model_name == 'yolor':
             # Load model
             cfg = 'yolor/cfg/yolor_p6.cfg'
@@ -259,6 +263,7 @@ def run(args,
 
         # Data
         data = check_dataset(data)  # check
+
 
     print(data['train'])
 
@@ -279,6 +284,7 @@ def run(args,
             img = torch.zeros((1, 3, imgsz, imgsz), device=device)  # init img
             _ = model(img.half() if half else img) if device.type != 'cpu' else None  # run once
 
+        
         dataloader = create_dataloader(data[task], imgsz, batch_size, stride,
                                        single_cls, pad=pad, rect=pt,
                                        workers=workers,
@@ -288,14 +294,11 @@ def run(args,
         # dataloader = create_dataloader(path, imgsz, batch_size, 64, opt, pad=0.5, rect=True)[0]
 
     seen = 0
-
+    
     try:
         names = {k: v for k, v in enumerate(model.names if hasattr(model, 'names') else model.module.names)}
-        # TODO: temporary fix  # FIXME
-        names[11] = 'other'
-        print('figure out names')
-        import pdb
-        pdb.set_trace()
+        # TODO: temporary fix
+        # names[11] = 'other'
     except:
         names = {k: v for k, v in enumerate(data['names'])}
 
@@ -321,13 +324,64 @@ def run(args,
     #     torchvision.utils.save_image(demo_patch, f)
 
     if synthetic_eval:
-        # Prepare evaluation with synthetic signs
-        obj, obj_mask, obj_transforms, mask_transforms, syn_sign_class = \
-            prep_synthetic_eval(args, img_size, names, device=device)
+        # Testing with synthetic signs
+        syn_sign_class = len(names)
+        names[syn_sign_class] = 'synthetic'
+        nc += 1
+        # Set up random transforms for synthetic sign
+        img_height, img_width = img_size
+        obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True)
+        mask_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, resample=Resample.NEAREST)
+
+        # Load synthetic object/sign from file
+        adv_patch, patch_mask = pickle.load(open(adv_patch_path, 'rb'))
+        patch_mask = patch_mask.to(device)
+        obj_size = patch_mask.shape[1]
+        obj, obj_mask = prepare_obj(syn_obj_path, img_size, (obj_size, obj_size))
+        obj = obj.to(device)
+        obj_mask = obj_mask.to(device).unsqueeze(0)
 
     if use_attack:
-        # Prepare attack data
-        df, adv_patch, patch_mask, patch_loc = prep_attack(args, device)
+        # Load patch from a pickle file if specified
+        # TODO: make script to generate dummy patch
+        adv_patch, patch_mask = pickle.load(open(adv_patch_path, 'rb'))
+        patch_mask = patch_mask.to(device)
+        patch_height, patch_width = adv_patch.shape[1:]
+        patch_loc = mask_to_box(patch_mask)
+
+        if attack_type == 'debug':
+            # Load 'arrow on checkboard' patch if specified (for debug)
+            adv_patch = torchvision.io.read_image('demo.png').float()[:3, :, :] / 255
+            adv_patch = resize(adv_patch, (patch_height, patch_width))
+        elif attack_type == 'random':
+            # Patch with uniformly random pixels
+            adv_patch = torch.rand(3, patch_height, patch_width)
+
+        if synthetic_eval:
+            # Adv patch and mask have to be made compatible with random
+            # transformation for synthetic signs
+            _, patch_mask = pad_and_center(None, patch_mask, img_size, (obj_size, obj_size))
+            patch_loc = mask_to_box(patch_mask)
+            # Pad adv patch
+            pad_size = [
+                patch_loc[1],  # left
+                patch_loc[0],  # right
+                img_size[1] - patch_loc[1] - patch_loc[3],  # top
+                img_size[0] - patch_loc[0] - patch_loc[2],  # bottom
+            ]
+            adv_patch = T.pad(adv_patch, pad_size)
+            patch_mask = patch_mask.to(device)
+            adv_patch = adv_patch.to(device)
+            obj = obj.to(device)
+        else:
+            # load csv file containing target points for transform
+            df = pd.read_csv(tgt_csv_filepath)
+            # converts 'tgt_final' from string to list format
+            df['tgt_final'] = df['tgt_final'].apply(literal_eval)
+            # exclude shapes to which we do not apply the transform to
+            df = df[df['final_shape'] != 'other-0.0-0.0']
+            print(df.shape)
+            print(df.groupby(by=['final_shape']).count())
 
     # Initialize attack
     if attack_type == 'per-sign':
@@ -375,13 +429,13 @@ def run(args,
         # Originally, targets has shape (#labels, 7)
         # [image_id, class, x1, y1, label_width, label_height, obj_id]
 
-        # FIXME: get this automatically from nc
         if model_trained_without_other:
             targets = targets[targets[:, 1] != other_class_label]
+        # targets = targets[targets[:, 1] != 15]
 
         # DEBUG
-        if args.debug and batch_i == 20:
-            # if args.debug and batch_i == 100:
+        # if args.debug and batch_i == 20:
+        if args.debug and batch_i == 100:
             break
 
         if num_apply_imgs >= len(filename_list) and args.run_only_img_txt:
@@ -424,12 +478,13 @@ def run(args,
                                 attack_images, patch_mask=patch_mask,
                                 obj_class=adv_sign_class)[0]
 
-                    # Transform and apply patch on the image. `im` has range [0, 255]
+                    # # Transform and apply patch on the image. `im` has range [0, 255]
                     im[image_i] = transform_and_apply_patch(
                         im[image_i].to(device), adv_patch.to(device),
                         patch_mask, patch_loc, predicted_class, row, img_data,
-                        use_transform=not args.no_patch_transform,
-                        use_relight=not args.no_patch_relight, interp=args.interp) * 255
+                        no_transform=no_transform, relighting=relighting,
+                        interp=args.interp) * 255
+                    # num_patches_applied_to_image += 1
                     total_num_patches += 1
 
                 # set targets[6] to #patches_applied_to_image
@@ -486,7 +541,7 @@ def run(args,
             out, train_out = model(im) if training else model(im, augment=augment, val=True)  # inference, loss outputs
         elif model_name == 'yolor':
             out, train_out = model(im, augment=augment)  # inference and training outputs
-
+                
         dt[1] += time_sync() - t2
 
         # Loss
@@ -506,7 +561,7 @@ def run(args,
 
         # Metrics
         predictions_for_plotting = output_to_target(out)
-
+        
         for si, pred in enumerate(out):
             # pred (Array[N, 6]), x1, y1, x2, y2, confidence, class
             # labels (Array[M, 5]), class, x1, y1, x2, y2
@@ -536,10 +591,10 @@ def run(args,
                         current_label_metric, ignore_index=True)
                 labels = labels[lbl_index_to_keep]
                 tcls = labels[:, 0].tolist() if nl else []  # target class
-
+                
                 labels_kept += lbl_index_to_keep.sum()
                 labels_removed += (~lbl_index_to_keep).sum()
-
+                
                 if nl:
                     stats.append((torch.zeros(0, niou, dtype=torch.bool),
                                   torch.Tensor(), torch.Tensor(), tcls))
@@ -587,11 +642,24 @@ def run(args,
                 # `pred_idx`: idx of object in `predn`
 
                 # matching on bounding boxes and correct predictions, i.e, match label and pred if iou >= 0.5 and label == pred
-                # or match on whether label == 'other' class and iou(label, pred) >= 0.5
+                # or match on whether label == 'other' class and iou(label, pred) >= 0.5 
                 # correct, matches = process_batch(predn, labelsn, iouv, other_class_label=None)
-                correct, matches = process_batch(
-                    predn, labelsn, iouv, other_class_label=other_class_label,
-                    other_class_confidence_threshold=other_class_confidence_threshold)
+                # iou_correct, iou_matches = process_batch(predn, labelsn, iouv, match_on_iou_only=True)
+                correct, matches = process_batch(predn, labelsn, iouv, other_class_label=other_class_label, other_class_confidence_threshold=other_class_confidence_threshold)
+                # correct, matches = process_batch(predn, labelsn, iouv)
+                # correct, matches = process_batch(predn, labelsn, iouv)
+
+                # if (len(matches) > 0 or len(iou_matches) > 0) and len(iou_matches) < len(matches):
+                #     print(iou_matches)
+                #     print(matches)
+                #     print(iou_matches.shape)
+                #     print(matches.shape)
+                #     print(labels)
+                    
+                #     print(batch_i, si)
+                #     import pdb
+                #     pdb.set_trace()
+                    
 
                 if plots:
                     confusion_matrix.process_batch(predn, labelsn)
@@ -610,7 +678,7 @@ def run(args,
                 small_preds_index[det_idx] = pred_bbox_area < min_pred_area
 
             matched_preds_index = np.zeros(len(pred), dtype=np.bool)
-
+            
             # Collecting results
             curr_false_positives_preds = []
 
@@ -624,23 +692,23 @@ def run(args,
                 lbl_index_to_keep[lbl_index] = ~current_label_metric['too_small']
 
                 class_label = lbl_[0]
-
+                                
                 # If there's no match, just save current metric and continue to
                 # the next label.
                 if len(match) == 0:
                     # if ground truth is 'other' and there is NO prediction, we drop the label so it's not counted as a false negative
                     if class_label == other_class_label:
                         lbl_index_to_keep[lbl_index] = 0
-
+                        
                     metrics_per_label_df = metrics_per_label_df.append(
                         current_label_metric, ignore_index=True)
                     continue
 
                 # Find index of `pred` corresponding to this match
                 det_idx = int(match[0, 1])
-
+                
                 matched_preds_index[det_idx] = 1
-
+                
                 # Populate other metrics
                 pred_conf, pred_label = pred[det_idx, 4:6].cpu().numpy()
                 current_label_metric['confidence'] = pred_conf
@@ -649,26 +717,61 @@ def run(args,
                 # Drop this prediction if the target object is too small
                 pred_index_to_keep[det_idx] = ~current_label_metric['too_small']
 
+                
                 if class_label == other_class_label:
+                    # as in the mtsd paper, we drop both label and prediction if the label is 'other'
+                    lbl_index_to_keep[lbl_index] = 0
+                    pred_index_to_keep[det_idx] = 0
+                    correct[det_idx] = torch.BoolTensor([False] * len(iouv))
                     # if ground truth is 'other' and there is a prediction, we count any detection as a true positive
                     # we change the label from 'other' to the detected class so there is no false negative
-                    if other_class_confidence_threshold and pred_conf > other_class_confidence_threshold:
-                        labels[lbl_index, 0] = pred_label.item()
-                        current_label_metric['label'] = pred_label.item()
-                        current_label_metric['changed_from_other_label'] = 1
-                        targets[targets[:, 0] == si, 1:] = labels
+                    # if other_class_confidence_threshold and pred_conf > other_class_confidence_threshold:
+                    #     labels[lbl_index, 0] = pred_label.item()
+                    #     current_label_metric['label'] = pred_label.item()
+                    #     current_label_metric['changed_from_other_label'] = 1
+                    #     targets[targets[:, 0] == si, 1:] = labels
 
-                # if pred_label == other_class_label:
-                #     # as in the mtsd paper, we drop both label and prediction if any of them is 'other'
-                #     lbl_index_to_keep[lbl_index] = 0
-                #     pred_index_to_keep[det_idx] = 0
+                if pred_label == other_class_label:
+                    # as in the mtsd paper, we drop both label and prediction if the prediction is 'other'
+                    lbl_index_to_keep[lbl_index] = 0
+                    pred_index_to_keep[det_idx] = 0
+                    # correct[det_idx] = torch.BoolTensor([False] * len(iouv))
 
+                # if class_label != pred_label:
+                #     # print(class_label)
+                #     # print(type(class_label))
+                #     # print(pred_label)
+                #     # print(type(pred_label))
+
+                #     # print(det_idx)
+                #     # print()
+                #     # print(correct_v2[det_idx])
+                #     # print(correct[det_idx])
+                #     # print()
+                    
+                #     # print(matches_v2)
+                #     # print(matches)
+                #     # print()
+                #     # qqq
+                    
+                #     # print(correct.shape)
+                #     # print(correct)
+                #     # correct[det_idx] = torch.BoolTensor([False] * len(iouv))
+                #     correct[det_idx] = correct_v2[det_idx]
+                #     matched_preds_index[det_idx] = 0
+                #     lbl_index_to_keep[lbl_index] = 1
+                #     pred_index_to_keep[det_idx] = 1
+
+                    
+                    # print(correct)
+                    # qqq
+                
                 # Get detection boolean at iou_thres
                 iou_idx = torch.where(iouv >= iou_thres)[0][0]
                 is_detected = correct[det_idx, iou_idx]
-                if (use_attack and pred_label == adv_sign_class and
-                        pred_conf > metrics_conf_thres and is_detected):
+                if (use_attack and pred_label == adv_sign_class and pred_conf > metrics_conf_thres and is_detected):
                     current_label_metric['correct_prediction'] = 1
+
                 metrics_per_label_df = metrics_per_label_df.append(
                     current_label_metric, ignore_index=True)
 
@@ -682,15 +785,14 @@ def run(args,
                 false_positives_filenames.append(filename)
 
             # if unmatched and small, the prediction should be removed
-            pred_index_to_keep = np.logical_and(pred_index_to_keep, ~np.logical_and(
-                unmatched_preds_index, small_preds_index))
+            pred_index_to_keep = np.logical_and(pred_index_to_keep, ~np.logical_and(unmatched_preds_index, small_preds_index))
 
             correct = correct[pred_index_to_keep]
             pred = pred[pred_index_to_keep]
             labels = labels[lbl_index_to_keep]
 
             tcls = labels[:, 0].tolist() if nl else []  # target class
-
+            
             labels_kept += lbl_index_to_keep.sum()
             predictions_kept += pred_index_to_keep.sum()
             labels_removed += (~lbl_index_to_keep).sum()
@@ -781,9 +883,7 @@ def run(args,
     else:
         nt = torch.zeros(1)
 
-    plot_false_positives(false_positive_images, false_positives_preds, false_positives_filenames,
-                         max_f1_index/1000, names, plot_folder=f'{project}/{name}/plots_false_positives/')
-    # plot_false_positives(false_positive_images, false_positives_labels, false_positives_preds, false_positives_filenames, max_f1_index/1000, names)
+    plot_false_positives(false_positive_images, false_positives_preds, false_positives_filenames, max_f1_index/1000, names, plot_folder=f'{project}/{name}/plots_false_positives/')
 
     # Print results
     pf = '%20s' + '%11i' * 2 + '%11.3g' * 4  # print format
@@ -806,6 +906,7 @@ def run(args,
     metrics_df_column_names.append('fp_cmb')
     current_exp_metrics['fp_cmb'] = sum(fp)
 
+    
     LOGGER.info(pf % ('all', seen, nt.sum(), mp, mr, map50, map))
 
     metrics_df_column_names.append('min_area')
@@ -847,7 +948,7 @@ def run(args,
         LOGGER.info(pf % (names[c], seen, nt[c], p[i], r[i], ap50[i], ap[i]))
     metrics_df_column_names.append('dataset')
     current_exp_metrics['dataset'] = DATASET_NAME
-
+    
     metrics_df_column_names.append('total_num_patches')
     current_exp_metrics['total_num_patches'] = total_num_patches
 
@@ -962,12 +1063,11 @@ def parse_opt():
     parser.add_argument('--dnn', action='store_true', help='use OpenCV DNN for ONNX inference')
     parser.add_argument('--model_name', default='yolov5', help='yolov5 or yolor')
     parser.add_argument('--other-class-label', type=int, default=None, help="Class for the 'other' label")
-    parser.add_argument('--model-trained-without-other', action='store_true',
-                        help="True if model was trained without the 'other' class label")
+    parser.add_argument('--model-trained-without-other', action='store_true', help="True if model was trained without the 'other' class label")
 
     # ========================== Our misc arguments ========================= #
     parser.add_argument('--seed', type=int, default=0, help='set random seed')
-    parser.add_argument('--padded-imgsz', type=str, default='992,1312',
+    parser.add_argument('--padded_imgsz', type=str, default='992,1312',
                         help='final image size including padding (height,width). Default: 992,1312')
     parser.add_argument('--interp', type=str, default='bilinear',
                         help='interpolation method (nearest, bilinear, bicubic)')
@@ -990,18 +1090,16 @@ def parse_opt():
                         help='path to a text file containing image filenames')
     parser.add_argument('--run-only-img-txt', action='store_true',
                         help='run evaluation on images listed in img-txt-path. Otherwise, exclude these images.')
-    parser.add_argument('--no-patch-transform', action='store_true',
+    parser.add_argument('--no-transform', action='store_true',
                         help=('If True, do not apply patch to signs using '
                               '3D-transform. Patch will directly face camera.'))
-    parser.add_argument('--no-patch-relighting', action='store_true',
+    parser.add_argument('--no-relighting', action='store_true',
                         help=('If True, do not apply relighting transform to patch'))
     parser.add_argument('--min-area', type=float, default=0,
                         help=('Minimum area for labels. if a label has area > min_area,'
                               'predictions correspoing to this target will be discarded'))
-    parser.add_argument(
-        '--min-pred-area', type=float, default=0,
-        help=(
-            'Minimum area for predictions. if a predicion has area < min_area and that prediction is not matched to any label, it will be discarded'))
+    parser.add_argument('--min-pred-area', type=float, default=0,
+                    help=('Minimum area for predictions. if a predicion has area < min_area and that prediction is not matched to any label, it will be discarded'))
     # ============================== Plot / log ============================= #
     parser.add_argument('--save-exp-metrics', action='store_true', help='save metrics for this experiment to dataframe')
     parser.add_argument('--plot-single-images', action='store_true',
@@ -1009,9 +1107,7 @@ def parse_opt():
     parser.add_argument('--plot-class-examples', type=str, default='', nargs='*',
                         help='save single images containing individual classes in different folders.')
     parser.add_argument('--metrics-confidence-threshold', type=float, default=None, help='confidence threshold')
-    parser.add_argument(
-        '--other-class-confidence-threshold', type=float, default=None,
-        help='confidence threshold at which other labels are changed if there is a match with a prediction')
+    parser.add_argument('--other-class-confidence-threshold', type=float, default=None, help='confidence threshold at which other labels are changed if there is a match with a prediction')
 
     # TODO: remove when no bug
     # parser.add_argument('--num-bg', type=int, default=16, help='number of backgrounds to generate adversarial patch')

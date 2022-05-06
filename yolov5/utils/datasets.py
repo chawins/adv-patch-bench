@@ -119,15 +119,15 @@ def create_dataloader(
 
     # EDIT: Use RepeatFactorTrainingSampler similar to detectron2 to deal with
     # the class imbalance problem
-    # sampler = None if rank == -1 else distributed.DistributedSampler(dataset, shuffle=shuffle)
-    # loader = DataLoader if image_weights else InfiniteDataLoader  # only DataLoader allows for attribute updates
-    sampler = None
-    if repeat_sampler:
-        repeat_threshold = 1
-        repeat_factors = RepeatFactorTrainingSampler.repeat_factors_from_category_frequency(
-            dataset.img_to_labels, repeat_threshold)
-        sampler = RepeatFactorTrainingSampler(repeat_factors, shuffle=shuffle)
-    loader = DataLoader if sampler else InfiniteDataLoader
+    sampler = None if rank == -1 else distributed.DistributedSampler(dataset, shuffle=shuffle)
+    loader = DataLoader if image_weights else InfiniteDataLoader  # only DataLoader allows for attribute updates
+    # sampler = None
+    # if repeat_sampler:
+    #     repeat_threshold = 1
+    #     repeat_factors = RepeatFactorTrainingSampler.repeat_factors_from_category_frequency(
+    #         dataset.img_to_labels, repeat_threshold)
+    #     sampler = RepeatFactorTrainingSampler(repeat_factors, shuffle=shuffle)
+    # loader = DataLoader if sampler else InfiniteDataLoader
 
     # DEBUG
     # check sample from original dataloader
@@ -652,12 +652,13 @@ class LoadImagesAndLabels(Dataset):
 
             if hyp['random_crop']:
                 crop_size = (1024, 1024)
-                (h0, w0), (h, w) = crop_size, crop_size
+                # (h0, w0), (h, w) = crop_size, crop_size
                 ratio = (1, 1)
                 pad = (0, 0)
                 # img, ratio, pad = letterbox(img, shape, auto=False, scaleup=self.augment)
                 if labels.size:  # normalized xywh to pixel xyxy format
-                    labels[:, 1:] = xywhn2xyxy(labels[:, 1:], crop_size[0], crop_size[1], padw=pad[0], padh=pad[1])
+                    # labels[:, 1:] = xywhn2xyxy(labels[:, 1:], crop_size[0], crop_size[1], padw=pad[0], padh=pad[1])
+                    labels[:, 1:] = xywhn2xyxy(labels[:, 1:], ratio[0] * w, ratio[1] * h, padw=pad[0], padh=pad[1])
                 img, labels = random_crop(crop_size, img, labels)
             else:
                 shape = self.batch_shapes[self.batch[index]] if self.rect else self.img_size  # final letterboxed shape
