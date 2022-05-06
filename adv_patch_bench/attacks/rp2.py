@@ -1,4 +1,5 @@
 import time
+from typing import Any, List, Optional
 
 import numpy as np
 import torch
@@ -100,9 +101,11 @@ class RP2AttackModule(DetectorAttackModule):
         return loss
 
     # ==================== Faster R-CNN-specific methods ==================== #
-    def _compute_loss_rcnn(self, adv_img, instances):
+    def _compute_loss_rcnn(self, adv_img, metadata):
+        for i, m in enumerate(metadata):
+            m['image'] = adv_img[i]
         target_boxes, target_labels, target_logits, obj_logits = get_targets(
-            self.core_model, adv_img, instances, device=self.core_model.device)
+            self.core_model, metadata, device=self.core_model.device)
         # features = self.core_model.backbone(adv_img)
         # # Get classification logits
         # logits, _ = get_roi_heads_predictions(features, target_boxes)
@@ -252,7 +255,13 @@ class RP2AttackModule(DetectorAttackModule):
         self.core_model.train(mode)
         return delta.detach()
 
-    def transform_and_attack(self, objs, patch_mask, obj_class, instances=None):
+    def attack_real(
+        self,
+        objs: List,
+        patch_mask: torch.Tensor,
+        obj_class: int,
+        metadata: Optional[List] = None,
+    ):
         """Run RP2 Attack.
 
         Args:
@@ -266,8 +275,12 @@ class RP2AttackModule(DetectorAttackModule):
         ymin, xmin, height, width = mask_to_box(patch_mask)
         patch_loc = (ymin, xmin, height, width)
 
-        # ema_const = 0.99
-        ema_const = 0
+        metadata_clone = None
+        if self.is_detectron:
+            metadata_clone = self._clone_detectron_metadata(metadata)
+
+        ema_const = 0.99
+        # ema_const = 0
         ema_loss = None
 
         self.alpha = 1e-2
@@ -324,12 +337,14 @@ class RP2AttackModule(DetectorAttackModule):
                     tf_function, curr_tf_data, interp=self.interp,
                     **self.real_transform, use_relight=self.use_relight)
 
+                # TODO: Add EoT on the patch?
+
                 # DEBUG
                 # torchvision.utils.save_image(adv_img, 'temp.png')
                 # import pdb
                 # pdb.set_trace()
 
-                loss = self.compute_loss(adv_img, instances if self.is_detectron else obj_class)
+                loss = self.compute_loss(adv_img, metadata_clone if self.is_detectron else obj_class)
                 tv = ((delta[:, :, :-1, :] - delta[:, :, 1:, :]).abs().mean() +
                       (delta[:, :, :, :-1] - delta[:, :, :, 1:]).abs().mean())
                 # loss = out[:, :, 4].mean() + self.lmbda * tv
@@ -367,6 +382,18 @@ class RP2AttackModule(DetectorAttackModule):
         # Return worst-case perturbed input logits
         self.core_model.train(mode)
         return delta.detach()
+
+    def _clone_detectron_metadata(self, metadata):
+        metadata_clone = []
+        for m in metadata:
+            data_dict = {}
+            for keys in m:
+                if keys == 'image':
+                    data_dict[keys] = None
+                else:
+                    data_dict[keys] = m[keys]
+            metadata_clone.append(data_dict)
+        return metadata_clone
 
     def _to_attack_space(self, x, min_, max_):
         # map from [min_, max_] to [-1, +1]

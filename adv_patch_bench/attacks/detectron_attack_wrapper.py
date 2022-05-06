@@ -13,7 +13,8 @@ import detectron2.data.transforms as T
 import numpy as np
 import pandas as pd
 import torch
-from adv_patch_bench.attacks.utils import prep_attack, prep_synthetic_eval
+from adv_patch_bench.attacks.utils import (apply_synthetic_sign, prep_attack,
+                                           prep_synthetic_eval)
 from adv_patch_bench.transforms import transform_and_apply_patch
 from detectron2.checkpoint import DetectionCheckpointer
 from detectron2.config import CfgNode
@@ -107,10 +108,17 @@ class DAGAttacker:
                                       rescaling=False, interp=args.interp,
                                       verbose=self.verbose, is_detectron=True)
         self.attack_type = args.attack_type
+        self.use_attack = self.attack_type != 'none'
         self.adv_sign_class = args.obj_class
         self.df = pd.read_csv(args.tgt_csv_filepath)
         self.class_names = class_names
         self.synthetic_eval = args.synthetic_eval
+
+        # Loading file names from the specified text file
+        self.skipped_filename_list = []
+        if args.img_txt_path != '':
+            with open(args.img_txt_path, 'r') as f:
+                self.skipped_filename_list = f.read().splitlines()
 
     def log(self, *args, **kwargs):
         if self.verbose:
@@ -145,8 +153,8 @@ class DAGAttacker:
 
         if self.synthetic_eval:
             # Prepare evaluation with synthetic signs
-            obj, obj_mask, obj_transforms, mask_transforms, syn_sign_class = \
-                prep_synthetic_eval(self.args, self.img_size, self.class_names, device=self.device)
+            # syn_data: (syn_obj, syn_obj_mask, obj_transforms, mask_transforms, syn_sign_class)
+            syn_data = prep_synthetic_eval(self.args, self.img_size, self.class_names, device=self.device)
 
         # Prepare attack data
         _, adv_patch, patch_mask, patch_loc = prep_attack(self.args, self.device)
@@ -160,6 +168,14 @@ class DAGAttacker:
             instances = batch[0]['instances']
             h0, w0 = batch[0]['height'], batch[0]['height']
             img_df = self.df[self.df['filename'] == filename]
+
+            if len(img_df) == 0:
+                continue
+            # Skip (or only run on) files listed in the txt file
+            in_list = filename in self.skipped_filename_list
+            if ((in_list and not self.args.run_only_img_txt) or
+                    (not in_list and self.args.run_only_img_txt)):
+                continue
 
             # Peform DAG attack
             self.log(f'[{i}/{len(self.data_loader)}] Attacking {file_name} ...')
@@ -177,20 +193,24 @@ class DAGAttacker:
             _, h, w = images.shape
             img_data = (h0, w0, h / h0, w / w0, 0, 0)
 
-            if not self.synthetic_eval:
+            if self.synthetic_eval:
+                # Apply synthetic sign and patch to image
+                perturbed_image = apply_synthetic_sign(
+                    images, adv_patch, patch_mask, *syn_data, apply_patch=self.use_attack)
+            else:
                 # Iterate through objects in the current image
                 for _, obj in img_df.iterrows():
                     obj_label = obj['final_shape']
                     if obj_label != self.class_names[self.adv_sign_class]:
                         continue
 
-                    # Run attack for each sign
+                    # Run attack for each sign to get `adv_patch`
                     if self.attack_type == 'per-sign':
                         data = [obj_label, obj, *img_data]
                         attack_images = [[images, data, str(file_name)]]
                         with torch.enable_grad():
-                            adv_patch = self.attack.transform_and_attack(
-                                attack_images, patch_mask, obj_class, instances=instances)
+                            adv_patch = self.attack.attack_real(
+                                attack_images, patch_mask, obj_class, metadata=batch)
 
                     # Transform and apply patch on the image. `im` has range [0, 255]
                     perturbed_image = transform_and_apply_patch(
@@ -199,41 +219,11 @@ class DAGAttacker:
                         use_transform=not self.no_patch_transform,
                         use_relight=not self.no_patch_relight, interp=self.args.interp)
                     total_num_patches += 1
-            else:
-                adv_obj = patch_mask * adv_patch + (1 - patch_mask) * obj
-                adv_obj, tf_params = obj_transforms(adv_obj)
-                adv_obj.clamp_(0, 1)
-                o_mask = mask_transforms.apply_transform(
-                    obj_mask, None, transform=tf_params.to(self.device))
-
-                # get top left and bottom right points
-                # TODO: can we use mask_to_box here?
-                indices = np.where(o_mask.cpu()[0][0] == 1)
-                x_min, x_max = min(indices[1]), max(indices[1])
-                y_min, y_max = min(indices[0]), max(indices[0])
-
-                # Since we paste a new synthetic sign on image, we have to add
-                # in a new synthetic label/target to compute the metrics
-                label = [
-                    perturbed_image,
-                    syn_sign_class,
-                    (x_min + x_max) / (2 * w),
-                    (y_min + y_max) / (2 * h),
-                    (x_max - x_min) / w,
-                    (y_max - y_min) / h,
-                    1,
-                    -1
-                ]
-                targets = torch.cat((targets, torch.tensor(label).unsqueeze(0)))
-
-                adv_img = o_mask * adv_obj + (1 - o_mask) * perturbed_image.to(self.device) / 255
-                perturbed_image = adv_img.squeeze() * 255
 
             # Perform inference on perturbed image
             perturbed_image = self._post_process_image(perturbed_image)
-            perturbed_image = (
-                perturbed_image.permute(1, 2, 0).cpu().numpy().astype(np.uint8)
-            )
+            perturbed_image = perturbed_image.permute(1, 2, 0).cpu().numpy().astype(np.uint8)
+
             outputs = self(perturbed_image)
 
             # Convert to coco predictions format

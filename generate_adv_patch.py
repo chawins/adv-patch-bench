@@ -184,9 +184,9 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
 
         print(f'=> Start attacking...')
         with torch.enable_grad():
-            adv_patch = attack.transform_and_attack(attack_images,
-                                                    patch_mask=patch_mask.to(device),
-                                                    obj_class=obj_class)
+            adv_patch = attack.attack_real(attack_images,
+                                           patch_mask=patch_mask.to(device),
+                                           obj_class=obj_class)
 
     adv_patch = adv_patch[0].detach().cpu().float()
 

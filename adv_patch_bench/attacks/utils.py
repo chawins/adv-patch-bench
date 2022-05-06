@@ -1,8 +1,9 @@
 import ast
 import pickle
 from argparse import Namespace
-from typing import List, Tuple
+from typing import Any, List, Tuple
 
+import numpy as np
 import pandas as pd
 import torch
 import torchvision
@@ -86,3 +87,50 @@ def prep_attack(
         adv_patch = adv_patch.to(device)
 
     return df, adv_patch, patch_mask, patch_loc
+
+
+def apply_synthetic_sign(
+    image: torch.Tensor,
+    adv_patch: torch.Tensor,
+    patch_mask: torch.Tensor,
+    syn_obj: torch.Tensor,
+    syn_obj_mask: torch.Tensor,
+    obj_transforms: Any,
+    mask_transforms: Any,
+    syn_sign_class: int,
+    device: str = 'cuda',
+    use_attack: bool = True,
+):
+    _, h, w = image.shape
+    if use_attack:
+        adv_obj = patch_mask * adv_patch + (1 - patch_mask) * syn_obj
+    else:
+        adv_obj = syn_obj
+    adv_obj, tf_params = obj_transforms(adv_obj)
+    adv_obj.clamp_(0, 1)
+    o_mask = mask_transforms.apply_transform(
+        syn_obj_mask, None, transform=tf_params.to(device))
+
+    # get top left and bottom right points
+    # TODO: can we use mask_to_box here?
+    indices = np.where(o_mask.cpu()[0][0] == 1)
+    x_min, x_max = min(indices[1]), max(indices[1])
+    y_min, y_max = min(indices[0]), max(indices[0])
+
+    # Since we paste a new synthetic sign on image, we have to add
+    # in a new synthetic label/target to compute the metrics
+    label = [
+        image,
+        syn_sign_class,
+        (x_min + x_max) / (2 * w),
+        (y_min + y_max) / (2 * h),
+        (x_max - x_min) / w,
+        (y_max - y_min) / h,
+        1,
+        -1
+    ]
+    targets = torch.cat((targets, torch.tensor(label).unsqueeze(0)))
+
+    adv_img = o_mask * adv_obj + (1 - o_mask) * perturbed_image.to(device) / 255
+    perturbed_image = adv_img.squeeze() * 255
+    return perturbed_image

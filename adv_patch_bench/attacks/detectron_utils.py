@@ -8,8 +8,7 @@ from detectron2.structures import Boxes, pairwise_iou
 @torch.no_grad()
 def get_targets(
     model,
-    batched_inputs: List[Dict[Any, Any]],
-    instances: Any,
+    inputs: List[Dict[Any, Any]],
     device: str = 'cuda',
 ) -> Tuple[Boxes, torch.Tensor]:
     """Select a set of initial targets for the DAG algo.
@@ -24,12 +23,12 @@ def get_targets(
     Tuple[Boxes, torch.Tensor]
         target_boxes, target_labels
     """
-    # instances = batched_inputs[0]["instances"]
+    # TODO: make this handle batch
+    instances = inputs[0]["instances"]
     gt_boxes = instances.gt_boxes.to(device)
     gt_classes = instances.gt_classes
 
-    inputs = [{}]
-    images = model.preprocess_image(batched_inputs)
+    images = model.preprocess_image(inputs)
 
     # Get features
     features = model.backbone(images.tensor)

@@ -24,7 +24,8 @@ import yaml
 from tqdm import tqdm
 
 from adv_patch_bench.attacks.rp2 import RP2AttackModule
-from adv_patch_bench.attacks.utils import prep_attack, prep_synthetic_eval
+from adv_patch_bench.attacks.utils import (apply_synthetic_sign, prep_attack,
+                                           prep_synthetic_eval)
 from adv_patch_bench.transforms import transform_and_apply_patch
 from yolor.models.models import Darknet
 from yolov5.models.common import DetectMultiBackend
@@ -168,10 +169,8 @@ def run(args,
     plot_single_images = args.plot_single_images
     plot_class_examples = [int(x) for x in args.plot_class_examples]
     adv_patch_path = args.adv_patch_path
-    tgt_csv_filepath = args.tgt_csv_filepath
     attack_config_path = args.attack_config_path
     adv_sign_class = args.obj_class
-    syn_obj_path = args.syn_obj_path
     min_area = args.min_area
     model_name = args.model_name
     other_class_label = args.other_class_label
@@ -179,13 +178,8 @@ def run(args,
     other_class_confidence_threshold = args.other_class_confidence_threshold
     min_pred_area = args.min_pred_area
 
-    # split = args.split
-
-    no_transform = args.no_transform
-    relighting = not args.no_relighting
     metrics_conf_thres = args.metrics_confidence_threshold
     img_size = tuple([int(x) for x in args.padded_imgsz.split(',')])
-    img_height, img_width = img_size
 
     false_positive_images = []
     false_positives_labels = []
@@ -322,8 +316,8 @@ def run(args,
 
     if synthetic_eval:
         # Prepare evaluation with synthetic signs
-        obj, obj_mask, obj_transforms, mask_transforms, syn_sign_class = \
-            prep_synthetic_eval(args, img_size, names, device=device)
+        # syn_data: syn_obj, obj_mask, obj_transforms, mask_transforms, syn_sign_class
+        syn_data = prep_synthetic_eval(args, img_size, names, device=device)
 
     if use_attack:
         # Prepare attack data
@@ -391,9 +385,7 @@ def run(args,
 
             if use_attack and not synthetic_eval:
                 filename = path.split('/')[-1]
-
                 img_df = df[df['filename'] == filename]
-
                 if len(img_df) == 0:
                     continue
 
@@ -420,7 +412,7 @@ def run(args,
                         data = [predicted_class, row, *img_data]
                         attack_images = [[im[image_i], data, str(filename)]]
                         with torch.enable_grad():
-                            adv_patch = attack.transform_and_attack(
+                            adv_patch = attack.attack_real(
                                 attack_images, patch_mask=patch_mask,
                                 obj_class=adv_sign_class)[0]
 
@@ -436,38 +428,9 @@ def run(args,
                 # targets[targets[:, 0] == image_i, 6] = num_patches_applied_to_image
 
             elif synthetic_eval:
-                if use_attack:
-                    adv_obj = patch_mask * adv_patch + (1 - patch_mask) * obj
-                else:
-                    adv_obj = obj
-
-                adv_obj, tf_params = obj_transforms(adv_obj)
-                adv_obj.clamp_(0, 1)
-                o_mask = mask_transforms.apply_transform(
-                    obj_mask, None, transform=tf_params.to(device))
-
-                # get top left and bottom right points
-                # TODO: can we use mask_to_box here?
-                indices = np.where(o_mask.cpu()[0][0] == 1)
-                x_min, x_max = min(indices[1]), max(indices[1])
-                y_min, y_max = min(indices[0]), max(indices[0])
-
-                # Since we paste a new synthetic sign on image, we have to add
-                # in a new synthetic label/target to compute the metrics
-                label = [
-                    image_i,
-                    syn_sign_class,
-                    (x_min + x_max) / (2 * img_width),
-                    (y_min + y_max) / (2 * img_height),
-                    (x_max - x_min) / img_width,
-                    (y_max - y_min) / img_height,
-                    int(use_attack),
-                    -1
-                ]
-                targets = torch.cat((targets, torch.tensor(label).unsqueeze(0)))
-
-                adv_img = o_mask * adv_obj + (1 - o_mask) * im[image_i].to(device) / 255
-                im[image_i] = adv_img.squeeze() * 255
+                im[image_i] = apply_synthetic_sign(
+                    im[image_i], adv_patch, patch_mask, *syn_data,
+                    device=device, use_attack=use_attack)
 
         t1 = time_sync()
         if pt or jit or engine:
