@@ -653,8 +653,10 @@ class LoadImagesAndLabels(Dataset):
                 # some images can't be cropped because they are too small and have to be padded
                 if img.shape[0] < crop_size[0] or img.shape[1] < crop_size[1]:
                     # need to add code to pad
-                    shape = self.batch_shapes[self.batch[index]] if self.rect else self.img_size  # final letterboxed shape
-                    img, ratio, pad = letterbox(img, shape, auto=False, scaleup=self.augment)
+                    new_shape = [0, 0] # new height, width
+                    new_shape[0] = max(img.shape[0], crop_size[0])
+                    new_shape[1] = max(img.shape[1], crop_size[1])
+                    img, ratio, pad = letterbox(img, new_shape, auto=False, scaleup=False)
                 else:
                     ratio = (1, 1)
                     pad = (0, 0)
