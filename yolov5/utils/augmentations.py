@@ -9,6 +9,7 @@ import random
 import cv2
 import matplotlib.pyplot as plt
 import numpy as np
+import albumentations as A
 
 from yolov5.utils.general import LOGGER, check_version, colorstr, resample_segments, segment2box
 from yolov5.utils.metrics import bbox_ioa
@@ -92,7 +93,8 @@ def replicate(im, labels):
     return im, labels
 
 
-def letterbox(im, new_shape=(640, 640), color=(114, 114, 114), auto=True, scaleFill=False, scaleup=True, stride=32):
+def letterbox(im, new_shape=(640, 640), color=(114, 114, 114), auto=True,
+              scaleFill=False, scaleup=True, stride=32):
     # Resize and pad image while meeting stride-multiple constraints
     shape = im.shape[:2]  # current shape [height, width]
     if isinstance(new_shape, int):
@@ -125,9 +127,9 @@ def letterbox(im, new_shape=(640, 640), color=(114, 114, 114), auto=True, scaleF
     return im, ratio, (dw, dh)
 
 
-def random_perspective(
-        im, targets=(), segments=(), degrees=10, translate=.1, scale=.1, shear=10,
-        perspective=0.0, border=(0, 0), random_crop=False):
+def random_perspective(im, targets=(), segments=(), degrees=10, translate=.1,
+                       scale=.1, shear=10, perspective=0.0, border=(0, 0),
+                       random_crop=False):
     # torchvision.transforms.RandomAffine(degrees=(-10, 10), translate=(0.1, 0.1), scale=(0.9, 1.1), shear=(-10, 10))
     # targets = [cls, xyxy]
 
@@ -206,22 +208,45 @@ def random_perspective(
         targets = targets[i]
         targets[:, 1:5] = new[i]
 
-    # EDIT
-    if random_crop:
-        import albumentations as A
-        transform = A.Compose(
-            [A.RandomSizedBBoxSafeCrop(width=width, height=height, erosion_rate=0.0)],
-            bbox_params=A.BboxParams(format='pascal_voc', label_fields=['category_ids']))
+    return im, targets
 
-        transformed = transform(image=im[:, :, ::-1], bboxes=targets[:, 1:5], category_ids=targets[:, 0])
 
-        # DEBUG
+
+def random_crop(crop_size, im, targets):
+    # some images can't be cropped because they are too small and have to be padded
+    if im.shape[0] < crop_size[0] or im.shape[1] < crop_size[1]:
+        # need to add code to pad
+        return im, targets
+
+    width, height = crop_size
+    from yolov5.utils.album import RandomSizedBBoxSafeCrop_v2
+    random_bbox_crop = RandomSizedBBoxSafeCrop_v2(width=width, height=height, erosion_rate=0.0)
+    transform = A.Compose(
+        [random_bbox_crop],
+        bbox_params=A.BboxParams(format='pascal_voc', label_fields=['category_ids']))
+          
+    transformed = transform(image=im[:, :, ::-1],
+                            bboxes=targets[:, 1:5],
+                            category_ids=targets[:, 0])
+
+
+    plot_and_debug = False
+    if plot_and_debug:
         # visualize before and after random crop
-        # visualize(im[:, :, ::-1], targets[:, 1:5], 'test_augmentation_before.png')
-        # visualize(transformed['image'], transformed['bboxes'], 'test_augmentation_after.png')
+        visualize(im[:, :, ::-1], targets[:, 0:5], 'test_augmentation_before.png')
 
-        im[:, :, ::-1] = transformed['image']
-        targets[:, 1:5] = np.array(transformed['bboxes'])
+    im = np.array(transformed['image'][:, :, ::-1])
+    transformed_targets = np.array(transformed['bboxes'])
+    
+    new_targets = np.zeros((transformed_targets.shape[0], targets.shape[1]))
+    if len(transformed_targets) > 0:
+        new_targets[:, 0] = transformed['category_ids']
+        new_targets[:, 1:5] = np.array(transformed['bboxes'])
+
+    targets = new_targets
+    
+    if plot_and_debug:
+        visualize(transformed['image'], targets[:, 0:5], 'test_augmentation_after.png')
 
     return im, targets
 
@@ -293,9 +318,15 @@ def box_candidates(box1, box2, wh_thr=2, ar_thr=20, area_thr=0.1, eps=1e-16):  #
     return (w2 > wh_thr) & (h2 > wh_thr) & (w2 * h2 / (w1 * h1 + eps) > area_thr) & (ar < ar_thr)  # candidates
 
 
-def visualize_bbox(img, bbox, class_name, color=BOX_COLOR, thickness=2):
+def visualize_bbox(img, bbox, color=BOX_COLOR, thickness=2):
     """Visualizes a single bounding box on the image"""
-    x_min, y_min, x_max, y_max = bbox
+    label, x_min, y_min, x_max, y_max = bbox
+
+    CLASS_LIST = ['circle-750.0', 'triangle-900.0', 'triangle_inverted-1220.0', 
+        'diamond-600.0', 'diamond-915.0', 'square-600.0', 'rect-458.0-610.0', 
+        'rect-762.0-915.0', 'rect-915.0-1220.0', 'pentagon-915.0', 
+        'octagon-915.0', 'other']
+    class_name = CLASS_LIST[int(label)]
     x_min = int(x_min)
     x_max = int(x_max)
     y_min = int(y_min)
@@ -320,7 +351,7 @@ def visualize_bbox(img, bbox, class_name, color=BOX_COLOR, thickness=2):
 def visualize(image, bboxes, filename):
     img = image.copy()
     for bbox in bboxes:
-        img = visualize_bbox(img, bbox, 'label')
+        img = visualize_bbox(img, bbox)
     fig = plt.figure(figsize=(20, 20))
     plt.imshow(img)
     fig.savefig(filename)

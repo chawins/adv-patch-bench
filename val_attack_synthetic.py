@@ -74,7 +74,8 @@ def save_one_json(predn, jdict, path, class_map):
                       'score': round(p[4], 5)})
 
 
-def process_batch(detections, labels, iouv, other_class_label=None, other_class_confidence_threshold=0):
+def process_batch(detections, labels, iouv, other_class_label=None, other_class_confidence_threshold=0,
+                  match_on_iou_only=False):
     """
     Return correct predictions matrix. Both sets of boxes are in (x1, y1, x2, y2) format.
     Arguments:
@@ -86,9 +87,12 @@ def process_batch(detections, labels, iouv, other_class_label=None, other_class_
     correct = torch.zeros(detections.shape[0], iouv.shape[0], dtype=torch.bool, device=iouv.device)
     iou = box_iou(labels[:, 1:5], detections[:, :4])
 
-    if other_class_label:
+    if match_on_iou_only:
+        x = torch.where((iou >= iouv[0]))  # IoU above threshold
+    elif other_class_label:
         x = torch.where((iou >= iouv[0]) & ((labels[:, 0:1] == detections[:, 5]) | ((labels[:, 0:1] == other_class_label) & (
             detections[:, 4] > other_class_confidence_threshold))))  # IoU above threshold and classes match
+        # x = torch.where((iou >= iouv[0]))  # IoU above threshold
     else:
         # IoU above threshold and classes match
         x = torch.where((iou >= iouv[0]) & (labels[:, 0:1] == detections[:, 5]))
@@ -285,11 +289,8 @@ def run(args,
 
     try:
         names = {k: v for k, v in enumerate(model.names if hasattr(model, 'names') else model.module.names)}
-        # TODO: temporary fix  # FIXME
-        names[11] = 'other'
-        print('figure out names')
-        import pdb
-        pdb.set_trace()
+        # TODO: temporary fix # FIXME: ?
+        # names[11] = 'other'
     except:
         names = {k: v for k, v in enumerate(data['names'])}
 
@@ -318,6 +319,7 @@ def run(args,
         # Prepare evaluation with synthetic signs
         # syn_data: syn_obj, obj_mask, obj_transforms, mask_transforms, syn_sign_class
         syn_data = prep_synthetic_eval(args, img_size, names, device=device)
+        syn_sign_class = syn_data[-1]
 
     if use_attack:
         # Prepare attack data
@@ -369,13 +371,13 @@ def run(args,
         # Originally, targets has shape (#labels, 7)
         # [image_id, class, x1, y1, label_width, label_height, obj_id]
 
-        # FIXME: get this automatically from nc
         if model_trained_without_other:
             targets = targets[targets[:, 1] != other_class_label]
+        # targets = targets[targets[:, 1] != 15]
 
         # DEBUG
-        if args.debug and batch_i == 20:
-            # if args.debug and batch_i == 100:
+        # if args.debug and batch_i == 20:
+        if args.debug and batch_i == 100:
             break
 
         if num_apply_imgs >= len(filename_list) and args.run_only_img_txt:
@@ -416,12 +418,13 @@ def run(args,
                                 attack_images, patch_mask=patch_mask,
                                 obj_class=adv_sign_class)[0]
 
-                    # Transform and apply patch on the image. `im` has range [0, 255]
+                    # # Transform and apply patch on the image. `im` has range [0, 255]
                     im[image_i] = transform_and_apply_patch(
                         im[image_i].to(device), adv_patch.to(device),
                         patch_mask, patch_loc, predicted_class, row, img_data,
                         use_transform=not args.no_patch_transform,
                         use_relight=not args.no_patch_relight, interp=args.interp) * 255
+                    # num_patches_applied_to_image += 1
                     total_num_patches += 1
 
                 # set targets[6] to #patches_applied_to_image
@@ -552,9 +555,23 @@ def run(args,
                 # matching on bounding boxes and correct predictions, i.e, match label and pred if iou >= 0.5 and label == pred
                 # or match on whether label == 'other' class and iou(label, pred) >= 0.5
                 # correct, matches = process_batch(predn, labelsn, iouv, other_class_label=None)
+                # iou_correct, iou_matches = process_batch(predn, labelsn, iouv, match_on_iou_only=True)
                 correct, matches = process_batch(
                     predn, labelsn, iouv, other_class_label=other_class_label,
                     other_class_confidence_threshold=other_class_confidence_threshold)
+                # correct, matches = process_batch(predn, labelsn, iouv)
+                # correct, matches = process_batch(predn, labelsn, iouv)
+
+                # if (len(matches) > 0 or len(iou_matches) > 0) and len(iou_matches) < len(matches):
+                #     print(iou_matches)
+                #     print(matches)
+                #     print(iou_matches.shape)
+                #     print(matches.shape)
+                #     print(labels)
+
+                #     print(batch_i, si)
+                #     import pdb
+                #     pdb.set_trace()
 
                 if plots:
                     confusion_matrix.process_batch(predn, labelsn)
@@ -613,25 +630,58 @@ def run(args,
                 pred_index_to_keep[det_idx] = ~current_label_metric['too_small']
 
                 if class_label == other_class_label:
+                    # as in the mtsd paper, we drop both label and prediction if the label is 'other'
+                    lbl_index_to_keep[lbl_index] = 0
+                    pred_index_to_keep[det_idx] = 0
+                    correct[det_idx] = torch.BoolTensor([False] * len(iouv))
                     # if ground truth is 'other' and there is a prediction, we count any detection as a true positive
                     # we change the label from 'other' to the detected class so there is no false negative
-                    if other_class_confidence_threshold and pred_conf > other_class_confidence_threshold:
-                        labels[lbl_index, 0] = pred_label.item()
-                        current_label_metric['label'] = pred_label.item()
-                        current_label_metric['changed_from_other_label'] = 1
-                        targets[targets[:, 0] == si, 1:] = labels
+                    # if other_class_confidence_threshold and pred_conf > other_class_confidence_threshold:
+                    #     labels[lbl_index, 0] = pred_label.item()
+                    #     current_label_metric['label'] = pred_label.item()
+                    #     current_label_metric['changed_from_other_label'] = 1
+                    #     targets[targets[:, 0] == si, 1:] = labels
 
-                # if pred_label == other_class_label:
-                #     # as in the mtsd paper, we drop both label and prediction if any of them is 'other'
-                #     lbl_index_to_keep[lbl_index] = 0
-                #     pred_index_to_keep[det_idx] = 0
+                if pred_label == other_class_label:
+                    # as in the mtsd paper, we drop both label and prediction if the prediction is 'other'
+                    lbl_index_to_keep[lbl_index] = 0
+                    pred_index_to_keep[det_idx] = 0
+                    # correct[det_idx] = torch.BoolTensor([False] * len(iouv))
+
+                # if class_label != pred_label:
+                #     # print(class_label)
+                #     # print(type(class_label))
+                #     # print(pred_label)
+                #     # print(type(pred_label))
+
+                #     # print(det_idx)
+                #     # print()
+                #     # print(correct_v2[det_idx])
+                #     # print(correct[det_idx])
+                #     # print()
+
+                #     # print(matches_v2)
+                #     # print(matches)
+                #     # print()
+                #     # qqq
+
+                #     # print(correct.shape)
+                #     # print(correct)
+                #     # correct[det_idx] = torch.BoolTensor([False] * len(iouv))
+                #     correct[det_idx] = correct_v2[det_idx]
+                #     matched_preds_index[det_idx] = 0
+                #     lbl_index_to_keep[lbl_index] = 1
+                #     pred_index_to_keep[det_idx] = 1
+
+                    # print(correct)
+                    # qqq
 
                 # Get detection boolean at iou_thres
                 iou_idx = torch.where(iouv >= iou_thres)[0][0]
                 is_detected = correct[det_idx, iou_idx]
-                if (use_attack and pred_label == adv_sign_class and
-                        pred_conf > metrics_conf_thres and is_detected):
+                if (use_attack and pred_label == adv_sign_class and pred_conf > metrics_conf_thres and is_detected):
                     current_label_metric['correct_prediction'] = 1
+
                 metrics_per_label_df = metrics_per_label_df.append(
                     current_label_metric, ignore_index=True)
 
@@ -746,7 +796,6 @@ def run(args,
 
     plot_false_positives(false_positive_images, false_positives_preds, false_positives_filenames,
                          max_f1_index/1000, names, plot_folder=f'{project}/{name}/plots_false_positives/')
-    # plot_false_positives(false_positive_images, false_positives_labels, false_positives_preds, false_positives_filenames, max_f1_index/1000, names)
 
     # Print results
     pf = '%20s' + '%11i' * 2 + '%11.3g' * 4  # print format
@@ -930,7 +979,7 @@ def parse_opt():
 
     # ========================== Our misc arguments ========================= #
     parser.add_argument('--seed', type=int, default=0, help='set random seed')
-    parser.add_argument('--padded-imgsz', type=str, default='992,1312',
+    parser.add_argument('--padded_imgsz', type=str, default='992,1312',
                         help='final image size including padding (height,width). Default: 992,1312')
     parser.add_argument('--interp', type=str, default='bilinear',
                         help='interpolation method (nearest, bilinear, bicubic)')
@@ -956,7 +1005,7 @@ def parse_opt():
     parser.add_argument('--no-patch-transform', action='store_true',
                         help=('If True, do not apply patch to signs using '
                               '3D-transform. Patch will directly face camera.'))
-    parser.add_argument('--no-patch-relighting', action='store_true',
+    parser.add_argument('--no-patch-relight', action='store_true',
                         help=('If True, do not apply relighting transform to patch'))
     parser.add_argument('--min-area', type=float, default=0,
                         help=('Minimum area for labels. if a label has area > min_area,'
