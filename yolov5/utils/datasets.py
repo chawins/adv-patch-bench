@@ -646,19 +646,22 @@ class LoadImagesAndLabels(Dataset):
             img, (h0, w0), (h, w) = load_image(self, index, augment=True)
             labels = self.labels[index].copy()
 
-            # Letterbox
-
             # EDIT
-
             if hyp['random_crop']:
                 crop_size = (1024, 1024)
-                # (h0, w0), (h, w) = crop_size, crop_size
-                ratio = (1, 1)
-                pad = (0, 0)
-                # img, ratio, pad = letterbox(img, shape, auto=False, scaleup=self.augment)
+
+                # some images can't be cropped because they are too small and have to be padded
+                if img.shape[0] < crop_size[0] or img.shape[1] < crop_size[1]:
+                    # need to add code to pad
+                    shape = self.batch_shapes[self.batch[index]] if self.rect else self.img_size  # final letterboxed shape
+                    img, ratio, pad = letterbox(img, shape, auto=False, scaleup=self.augment)
+                else:
+                    ratio = (1, 1)
+                    pad = (0, 0)
+
                 if labels.size:  # normalized xywh to pixel xyxy format
-                    # labels[:, 1:] = xywhn2xyxy(labels[:, 1:], crop_size[0], crop_size[1], padw=pad[0], padh=pad[1])
                     labels[:, 1:] = xywhn2xyxy(labels[:, 1:], ratio[0] * w, ratio[1] * h, padw=pad[0], padh=pad[1])
+
                 img, labels = random_crop(crop_size, img, labels)
             else:
                 shape = self.batch_shapes[self.batch[index]] if self.rect else self.img_size  # final letterboxed shape

@@ -13,6 +13,8 @@ import albumentations as A
 
 from yolov5.utils.general import LOGGER, check_version, colorstr, resample_segments, segment2box
 from yolov5.utils.metrics import bbox_ioa
+from yolov5.utils.album import RandomSizedBBoxSafeCrop_v2
+
 
 BOX_COLOR = (255, 0, 0)  # Red
 TEXT_COLOR = (255, 255, 255)  # White
@@ -213,13 +215,7 @@ def random_perspective(im, targets=(), segments=(), degrees=10, translate=.1,
 
 
 def random_crop(crop_size, im, targets):
-    # some images can't be cropped because they are too small and have to be padded
-    if im.shape[0] < crop_size[0] or im.shape[1] < crop_size[1]:
-        # need to add code to pad
-        return im, targets
-
     width, height = crop_size
-    from yolov5.utils.album import RandomSizedBBoxSafeCrop_v2
     random_bbox_crop = RandomSizedBBoxSafeCrop_v2(width=width, height=height, erosion_rate=0.0)
     transform = A.Compose(
         [random_bbox_crop],
@@ -229,11 +225,11 @@ def random_crop(crop_size, im, targets):
                             bboxes=targets[:, 1:5],
                             category_ids=targets[:, 0])
 
-
+    # DEBUG: change to True to plot images and debug
     plot_and_debug = False
     if plot_and_debug:
         # visualize before and after random crop
-        visualize(im[:, :, ::-1], targets[:, 0:5], 'test_augmentation_before.png')
+        visualize(im[:, :, ::-1], targets[:, 0:5], f'test_augmentation_before.png')
 
     im = np.array(transformed['image'][:, :, ::-1])
     transformed_targets = np.array(transformed['bboxes'])
@@ -246,7 +242,7 @@ def random_crop(crop_size, im, targets):
     targets = new_targets
     
     if plot_and_debug:
-        visualize(transformed['image'], targets[:, 0:5], 'test_augmentation_after.png')
+        visualize(transformed['image'], targets[:, 0:5], f'test_augmentation_after.png')
 
     return im, targets
 
