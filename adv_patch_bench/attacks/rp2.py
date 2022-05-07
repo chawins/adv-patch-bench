@@ -3,7 +3,7 @@ from typing import Any, List, Optional
 
 import numpy as np
 import torch
-import torch.functional as F
+import torch.nn.functional as F
 import torch.optim as optim
 import torchvision
 from adv_patch_bench.transforms import apply_transform, get_transform
@@ -109,6 +109,8 @@ class RP2AttackModule(DetectorAttackModule):
         # features = self.core_model.backbone(adv_img)
         # # Get classification logits
         # logits, _ = get_roi_heads_predictions(features, target_boxes)
+        import pdb
+        pdb.set_trace()
         target_loss = F.cross_entropy(target_logits, target_labels, reduction='sum')
         obj_labels = torch.ones(len(obj_logits), device=self.core_model.device, dtype=torch.long)
         obj_loss = F.cross_entropy(obj_logits, obj_labels, reduction='sum')

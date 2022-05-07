@@ -40,20 +40,18 @@ def get_targets(
     objectness_logits = proposals[0].objectness_logits
 
     # Get proposal boxes' classification scores
-    predictions = get_roi_heads_predictions(features, proposal_boxes)
+    predictions = get_roi_heads_predictions(model, features, proposal_boxes)
     # Scores (softmaxed) for a single image, [n_proposals, n_classes + 1]
-    # For API, see https://github.com/facebookresearch/detectron2/blob/main/detectron2/modeling/roi_heads/fast_rcnn.py#L547
     # scores = model.roi_heads.box_predictor.predict_probs(
     #     predictions, proposals
     # )[0]
-    # Get logit scores without softmax
+    # Instead, we want to get logit scores without softmax
+    # For API, see https://github.com/facebookresearch/detectron2/blob/main/detectron2/modeling/roi_heads/fast_rcnn.py#L547
     class_logits, _ = predictions
     num_inst_per_image = [len(p) for p in proposals]
-    class_logits = class_logits.split(num_inst_per_image, dim=0)
+    class_logits = class_logits.split(num_inst_per_image, dim=0)[0]
 
-    # TODO: check class_logits dim
-    import pdb
-    pdb.set_trace()
+    # NOTE: class_logits dim [[1000, 13], ...]
 
     return filter_positive_proposals(
         proposal_boxes, class_logits, gt_boxes, gt_classes, objectness_logits,
@@ -116,9 +114,10 @@ def filter_positive_proposals(
     # Filter for score of proposal > 0.1
     # Get class of paired gt_box
     gt_classes_repeat = gt_classes.repeat(n_proposals, 1)
-    paired_gt_classes = gt_classes_repeat[torch.arange(n_proposals), paired_gt_idx]
+    idx = torch.arange(n_proposals)
+    paired_gt_classes = gt_classes_repeat[idx, paired_gt_idx]
     # Get scores of corresponding class
-    paired_scores = scores[torch.arange(n_proposals), paired_gt_classes]
+    paired_scores = scores[idx, paired_gt_classes.cuda()]
     score_cond = paired_scores > 0.1
 
     # Filter for positive proposals and their corresponding gt labels

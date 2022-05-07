@@ -15,7 +15,8 @@ import adv_patch_bench.utils.detectron.custom_coco_evaluator as cocoeval
 from adv_patch_bench.attacks.detectron_attack_wrapper import DAGAttacker
 from adv_patch_bench.dataloaders import (BenignMapper, get_mtsd_dict,
                                          register_mapillary, register_mtsd)
-from hparams import DATASETS, OTHER_SIGN_CLASS, LABEL_LIST
+from adv_patch_bench.utils.argparse import eval_args_parser
+from hparams import DATASETS, LABEL_LIST, OTHER_SIGN_CLASS
 
 
 def main(cfg, args):
@@ -164,53 +165,7 @@ def setup(args):
 
 
 if __name__ == "__main__":
-    parser = default_argument_parser()
-    parser.add_argument('--single-image', action='store_true')
-    parser.add_argument('--debug', action='store_true')
-    parser.add_argument('--dataset', type=str, required=True)
-    parser.add_argument('--data-no-other', action='store_true',
-                        help='If True, do not load "other" or "background" class to the dataset.')
-    parser.add_argument('--eval-mode', type=str, default='default')
-
-    parser.add_argument('--interp', type=str, default='bilinear',
-                        help='interpolation method (nearest, bilinear, bicubic)')
-    parser.add_argument('--synthetic-eval', action='store_true',
-                        help='evaluate with pasted synthetic signs')
-    parser.add_argument('--name', default='exp', help='save to project/name')
-    parser.add_argument('--verbose', action='store_true')
-    parser.add_argument('--seed', type=int, default=0, help='set random seed')
-    parser.add_argument('--padded-imgsz', type=str, default='3000,4000',
-                        help='final image size including padding (height,width). Default: 3000,4000')
-
-    # =========================== Attack arguments ========================== #
-    parser.add_argument('--attack-type', type=str, required=True,
-                        help='which attack evaluation to run (none, load, per-sign, random, debug)')
-    parser.add_argument('--adv-patch-path', type=str, default='',
-                        help='path to adv patch and mask to load')
-    parser.add_argument('--obj-class', type=int, default=0, help='class of object to attack')
-    parser.add_argument('--tgt-csv-filepath', required=True,
-                        help='path to csv which contains target points for transform')
-    parser.add_argument('--attack-config-path',
-                        help='path to yaml file with attack configs (used when attack_type is per-sign)')
-    parser.add_argument('--syn-obj-path', type=str, default='',
-                        help='path to an image of a synthetic sign (used when synthetic_eval is True')
-    parser.add_argument('--img-txt-path', type=str, default='',
-                        help='path to a text file containing image filenames')
-    parser.add_argument('--run-only-img-txt', action='store_true',
-                        help='run evaluation on images listed in img-txt-path. Otherwise, exclude these images.')
-    parser.add_argument('--no-patch-transform', action='store_true',
-                        help=('If True, do not apply patch to signs using '
-                              '3D-transform. Patch will directly face camera.'))
-    parser.add_argument('--no-patch-relight', action='store_true',
-                        help=('If True, do not apply relighting transform to patch'))
-    parser.add_argument('--min-area', type=float, default=0,
-                        help=('Minimum area for labels. if a label has area > min_area,'
-                              'predictions correspoing to this target will be discarded'))
-    parser.add_argument('--min-pred-area', type=float, default=0,
-                        help=('Minimum area for predictions. if a predicion has area < min_area and '
-                              'that prediction is not matched to any label, it will be discarded'))
-
-    args = parser.parse_args()
+    args = eval_args_parser(True)
     print('Command Line Args:', args)
     args.img_size = args.padded_imgsz
 
