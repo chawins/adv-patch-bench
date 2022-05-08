@@ -20,11 +20,10 @@ from detectron2.data import (build_detection_train_loader,
 from detectron2.engine import (DefaultTrainer, default_argument_parser,
                                default_setup, hooks, launch)
 from detectron2.evaluation import COCOEvaluator, verify_results
-from detectron2.modeling import GeneralizedRCNNWithTTA
 
-import adv_patch_bench.utils.detectron.custom_coco_evaluator as cocoeval
 # Import this file to register MTSD for detectron
 from adv_patch_bench.dataloaders.detectron.mtsd import register_mtsd
+from adv_patch_bench.utils.detectron import build_evaluator
 from adv_patch_bench.utils.detectron.custom_best_checkpointer import \
     BestCheckpointer
 from adv_patch_bench.utils.detectron.custom_sampler import \
@@ -32,18 +31,6 @@ from adv_patch_bench.utils.detectron.custom_sampler import \
 from hparams import DATASETS, OTHER_SIGN_CLASS
 
 torch.multiprocessing.set_sharing_strategy('file_system')
-
-
-def build_evaluator(cfg, dataset_name, output_folder=None):
-    evaluator = cocoeval.CustomCOCOEvaluator(
-        dataset_name, cfg, False,
-        output_dir=cfg.OUTPUT_DIR,
-        use_fast_impl=False,  # Use COCO original eval code
-        eval_mode=cfg.eval_mode,
-        other_catId=cfg.other_catId,
-    )
-    # return COCOEvaluator('mtsd_val', output_dir=cfg.OUTPUT_DIR)
-    return evaluator
 
 
 class Trainer(DefaultTrainer):

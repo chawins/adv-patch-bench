@@ -104,16 +104,33 @@ class RP2AttackModule(DetectorAttackModule):
     def _compute_loss_rcnn(self, adv_img, metadata):
         for i, m in enumerate(metadata):
             m['image'] = adv_img[i]
+        # NOTE: IoU threshold for ROI is 0.5 and for RPN is 0.7 so we pick the 
+        # smaller of the two, 0.5
         target_boxes, target_labels, target_logits, obj_logits = get_targets(
-            self.core_model, metadata, device=self.core_model.device)
+            self.core_model, metadata, device=self.core_model.device,
+            iou_thres=0.5, score_thres=self.min_conf)
         # features = self.core_model.backbone(adv_img)
         # # Get classification logits
         # logits, _ = get_roi_heads_predictions(features, target_boxes)
-        import pdb
-        pdb.set_trace()
-        target_loss = F.cross_entropy(target_logits, target_labels, reduction='sum')
-        obj_labels = torch.ones(len(obj_logits), device=self.core_model.device, dtype=torch.long)
-        obj_loss = F.cross_entropy(obj_logits, obj_labels, reduction='sum')
+
+        # TODO: If there's no matched gt/prediction, then attack already
+        # succeeds. This has to be changed for appearing or misclassification attacks.
+        if len(target_logits) == 0 or len(target_labels) == 0:
+            target_loss = 0
+        else:
+            target_loss = F.cross_entropy(target_logits, target_labels,
+                                          reduction='sum')
+
+        if len(obj_logits) == 0:
+            obj_loss = 0
+        else:
+            # obj_labels = torch.ones(len(obj_logits),
+            #                         device=self.core_model.device,
+            #                         dtype=torch.float32)
+            obj_labels = torch.ones_like(obj_logits)
+            obj_loss = F.binary_cross_entropy_with_logits(
+                obj_logits, obj_labels, reduction='sum')
+
         # TODO: constant?
         return target_loss + obj_loss
 
@@ -335,8 +352,8 @@ class RP2AttackModule(DetectorAttackModule):
                 curr_tf_data = [data[bg_idx] for data in tf_data]
                 delta = delta.repeat(self.num_eot, 1, 1, 1)
                 adv_img = apply_transform(
-                    backgrounds[bg_idx].clone(), delta.clone(), patch_mask, patch_loc,
-                    tf_function, curr_tf_data, interp=self.interp,
+                    backgrounds[bg_idx].clone(), delta.clone(), patch_mask,
+                    patch_loc, tf_function, curr_tf_data, interp=self.interp,
                     **self.real_transform, use_relight=self.use_relight)
 
                 # TODO: Add EoT on the patch?

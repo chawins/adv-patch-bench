@@ -1,7 +1,7 @@
 from typing import Any, Callable, Dict, List, Tuple
 
 import torch
-import torch.functional as F
+import torch.nn.functional as F
 from detectron2.structures import Boxes, pairwise_iou
 
 
@@ -10,6 +10,8 @@ def get_targets(
     model,
     inputs: List[Dict[Any, Any]],
     device: str = 'cuda',
+    iou_thres: float = 0.1,
+    score_thres: float = 0.1,
 ) -> Tuple[Boxes, torch.Tensor]:
     """Select a set of initial targets for the DAG algo.
 
@@ -24,7 +26,7 @@ def get_targets(
         target_boxes, target_labels
     """
     # TODO: make this handle batch
-    instances = inputs[0]["instances"]
+    instances = inputs[0]['instances']
     gt_boxes = instances.gt_boxes.to(device)
     gt_classes = instances.gt_classes
 
@@ -51,11 +53,11 @@ def get_targets(
     num_inst_per_image = [len(p) for p in proposals]
     class_logits = class_logits.split(num_inst_per_image, dim=0)[0]
 
-    # NOTE: class_logits dim [[1000, 13], ...]
+    # NOTE: class_logits dim [[1000, num_classes + 1], ...]
 
     return filter_positive_proposals(
         proposal_boxes, class_logits, gt_boxes, gt_classes, objectness_logits,
-        device=device)
+        device=device, iou_thres=iou_thres, score_thres=score_thres)
 
 
 def get_roi_heads_predictions(
@@ -74,13 +76,16 @@ def get_roi_heads_predictions(
     return logits, proposal_deltas
 
 
+@torch.no_grad()
 def filter_positive_proposals(
     proposal_boxes: Boxes,
-    scores: torch.Tensor,
+    class_logits: torch.Tensor,
     gt_boxes: Boxes,
     gt_classes: torch.Tensor,
     objectness_logits: torch.Tensor,
     device: str = 'cuda',
+    iou_thres: float = 0.1,
+    score_thres: float = 0.1,
 ) -> Tuple[Boxes, torch.Tensor, torch.Tensor]:
     """Filter for desired targets for the DAG algo
 
@@ -108,20 +113,21 @@ def filter_positive_proposals(
     # IoU with paired gt_box, idx of paired gt_box
     paired_ious, paired_gt_idx = proposal_gt_ious.max(dim=1)
 
-    # Filter for IoUs > 0.1
-    iou_cond = paired_ious > 0.1
+    # Filter for IoUs > iou_thres
+    iou_cond = paired_ious > iou_thres
 
-    # Filter for score of proposal > 0.1
+    # Filter for score of proposal > score_thres
     # Get class of paired gt_box
     gt_classes_repeat = gt_classes.repeat(n_proposals, 1)
     idx = torch.arange(n_proposals)
     paired_gt_classes = gt_classes_repeat[idx, paired_gt_idx]
     # Get scores of corresponding class
-    paired_scores = scores[idx, paired_gt_classes.cuda()]
-    score_cond = paired_scores > 0.1
+    scores = F.softmax(class_logits, dim=-1)
+    paired_scores = scores[idx, paired_gt_classes]
+    score_cond = paired_scores > score_thres
 
     # Filter for positive proposals and their corresponding gt labels
     cond = iou_cond & score_cond
 
     return (proposal_boxes[cond], paired_gt_classes[cond].to(device),
-            paired_scores[cond], objectness_logits[cond])
+            class_logits[cond], objectness_logits[cond])

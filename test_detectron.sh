@@ -31,13 +31,14 @@ OBJ_CLASS=10
 
 CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
     --num-gpus $NUM_GPU --config-file ./configs/faster_rcnn_R_50_FPN_3x.yaml \
-    --dataset mapillary_no_color --eval-mode drop \
+    --dataset mapillary-train-no_color --eval-mode drop \
     --tgt-csv-filepath $CSV_PATH --attack-config-path attack_config.yaml \
     --adv-patch-path ./runs/val/stop_sign_demo/$PATCH_NAME.pkl --name $PATCH_NAME \
     --obj-class $OBJ_CLASS --syn-obj-path $SYN_OBJ_PATH \
-    --attack-type per-sign --interp bilinear --min-area 600 --debug --verbose \
+    --attack-type per-sign --interp bilinear --min-area 600 --verbose --debug \
     MODEL.ROI_HEADS.NUM_CLASSES 12 \
     OUTPUT_DIR $OUTPUT_PATH \
     MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
     DATALOADER.NUM_WORKERS 8
 # --adv-patch-path ./runs/val/exp$EXP/$PATCH_NAME.pkl --name $PATCH_NAME \
+# --compute-metrics

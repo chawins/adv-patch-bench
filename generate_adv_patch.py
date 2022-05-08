@@ -146,7 +146,6 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
         for batch_i, (im, targets, paths, shapes) in enumerate(dataloader):
             for image_i, path in enumerate(paths):
                 filename = path.split('/')[-1]
-
                 img_df = df[df['filename'] == filename]
 
                 if len(img_df) == 0:
@@ -223,7 +222,7 @@ def main(
     csv_path='',
     data=None,
     attack_config_path=None,
-    task='test'
+    task='test',
 ):
     cudnn.benchmark = True
     torch.manual_seed(seed)

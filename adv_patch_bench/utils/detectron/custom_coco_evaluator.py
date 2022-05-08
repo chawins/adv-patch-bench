@@ -142,7 +142,7 @@ class CustomCOCOEvaluator(DatasetEvaluator):
             tasks = tasks + ("keypoints",)
         return tasks
 
-    def process(self, inputs, outputs):
+    def process(self, inputs, outputs, outputs_are_json=False):
         """
         Args:
             inputs: the inputs to a COCO model (e.g., GeneralizedRCNN).
@@ -155,10 +155,13 @@ class CustomCOCOEvaluator(DatasetEvaluator):
             prediction = {"image_id": input["image_id"],
                           "file_name": input["file_name"]}
 
-            if "instances" in output:
+            # EDIT: Add outputs_are_json for test_detectron.py
+            if outputs_are_json:
+                prediction['instances'] = output
+            elif "instances" in output:
                 instances = output["instances"].to(self._cpu_device)
                 prediction["instances"] = instances_to_coco_json(instances, input["image_id"])
-            if "proposals" in output:
+            elif "proposals" in output:
                 prediction["proposals"] = output["proposals"].to(self._cpu_device)
             self._predictions.append(prediction)
 
@@ -574,9 +577,8 @@ def _evaluate_predictions_on_coco(
     coco_dt = coco_gt.loadRes(coco_results)
 
     # EDIT: set mode
-    coco_eval = (COCOeval_opt if use_fast_impl else COCOeval)(coco_gt, coco_dt, iou_type,
-                                                              mode=eval_mode,
-                                                              other_catId=other_catId)
+    coco_eval = (COCOeval_opt if use_fast_impl else COCOeval)(
+        coco_gt, coco_dt, iou_type, mode=eval_mode, other_catId=other_catId)
     if img_ids is not None:
         coco_eval.params.imgIds = img_ids
 
