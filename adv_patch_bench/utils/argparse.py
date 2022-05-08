@@ -32,7 +32,7 @@ def eval_args_parser(is_detectron, root=None):
                         help='which attack evaluation to run (none, load, per-sign, random, debug)')
     parser.add_argument('--adv-patch-path', type=str, default='',
                         help='path to adv patch and mask to load')
-    parser.add_argument('--obj-class', type=int, default=0, help='class of object to attack')
+    parser.add_argument('--obj-class', type=int, default=-1, help='class of object to attack (-1: all classes)')
     parser.add_argument('--tgt-csv-filepath', required=True,
                         help='path to csv which contains target points for transform')
     parser.add_argument('--attack-config-path',
@@ -54,6 +54,12 @@ def eval_args_parser(is_detectron, root=None):
     parser.add_argument('--min-pred-area', type=float, default=0,
                         help=('Minimum area for predictions. if a predicion has area < min_area and '
                               'that prediction is not matched to any label, it will be discarded'))
+
+    # ===================== Patch generation arguments ====================== #
+    parser.add_argument('--obj-size', type=int, default=-1, help='object width in pixels (default: 0.1 * img_size)')
+    parser.add_argument('--patch-size', type=int, required=True, help='object width in pixels')
+    parser.add_argument('--bg-dir', type=str, default='', help='path to background directory')
+    parser.add_argument('--save-images', action='store_true', help='save generated patch')
 
     if is_detectron:
         parser.add_argument('--compute-metrics', action='store_true', help='Compute metrics after running attack')

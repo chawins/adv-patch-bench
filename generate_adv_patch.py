@@ -26,6 +26,8 @@ from yolov5.utils.datasets import create_dataloader
 from yolov5.utils.general import (LOGGER, check_dataset, check_img_size,
                                   check_yaml, colorstr, increment_path)
 from yolov5.utils.torch_utils import select_device
+from generate_patch_mask import generate_mask
+
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # YOLOv5 root directory
@@ -58,7 +60,7 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
                        bg_dir='./', num_bg=16, save_images=False, save_dir='./',
                        generate_patch='synthetic', rescaling=False,
                        csv_path='mapillary.csv', dataloader=None,
-                       attack_config_path=None):
+                       attack_config_path=None, **kwargs):
     """Generate adversarial patch
 
     Args:
@@ -172,7 +174,7 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
 
         # DEBUG: Save all the background images
         for img in attack_images:
-            torchvision.utils.save_image(img[0] / 255, f'tmp/{img[2]}.png')
+            torchvision.utils.save_image(img[0] / 255, f'tmp/{img[2]}')
 
         # Save background filenames in txt file
         print(f'=> Saving used backgrounds in a txt file.')
@@ -201,27 +203,23 @@ def main(
     weights=None,  # model.pt path(s)
     imgsz=1280,  # image width
     padded_imgsz='992,1312',
+    patch_size=-1,
     dnn=False,  # use OpenCV DNN for ONNX inference
     half=False,
     save_dir=Path(''),
     exist_ok=True,  # existing project/name ok, do not increment
     project=ROOT / 'runs/val',  # save to project/name
     name='exp',  # save to project/name
-    save_txt=False,  # save results to *.txt
+    # save_txt=False,  # save results to *.txt
     obj_class=0,
     obj_size=-1,
     syn_obj_path='',
-    bg_dir='./',
-    num_bg=16,
-    save_images=False,
-    patch_name='adv_patch',
     seed=0,
-    generate_patch='synthetic',
-    rescaling=False,
-    csv_path='',
+    attack_type='synthetic',
+    # rescaling=False,
     data=None,
-    attack_config_path=None,
     task='test',
+    **kwargs,
 ):
     cudnn.benchmark = True
     torch.manual_seed(seed)
@@ -232,9 +230,11 @@ def main(
 
     # Directories
     save_dir = increment_path(Path(project) / name, exist_ok=exist_ok)  # increment run
-    (save_dir / 'labels' if save_txt else save_dir).mkdir(parents=True, exist_ok=True)  # make dir
+    # (save_dir / 'labels' if save_txt else save_dir).mkdir(parents=True, exist_ok=True)  # make dir
+    save_dir = save_dir / str(obj_class)
+    os.makedirs(save_dir, exist_ok=True)
 
-    # Load model (YOLOv5)
+    # Load model (YOLO)
     model, data = load_yolov5(weights, device, imgsz, img_size, data, dnn, half)
 
     # Configure object size
@@ -250,33 +250,11 @@ def main(
     if isinstance(obj_size, int):
         obj_size = (round(obj_size * h_w_ratio), obj_size)
 
-    print('obj size', obj_size)
-    # Define patch location and size
-    patch_mask = torch.zeros((1, ) + obj_size)
-    # TODO: Move this to a separate script for generating patch size/location
-    # Example: 10x10-inch patch in the middle of 36x36-inch sign
-    # (1) 1 square
-    mid_height = obj_size[0] // 2 + round(40 / 128 * obj_size[0])
-    mid_width = obj_size[1] // 2
-    patch_size = 10
-    # mid_height = obj_size[0] // 2 + 35
-    # mid_width = obj_size[1] // 2
-    # patch_size = 20
-    h = round(patch_size / 36 / 2 * obj_size[0])
-    w = round(patch_size / 36 / 2 * obj_size[1])
-    patch_mask[:, mid_height - h:mid_height + h, mid_width - w:mid_width + w] = 1
-    # (2) 2 rectangles
-    # patch_width = 20
-    # patch_height = 6
-    # h = round(patch_height / 36 / 2 * obj_size[0])
-    # w = round(patch_width / 36 / 2 * obj_size[1])
-    # offset_h = round(28 / 128 * obj_size[0])
-    # offset_w = obj_size[1] // 2
-    # patch_mask[:, offset_h - h:offset_h + h, offset_w - w:offset_w + w] = 1
-    # patch_mask[:, obj_size[0] - offset_h - h:obj_size[0] - offset_h + h, offset_w - w:offset_w + w] = 1
+    patch_mask = generate_mask(syn_obj_path, obj_size, patch_size,
+                               patch_name=None, save_mask=False)
 
     dataloader = None
-    if generate_patch == 'real':
+    if attack_type == 'real':
         stride, pt = model.stride, model.pt
         dataloader = create_dataloader(data[task], imgsz, batch_size, stride,
                                        single_cls=False, pad=0.5, rect=pt, shuffle=True,
@@ -284,19 +262,17 @@ def main(
 
     adv_patch = generate_adv_patch(
         model, obj_numpy, patch_mask, device=device, img_size=img_size,
-        obj_class=obj_class, obj_size=obj_size, bg_dir=bg_dir, num_bg=num_bg,
-        save_images=save_images, save_dir=save_dir, generate_patch=generate_patch,
-        rescaling=rescaling, csv_path=csv_path, dataloader=dataloader,
-        attack_config_path=attack_config_path)
+        obj_size=obj_size, save_dir=save_dir, attack_type=attack_type,
+        dataloader=dataloader, **kwargs)
 
     # Save adv patch
-    patch_path = join(save_dir, f'{patch_name}.pkl')
+    patch_path = join(save_dir, f'adv_patch.pkl')
     print(f'Saving the generated adv patch to {patch_path}...')
     pickle.dump([adv_patch, patch_mask], open(patch_path, 'wb'))
 
     patch_metadata = {
-        'generate_patch': generate_patch,
-        'rescaling': rescaling,
+        'attack_type': attack_type,
+        # 'rescaling': rescaling,
     }
     patch_metadata_path = join(save_dir, 'patch_metadata.pkl')
     print(f'Saving the generated adv patch metadata to {patch_metadata_path}...')

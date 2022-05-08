@@ -111,21 +111,21 @@
 #     --interp bicubic \
 #     --attack-type none
     
-CUDA_VISIBLE_DEVICES=1 python -u val_attack_synthetic.py \
-    --imgsz 1280 \
-    --padded_imgsz 992,1312 \
-    --batch-size 8 \
-    --data mapillary_vistas_no_color.yaml \
-    --weights /data/shared/adv-patch-bench/yolov5/runs/train/exp7/weights/best.pt \
-    --exist-ok \
-    --workers 8 \
-    --task train \
-    --save-exp-metrics \
-    --tgt-csv-filepath mapillary_vistas_final_merged.csv \
-    --obj-class 10 \
-    --plot-class-examples 10 \
-    --interp bicubic \
-    --attack-type none 
+# CUDA_VISIBLE_DEVICES=1 python -u val_attack_synthetic.py \
+#     --imgsz 1280 \
+#     --padded_imgsz 992,1312 \
+#     --batch-size 8 \
+#     --data mapillary_vistas_no_color.yaml \
+#     --weights /data/shared/adv-patch-bench/yolov5/runs/train/exp7/weights/best.pt \
+#     --exist-ok \
+#     --workers 8 \
+#     --task train \
+#     --save-exp-metrics \
+#     --tgt-csv-filepath mapillary_vistas_final_merged.csv \
+#     --obj-class 10 \
+#     --plot-class-examples 10 \
+#     --interp bicubic \
+#     --attack-type none 
 
 
 # # Test real dataset WITHOUT patch
@@ -569,23 +569,25 @@ CUDA_VISIBLE_DEVICES=1 python -u val_attack_synthetic.py \
     # --img-txt-path ./runs/successful_attack_filenames.txt \
     # --run-only-img-txt
     
-## Generate patch on real dataset
-# CUDA_VISIBLE_DEVICES=1 python -u generate_adv_patch.py \
-#     --seed 0 \
-#     --data mapillary_vistas.yaml \
-#     --weights /data/shared/adv-patch-bench/yolov5/runs/train/exp2/weights/best.pt \
-#     --patch-name stop_sign \
-#     --csv-path mapillary_vistas_final_merged.csv \
-#     --imgsz 1280 \
-#     --padded_imgsz 992,1312 \
-#     --obj-class 14 \
-#     --obj-size 128 \
-#     --obj-path attack_assets/octagon-915.0.png \
-#     --num-bg 1 \
-#     --bg-dir /data/shared/mtsd_v2_fully_annotated/train \
-#     --save-images \
-#     --generate-patch real \
-#     --attack-config-path attack_config.yaml
+# Generate patch on real dataset
+CUDA_VISIBLE_DEVICES=1 python -u generate_adv_patch.py \
+    --seed 0 \
+    --data mapillary_vistas_no_color.yaml \
+    --weights /data/shared/adv-patch-bench/yolov5/runs/train/exp2/weights/best.pt \
+    --patch-name stop_sign \
+    --task train \
+    --csv-path mapillary_vistas_final_merged.csv \
+    --imgsz 1280 \
+    --padded_imgsz 992,1312 \
+    --obj-class 14 \
+    --obj-size 128 \
+    --num-bg 1 \
+    --bg-dir /data/shared/mtsd_v2_fully_annotated/train \
+    --syn-obj-path attack_assets/octagon-915.0.png \
+    --save-images \
+    --generate-patch real \
+    --attack-config-path attack_config.yaml \
+    --patch_size 10
 
 ## Test patch on real dataset
 # CUDA_VISIBLE_DEVICES=0 python -u val_attack_synthetic.py \
