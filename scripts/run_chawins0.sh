@@ -12,7 +12,7 @@ CUDA_VISIBLE_DEVICES=$GPU python -u generate_adv_patch.py \
     --weights $MODEL_PATH --patch-name $PATCH_NAME --csv-path $CSV_PATH \
     --bg-dir ~/data/mtsd_v2_fully_annotated/train \
     --save-images --attack-config-path attack_config.yaml \
-    --imgsz 4000 --padded_imgsz 3000,4000 \
+    --imgsz 4000 --padded_imgsz 3040,4032 \
     --obj-class $OBJ_CLASS --syn-obj-path $SYN_OBJ_PATH \
     --obj-size 400 --num-bg 1 --generate-patch real
 # --imgsz 2560 --padded_imgsz 1952,2592 \

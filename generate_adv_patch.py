@@ -2,7 +2,6 @@
 Generate adversarial patch
 """
 
-import argparse
 import os
 import pickle
 import sys
@@ -21,7 +20,7 @@ from PIL import Image
 from torch.nn import DataParallel
 
 from adv_patch_bench.attacks.rp2 import RP2AttackModule
-from hparams import TS_COLOR_LABEL_DICT
+from adv_patch_bench.utils.argparse import eval_args_parser
 from yolov5.models.common import DetectMultiBackend
 from yolov5.utils.datasets import create_dataloader
 from yolov5.utils.general import (LOGGER, check_dataset, check_img_size,
@@ -84,6 +83,7 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
     print(f'There are {len(all_bgs)} background images in {bg_dir}.')
     idx = np.arange(len(all_bgs))
     np.random.shuffle(idx)
+    # FIXME: does this break anything?
     # bg_size = (img_size[0] - 32, img_size[1] - 32)
     bg_size = img_size
     backgrounds = torch.zeros((num_bg, 3) + bg_size, )
@@ -109,7 +109,6 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
         obj_mask = torch.from_numpy(obj_numpy[:, :, -1] == 1).float().unsqueeze(0)
         obj = torch.from_numpy(obj_numpy[:, :, :-1]).float().permute(2, 0, 1)
         # Resize object to the specify size and pad obj and masks to image size
-        # pad_size = [(img_size[1] - obj_size[1]) // 2, (img_size[0] - obj_size[0]) // 2]  # left/right, top/bottom
         pad_size = [(img_size[1] - obj_size[1]) // 2,
                     (img_size[0] - obj_size[0]) // 2,
                     (img_size[1] - obj_size[1]) // 2 + obj_size[1] % 2,
@@ -305,40 +304,6 @@ def main(
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--device', type=str, default='0', help='set device, e.g., "0,1,3"')
-    parser.add_argument('--data', type=str, default=ROOT / 'data/coco128.yaml', help='dataset.yaml path')
-    parser.add_argument('--weights', nargs='+', type=str, default=ROOT / 'yolov5s.pt', help='model.pt path(s)')
-    parser.add_argument('--batch-size', type=int, default=32, help='batch size')
-    parser.add_argument('--imgsz', type=int, default=1280, help='inference size (width)')
-    parser.add_argument('--save-txt', action='store_true', help='save results to *.txt')
-    parser.add_argument('--project', default=ROOT / 'runs/val', help='save to project/name')
-    parser.add_argument('--name', default='exp', help='save to project/name')
-    parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
-    parser.add_argument('--half', action='store_true', help='use FP16 half-precision inference')
-    parser.add_argument('--dnn', action='store_true', help='use OpenCV DNN for ONNX inference')
-    # Our attack and evaluate
-    parser.add_argument('--seed', type=int, default=0, help='set random seed')
-    parser.add_argument('--padded_imgsz', type=str, default='992,1312',
-                        help='final image size including padding (height,width); comma-separated')
-    parser.add_argument('--patch-name', type=str, default='adv_patch',
-                        help='name of pickle file to save the generated patch')
-    parser.add_argument('--obj-class', type=int, default=0, help='class of object to attack')
-    parser.add_argument('--obj-size', type=int, default=-1, help='object width in pixels')
-    parser.add_argument('--syn-obj-path', type=str, default='', help='path to synthetic image of the object')
-    parser.add_argument('--bg-dir', type=str, default='', help='path to background directory')
-    parser.add_argument('--num-bg', type=int, default=16, help='number of backgrounds to generate adversarial patch')
-    parser.add_argument('--save-images', action='store_true', help='save generated patch')
-    parser.add_argument('--generate-patch', type=str, default='synthetic',
-                        help=("create patch using synthetic stop signs if 'synthetic', use real signs if 'real'"))
-    parser.add_argument('--rescaling', action='store_true',
-                        help=('randomly rescale synthetic sign size during patch generations'
-                              '(use with --generate-patch synthetic)'))
-    parser.add_argument('--csv-path', type=str, default='',
-                        help=('path to csv file with the annotated transform '
-                              'data (required if --generate-patch real)'))
-    parser.add_argument('--attack-config-path', help='path to yaml file with attack configs')
-    opt = parser.parse_args()
+    opt = eval_args_parser(False, root=ROOT)
     print(opt)
-
     main(**vars(opt))

@@ -92,11 +92,11 @@ def register_mapillary(
     base_path = PATH_MAPILLARY_BASE
 
     if use_color:
-        bg_idx = OTHER_SIGN_CLASS['mtsd_color']
+        bg_idx = OTHER_SIGN_CLASS['mapillary_color']
     else:
-        bg_idx = OTHER_SIGN_CLASS['mtsd_no_color']
+        bg_idx = OTHER_SIGN_CLASS['mapillary_no_color']
 
-    splits = ['train', 'test']
+    splits = ['test']
     for split in splits:
         DatasetCatalog.register(f'mapillary_{split}', lambda s=split: get_mapillary_dict(
             s, base_path, bg_idx, use_color=use_color, ignore_other=ignore_other))
