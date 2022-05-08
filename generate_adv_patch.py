@@ -27,6 +27,8 @@ from yolov5.utils.datasets import create_dataloader
 from yolov5.utils.general import (LOGGER, check_dataset, check_img_size,
                                   check_yaml, colorstr, increment_path)
 from yolov5.utils.torch_utils import select_device
+from generate_patch_mask import generate_mask
+
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # YOLOv5 root directory
@@ -173,7 +175,7 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
 
         # DEBUG: Save all the background images
         for img in attack_images:
-            torchvision.utils.save_image(img[0] / 255, f'tmp/{img[2]}.png')
+            torchvision.utils.save_image(img[0] / 255, f'tmp/{img[2]}')
 
         # Save background filenames in txt file
         print(f'=> Saving used backgrounds in a txt file.')
@@ -202,6 +204,7 @@ def main(
     weights=None,  # model.pt path(s)
     imgsz=1280,  # image width
     padded_imgsz='992,1312',
+    patch_size=-1,
     dnn=False,  # use OpenCV DNN for ONNX inference
     half=False,
     save_dir=Path(''),
@@ -243,6 +246,7 @@ def main(
     # that we generate canonical masks (e.g., largest inscribed circle, octagon,
     # etc. in a square). Patch and patch mask are defined with respect to this
     # object tensor, and they should all have the same width and height.
+
     obj_numpy = np.array(Image.open(syn_obj_path).convert('RGBA')) / 255
     h_w_ratio = obj_numpy.shape[0] / obj_numpy.shape[1]
 
@@ -251,30 +255,7 @@ def main(
     if isinstance(obj_size, int):
         obj_size = (round(obj_size * h_w_ratio), obj_size)
 
-    print('obj size', obj_size)
-    # Define patch location and size
-    patch_mask = torch.zeros((1, ) + obj_size)
-    # TODO: Move this to a separate script for generating patch size/location
-    # Example: 10x10-inch patch in the middle of 36x36-inch sign
-    # (1) 1 square
-    mid_height = obj_size[0] // 2 + round(40 / 128 * obj_size[0])
-    mid_width = obj_size[1] // 2
-    patch_size = 10
-    # mid_height = obj_size[0] // 2 + 35
-    # mid_width = obj_size[1] // 2
-    # patch_size = 20
-    h = round(patch_size / 36 / 2 * obj_size[0])
-    w = round(patch_size / 36 / 2 * obj_size[1])
-    patch_mask[:, mid_height - h:mid_height + h, mid_width - w:mid_width + w] = 1
-    # (2) 2 rectangles
-    # patch_width = 20
-    # patch_height = 6
-    # h = round(patch_height / 36 / 2 * obj_size[0])
-    # w = round(patch_width / 36 / 2 * obj_size[1])
-    # offset_h = round(28 / 128 * obj_size[0])
-    # offset_w = obj_size[1] // 2
-    # patch_mask[:, offset_h - h:offset_h + h, offset_w - w:offset_w + w] = 1
-    # patch_mask[:, obj_size[0] - offset_h - h:obj_size[0] - offset_h + h, offset_w - w:offset_w + w] = 1
+    patch_mask = generate_mask(syn_obj_path, obj_size, patch_size, patch_name=None, plot_mask=False)
 
     dataloader = None
     if generate_patch == 'real':
@@ -308,6 +289,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--device', type=str, default='0', help='set device, e.g., "0,1,3"')
     parser.add_argument('--data', type=str, default=ROOT / 'data/coco128.yaml', help='dataset.yaml path')
+    parser.add_argument('--task', default='train', help='train, val, test, speed or study')
     parser.add_argument('--weights', nargs='+', type=str, default=ROOT / 'yolov5s.pt', help='model.pt path(s)')
     parser.add_argument('--batch-size', type=int, default=32, help='batch size')
     parser.add_argument('--imgsz', type=int, default=1280, help='inference size (width)')
@@ -325,6 +307,7 @@ if __name__ == "__main__":
                         help='name of pickle file to save the generated patch')
     parser.add_argument('--obj-class', type=int, default=0, help='class of object to attack')
     parser.add_argument('--obj-size', type=int, default=-1, help='object width in pixels')
+    parser.add_argument('--patch_size', type=int, default=-1, help='object width in pixels')
     parser.add_argument('--syn-obj-path', type=str, default='', help='path to synthetic image of the object')
     parser.add_argument('--bg-dir', type=str, default='', help='path to background directory')
     parser.add_argument('--num-bg', type=int, default=16, help='number of backgrounds to generate adversarial patch')
