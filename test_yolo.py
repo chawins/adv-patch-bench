@@ -6,7 +6,6 @@ Usage:
     $ python path/to/val.py --data coco128.yaml --weights yolov5s.pt --img 640
 """
 
-import argparse
 import json
 import os
 import pdb
@@ -26,6 +25,7 @@ from tqdm import tqdm
 from adv_patch_bench.attacks.rp2 import RP2AttackModule
 from adv_patch_bench.attacks.utils import (apply_synthetic_sign, prep_attack,
                                            prep_synthetic_eval)
+from adv_patch_bench.utils.argparse import eval_args_parser
 from adv_patch_bench.transforms import transform_and_apply_patch
 from yolor.models.models import Darknet
 from yolov5.models.common import DetectMultiBackend
@@ -178,7 +178,7 @@ def run(args,
     min_area = args.min_area
     model_name = args.model_name
     other_class_label = args.other_class_label
-    model_trained_without_other = args.model_trained_without_other
+    # model_trained_without_other = args.model_trained_without_other
     other_class_confidence_threshold = args.other_class_confidence_threshold
     min_pred_area = args.min_pred_area
     plot_fp = args.plot_fp
@@ -371,9 +371,8 @@ def run(args,
         # Originally, targets has shape (#labels, 7)
         # [image_id, class, x1, y1, label_width, label_height, obj_id]
 
-        if model_trained_without_other:
-            targets = targets[targets[:, 1] != other_class_label]
-        # targets = targets[targets[:, 1] != 15]
+        # if model_trained_without_other:
+        #     targets = targets[targets[:, 1] != other_class_label]
 
         # DEBUG
         # if args.debug and batch_i == 20:
@@ -968,92 +967,9 @@ def run(args,
 
 
 def parse_opt():
-    parser = argparse.ArgumentParser()
-    # =========================== Model arguments =========================== #
-    parser.add_argument('--data', type=str, default=ROOT / 'data/coco128.yaml', help='dataset.yaml path')
-    parser.add_argument('--weights', nargs='+', type=str, default=ROOT / 'yolov5s.pt', help='model.pt path(s)')
-    parser.add_argument('--batch-size', type=int, default=32, help='batch size')
-    parser.add_argument('--imgsz', '--img', '--img-size', type=int, default=640, help='inference size (pixels)')
-    parser.add_argument('--conf-thres', type=float, default=0.001, help='confidence threshold')
-    parser.add_argument('--iou-thres', type=float, default=0.6, help='NMS IoU threshold')
-    parser.add_argument('--task', default='val', help='train, val, test, speed or study')
-    parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
-    parser.add_argument('--workers', type=int, default=8, help='max dataloader workers (per RANK in DDP mode)')
-    parser.add_argument('--single-cls', action='store_true', help='treat as single-class dataset')
-    parser.add_argument('--augment', action='store_true', help='augmented inference')
-    parser.add_argument('--verbose', action='store_true', help='report mAP by class')
-    parser.add_argument('--save-txt', action='store_true', help='save results to *.txt')
-    parser.add_argument('--save-hybrid', action='store_true', help='save label+prediction hybrid results to *.txt')
-    parser.add_argument('--save-conf', action='store_true', help='save confidences in --save-txt labels')
-    parser.add_argument('--save-json', action='store_true', help='save a COCO-JSON results file')
-    parser.add_argument('--project', default=ROOT / 'runs/val', help='save to project/name')
-    parser.add_argument('--name', default='exp', help='save to project/name')
-    parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
-    parser.add_argument('--half', action='store_true', help='use FP16 half-precision inference')
-    parser.add_argument('--dnn', action='store_true', help='use OpenCV DNN for ONNX inference')
-    parser.add_argument('--model_name', default='yolov5', help='yolov5 or yolor')
-    parser.add_argument('--other-class-label', type=int, default=None, help="Class for the 'other' label")
-    parser.add_argument('--model-trained-without-other', action='store_true',
-                        help="True if model was trained without the 'other' class label")
-
-    # ========================== Our misc arguments ========================= #
-    parser.add_argument('--seed', type=int, default=0, help='set random seed')
-    parser.add_argument('--padded_imgsz', type=str, default='992,1312',
-                        help='final image size including padding (height,width). Default: 992,1312')
-    parser.add_argument('--interp', type=str, default='bilinear',
-                        help='interpolation method (nearest, bilinear, bicubic)')
-    parser.add_argument('--synthetic-eval', action='store_true',
-                        help='evaluate with pasted synthetic signs')
-    parser.add_argument('--debug', action='store_true')
-    # =========================== Attack arguments ========================== #
-    parser.add_argument('--attack-type', type=str, required=True,
-                        help='which attack evaluation to run (none, load, per-sign, random, debug)')
-    parser.add_argument('--adv-patch-path', type=str, default='',
-                        help='path to adv patch and mask to load')
-    parser.add_argument('--obj-class', type=int, default=0, help='class of object to attack')
-    parser.add_argument('--tgt-csv-filepath', required=True,
-                        help='path to csv which contains target points for transform')
-    parser.add_argument('--attack-config-path',
-                        help='path to yaml file with attack configs (used when attack_type is per-sign)')
-    parser.add_argument('--syn-obj-path', type=str, default='',
-                        help='path to an image of a synthetic sign (used when synthetic_eval is True')
-    parser.add_argument('--img-txt-path', type=str, default='',
-                        help='path to a text file containing image filenames')
-    parser.add_argument('--run-only-img-txt', action='store_true',
-                        help='run evaluation on images listed in img-txt-path. Otherwise, exclude these images.')
-    parser.add_argument('--no-patch-transform', action='store_true',
-                        help=('If True, do not apply patch to signs using '
-                              '3D-transform. Patch will directly face camera.'))
-    parser.add_argument('--no-patch-relight', action='store_true',
-                        help=('If True, do not apply relighting transform to patch'))
-    parser.add_argument('--min-area', type=float, default=0,
-                        help=('Minimum area for labels. if a label has area > min_area,'
-                              'predictions correspoing to this target will be discarded'))
-    parser.add_argument(
-        '--min-pred-area', type=float, default=0,
-        help=(
-            'Minimum area for predictions. if a predicion has area < min_area and that prediction is not matched to any label, it will be discarded'))
-    # ============================== Plot / log ============================= #
-    parser.add_argument('--save-exp-metrics', action='store_true', help='save metrics for this experiment to dataframe')
-    parser.add_argument('--plot-single-images', action='store_true',
-                        help='save single images in a folder instead of batch images in a single plot')
-    parser.add_argument('--plot-class-examples', type=str, default='', nargs='*',
-                        help='save single images containing individual classes in different folders.')
-    parser.add_argument('--plot-fp', action='store_true', help='save images containing false positives')
-
-    parser.add_argument('--metrics-confidence-threshold', type=float, default=None, help='confidence threshold')
-    parser.add_argument(
-        '--other-class-confidence-threshold', type=float, default=None,
-        help='confidence threshold at which other labels are changed if there is a match with a prediction')
-
-    # TODO: remove when no bug
-    # parser.add_argument('--num-bg', type=int, default=16, help='number of backgrounds to generate adversarial patch')
-    # parser.add_argument('--patch-loc', type=str, default='', nargs='*',
-    #                     help='location to place patch w.r.t. object in tuple (ymin, xmin)')
-    # parser.add_argument('--obj-size', type=int, default=128, help='width of the object in pixels')
-
-    opt = parser.parse_args()
+    opt = eval_args_parser(False, root=ROOT)
     opt.data = check_yaml(opt.data)  # check YAML
+    
     opt.save_json |= opt.data.endswith('coco.yaml')
     opt.save_txt |= opt.save_hybrid
     print_args(FILE.stem, opt)
