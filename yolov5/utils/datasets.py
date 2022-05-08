@@ -647,13 +647,15 @@ class LoadImagesAndLabels(Dataset):
             labels = self.labels[index].copy()
 
             # EDIT
-            if hyp['random_crop']:
-                crop_size = (1024, 1024)
+            if hyp is not None and hyp['random_crop']:
+                # TODO: move this to config file or arguments
+                # crop_size = (1024, 1024)
+                crop_size = (self.img_size, self.img_size)
 
                 # some images can't be cropped because they are too small and have to be padded
                 if img.shape[0] < crop_size[0] or img.shape[1] < crop_size[1]:
                     # need to add code to pad
-                    new_shape = [0, 0] # new height, width
+                    new_shape = [0, 0]  # new height, width
                     new_shape[0] = max(img.shape[0], crop_size[0])
                     new_shape[1] = max(img.shape[1], crop_size[1])
                     img, ratio, pad = letterbox(img, new_shape, auto=False, scaleup=False)
@@ -777,7 +779,7 @@ def load_image(self, i, augment=None):
         # EDIT: When mosaic is used (i.e., during training), don't resize if
         # the original image is smaller than 4000px
         # r = self.img_size / max(h0, w0)  # ratio
-        r = self.img_size / max(h0, w0) if not augment else min(1, 4000 / max(h0, w0))
+        r = self.img_size / max(h0, w0) if not augment else min(1, self.img_size / max(h0, w0))
         if r != 1:  # if sizes are not equal
             im = cv2.resize(im, (int(w0 * r), int(h0 * r)),
                             interpolation=cv2.INTER_AREA if r < 1 and not self.augment else cv2.INTER_LINEAR)

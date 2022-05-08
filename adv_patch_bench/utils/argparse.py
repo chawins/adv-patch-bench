@@ -54,7 +54,9 @@ def eval_args_parser(is_detectron, root=None):
                         help=('Minimum area for predictions. if a predicion has area < min_area and '
                               'that prediction is not matched to any label, it will be discarded'))
 
-    if not is_detectron:
+    if is_detectron:
+        parser.add_argument('--compute-metrics', action='store_true', help='Compute metrics after running attack')
+    else:
         # ========================= YOLO arguments ========================== #
         parser.add_argument('--data', type=str, default=root / 'data/coco128.yaml', help='dataset.yaml path')
         parser.add_argument('--weights', nargs='+', type=str, default=root / 'yolov5s.pt', help='model.pt path(s)')

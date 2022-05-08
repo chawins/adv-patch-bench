@@ -1,11 +1,12 @@
 __author__ = 'tsungyi'
 
-import numpy as np
+import copy
 import datetime
 import time
 from collections import defaultdict
+
+import numpy as np
 from pycocotools import mask as maskUtils
-import copy
 
 
 class COCOeval:
@@ -165,16 +166,16 @@ class COCOeval:
                          ]
         self._paramsEval = copy.deepcopy(self.params)
         toc = time.time()
-        print('DONE (t={:0.2f}s).'.format(toc-tic))
+        print('DONE (t={:0.2f}s).'.format(toc - tic))
 
     def computeIoU(self, imgId, catId):
         p = self.params
         # EDIT: for gt with "other" class, we want to match and compute iou for
         # all detections
-        if self.mode is not None and catId == self.other_catId:
+        if self.mode == 'drop' and catId == self.other_catId:
             gt = self._gts[imgId, catId]
             dt = [_ for cId in p.catIds for _ in self._dts[imgId, cId]]
-        elif self.mode is not None:
+        elif self.mode == 'drop':
             # TODO: potential bug (low impact): this way, one "other" gt can be
             # matched to multiple dt's.
             # Match non-other dt to either other or non-other dt
@@ -263,12 +264,12 @@ class COCOeval:
         p = self.params
         # EDIT: ============================================================= #
         catId_is_other = catId == self.other_catId
-        if self.mode is not None and catId_is_other:
+        if self.mode == 'drop' and catId_is_other:
             # For other catId , we want to consider all detections regardless
             # of their catId.
             gt = self._gts[imgId, catId]
             dt = [_ for cId in p.catIds for _ in self._dts[imgId, cId]]
-        elif self.mode is not None:
+        elif self.mode == 'drop':
             # Match non-other dt to either other or non-other dt
             gt = [*self._gts[imgId, catId], *self._gts[imgId, self.other_catId]]
             dt = self._dts[imgId, catId]

@@ -1,8 +1,8 @@
 #!/bin/bash
 GPU=0
-PATCH_NAME=test-min-area-600
+PATCH_NAME=test-yolo
 EXP=1
-MODEL_PATH=~/data/adv-patch-bench/yolov5/runs/train/exp6/weights/best.pt
+MODEL_PATH=~/data/adv-patch-bench/yolov5/runs/train/exp10/weights/best.pt
 CSV_PATH=mapillary_vistas_training_final_merged.csv
 SYN_OBJ_PATH=attack_assets/octagon-915.0.png
 OBJ_CLASS=11
@@ -12,11 +12,12 @@ CUDA_VISIBLE_DEVICES=$GPU python -u generate_adv_patch.py \
     --weights $MODEL_PATH --patch-name $PATCH_NAME --csv-path $CSV_PATH \
     --bg-dir ~/data/mtsd_v2_fully_annotated/train \
     --save-images --attack-config-path attack_config.yaml \
-    --imgsz 1280 --padded_imgsz 960,1280 \
+    --imgsz 4000 --padded_imgsz 3000,4000 \
     --obj-class $OBJ_CLASS --syn-obj-path $SYN_OBJ_PATH \
-    --obj-size 400 --num-bg 1 --generate-patch synthetic
+    --obj-size 400 --num-bg 1 --generate-patch real
 # --imgsz 2560 --padded_imgsz 1952,2592 \
-# --imgsz 4000 --padded_imgsz 3000,4000 \
+
+# --imgsz 1280 --padded_imgsz 960,1280 \
 
 # CUDA_VISIBLE_DEVICES=$GPU python -u val_attack_synthetic.py \
 #     --data mapillary_no_color.yaml --tgt-csv-filepath $CSV_PATH \

@@ -9,22 +9,18 @@ from argparse import Namespace
 from typing import Any, Callable, Dict, List, Tuple
 
 import cv2
-import detectron2.data.transforms as T
 import numpy as np
 import pandas as pd
 import torch
 from adv_patch_bench.attacks.utils import (apply_synthetic_sign, prep_attack,
                                            prep_synthetic_eval)
 from adv_patch_bench.transforms import transform_and_apply_patch
-from detectron2.checkpoint import DetectionCheckpointer
 from detectron2.config import CfgNode
-from detectron2.data import (DatasetMapper, MetadataCatalog,
-                             build_detection_test_loader)
-from detectron2.modeling import build_model
-from detectron2.structures import Boxes, BoxMode, pairwise_iou
+from detectron2.data import MetadataCatalog
 from detectron2.utils.visualizer import Visualizer
-from torch.nn import functional as F
 from tqdm import tqdm
+
+from adv_patch_bench.utils.detectron import build_evaluator
 
 from .rp2 import RP2AttackModule
 
@@ -98,8 +94,6 @@ class DAGAttacker:
         self.device = self.model.device
         self.n_classes = self.cfg.MODEL.ROI_HEADS.NUM_CLASSES
         self.metadata = MetadataCatalog.get(self.cfg.DATASETS.TEST[0])
-        # HACK Only specific for this dataset
-        # self.metadata.thing_classes = ["box", "logo"]
         # self.contiguous_id_to_thing_id = {
         #     v: k for k, v in self.metadata.thing_dataset_id_to_contiguous_id.items()
         # }
@@ -113,12 +107,16 @@ class DAGAttacker:
         self.df = pd.read_csv(args.tgt_csv_filepath)
         self.class_names = class_names
         self.synthetic_eval = args.synthetic_eval
+        self.no_patch_transform = args.no_patch_transform
+        self.no_patch_relight = args.no_patch_relight
 
         # Loading file names from the specified text file
         self.skipped_filename_list = []
         if args.img_txt_path != '':
             with open(args.img_txt_path, 'r') as f:
                 self.skipped_filename_list = f.read().splitlines()
+
+        self.evaluator = build_evaluator(cfg, cfg.DATASETS.TEST[0])
 
     def log(self, *args, **kwargs):
         if self.verbose:
@@ -154,19 +152,22 @@ class DAGAttacker:
         if self.synthetic_eval:
             # Prepare evaluation with synthetic signs
             # syn_data: (syn_obj, syn_obj_mask, obj_transforms, mask_transforms, syn_sign_class)
-            syn_data = prep_synthetic_eval(self.args, self.img_size, self.class_names, device=self.device)
+            syn_data = prep_synthetic_eval(
+                self.args, self.img_size, self.class_names, device=self.device)
 
         # Prepare attack data
         _, adv_patch, patch_mask, patch_loc = prep_attack(self.args, self.device)
+
+        total_num_patches = 0
+        self.evaluator.reset()
 
         for i, batch in tqdm(enumerate(self.data_loader)):
             original_image = batch[0]['image'].permute(1, 2, 0).numpy()
             file_name = batch[0]['file_name']
             filename = file_name.split('/')[-1]
-            basename = os.path.basename(file_name)
+            # basename = os.path.basename(file_name)
             image_id = batch[0]['image_id']
-            instances = batch[0]['instances']
-            h0, w0 = batch[0]['height'], batch[0]['height']
+            h0, w0 = batch[0]['height'], batch[0]['width']
             img_df = self.df[self.df['filename'] == filename]
 
             if len(img_df) == 0:
@@ -188,7 +189,7 @@ class DAGAttacker:
                 vis_gt = visualizer.draw_dataset_dict(batch[0])
                 vis_gt.save(os.path.join(vis_save_dir, f'gt_{i}.jpg'))
 
-            images = batch[0]['image'].float().to(self.device) / 255
+            images = batch[0]['image'].float().to(self.device)
             perturbed_image = images.clone()
             _, h, w = images.shape
             img_data = (h0, w0, h / h0, w / w0, 0, 0)
@@ -217,14 +218,20 @@ class DAGAttacker:
                         perturbed_image, adv_patch.to(self.device),
                         patch_mask, patch_loc, obj_label, obj, img_data,
                         use_transform=not self.no_patch_transform,
-                        use_relight=not self.no_patch_relight, interp=self.args.interp)
+                        use_relight=not self.no_patch_relight,
+                        interp=self.args.interp) * 255
                     total_num_patches += 1
 
             # Perform inference on perturbed image
-            perturbed_image = self._post_process_image(perturbed_image)
-            perturbed_image = perturbed_image.permute(1, 2, 0).cpu().numpy().astype(np.uint8)
+            # perturbed_image = self._post_process_image(perturbed_image)
+            if perturbed_image.ndim == 4:
+                # TODO: Remove batch dim
+                perturbed_image = perturbed_image[0]
+            perturbed_image = perturbed_image.permute(1, 2, 0)
+            perturbed_image = perturbed_image.cpu().numpy().astype(np.uint8)
 
-            outputs = self(perturbed_image)
+            outputs = self(perturbed_image, (h0, w0))
+            self.evaluator.process(batch, [outputs])
 
             # Convert to coco predictions format
             instance_dicts = self._create_instance_dicts(outputs, image_id)
@@ -241,7 +248,7 @@ class DAGAttacker:
                 vis_adv = v.draw_instance_predictions(instances.to('cpu')).get_image()
 
                 # Save original predictions
-                outputs = self(original_image)
+                outputs = self(original_image, (h0, w0))
                 instances = outputs["instances"]
                 mask = instances.scores > vis_conf_thresh
                 instances = instances[mask]
@@ -262,97 +269,15 @@ class DAGAttacker:
                 cv2.imwrite(save_adv_path, vis_adv[:, :, ::-1])
                 self.log(f'Saved visualization to {save_path}')
 
+            if self.debug and i >= 5:
+                break
+
         # Save predictions as COCO results json format
-        with open(results_save_path, 'w') as f:
-            json.dump(coco_instances_results, f)
+        # with open(results_save_path, 'w') as f:
+        #     json.dump(coco_instances_results, f)
+        self.evaluator.evaluate()
 
         return coco_instances_results
-
-    # def attack_image(self, batched_inputs: List[Dict[str, Any]]) -> torch.Tensor:
-    #     """Attack an image from the test dataloader
-
-    #     Parameters
-    #     ----------
-    #     batched_inputs : List[Dict[str, Any]]
-    #         A list containing a single element, the dataset_dict from the test dataloader
-
-    #     Returns
-    #     -------
-    #     torch.Tensor
-    #         [C, H, W], Perturbed image
-    #     """
-    #     images = self.model.preprocess_image(batched_inputs)
-
-    #     instances = batched_inputs[0]["instances"]
-    #     # If no ground truth annotations, no choice but to skip
-    #     if len(instances.gt_boxes) == 0:
-    #         return self._post_process_image(images.tensor[0])
-
-    #     # Acquire targets and corresponding labels to attack
-    #     # FIXME What if no target_boxes?
-    #     target_boxes, target_labels = self._get_targets(batched_inputs)
-
-    #     # Record gradients for image
-    #     images.tensor.requires_grad = True
-
-    #     # if len(target_boxes) == 0:
-    #     #     return self._post_process_image(images.tensor[0])
-
-    #     # Start DAG
-    #     for i in range(self.n_iter):
-    #         # Get features
-    #         features = self.model.backbone(images.tensor)
-
-    #         # Get classification logits
-    #         logits, _ = self._get_roi_heads_predictions(features, target_boxes)
-
-    #         # FIXME
-    #         if len(logits) == 0:
-    #             break
-
-    #         # Update active target set,
-    #         # i.e. filter for correctly predicted targets;
-    #         # only attack targets that are still correctly predicted so far
-    #         # FIXME
-    #         active_cond = logits.argmax(dim=1) == target_labels
-    #         # active_cond = logits.argmax(dim=1) != adv_labels
-
-    #         target_boxes = target_boxes[active_cond]
-    #         logits = logits[active_cond]
-    #         target_labels = target_labels[active_cond]
-    #         # adv_labels = adv_labels[active_cond]
-
-    #         # If active set is empty, end algo;
-    #         # All targets are already wrongly predicted
-    #         if len(target_boxes) == 0:
-    #             break
-
-    #         # Compute total loss
-    #         # FIXME Use before or after softmax?
-    #         target_loss = F.cross_entropy(logits, target_labels, reduction="sum")
-    #         adv_loss = F.cross_entropy(logits, adv_labels, reduction="sum")
-    #         # Make every target incorrectly predicted as the adversarial label
-    #         total_loss = target_loss - adv_loss
-
-    #         # Backprop and compute gradient wrt image
-    #         total_loss.backward()
-    #         image_grad = images.tensor.grad.detach()
-
-    #         # Apply perturbation on image
-    #         with torch.no_grad():
-    #             # Normalize grad
-    #             image_perturb = (
-    #                 self.gamma / image_grad.norm(float("inf"))
-    #             ) * image_grad
-    #             images.tensor += image_perturb
-
-    #         # Zero gradients
-    #         image_grad.zero_()
-    #         self.model.zero_grad()
-
-    #     self.log(f"Done with attack. Total Iterations {i}")
-
-    #     return self._post_process_image(images.tensor[0])
 
     def _create_instance_dicts(
         self, outputs: Dict[str, Any], image_id: int
@@ -372,30 +297,20 @@ class DAGAttacker:
         """
         instance_dicts = []
 
-        instances = outputs["instances"]
+        instances = outputs['instances']
         pred_classes = instances.pred_classes.cpu().numpy()
         pred_boxes = instances.pred_boxes
         scores = instances.scores.cpu().numpy()
 
         # For each bounding box
         for i, box in enumerate(pred_boxes):
-            box = box.cpu().numpy()
-            x1, y1, x2, y2 = float(box[0]), float(box[1]), float(box[2]), float(box[3])
-            width = x2 - x1
-            height = y2 - y1
-
-            # HACK Only specific for this dataset
-            category_id = int(pred_classes[i] + 1)
-            # category_id = self.contiguous_id_to_thing_id[pred_classes[i]]
-            score = float(scores[i])
-
+            # x1, y1, x2, y2 = float(box[0]), float(box[1]), float(box[2]), float(box[3])
             i_dict = {
                 "image_id": image_id,
-                "category_id": category_id,
-                "bbox": [x1, y1, width, height],
-                "score": score,
+                "category_id": int(pred_classes[i]),
+                "bbox": [b.item() for b in box],
+                "score": float(scores[i]),
             }
-
             instance_dicts.append(i_dict)
 
         return instance_dicts
@@ -419,7 +334,7 @@ class DAGAttacker:
 
         return torch.clamp(image, 0, 255)
 
-    def __call__(self, original_image: np.ndarray) -> Dict:
+    def __call__(self, original_image: np.ndarray, size) -> Dict:
         """Simple inference on a single image
 
         Args:
@@ -438,6 +353,7 @@ class DAGAttacker:
             # image = self.aug.get_transform(original_image).apply_image(original_image)
             image = torch.as_tensor(original_image.astype("float32").transpose(2, 0, 1))
 
-            inputs = {"image": image, "height": height, "width": width}
+            # inputs = {"image": image, "height": height, "width": width}
+            inputs = {"image": image, "height": size[0], "width": size[1]}
             predictions = self.model([inputs])[0]
             return predictions
