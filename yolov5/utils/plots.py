@@ -497,7 +497,7 @@ def plot_false_positives(images, false_positives_preds, filenames, metrics_conf_
                 plot_image = im.cpu().float().numpy()
             plot_image = plot_image.transpose(1, 2, 0)
             
-            plot_image = plot_image[int(y1):int(y2), int(x1):int(x2), :]
+            plot_image = plot_image[max(int(y1), 0):int(y2), max(int(x1), 0):int(x2), :]
             ax[i,j].imshow(plot_image)
             # ax[i,j].set_title(f"{filename} \n {names[class_label.item()]}|{names[pred_label.item()]}|{round(pred_conf.item(), 3)}", fontdict={'fontsize': 8})
             ax[i,j].set_title(f"{filename} \n {names[pred_label.item()]}|{round(pred_conf.item(), 3)}", fontdict={'fontsize': 8})

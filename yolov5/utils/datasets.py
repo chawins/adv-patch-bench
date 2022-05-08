@@ -119,15 +119,17 @@ def create_dataloader(
 
     # EDIT: Use RepeatFactorTrainingSampler similar to detectron2 to deal with
     # the class imbalance problem
-    sampler = None if rank == -1 else distributed.DistributedSampler(dataset, shuffle=shuffle)
-    loader = DataLoader if image_weights else InfiniteDataLoader  # only DataLoader allows for attribute updates
-    # sampler = None
-    # if repeat_sampler:
-    #     repeat_threshold = 1
-    #     repeat_factors = RepeatFactorTrainingSampler.repeat_factors_from_category_frequency(
-    #         dataset.img_to_labels, repeat_threshold)
-    #     sampler = RepeatFactorTrainingSampler(repeat_factors, shuffle=shuffle)
-    # loader = DataLoader if sampler else InfiniteDataLoader
+    if not repeat_sampler:
+        sampler = None if rank == -1 else distributed.DistributedSampler(dataset, shuffle=shuffle)
+        loader = DataLoader if image_weights else InfiniteDataLoader  # only DataLoader allows for attribute updates
+    else:
+        sampler = None
+        if repeat_sampler:
+            repeat_threshold = 1
+            repeat_factors = RepeatFactorTrainingSampler.repeat_factors_from_category_frequency(
+                dataset.img_to_labels, repeat_threshold)
+            sampler = RepeatFactorTrainingSampler(repeat_factors, shuffle=shuffle)
+        loader = DataLoader if sampler else InfiniteDataLoader
 
     # DEBUG
     # check sample from original dataloader
@@ -647,7 +649,8 @@ class LoadImagesAndLabels(Dataset):
             labels = self.labels[index].copy()
 
             # EDIT
-            if hyp['random_crop']:
+            # if hyp['random_crop']:
+            if False:
                 crop_size = (1024, 1024)
 
                 # some images can't be cropped because they are too small and have to be padded

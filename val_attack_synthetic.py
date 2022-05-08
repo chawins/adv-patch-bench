@@ -181,12 +181,12 @@ def run(args,
     model_trained_without_other = args.model_trained_without_other
     other_class_confidence_threshold = args.other_class_confidence_threshold
     min_pred_area = args.min_pred_area
+    plot_fp = args.plot_fp
 
     metrics_conf_thres = args.metrics_confidence_threshold
     img_size = tuple([int(x) for x in args.padded_imgsz.split(',')])
 
     false_positive_images = []
-    false_positives_labels = []
     false_positives_preds = []
     false_positives_filenames = []
 
@@ -555,14 +555,14 @@ def run(args,
                 # matching on bounding boxes and correct predictions, i.e, match label and pred if iou >= 0.5 and label == pred
                 # or match on whether label == 'other' class and iou(label, pred) >= 0.5
                 # correct, matches = process_batch(predn, labelsn, iouv, other_class_label=None)
-                # iou_correct, iou_matches = process_batch(predn, labelsn, iouv, match_on_iou_only=True)
+                iou_correct, iou_matches = process_batch(predn, labelsn, iouv, match_on_iou_only=True)
                 correct, matches = process_batch(
                     predn, labelsn, iouv, other_class_label=other_class_label,
                     other_class_confidence_threshold=other_class_confidence_threshold)
                 # correct, matches = process_batch(predn, labelsn, iouv)
                 # correct, matches = process_batch(predn, labelsn, iouv)
 
-                # if (len(matches) > 0 or len(iou_matches) > 0) and len(iou_matches) < len(matches):
+                # if (len(matches) > 0 or len(iou_matches) > 0):
                 #     print(iou_matches)
                 #     print(matches)
                 #     print(iou_matches.shape)
@@ -581,6 +581,9 @@ def run(args,
             # When there's no match, create a dummy match to make next steps easier
             if len(matches) == 0:
                 matches = np.zeros((1, 1)) - 1
+
+            if len(iou_matches) == 0:
+                iou_matches = np.zeros((1, 1)) - 1
 
             # pred (Array[N, 6]), x1, y1, x2, y2, confidence, class
             small_preds_index = np.zeros(len(pred), dtype=np.bool)
@@ -608,9 +611,24 @@ def run(args,
                 # If there's no match, just save current metric and continue to
                 # the next label.
                 if len(match) == 0:
-                    # if ground truth is 'other' and there is NO prediction, we drop the label so it's not counted as a false negative
-                    if class_label == other_class_label:
-                        lbl_index_to_keep[lbl_index] = 0
+                    
+                    # this can be deleted since we do not count include others when computing metrics all signs
+                    # # if ground truth is 'other' and there is NO prediction, we drop the label so it's not counted as a false negative
+                    # if class_label == other_class_label:
+                    #     lbl_index_to_keep[lbl_index] = 0
+
+                    try:
+                        iou_match = iou_matches[iou_matches[:, 0] == lbl_index]
+                    except:
+                        import pdb
+                        pdb.set_trace()
+                    assert len(iou_match) <= 1  # There can only be one match per object
+                    if len(iou_match) == 1:
+                        # Find index of `pred` corresponding to this match
+                        iou_det_idx = int(iou_match[0, 1])
+                        iou_pred_conf, iou_pred_label = pred[iou_det_idx, 4:6].cpu().numpy()
+                        current_label_metric['confidence'] = iou_pred_conf
+                        current_label_metric['prediction'] = iou_pred_label
 
                     metrics_per_label_df = metrics_per_label_df.append(
                         current_label_metric, ignore_index=True)
@@ -629,8 +647,8 @@ def run(args,
                 # Drop this prediction if the target object is too small
                 pred_index_to_keep[det_idx] = ~current_label_metric['too_small']
 
-                if class_label == other_class_label:
-                    # as in the mtsd paper, we drop both label and prediction if the label is 'other'
+                if class_label == other_class_label and pred_label != other_class_label:
+                    # as in the mtsd paper, we drop both label and prediction if the label is 'other' and the prediction is 'non-other'
                     lbl_index_to_keep[lbl_index] = 0
                     pred_index_to_keep[det_idx] = 0
                     correct[det_idx] = torch.BoolTensor([False] * len(iouv))
@@ -642,11 +660,11 @@ def run(args,
                     #     current_label_metric['changed_from_other_label'] = 1
                     #     targets[targets[:, 0] == si, 1:] = labels
 
-                if pred_label == other_class_label:
-                    # as in the mtsd paper, we drop both label and prediction if the prediction is 'other'
-                    lbl_index_to_keep[lbl_index] = 0
-                    pred_index_to_keep[det_idx] = 0
-                    # correct[det_idx] = torch.BoolTensor([False] * len(iouv))
+                # if pred_label == other_class_label:
+                #     # as in the mtsd paper, we drop both label and prediction if the prediction is 'other'
+                #     lbl_index_to_keep[lbl_index] = 0
+                #     pred_index_to_keep[det_idx] = 0
+                #     # correct[det_idx] = torch.BoolTensor([False] * len(iouv))
 
                 # if class_label != pred_label:
                 #     # print(class_label)
@@ -794,8 +812,9 @@ def run(args,
     else:
         nt = torch.zeros(1)
 
-    plot_false_positives(false_positive_images, false_positives_preds, false_positives_filenames,
-                         max_f1_index/1000, names, plot_folder=f'{project}/{name}/plots_false_positives/')
+    if plot_fp:
+        plot_false_positives(false_positive_images, false_positives_preds, false_positives_filenames,
+                            max_f1_index/1000, names, plot_folder=f'{project}/{name}/plots_false_positives/')
 
     # Print results
     pf = '%20s' + '%11i' * 2 + '%11.3g' * 4  # print format
@@ -1020,6 +1039,8 @@ def parse_opt():
                         help='save single images in a folder instead of batch images in a single plot')
     parser.add_argument('--plot-class-examples', type=str, default='', nargs='*',
                         help='save single images containing individual classes in different folders.')
+    parser.add_argument('--plot-fp', action='store_true', help='save images containing false positives')
+
     parser.add_argument('--metrics-confidence-threshold', type=float, default=None, help='confidence threshold')
     parser.add_argument(
         '--other-class-confidence-threshold', type=float, default=None,
