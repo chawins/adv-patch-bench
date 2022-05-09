@@ -1,9 +1,13 @@
 from os.path import expanduser, join
 
 # Set paths
-# PATH_MAPILLARY_ANNO_TRAIN = './mapillary_vistas_training_final_merged.csv'
-# PATH_MAPILLARY_ANNO_VAL = './mapillary_vistas_validation_final_merged.csv'
-PATH_MAPILLARY_ANNO = './mapillary_vistas_final_merged.csv'
+# PATH_MAPILLARY_ANNO_TRAIN =
+# PATH_MAPILLARY_ANNO_VAL =
+PATH_MAPILLARY_ANNO = {
+    'train': './mapillary_vistas_training_final_merged.csv',
+    'val': './mapillary_vistas_validation_final_merged.csv',
+    'combined': './mapillary_vistas_final_merged.csv',
+}
 PATH_MTSD_BASE = expanduser('~/data/mtsd_v2_fully_annotated/')
 PATH_MAPILLARY_BASE = expanduser('~/data/mapillary_vistas/')
 PATH_APB_ANNO = expanduser('~/adv-patch-bench/traffic_sign_dimension_v6.csv')
@@ -61,7 +65,7 @@ LABEL_LIST = {
 MIN_OBJ_AREA = 0
 NUM_CLASSES = len(TS_COLOR_LABEL_LIST)
 
-DATASETS = ('mtsd_orig', 'mtsd_no_color', 'mtsd_color', 'mapillary_no_color', 
+DATASETS = ('mtsd_orig', 'mtsd_no_color', 'mtsd_color', 'mapillary_no_color',
             'mapillary_color')
 OTHER_SIGN_CLASS = {
     'mtsd_orig': 89,

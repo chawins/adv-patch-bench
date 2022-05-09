@@ -26,10 +26,11 @@ def get_mapillary_dict(
     mapillary_split = {
         'train': 'training',
         'test': 'validation',
+        'combined': 'combined',
     }[split]
-    label_dir = 'detectron_labels_color' if use_color else 'detectron_labels_no_color'
-    anno_path = f'{base_path}/{mapillary_split}/{label_dir}'
-    img_path = f'{base_path}/{mapillary_split}/images'
+    subdir = 'color' if use_color else 'no_color'
+    anno_path = f'{base_path}/{subdir}/{mapillary_split}/detectron_labels'
+    img_path = f'{base_path}/{subdir}/{mapillary_split}/images'
 
     dataset_dicts = []
     anno_files = [join(anno_path, f) for f in os.listdir(anno_path) if isfile(join(anno_path, f))]
@@ -96,7 +97,7 @@ def register_mapillary(
     else:
         bg_idx = OTHER_SIGN_CLASS['mapillary_no_color']
 
-    splits = ['test']
+    splits = ['train', 'val', 'combined']
     for split in splits:
         DatasetCatalog.register(f'mapillary_{split}', lambda s=split: get_mapillary_dict(
             s, base_path, bg_idx, use_color=use_color, ignore_other=ignore_other))

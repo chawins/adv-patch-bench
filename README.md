@@ -59,7 +59,7 @@ cd ./yolor/scripts && gdown 1Tdn3yqpZ79X7R1Ql0zNlNScB1Dv9Fp76
 ### Data Preparation
 
 - `prep_mtsd_for_yolo.py`: Prepare MTSD dataset for YOLOv5.
-- `prep_vistas_for_yolo.py`: Prepare Vistas dataset for YOLOv5 using a pretrained classifier to determine classes of the signs. May require substantial memory to run. Insufficient memory can lead to the script getting killed with no error message.
+- `prep_mapillary.py`: Prepare Vistas dataset for YOLOv5 using a pretrained classifier to determine classes of the signs. May require substantial memory to run. Insufficient memory can lead to the script getting killed with no error message.
 - YOLO expects samples and labels in `root_dir/images/*` and `root_dir/labels/*`, respectively. See [this link](https://github.com/ultralytics/yolov5/wiki/Train-Custom-Data#13-organize-directories) for more detail.
 - Training set: MTSD training. Symlink to `~/data/yolo_data/(images or labels)/train`.
 - Validation set: MTSD validation Symlink to `~/data/yolo_data/(images or labels)/val`.
@@ -82,15 +82,20 @@ ln -s ~/data/mtsd_v2_fully_annotated/$LABEL_NAME/val val
 
 # Prepare Mapillary path
 # Dataset should be extracted to ~/data/mapillary_vistas
+CUDA_VISIBLE_DEVICES=0 python prep_mapillary.py --split train --resume PATH_TO_CLASSIFIER
+CUDA_VISIBLE_DEVICES=0 python prep_mapillary.py --split val --resume PATH_TO_CLASSIFIER
+
+# Combined train and val partition into "combined"
 cd ~/data/mapillary_vistas
 mkdir no_color && cd no_color
-mkdir test val
-cd ~/data/mapillary_vistas/no_color/test
-ln -s ~/data/mapillary_vistas/training/images .
-ln -s ~/data/mapillary_vistas/training/labels_no_color/ labels
-cd ~/data/mapillary_vistas/no_color/val
-ln -s ~/data/mapillary_vistas/validation/images .
-ln -s ~/data/mapillary_vistas/validation/labels_no_color/ labels
+mkdir combined && cd combined
+mkdir images labels detectron_labels
+ln -s ~/data/mapillary_vistas/training/images/* images/
+ln -s ~/data/mapillary_vistas/validation/images/* images/
+ln -s ~/data/mapillary_vistas/training/labels_no_color/* labels/
+ln -s ~/data/mapillary_vistas/validation/labels_no_color/* labels/
+ln -s ~/data/mapillary_vistas/training/detectron_labels_no_color/* detectron_labels/
+ln -s ~/data/mapillary_vistas/validation/detectron_labels_no_color/* detectron_labels/
 
 # FIXME
 # Change data path in mtsd.yml in adv-patch-bench/yolov5/data/ to the absolute

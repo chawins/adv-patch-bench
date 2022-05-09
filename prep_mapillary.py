@@ -15,7 +15,7 @@ from PIL import Image
 from tqdm.auto import tqdm
 
 from adv_patch_bench.models import build_classifier
-from hparams import (MIN_OBJ_AREA, NUM_CLASSES, TS_COLOR_DICT,
+from hparams import (MIN_OBJ_AREA, NUM_CLASSES, PATH_MAPILLARY_ANNO, PATH_MAPILLARY_BASE, TS_COLOR_DICT,
                      TS_COLOR_LABEL_LIST, TS_COLOR_OFFSET_DICT)
 
 
@@ -39,9 +39,9 @@ def set_default_args(parser):
     parser.add_argument('--dataset', default='mtsd', type=str, help='Dataset')
 
 
-def write_yolo_labels(model, label, panoptic_per_image_id, data_dir,
-                      num_classes, anno_df, min_area=0, conf_thres=0.,
-                      device='cuda', batch_size=128, use_color=True):
+def write_labels(model, label, panoptic_per_image_id, data_dir,
+                 num_classes, anno_df, min_area=0, conf_thres=0.,
+                 device='cuda', batch_size=128, use_color=True):
     img_path = join(data_dir, 'images')
     lp = 'labels_color' if use_color else 'labels_no_color'
     label_path = join(data_dir, lp)
@@ -224,21 +224,26 @@ def write_yolo_labels(model, label, panoptic_per_image_id, data_dir,
 
 
 def main():
+    parser = argparse.ArgumentParser(description='Manually set args', add_help=False)
+    set_default_args(parser)
+    parser.add_argument('--split', type=str, required=True, help='training or validation')
+    parser.add_argument('--resume', type=str, required=True, help='path to latest checkpoint')
+    parser.add_argument('--use-color', action='store_true',
+                        help='Labels will contain sign color in addition to shape')
+    args = parser.parse_args()
+
     # Arguments
     min_area = MIN_OBJ_AREA
     label_to_classify = 95      # Class id of traffic signs on Vistas
     conf_thres = 0.
     # TODO: put these params in hparams.py
-    num_classes = NUM_CLASSES['mtsd_color']
-    # data_dir = expanduser('~/data/mapillary_vistas/training/')
-    # model_path = expanduser('~/adv-patch-bench/results/5/checkpoint_best.pt')
-    split = 'training'
-    # split = 'validation'
-    data_dir = f'/data/shared/mapillary_vistas/{split}/'
-    model_path = '/data/shared/adv-patch-bench/results/6/checkpoint_best.pt'
+    dataset = 'mapillary_color' if args.use_color else 'mapillary_no_color'
+    num_classes = NUM_CLASSES[dataset]
+    data_dir = join(PATH_MAPILLARY_BASE, 'training' if args.split == 'train' else 'validation')
+    # model_path = '/data/shared/adv-patch-bench/results/6/checkpoint_best.pt'
     # The final CSV file with our annotation. This will be used to check
     # against the prediction of the classifier
-    csv_path = f'./mapillary_vistas_{split}_final_merged.csv'
+    csv_path = PATH_MAPILLARY_ANNO[args.split]
     anno_df = pd.read_csv(csv_path)
 
     device = 'cuda'
@@ -246,14 +251,6 @@ def main():
     torch.manual_seed(seed)
     np.random.seed(seed)
     cudnn.benchmark = True
-
-    parser = argparse.ArgumentParser(description='Manually set args', add_help=False)
-    set_default_args(parser)
-    parser.add_argument('--resume', default=model_path, type=str, help='path to latest checkpoint')
-    parser.add_argument('--num-classes', default=num_classes, type=int, help='Number of classes')
-    parser.add_argument('--use-color', action='store_true',
-                        help='Labels will contain sign color in addition to shape')
-    args = parser.parse_args()
 
     model, _, _ = build_classifier(args)
     model = model.module
@@ -273,7 +270,7 @@ def main():
     for category in panoptic['categories']:
         panoptic_category_per_id[category['id']] = category
 
-    write_yolo_labels(
+    write_labels(
         model, label_to_classify, panoptic_per_image_id, data_dir, num_classes,
         anno_df, min_area=min_area, conf_thres=conf_thres, device=device,
         batch_size=args.batch_size, use_color=args.use_color)
