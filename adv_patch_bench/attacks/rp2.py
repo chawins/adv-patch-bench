@@ -300,6 +300,7 @@ class RP2AttackModule(DetectorAttackModule):
 
         metadata_clone = None
         if self.is_detectron:
+            assert metadata is not None, 'metadata is needed for detectron'
             metadata_clone = self._clone_detectron_metadata(metadata)
 
         ema_const = 0.99

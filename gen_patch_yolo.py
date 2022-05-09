@@ -215,7 +215,6 @@ def main(
     weights=None,  # model.pt path(s)
     imgsz=1280,  # image width
     padded_imgsz='992,1312',
-    patch_size_inch=-1,
     dnn=False,  # use OpenCV DNN for ONNX inference
     half=False,
     save_dir=Path(''),
@@ -262,8 +261,8 @@ def main(
     if isinstance(obj_size, int):
         obj_size = (round(obj_size * h_w_ratio), obj_size)
 
-    patch_mask = generate_mask(syn_obj_path, obj_size, patch_size_inch,
-                               patch_name=None, save_mask=False)
+    # FIXME: get obj size inch
+    patch_mask = generate_mask(obj_numpy, obj_size, 36)
 
     dataloader = None
     if not synthetic:

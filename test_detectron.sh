@@ -32,7 +32,7 @@ OBJ_CLASS=10
 CUDA_VISIBLE_DEVICES=$GPU python -u gen_patch_detectron.py \
     --num-gpus $NUM_GPU --config-file ./configs/faster_rcnn_R_50_FPN_3x.yaml \
     --dataset mapillary-combined-no_color --padded-imgsz 3000,4000 --patch-size-inch 10 \
-    --bg-dir ~/data/mtsd_v2_fully_annotated/test/ \
+    --bg-dir ~/data/mtsd_v2_fully_annotated/test/ --num-bg 2 \
     --tgt-csv-filepath $CSV_PATH --attack-config-path attack_config.yaml \
     --adv-patch-path ./runs/val/stop_sign_demo/$PATCH_NAME.pkl --name $PATCH_NAME \
     --obj-class $OBJ_CLASS --syn-obj-path $SYN_OBJ_PATH --verbose --debug \
@@ -43,7 +43,7 @@ CUDA_VISIBLE_DEVICES=$GPU python -u gen_patch_detectron.py \
 
 # CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
 #     --num-gpus $NUM_GPU --config-file ./configs/faster_rcnn_R_50_FPN_3x.yaml \
-#     --dataset mapillary-test-no_color --eval-mode drop \
+#     --dataset mapillary-combined-no_color --eval-mode drop \
 #     --tgt-csv-filepath $CSV_PATH --attack-config-path attack_config.yaml \
 #     --adv-patch-path ./runs/val/stop_sign_demo/$PATCH_NAME.pkl --name $PATCH_NAME \
 #     --obj-class $OBJ_CLASS --syn-obj-path $SYN_OBJ_PATH \

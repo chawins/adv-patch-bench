@@ -1,7 +1,7 @@
 import ast
 import pickle
 from argparse import Namespace
-from typing import Any, List, Tuple
+from typing import Any, List, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -134,3 +134,22 @@ def apply_synthetic_sign(
     adv_img = o_mask * adv_obj + (1 - o_mask) * perturbed_image.to(device) / 255
     perturbed_image = adv_img.squeeze() * 255
     return perturbed_image
+
+
+def get_object_and_mask_from_numpy(
+    obj_numpy: np.ndarray,
+    obj_size: Tuple[int, int],
+    pad_size: Union[Tuple, List] = None,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Get object and its mask and resize to obj_size"""
+    obj_mask = torch.from_numpy(obj_numpy[:, :, -1] == 1).float().unsqueeze(0)
+    obj = torch.from_numpy(obj_numpy[:, :, :-1]).float().permute(2, 0, 1)
+    obj = T.resize(obj, obj_size, antialias=True)
+    if pad_size is not None:
+        obj = T.pad(obj, pad_size)
+    # obj = obj.permute(1, 2, 0)
+    obj_mask = T.resize(obj_mask, obj_size, interpolation=T.InterpolationMode.NEAREST)
+    if pad_size is not None:
+        obj_mask = T.pad(obj_mask, pad_size)
+    # obj_mask = obj_mask.permute(1, 2, 0)
+    return obj, obj_mask
