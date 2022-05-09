@@ -417,6 +417,7 @@ class RP2AttackModule(DetectorAttackModule):
                 else:
                     data_dict[keys] = m[keys]
             metadata_clone.append(data_dict)
+        metadata_clone = np.array(metadata_clone)
         return metadata_clone
 
     def _to_attack_space(self, x, min_, max_):
