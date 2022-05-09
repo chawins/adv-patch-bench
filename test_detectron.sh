@@ -5,7 +5,7 @@ EXP=faster_rcnn_R_50_FPN_mtsd_no_color_2
 # EXP=faster_rcnn_R_50_FPN_mtsd_color_1
 OUTPUT_PATH=~/adv-patch-bench/detectron_output/$EXP
 PATCH_NAME=stop_sign_demo
-CSV_PATH=mapillary_vistas_training_final_merged.csv
+CSV_PATH=mapillary_vistas_final_merged.csv
 SYN_OBJ_PATH=attack_assets/octagon-915.0.png
 OBJ_CLASS=10
 
@@ -31,7 +31,8 @@ OBJ_CLASS=10
 
 CUDA_VISIBLE_DEVICES=$GPU python -u gen_patch_detectron.py \
     --num-gpus $NUM_GPU --config-file ./configs/faster_rcnn_R_50_FPN_3x.yaml \
-    --dataset mapillary-test-no_color --padded-imgsz 3000,4000 --patch-size-inch 10 \
+    --dataset mapillary-combined-no_color --padded-imgsz 3000,4000 --patch-size-inch 10 \
+    --bg-dir ~/data/mtsd_v2_fully_annotated/test/ \
     --tgt-csv-filepath $CSV_PATH --attack-config-path attack_config.yaml \
     --adv-patch-path ./runs/val/stop_sign_demo/$PATCH_NAME.pkl --name $PATCH_NAME \
     --obj-class $OBJ_CLASS --syn-obj-path $SYN_OBJ_PATH --verbose --debug \

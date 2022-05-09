@@ -67,8 +67,9 @@ cd ./yolor/scripts && gdown 1Tdn3yqpZ79X7R1Ql0zNlNScB1Dv9Fp76
 - If you run into `Argument list too long` error, try to raise limit of argument stack size by `ulimit -S -s 100000000`. [Ref.](https://unix.stackexchange.com/a/401797)
 
 ```bash
-# Prepare MTSD path
+# Prepare MTSD dataset
 # Dataset should be extracted to ~/data/mtsd_v2_fully_annotated
+python prep_mtsd_for_yolo.py
 # FIXME: change yolo_data
 LABEL_NAME=labels_no_color
 cd ~/data/ && mkdir yolo_data && mkdir yolo_data/images yolo_data/labels
@@ -80,7 +81,7 @@ cd ~/data/yolo_data/labels/
 ln -s ~/data/mtsd_v2_fully_annotated/$LABEL_NAME/train train
 ln -s ~/data/mtsd_v2_fully_annotated/$LABEL_NAME/val val
 
-# Prepare Mapillary path
+# Prepare Mapillary dataset
 # Dataset should be extracted to ~/data/mapillary_vistas
 CUDA_VISIBLE_DEVICES=0 python prep_mapillary.py --split train --resume PATH_TO_CLASSIFIER
 CUDA_VISIBLE_DEVICES=0 python prep_mapillary.py --split val --resume PATH_TO_CLASSIFIER

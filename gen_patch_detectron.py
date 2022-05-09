@@ -56,7 +56,7 @@ def generate_adv_patch(
     save_dir: str = './',
     synthetic: bool = False,
     # rescaling: bool = False,
-    csv_path: str = 'mapillary.csv',
+    tgt_csv_filepath: str = None,
     dataloader: Any = None,
     attack_config_path: str = None,
     interp: str = 'bilinear',
@@ -137,7 +137,7 @@ def generate_adv_patch(
 
     else:
         print('=> Generating adversarial patch on real signs...')
-        df = pd.read_csv(csv_path)
+        df = pd.read_csv(tgt_csv_filepath)
         df['tgt_final'] = df['tgt_final'].apply(literal_eval)
         df = df[df['final_shape'] != 'other-0.0-0.0']
 
