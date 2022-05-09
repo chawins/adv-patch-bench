@@ -265,7 +265,7 @@ def main(
 if __name__ == "__main__":
     args = eval_args_parser(True)
     print('Command Line Args:', args)
-    args.img_size = args.padded_imgsz
+    # args.img_size = args.padded_imgsz
 
     # Verify some args
     cfg = setup_detectron_test_args(args, OTHER_SIGN_CLASS)
