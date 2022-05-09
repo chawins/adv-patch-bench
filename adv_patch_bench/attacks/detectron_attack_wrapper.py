@@ -31,8 +31,8 @@ class DAGAttacker:
         cfg: CfgNode,
         args: Namespace,
         attack_config: Dict,
-        model,
-        dataloader,
+        model: torch.nn.Module,
+        dataloader: Any,
         # n_iter: int = 150,
         # gamma: float = 0.5,
         # nms_thresh: float = 0.9,
@@ -106,7 +106,7 @@ class DAGAttacker:
         self.adv_sign_class = args.obj_class
         self.df = pd.read_csv(args.tgt_csv_filepath)
         self.class_names = class_names
-        self.synthetic_eval = args.synthetic_eval
+        self.synthetic = args.synthetic
         self.no_patch_transform = args.no_patch_transform
         self.no_patch_relight = args.no_patch_relight
 
@@ -149,7 +149,7 @@ class DAGAttacker:
         # Save predictions in coco format
         coco_instances_results = []
 
-        if self.synthetic_eval:
+        if self.synthetic:
             # Prepare evaluation with synthetic signs
             # syn_data: (syn_obj, syn_obj_mask, obj_transforms, mask_transforms, syn_sign_class)
             syn_data = prep_synthetic_eval(
@@ -194,7 +194,7 @@ class DAGAttacker:
             _, h, w = images.shape
             img_data = (h0, w0, h / h0, w / w0, 0, 0)
 
-            if self.synthetic_eval:
+            if self.synthetic:
                 # Apply synthetic sign and patch to image
                 perturbed_image = apply_synthetic_sign(
                     images, adv_patch, patch_mask, *syn_data, apply_patch=self.use_attack)

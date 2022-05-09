@@ -168,7 +168,7 @@ def run(args,
     # Load our new args
     attack_type = args.attack_type
     use_attack = args.attack_type != 'none'
-    synthetic_eval = args.synthetic_eval
+    synthetic = args.synthetic
     save_exp_metrics = args.save_exp_metrics
     plot_single_images = args.plot_single_images
     plot_class_examples = [int(x) for x in args.plot_class_examples]
@@ -315,7 +315,7 @@ def run(args,
     #     f = os.path.join(save_dir, 'adversarial_patch.png')
     #     torchvision.utils.save_image(demo_patch, f)
 
-    if synthetic_eval:
+    if synthetic:
         # Prepare evaluation with synthetic signs
         # syn_data: syn_obj, obj_mask, obj_transforms, mask_transforms, syn_sign_class
         syn_data = prep_synthetic_eval(args, img_size, names, device=device)
@@ -384,7 +384,7 @@ def run(args,
         # ======================= BEGIN: apply patch ======================== #
         for image_i, path in enumerate(paths):
 
-            if use_attack and not synthetic_eval:
+            if use_attack and not synthetic:
                 filename = path.split('/')[-1]
                 img_df = df[df['filename'] == filename]
                 if len(img_df) == 0:
@@ -429,7 +429,7 @@ def run(args,
                 # set targets[6] to #patches_applied_to_image
                 # targets[targets[:, 0] == image_i, 6] = num_patches_applied_to_image
 
-            elif synthetic_eval:
+            elif synthetic:
                 im[image_i] = apply_synthetic_sign(
                     im[image_i], adv_patch, patch_mask, *syn_data,
                     device=device, use_attack=use_attack)
@@ -522,7 +522,7 @@ def run(args,
             num_labels_changed = 0
 
             # TODO: comment
-            if synthetic_eval:
+            if synthetic:
                 for lbl in tbox:
                     if lbl[0] == syn_sign_class:
                         for pi, prd in enumerate(predn):
@@ -610,7 +610,7 @@ def run(args,
                 # If there's no match, just save current metric and continue to
                 # the next label.
                 if len(match) == 0:
-                    
+
                     # this can be deleted since we do not count include others when computing metrics all signs
                     # # if ground truth is 'other' and there is NO prediction, we drop the label so it's not counted as a false negative
                     # if class_label == other_class_label:
@@ -813,7 +813,7 @@ def run(args,
 
     if plot_fp:
         plot_false_positives(false_positive_images, false_positives_preds, false_positives_filenames,
-                            max_f1_index/1000, names, plot_folder=f'{project}/{name}/plots_false_positives/')
+                             max_f1_index/1000, names, plot_folder=f'{project}/{name}/plots_false_positives/')
 
     # Print results
     pf = '%20s' + '%11i' * 2 + '%11.3g' * 4  # print format
@@ -969,12 +969,12 @@ def run(args,
 def parse_opt():
     opt = eval_args_parser(False, root=ROOT)
     opt.data = check_yaml(opt.data)  # check YAML
-    
+
     opt.save_json |= opt.data.endswith('coco.yaml')
     opt.save_txt |= opt.save_hybrid
     print_args(FILE.stem, opt)
 
-    if opt.synthetic_eval and opt.attack_type == 'per-sign':
+    if opt.synthetic and opt.attack_type == 'per-sign':
         raise NotImplementedError('Synthetic evaluation with per-sign attack is not implemented.')
 
     return opt

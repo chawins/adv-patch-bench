@@ -4,11 +4,9 @@ import pickle
 
 import cv2
 import yaml
-from detectron2.config import get_cfg
 from detectron2.data import (MetadataCatalog, build_detection_test_loader,
                              build_detection_train_loader)
-from detectron2.engine import (DefaultPredictor, default_argument_parser,
-                               default_setup)
+from detectron2.engine import DefaultPredictor
 from detectron2.evaluation import inference_on_dataset, verify_results
 from detectron2.utils.visualizer import Visualizer
 from tqdm import tqdm
@@ -17,9 +15,10 @@ import adv_patch_bench.utils.detectron.custom_coco_evaluator as cocoeval
 from adv_patch_bench.attacks.detectron_attack_wrapper import DAGAttacker
 from adv_patch_bench.dataloaders import (BenignMapper, get_mtsd_dict,
                                          register_mapillary, register_mtsd)
-from adv_patch_bench.utils.argparse import eval_args_parser
+from adv_patch_bench.utils.argparse import (eval_args_parser,
+                                            setup_detectron_test_args)
 from adv_patch_bench.utils.detectron import build_evaluator
-from hparams import DATASETS, LABEL_LIST, OTHER_SIGN_CLASS
+from hparams import DATASETS, LABEL_LIST, OTHER_SIGN_CLASS, SAVE_DIR_DETECTRON
 
 
 def main(cfg, args):
@@ -55,7 +54,8 @@ def main_single(cfg, dataset_params):
     #                                          batch_size=1,
     #                                          num_workers=cfg.DATALOADER.NUM_WORKERS)
     # val_loader = build_detection_train_loader(cfg)
-    val_loader = get_mtsd_dict('val', *dataset_params)
+    split = cfg.DATASETS.TEST[0].split('_')[1]
+    val_loader = get_mtsd_dict(split, *dataset_params)
     for i, inpt in enumerate(val_loader):
 
         img = cv2.imread(inpt['file_name'])
@@ -81,7 +81,7 @@ def main_single(cfg, dataset_params):
 def main_attack(cfg, args, dataset_params):
 
     # Create folder for saving eval results
-    save_dir = os.path.join('./detectron_output/', args.name)
+    save_dir = os.path.join(SAVE_DIR_DETECTRON, args.name)
     os.makedirs(save_dir, exist_ok=True)
 
     with open(args.attack_config_path) as file:
@@ -122,7 +122,7 @@ def compute_metrics(cfg, args):
     evaluator = build_evaluator(cfg, dataset_name)
 
     # Load results from coco_instances.json
-    save_dir = os.path.join('./detectron_output/', args.name)
+    save_dir = os.path.join(SAVE_DIR_DETECTRON, args.name)
     with open(os.path.join(save_dir, f'coco_instances_results.json')) as f:
         coco_results = json.load(f)
     img_ids = None  # Set to None to evaluate the entire dataset
@@ -165,40 +165,13 @@ def compute_metrics(cfg, args):
     return
 
 
-def setup(args):
-    """
-    Create configs and perform basic setups.
-    """
-    cfg = get_cfg()
-    cfg.merge_from_file(args.config_file)
-    cfg.merge_from_list(args.opts)
-
-    # Copy dataset from args
-    tokens = args.dataset.split('-')
-    assert len(tokens) in (2, 3)
-    cfg.DATASETS.TEST = (f'{tokens[0]}_{tokens[1]}', )
-    args.dataset = f'{tokens[0]}_{tokens[2]}' if len(tokens) == 3 else f'{tokens[0]}_no_color'
-    args.use_color = 'no_color' not in tokens
-    # Copy test dataset to train one since we will use
-    # `build_detection_train_loader` to get labels
-    cfg.DATASETS.TRAIN = cfg.DATASETS.TEST
-    cfg.SOLVER.IMS_PER_BATCH = 1
-    cfg.INPUT.CROP.ENABLED = False
-    cfg.eval_mode = args.eval_mode
-    cfg.other_catId = OTHER_SIGN_CLASS[args.dataset]
-
-    cfg.freeze()
-    default_setup(cfg, args)
-    return cfg
-
-
 if __name__ == "__main__":
     args = eval_args_parser(True)
     print('Command Line Args:', args)
     args.img_size = args.padded_imgsz
 
     # Verify some args
-    cfg = setup(args)
+    cfg = setup_detectron_test_args(args, OTHER_SIGN_CLASS[args.dataset])
     assert args.dataset in DATASETS
 
     # Register dataset

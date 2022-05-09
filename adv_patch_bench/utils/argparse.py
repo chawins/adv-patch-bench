@@ -1,6 +1,7 @@
 import argparse
 
-from detectron2.engine import default_argument_parser
+from detectron2.config import get_cfg
+from detectron2.engine import default_argument_parser, default_setup
 
 
 def eval_args_parser(is_detectron, root=None):
@@ -19,7 +20,7 @@ def eval_args_parser(is_detectron, root=None):
 
     parser.add_argument('--interp', type=str, default='bilinear',
                         help='interpolation method (nearest, bilinear, bicubic)')
-    parser.add_argument('--synthetic-eval', action='store_true',
+    parser.add_argument('--synthetic', action='store_true',
                         help='evaluate with pasted synthetic signs')
     parser.add_argument('--name', default='exp', help='save to project/name')
     parser.add_argument('--verbose', action='store_true')
@@ -60,6 +61,7 @@ def eval_args_parser(is_detectron, root=None):
     parser.add_argument('--patch-size', type=int, required=True, help='object width in pixels')
     parser.add_argument('--bg-dir', type=str, default='', help='path to background directory')
     parser.add_argument('--save-images', action='store_true', help='save generated patch')
+    # parser.add_argument('--detectron', action='store_true', help='Model is detectron else YOLO')
 
     if is_detectron:
         parser.add_argument('--compute-metrics', action='store_true', help='Compute metrics after running attack')
@@ -100,3 +102,30 @@ def eval_args_parser(is_detectron, root=None):
         help='confidence threshold at which other labels are changed if there is a match with a prediction')
 
     return parser.parse_args()
+
+
+def setup_detectron_test_args(args, other_sign_class):
+    """
+    Create configs and perform basic setups.
+    """
+    cfg = get_cfg()
+    cfg.merge_from_file(args.config_file)
+    cfg.merge_from_list(args.opts)
+
+    # Copy dataset from args
+    tokens = args.dataset.split('-')
+    assert len(tokens) in (2, 3)
+    cfg.DATASETS.TEST = (f'{tokens[0]}_{tokens[1]}', )
+    args.dataset = f'{tokens[0]}_{tokens[2]}' if len(tokens) == 3 else f'{tokens[0]}_no_color'
+    args.use_color = 'no_color' not in tokens
+    # Copy test dataset to train one since we will use
+    # `build_detection_train_loader` to get labels
+    cfg.DATASETS.TRAIN = cfg.DATASETS.TEST
+    cfg.SOLVER.IMS_PER_BATCH = 1
+    cfg.INPUT.CROP.ENABLED = False
+    cfg.eval_mode = args.eval_mode
+    cfg.other_catId = other_sign_class
+
+    cfg.freeze()
+    default_setup(cfg, args)
+    return cfg

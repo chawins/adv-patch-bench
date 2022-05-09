@@ -9,6 +9,9 @@ PATH_MAPILLARY_BASE = expanduser('~/data/mapillary_vistas/')
 PATH_APB_ANNO = expanduser('~/adv-patch-bench/traffic_sign_dimension_v6.csv')
 PATH_SIMILAR_FILES = './similar_files_df.csv'
 
+# TODO: move to args in the future
+SAVE_DIR_DETECTRON = './detectron_output'
+
 
 # Traffic sign classes and colors
 TS_COLOR_DICT = {

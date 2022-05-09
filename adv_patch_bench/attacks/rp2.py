@@ -38,7 +38,11 @@ class RP2AttackModule(DetectorAttackModule):
         # TODO: rename a lot of these to be less confusing
         self.use_transform = attack_config['use_patch_transform']
         self.use_relight = attack_config['use_patch_relight']
-        self.rescaling = rescaling
+
+        # TODO: We probably don't need this now
+        # self.rescaling = rescaling
+        self.rescaling = False
+
         self.augment_real = attack_config['rp2_augment_real']
         self.interp = attack_config['interp'] if interp is None else interp
 
@@ -104,7 +108,7 @@ class RP2AttackModule(DetectorAttackModule):
     def _compute_loss_rcnn(self, adv_img, metadata):
         for i, m in enumerate(metadata):
             m['image'] = adv_img[i]
-        # NOTE: IoU threshold for ROI is 0.5 and for RPN is 0.7 so we pick the 
+        # NOTE: IoU threshold for ROI is 0.5 and for RPN is 0.7 so we pick the
         # smaller of the two, 0.5
         target_boxes, target_labels, target_logits, obj_logits = get_targets(
             self.core_model, metadata, device=self.core_model.device,

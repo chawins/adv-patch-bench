@@ -8,6 +8,7 @@ import sys
 from ast import literal_eval
 from os.path import join
 from pathlib import Path
+from typing import Any, Tuple
 
 import numpy as np
 import pandas as pd
@@ -21,13 +22,12 @@ from torch.nn import DataParallel
 
 from adv_patch_bench.attacks.rp2 import RP2AttackModule
 from adv_patch_bench.utils.argparse import eval_args_parser
+from generate_patch_mask import generate_mask
 from yolov5.models.common import DetectMultiBackend
 from yolov5.utils.datasets import create_dataloader
 from yolov5.utils.general import (LOGGER, check_dataset, check_img_size,
                                   check_yaml, colorstr, increment_path)
 from yolov5.utils.torch_utils import select_device
-from generate_patch_mask import generate_mask
-
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # YOLOv5 root directory
@@ -55,12 +55,25 @@ def load_yolov5(weights, device, imgsz, img_size, data, dnn, half):
     return model, data
 
 
-def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
-                       img_size=(992, 1312), obj_class=0, obj_size=None,
-                       bg_dir='./', num_bg=16, save_images=False, save_dir='./',
-                       generate_patch='synthetic', rescaling=False,
-                       csv_path='mapillary.csv', dataloader=None,
-                       attack_config_path=None, **kwargs):
+def generate_adv_patch(
+    model: torch.nn.Module,
+    obj_numpy: np.ndarray,
+    patch_mask,
+    device: str = 'cuda',
+    img_size: Tuple[int, int] = (992, 1312),
+    obj_class: int = 0,
+    obj_size: int = None,
+    bg_dir: str = './',
+    num_bg: int = 16,
+    save_images: bool = False,
+    save_dir: str = './',
+    synthetic: bool = False,
+    # rescaling: bool = False,
+    csv_path: str = 'mapillary.csv',
+    dataloader: Any = None,
+    attack_config_path: str = None,
+    **kwargs,
+):
     """Generate adversarial patch
 
     Args:
@@ -102,11 +115,10 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
         attack_config['input_size'] = img_size
 
     # TODO: Allow data parallel?
-    attack = RP2AttackModule(attack_config, model, None, None, None,
-                             rescaling=rescaling, verbose=True)
+    attack = RP2AttackModule(attack_config, model, None, None, None, verbose=True)
 
     # Generate an adversarial patch
-    if generate_patch == 'synthetic':
+    if synthetic:
         print('=> Generating adversarial patch on synthetic signs...')
         obj_mask = torch.from_numpy(obj_numpy[:, :, -1] == 1).float().unsqueeze(0)
         obj = torch.from_numpy(obj_numpy[:, :, :-1]).float().permute(2, 0, 1)
@@ -136,7 +148,7 @@ def generate_adv_patch(model, obj_numpy, patch_mask, device='cuda',
             torchvision.utils.save_image(obj_mask, join(save_dir, 'obj_mask.png'))
             torchvision.utils.save_image(backgrounds, join(save_dir, 'backgrounds.png'))
 
-    elif generate_patch == 'real':
+    else:
         print('=> Generating adversarial patch on real signs...')
         df = pd.read_csv(csv_path)
         df['tgt_final'] = df['tgt_final'].apply(literal_eval)
@@ -226,15 +238,15 @@ def main(
     np.random.seed(seed)
     img_size = tuple([int(i) for i in padded_imgsz.split(',')])
     assert len(img_size) == 2
-    device = select_device(device, batch_size=batch_size)
 
-    # Directories
+    # Set up directories
     save_dir = increment_path(Path(project) / name, exist_ok=exist_ok)  # increment run
     # (save_dir / 'labels' if save_txt else save_dir).mkdir(parents=True, exist_ok=True)  # make dir
     save_dir = save_dir / str(obj_class)
     os.makedirs(save_dir, exist_ok=True)
 
     # Load model (YOLO)
+    device = select_device(device, batch_size=batch_size)
     model, data = load_yolov5(weights, device, imgsz, img_size, data, dnn, half)
 
     # Configure object size
