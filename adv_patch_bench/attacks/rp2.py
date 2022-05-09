@@ -76,14 +76,14 @@ class RP2AttackModule(DetectorAttackModule):
             raise NotImplementedError('Given optimizer not implemented.')
         return opt
 
-    def compute_loss(self, adv_img, obj_class):
+    def compute_loss(self, adv_img, obj_class, metadata):
         if self.is_detectron:
-            loss = self._compute_loss_rcnn(adv_img, obj_class)
+            loss = self._compute_loss_rcnn(adv_img, obj_class, metadata)
         else:
-            loss = self._compute_loss_yolo(adv_img, obj_class)
+            loss = self._compute_loss_yolo(adv_img, obj_class, metadata)
         return loss
 
-    def _compute_loss_yolo(self, adv_img, obj_class):
+    def _compute_loss_yolo(self, adv_img, obj_class, metadata):
         """Compute loss for YOLO models"""
         # Compute logits, loss, gradients
         out, _ = self.core_model(adv_img, val=True)
@@ -102,32 +102,50 @@ class RP2AttackModule(DetectorAttackModule):
             loss = conf.max(1)[0].clamp_min(self.min_conf).mean()
         return loss
 
-    def _compute_loss_rcnn(self, adv_img, metadata):
+    def _compute_loss_rcnn(self, adv_img, obj_class, metadata):
         """Compute loss for Faster R-CNN models"""
         for i, m in enumerate(metadata):
             # Flip image from RGB to BGR
-            m['image'] = adv_img[i].flip(-1)
+            m['image'] = adv_img[i].flip(0) * 255
         # NOTE: IoU threshold for ROI is 0.5 and for RPN is 0.7 so we pick the
         # smaller of the two, 0.5
         _, target_labels, target_logits, obj_logits = get_targets(
             self.core_model, metadata, device=self.core_model.device,
             iou_thres=0.5, score_thres=self.min_conf)
 
+        # DEBUG
+        # import cv2
+        # from detectron2.utils.visualizer import Visualizer
+        # from detectron2.data import MetadataCatalog
+        # with torch.no_grad():
+        #     idx = 1
+        #     metadata[idx]['height'], metadata[idx]['width'] = adv_img.shape[2:]
+        #     outputs = self.core_model(metadata)[idx]
+        #     instances = outputs["instances"]
+        #     mask = instances.scores > 0.5
+        #     instances = instances[mask]
+        #     self.metadata = MetadataCatalog.get('mapillary_combined')
+        #     img = metadata[idx]['image'].cpu().numpy().transpose(1, 2, 0)[:, :, ::-1]
+        #     v = Visualizer(img, self.metadata, scale=0.5)
+        #     vis_og = v.draw_instance_predictions(instances.to('cpu')).get_image()
+        #     cv2.imwrite('temp.png', vis_og[:, :, ::-1])
+        #     import pdb
+        #     pdb.set_trace()
+        #     print('ok')
+
         loss = 0
         for tgt_lb, tgt_log, obj_log in zip(target_labels, target_logits, obj_logits):
+            # Filter obj_class
+            idx = obj_class == tgt_lb
+            tgt_lb, tgt_log, obj_log = tgt_lb[idx], tgt_log[idx], obj_log[idx]
             # TODO: If there's no matched gt/prediction, then attack already
             # succeeds. This has to be changed for appearing or misclassification attacks.
-            if len(tgt_log) == 0 or len(tgt_lb) == 0:
-                target_loss = 0
-            else:
+            target_loss, obj_loss = 0, 0
+            if len(tgt_log) > 0 and len(tgt_lb) > 0:
                 target_loss = - F.cross_entropy(tgt_log, tgt_lb, reduction='sum')
-
-            if len(obj_logits) == 0:
-                obj_loss = 0
-            else:
-                obj_labels = torch.zeros_like(obj_log)
-                obj_loss = F.binary_cross_entropy_with_logits(
-                    obj_log, obj_labels, reduction='sum')
+            if len(obj_logits) > 0:
+                obj_lb = torch.zeros_like(obj_log)
+                obj_loss = F.binary_cross_entropy_with_logits(obj_log, obj_lb, reduction='sum')
 
             # TODO: constant?
             loss += target_loss + obj_loss
@@ -165,13 +183,11 @@ class RP2AttackModule(DetectorAttackModule):
         backgrounds.detach_()
         obj_mask_dup = obj_mask.expand(self.num_eot, -1, -1, -1)
         ymin, xmin, height, width = mask_to_box(patch_mask)
-        # patch_full = torch.zeros_like(obj)
         all_bg_idx = np.arange(len(backgrounds))
 
         # TODO: Initialize worst-case inputs, use moving average
         # x_adv_worst = x.clone().detach()
         ema_const = 0.99
-        # ema_const = 0
         ema_loss = None
 
         for _ in range(self.num_restarts):
@@ -300,9 +316,7 @@ class RP2AttackModule(DetectorAttackModule):
             metadata_clone = self._clone_detectron_metadata(metadata)
 
         ema_const = 0.99
-        # ema_const = 0
         ema_loss = None
-
         self.alpha = 1e-2
 
         # Process transform data and create batch tensors
@@ -363,7 +377,7 @@ class RP2AttackModule(DetectorAttackModule):
                 # import pdb
                 # pdb.set_trace()
 
-                loss = self.compute_loss(adv_img, metadata_clone[bg_idx] if self.is_detectron else obj_class)
+                loss = self.compute_loss(adv_img, obj_class, metadata_clone[bg_idx])
                 tv = ((delta[:, :, :-1, :] - delta[:, :, 1:, :]).abs().mean() +
                       (delta[:, :, :, :-1] - delta[:, :, :, 1:]).abs().mean())
                 # loss = out[:, :, 4].mean() + self.lmbda * tv

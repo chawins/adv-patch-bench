@@ -155,6 +155,8 @@ def generate_adv_patch(
                 data = [obj_label, obj, *img_data]
                 image = T.resize(image, img_size, antialias=True)
                 attack_images.append([image, data, str(filename), batch[0]])
+                # FIXME
+                batch[0]['height'], batch[0]['width'] = h, w
                 metadata.extend(batch)
                 break   # This prevents duplicating the background
 

@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from detectron2.structures import Boxes, pairwise_iou
 
 
-@torch.no_grad()
+# @torch.no_grad()
 def get_targets(
     model: torch.nn.Module,
     inputs: List[Dict[Any, Any]],
@@ -75,7 +75,7 @@ def get_roi_heads_predictions(
     return logits, proposal_deltas
 
 
-@torch.no_grad()
+# @torch.no_grad()
 def filter_positive_proposals(
     proposal_boxes: List[Boxes],
     class_logits: List[torch.Tensor],

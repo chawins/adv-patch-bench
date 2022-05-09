@@ -362,7 +362,7 @@ class DAGAttacker:
                 # Torch image is already float and has shape [C, H, W]
                 image = original_image
                 if self.input_format == 'BGR':
-                    image = image.flip(-1)
+                    image = image.flip(0)
 
             # inputs = {"image": image, "height": height, "width": width}
             inputs = {"image": image, "height": size[0], "width": size[1]}
