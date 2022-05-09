@@ -6,7 +6,7 @@ import json
 import os
 import random
 from argparse import Namespace
-from typing import Any, Callable, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple, Union
 
 import cv2
 import numpy as np
@@ -15,12 +15,11 @@ import torch
 from adv_patch_bench.attacks.utils import (apply_synthetic_sign, prep_attack,
                                            prep_synthetic_eval)
 from adv_patch_bench.transforms import transform_and_apply_patch
+from adv_patch_bench.utils.detectron import build_evaluator
 from detectron2.config import CfgNode
 from detectron2.data import MetadataCatalog
 from detectron2.utils.visualizer import Visualizer
 from tqdm import tqdm
-
-from adv_patch_bench.utils.detectron import build_evaluator
 
 from .rp2 import RP2AttackModule
 
@@ -162,7 +161,6 @@ class DAGAttacker:
         self.evaluator.reset()
 
         for i, batch in tqdm(enumerate(self.data_loader)):
-            original_image = batch[0]['image'].permute(1, 2, 0).numpy()
             file_name = batch[0]['file_name']
             filename = file_name.split('/')[-1]
             # basename = os.path.basename(file_name)
@@ -185,11 +183,14 @@ class DAGAttacker:
             # normalization so scale is still 255
             # images = self.model.preprocess_image(batch)
             if vis_save_dir and i < self.num_vis:
-                visualizer = Visualizer(original_image[:, :, ::-1], self.metadata, scale=0.5)
+                original_image = batch[0]['image'].permute(1, 2, 0).numpy()[:, :, ::-1]
+                visualizer = Visualizer(original_image, self.metadata, scale=0.5)
                 vis_gt = visualizer.draw_dataset_dict(batch[0])
                 vis_gt.save(os.path.join(vis_save_dir, f'gt_{i}.jpg'))
 
             images = batch[0]['image'].float().to(self.device)
+            if self.input_format == 'BGR':
+                images = images.flip(-1)
             perturbed_image = images.clone()
             _, h, w = images.shape
             img_data = (h0, w0, h / h0, w / w0, 0, 0)
@@ -227,8 +228,8 @@ class DAGAttacker:
             if perturbed_image.ndim == 4:
                 # TODO: Remove batch dim
                 perturbed_image = perturbed_image[0]
-            perturbed_image = perturbed_image.permute(1, 2, 0)
-            perturbed_image = perturbed_image.cpu().numpy().astype(np.uint8)
+            # perturbed_image = perturbed_image.permute(1, 2, 0)
+            # perturbed_image = perturbed_image.cpu().numpy().astype(np.uint8)
 
             outputs = self(perturbed_image, (h0, w0))
             self.evaluator.process(batch, [outputs])
@@ -244,7 +245,7 @@ class DAGAttacker:
                 mask = instances.scores > vis_conf_thresh
                 instances = instances[mask]
 
-                v = Visualizer(perturbed_image[:, :, ::-1], self.metadata, scale=0.5)
+                v = Visualizer(perturbed_image, self.metadata, scale=0.5)
                 vis_adv = v.draw_instance_predictions(instances.to('cpu')).get_image()
 
                 # Save original predictions
@@ -253,7 +254,7 @@ class DAGAttacker:
                 mask = instances.scores > vis_conf_thresh
                 instances = instances[mask]
 
-                v = Visualizer(original_image[:, :, ::-1], self.metadata, scale=0.5)
+                v = Visualizer(original_image, self.metadata, scale=0.5)
                 vis_og = v.draw_instance_predictions(instances.to('cpu')).get_image()
 
                 # Save side-by-side
@@ -334,11 +335,15 @@ class DAGAttacker:
 
         return torch.clamp(image, 0, 255)
 
-    def __call__(self, original_image: np.ndarray, size) -> Dict:
+    def __call__(
+        self,
+        original_image: Union[np.ndarray, torch.Tensor],
+        size: Tuple[int, int],
+    ) -> Dict:
         """Simple inference on a single image
 
         Args:
-            original_image (np.ndarray): an image of shape (H, W, C) (in BGR order).
+            original_image (np.ndarray): an image of shape (H, W, C) (in RGB order).
         Returns:
             predictions (dict):
                 the output of the model for one image only.
@@ -346,12 +351,18 @@ class DAGAttacker:
         """
         with torch.no_grad():  # https://github.com/sphinx-doc/sphinx/issues/4258
             # Apply pre-processing to image.
-            if self.input_format == "RGB":
-                # whether the model expects BGR inputs or RGB
-                original_image = original_image[:, :, ::-1]
-            height, width = original_image.shape[:2]
-            # image = self.aug.get_transform(original_image).apply_image(original_image)
-            image = torch.as_tensor(original_image.astype("float32").transpose(2, 0, 1))
+            if isinstance(original_image, np.ndarray):
+                if self.input_format == 'BGR':
+                    # whether the model expects BGR inputs or RGB
+                    original_image = original_image[:, :, ::-1]
+                # height, width = original_image.shape[:2]
+                # image = self.aug.get_transform(original_image).apply_image(original_image)
+                image = torch.as_tensor(original_image.astype("float32").transpose(2, 0, 1))
+            else:
+                # Torch image is already float and has shape [C, H, W]
+                image = original_image
+                if self.input_format == 'BGR':
+                    image = image.flip(-1)
 
             # inputs = {"image": image, "height": height, "width": width}
             inputs = {"image": image, "height": size[0], "width": size[1]}

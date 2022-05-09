@@ -25,6 +25,7 @@ from tqdm import tqdm
 from adv_patch_bench.attacks.rp2 import RP2AttackModule
 from adv_patch_bench.attacks.utils import get_object_and_mask_from_numpy
 from adv_patch_bench.dataloaders import register_mapillary, register_mtsd
+from adv_patch_bench.dataloaders.detectron.mapper import BenignMapper
 from adv_patch_bench.utils.argparse import (eval_args_parser,
                                             setup_detectron_test_args)
 from generate_patch_mask import generate_mask
@@ -79,19 +80,6 @@ def generate_adv_patch(
         _type_: _description_
     """
     class_names = LABEL_LIST[args.dataset]
-    # Randomly select backgrounds from `bg_dir` and resize them
-    all_bgs = os.listdir(os.path.expanduser(bg_dir))
-    print(f'There are {len(all_bgs)} background images in {bg_dir}.')
-    idx = np.arange(len(all_bgs))
-    np.random.shuffle(idx)
-    # FIXME: does this break anything?
-    # bg_size = (img_size[0] - 32, img_size[1] - 32)
-    bg_size = img_size
-    backgrounds = torch.zeros((num_bg, 3) + bg_size, )
-    for i, index in enumerate(idx[:num_bg]):
-        bg = torchvision.io.read_image(join(bg_dir, all_bgs[index])) / 255
-        backgrounds[i] = T.resize(bg, bg_size, antialias=True)
-
     print(f'=> Initializing attack...')
     with open(attack_config_path) as file:
         attack_config = yaml.load(file, Loader=yaml.FullLoader)
@@ -100,6 +88,18 @@ def generate_adv_patch(
     # TODO: Allow data parallel?
     attack = RP2AttackModule(attack_config, model, None, None, None,
                              interp=interp, verbose=verbose, is_detectron=True)
+
+    # Randomly select backgrounds from `bg_dir` and resize them
+    # NOTE: we might not need this anymore?
+    # all_bgs = os.listdir(os.path.expanduser(bg_dir))
+    # print(f'There are {len(all_bgs)} background images in {bg_dir}.')
+    # idx = np.arange(len(all_bgs))
+    # np.random.shuffle(idx)
+    # bg_size = img_size
+    # backgrounds = torch.zeros((num_bg, 3) + bg_size, )
+    # for i, index in enumerate(idx[:num_bg]):
+    #     bg = torchvision.io.read_image(join(bg_dir, all_bgs[index])) / 255
+    #     backgrounds[i] = T.resize(bg, bg_size, antialias=True)
 
     # Generate an adversarial patch
     if synthetic:
@@ -142,7 +142,8 @@ def generate_adv_patch(
             if len(img_df) == 0:
                 continue
 
-            image = batch[0]['image'].float().to(device)
+            # Flip BGR to RGB and then flip back when feeding to model
+            image = batch[0]['image'].float().to(device).flip(0)
             h0, w0 = batch[0]['height'], batch[0]['width']
             _, h, w = image.shape
 
@@ -152,8 +153,9 @@ def generate_adv_patch(
                 if obj_label != class_names[obj_class]:
                     continue
                 data = [obj_label, obj, *img_data]
+                image = T.resize(image, img_size, antialias=True)
                 attack_images.append([image, data, str(filename), batch[0]])
-                metadata.append(batch[0])
+                metadata.extend(batch)
                 break   # This prevents duplicating the background
 
             if len(attack_images) >= num_bg:
@@ -233,8 +235,8 @@ def main(
     if not synthetic:
         # Build dataloader
         dataloader = build_detection_test_loader(
-            # cfg, cfg.DATASETS.TEST[0], mapper=BenignMapper(cfg, is_train=False),
-            cfg, cfg.DATASETS.TEST[0],
+            cfg, cfg.DATASETS.TEST[0], mapper=BenignMapper(cfg, is_train=False),
+            # cfg, cfg.DATASETS.TEST[0],
             batch_size=1, num_workers=cfg.DATALOADER.NUM_WORKERS
         )
 
@@ -261,7 +263,6 @@ if __name__ == "__main__":
     args = eval_args_parser(True)
     print('Command Line Args:', args)
     args.device = 'cuda'
-    # args.img_size = args.padded_imgsz
 
     # Verify some args
     cfg = setup_detectron_test_args(args, OTHER_SIGN_CLASS)

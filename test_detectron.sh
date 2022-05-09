@@ -29,9 +29,11 @@ OBJ_CLASS=10
 # --resume --eval-only
 # --eval-only MODEL.WEIGHTS /path/to/checkpoint_file
 
+# sizes: (1536,2048), (3040,4032)
+
 CUDA_VISIBLE_DEVICES=$GPU python -u gen_patch_detectron.py \
     --num-gpus $NUM_GPU --config-file ./configs/faster_rcnn_R_50_FPN_3x.yaml \
-    --dataset mapillary-combined-no_color --padded-imgsz 3000,4000 --patch-size-inch 10 \
+    --dataset mapillary-combined-no_color --padded-imgsz 1536,2048 --patch-size-inch 10 \
     --bg-dir ~/data/mtsd_v2_fully_annotated/test/ --num-bg 2 \
     --tgt-csv-filepath $CSV_PATH --attack-config-path attack_config.yaml \
     --adv-patch-path ./runs/val/stop_sign_demo/$PATCH_NAME.pkl --name $PATCH_NAME \

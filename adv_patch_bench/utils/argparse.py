@@ -127,6 +127,10 @@ def setup_detectron_test_args(args, other_sign_class):
     cfg.eval_mode = args.eval_mode
     cfg.other_catId = other_sign_class[args.dataset]
 
+    # Set detectron image size from argument
+    cfg.INPUT.MIN_SIZE_TEST = max([int(x) for x in args.padded_imgsz.split(',')])
+    cfg.INPUT.MAX_SIZE_TEST = cfg.INPUT.MIN_SIZE_TEST
+
     cfg.freeze()
     default_setup(cfg, args)
     return cfg
