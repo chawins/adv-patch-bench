@@ -26,13 +26,14 @@ from detectron2.data import build_detection_test_loader
 from detectron2.engine import DefaultPredictor
 from PIL import Image
 from torch.nn import DataParallel
+from tqdm import tqdm
 
 from adv_patch_bench.attacks.rp2 import RP2AttackModule
 from adv_patch_bench.dataloaders import register_mapillary, register_mtsd
 from adv_patch_bench.utils.argparse import (eval_args_parser,
                                             setup_detectron_test_args)
 from generate_patch_mask import generate_mask
-from hparams import DATASETS, OTHER_SIGN_CLASS, SAVE_DIR_DETECTRON
+from hparams import DATASETS, OTHER_SIGN_CLASS, SAVE_DIR_DETECTRON, LABEL_LIST
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # YOLOv5 root directory
@@ -58,6 +59,8 @@ def generate_adv_patch(
     csv_path: str = 'mapillary.csv',
     dataloader: Any = None,
     attack_config_path: str = None,
+    interp: str = 'bilinear',
+    verbose: bool = False,
     **kwargs,
 ):
     """Generate adversarial patch
@@ -78,7 +81,7 @@ def generate_adv_patch(
     Returns:
         [type]: [description]
     """
-
+    class_names = LABEL_LIST[args.dataset]
     # Randomly select backgrounds from `bg_dir` and resize them
     all_bgs = os.listdir(os.path.expanduser(bg_dir))
     print(f'There are {len(all_bgs)} background images in {bg_dir}.')
@@ -92,16 +95,14 @@ def generate_adv_patch(
         bg = torchvision.io.read_image(join(bg_dir, all_bgs[index])) / 255
         backgrounds[i] = T.resize(bg, bg_size, antialias=True)
 
-    # getting object classes names
-    names = {k: v for k, v in enumerate(model.names if hasattr(model, 'names') else model.module.names)}
-
     print(f'=> Initializing attack...')
     with open(attack_config_path) as file:
         attack_config = yaml.load(file, Loader=yaml.FullLoader)
         attack_config['input_size'] = img_size
 
     # TODO: Allow data parallel?
-    attack = RP2AttackModule(attack_config, model, None, None, None, verbose=True)
+    attack = RP2AttackModule(attack_config, model, None, None, None,
+                             interp=interp, verbose=verbose, is_detectron=True)
 
     # Generate an adversarial patch
     if synthetic:
@@ -142,27 +143,25 @@ def generate_adv_patch(
 
         attack_images = []
         print('=> Collecting background images...')
-        for batch_i, (im, targets, paths, shapes) in enumerate(dataloader):
-            for image_i, path in enumerate(paths):
-                filename = path.split('/')[-1]
-                img_df = df[df['filename'] == filename]
+        for i, batch in tqdm(enumerate(dataloader)):
+            file_name = batch[0]['file_name']
+            filename = file_name.split('/')[-1]
+            img_df = df[df['filename'] == filename]
+            if len(img_df) == 0:
+                continue
 
-                if len(img_df) == 0:
+            images = batch[0]['image'].float().to(device)
+            h0, w0 = batch[0]['height'], batch[0]['width']
+            _, h, w = images.shape
+
+            for _, obj in img_df.iterrows():
+                img_data = (h0, w0, h / h0, w / w0, 0, 0)
+                obj_label = obj['final_shape']
+                if obj_label != class_names[obj_class]:
                     continue
-                for _, row in img_df.iterrows():
-                    (h0, w0), ((h_ratio, w_ratio), (w_pad, h_pad)) = shapes[image_i]
-                    predicted_class = row['final_shape']
-                    shape = predicted_class.split('-')[0]
-
-                    # Filter out images that do not have the obj_class
-                    if shape != names[obj_class]:
-                        continue
-
-                    # Pad to make sure all images are of same size
-                    img = im[image_i]
-                    data = [predicted_class, row, h0, w0, h_ratio, w_ratio, w_pad, h_pad]
-                    attack_images.append([img, data, str(filename)])
-                    break   # This prevents duplicating the background
+                data = [obj_label, obj, *img_data]
+                attack_images.append([img, data, str(filename)])
+                break   # This prevents duplicating the background
 
             if len(attack_images) >= num_bg:
                 break
@@ -197,27 +196,14 @@ def generate_adv_patch(
 
 def main(
     device='',
-    batch_size=32,  # batch size
-    weights=None,  # model.pt path(s)
-    imgsz=1280,  # image width
     padded_imgsz='992,1312',
     patch_size=-1,
-    dnn=False,  # use OpenCV DNN for ONNX inference
-    half=False,
     save_dir=Path(''),
-    exist_ok=True,  # existing project/name ok, do not increment
-    project=ROOT / 'runs/val',  # save to project/name
     name='exp',  # save to project/name
-    # save_txt=False,  # save results to *.txt
-    obj_class=0,
     obj_size=-1,
     syn_obj_path='',
     seed=0,
-    attack_type='synthetic',
-    # rescaling=False,
-    data=None,
-    task='test',
-    detectron=False,
+    synthetic=False,
     **kwargs,
 ):
     cudnn.benchmark = True
@@ -248,8 +234,7 @@ def main(
                                patch_name=None, save_mask=False)
 
     dataloader = None
-    if attack_type == 'real':
-        # TODO
+    if not synthetic:
         # Build dataloader
         dataloader = build_detection_test_loader(
             # cfg, cfg.DATASETS.TEST[0], mapper=BenignMapper(cfg, is_train=False),
@@ -259,7 +244,7 @@ def main(
 
     adv_patch = generate_adv_patch(
         model, obj_numpy, patch_mask, device=device, img_size=img_size,
-        obj_size=obj_size, save_dir=save_dir, attack_type=attack_type,
+        obj_size=obj_size, save_dir=save_dir, synthetic=synthetic,
         dataloader=dataloader, **kwargs)
 
     # Save adv patch
@@ -268,7 +253,8 @@ def main(
     pickle.dump([adv_patch, patch_mask], open(patch_path, 'wb'))
 
     patch_metadata = {
-        'attack_type': attack_type,
+        'synthetic': synthetic,
+        # 'attack_type': attack_type,
         # 'rescaling': rescaling,
     }
     patch_metadata_path = join(save_dir, 'patch_metadata.pkl')
@@ -282,7 +268,7 @@ if __name__ == "__main__":
     args.img_size = args.padded_imgsz
 
     # Verify some args
-    cfg = setup_detectron_test_args(args, OTHER_SIGN_CLASS[args.dataset])
+    cfg = setup_detectron_test_args(args, OTHER_SIGN_CLASS)
     assert args.dataset in DATASETS
 
     # Register dataset

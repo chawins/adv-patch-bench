@@ -171,7 +171,7 @@ if __name__ == "__main__":
     args.img_size = args.padded_imgsz
 
     # Verify some args
-    cfg = setup_detectron_test_args(args, OTHER_SIGN_CLASS[args.dataset])
+    cfg = setup_detectron_test_args(args, OTHER_SIGN_CLASS)
     assert args.dataset in DATASETS
 
     # Register dataset

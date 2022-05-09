@@ -1,6 +1,7 @@
 import argparse
 import os
 import pickle
+from typing import Tuple, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -9,12 +10,21 @@ import torchvision.transforms.functional as T
 from PIL import Image
 
 
-def generate_mask(syn_obj_path, obj_size, patch_size, patch_name, save_mask=False):
+def generate_mask(
+    syn_obj_path: str,
+    obj_size: Union[int, Tuple[int, int]],
+    patch_size_inch: Union[int, Tuple[int, int]],
+    patch_name: str,
+    save_mask: bool = False,
+) -> torch.Tensor:
     obj_numpy = np.array(Image.open(syn_obj_path).convert('RGBA')) / 255
 
     h_w_ratio = obj_numpy.shape[0] / obj_numpy.shape[1]
     if isinstance(obj_size, int):
         obj_size = (round(obj_size * h_w_ratio), obj_size)
+
+    if isinstance(patch_size_inch, int):
+        patch_size_inch = (patch_size_inch, patch_size_inch)
 
     obj_mask = torch.from_numpy(obj_numpy[:, :, -1] == 1).float().unsqueeze(0)
     obj = torch.from_numpy(obj_numpy[:, :, :-1]).float().permute(2, 0, 1)
@@ -36,8 +46,8 @@ def generate_mask(syn_obj_path, obj_size, patch_size, patch_name, save_mask=Fals
     patch_x_pos = mid_width + patch_x_shift
     patch_y_pos = mid_height + patch_y_shift
 
-    h = round(patch_size / 36 / 2 * obj_size[0])
-    w = round(patch_size / 36 / 2 * obj_size[1])
+    h = round(patch_size_inch[0] / 36 / 2 * obj_size[0])
+    w = round(patch_size_inch[1] / 36 / 2 * obj_size[1])
 
     # # (2) 2 rectangles
     # patch_width = 20

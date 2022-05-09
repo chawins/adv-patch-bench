@@ -29,16 +29,27 @@ OBJ_CLASS=10
 # --resume --eval-only
 # --eval-only MODEL.WEIGHTS /path/to/checkpoint_file
 
-CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
+CUDA_VISIBLE_DEVICES=$GPU python -u gen_patch_detectron.py \
     --num-gpus $NUM_GPU --config-file ./configs/faster_rcnn_R_50_FPN_3x.yaml \
-    --dataset mapillary-train-no_color --eval-mode drop \
+    --dataset mapillary-test-no_color --padded-imgsz 3000,4000 --patch-size-inch 10 \
     --tgt-csv-filepath $CSV_PATH --attack-config-path attack_config.yaml \
     --adv-patch-path ./runs/val/stop_sign_demo/$PATCH_NAME.pkl --name $PATCH_NAME \
-    --obj-class $OBJ_CLASS --syn-obj-path $SYN_OBJ_PATH \
-    --attack-type per-sign --interp bilinear --min-area 600 --verbose --debug \
+    --obj-class $OBJ_CLASS --syn-obj-path $SYN_OBJ_PATH --verbose --debug \
     MODEL.ROI_HEADS.NUM_CLASSES 12 \
     OUTPUT_DIR $OUTPUT_PATH \
     MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
     DATALOADER.NUM_WORKERS 8
+
+# CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
+#     --num-gpus $NUM_GPU --config-file ./configs/faster_rcnn_R_50_FPN_3x.yaml \
+#     --dataset mapillary-test-no_color --eval-mode drop \
+#     --tgt-csv-filepath $CSV_PATH --attack-config-path attack_config.yaml \
+#     --adv-patch-path ./runs/val/stop_sign_demo/$PATCH_NAME.pkl --name $PATCH_NAME \
+#     --obj-class $OBJ_CLASS --syn-obj-path $SYN_OBJ_PATH \
+#     --attack-type per-sign --interp bilinear --min-area 600 --verbose --debug \
+#     MODEL.ROI_HEADS.NUM_CLASSES 12 \
+#     OUTPUT_DIR $OUTPUT_PATH \
+#     MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
+#     DATALOADER.NUM_WORKERS 8
 # --adv-patch-path ./runs/val/exp$EXP/$PATCH_NAME.pkl --name $PATCH_NAME \
 # --compute-metrics

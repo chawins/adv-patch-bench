@@ -58,7 +58,7 @@ def load_yolov5(weights, device, imgsz, img_size, data, dnn, half):
 def generate_adv_patch(
     model: torch.nn.Module,
     obj_numpy: np.ndarray,
-    patch_mask,
+    patch_mask: torch.Tensor,
     device: str = 'cuda',
     img_size: Tuple[int, int] = (992, 1312),
     obj_class: int = 0,
@@ -215,7 +215,7 @@ def main(
     weights=None,  # model.pt path(s)
     imgsz=1280,  # image width
     padded_imgsz='992,1312',
-    patch_size=-1,
+    patch_size_inch=-1,
     dnn=False,  # use OpenCV DNN for ONNX inference
     half=False,
     save_dir=Path(''),
@@ -227,7 +227,7 @@ def main(
     obj_size=-1,
     syn_obj_path='',
     seed=0,
-    attack_type='synthetic',
+    synthetic: bool = False,
     # rescaling=False,
     data=None,
     task='test',
@@ -262,11 +262,11 @@ def main(
     if isinstance(obj_size, int):
         obj_size = (round(obj_size * h_w_ratio), obj_size)
 
-    patch_mask = generate_mask(syn_obj_path, obj_size, patch_size,
+    patch_mask = generate_mask(syn_obj_path, obj_size, patch_size_inch,
                                patch_name=None, save_mask=False)
 
     dataloader = None
-    if attack_type == 'real':
+    if not synthetic:
         stride, pt = model.stride, model.pt
         dataloader = create_dataloader(data[task], imgsz, batch_size, stride,
                                        single_cls=False, pad=0.5, rect=pt, shuffle=True,
@@ -274,7 +274,7 @@ def main(
 
     adv_patch = generate_adv_patch(
         model, obj_numpy, patch_mask, device=device, img_size=img_size,
-        obj_size=obj_size, save_dir=save_dir, attack_type=attack_type,
+        obj_size=obj_size, save_dir=save_dir, synthetic=synthetic,
         dataloader=dataloader, **kwargs)
 
     # Save adv patch
@@ -283,7 +283,8 @@ def main(
     pickle.dump([adv_patch, patch_mask], open(patch_path, 'wb'))
 
     patch_metadata = {
-        'attack_type': attack_type,
+        'synthetic': synthetic,
+        # 'attack_type': attack_type,
         # 'rescaling': rescaling,
     }
     patch_metadata_path = join(save_dir, 'patch_metadata.pkl')

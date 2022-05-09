@@ -18,7 +18,7 @@ def eval_args_parser(is_detectron, root=None):
     parser.add_argument('--other-class-label', type=int, default=None, help="Class for the 'other' label")
     parser.add_argument('--eval-mode', type=str, default='default')
 
-    parser.add_argument('--interp', type=str, default='bilinear',
+    parser.add_argument('--interp', type=str, default=None,
                         help='interpolation method (nearest, bilinear, bicubic)')
     parser.add_argument('--synthetic', action='store_true',
                         help='evaluate with pasted synthetic signs')
@@ -29,7 +29,7 @@ def eval_args_parser(is_detectron, root=None):
                         help='final image size including padding (height,width). Default: 3000,4000')
 
     # =========================== Attack arguments ========================== #
-    parser.add_argument('--attack-type', type=str, required=True,
+    parser.add_argument('--attack-type', type=str, default='none',
                         help='which attack evaluation to run (none, load, per-sign, random, debug)')
     parser.add_argument('--adv-patch-path', type=str, default='',
                         help='path to adv patch and mask to load')
@@ -58,7 +58,7 @@ def eval_args_parser(is_detectron, root=None):
 
     # ===================== Patch generation arguments ====================== #
     parser.add_argument('--obj-size', type=int, default=-1, help='object width in pixels (default: 0.1 * img_size)')
-    parser.add_argument('--patch-size', type=int, required=True, help='object width in pixels')
+    parser.add_argument('--patch-size-inch', type=int, required=True, help='Patch size in inches')
     parser.add_argument('--bg-dir', type=str, default='', help='path to background directory')
     parser.add_argument('--save-images', action='store_true', help='save generated patch')
     # parser.add_argument('--detectron', action='store_true', help='Model is detectron else YOLO')
@@ -124,7 +124,7 @@ def setup_detectron_test_args(args, other_sign_class):
     cfg.SOLVER.IMS_PER_BATCH = 1
     cfg.INPUT.CROP.ENABLED = False
     cfg.eval_mode = args.eval_mode
-    cfg.other_catId = other_sign_class
+    cfg.other_catId = other_sign_class[args.dataset]
 
     cfg.freeze()
     default_setup(cfg, args)
