@@ -70,7 +70,7 @@ def prep_attack(
     print(df.shape)
     print(df.groupby(by=['final_shape']).count())
 
-    if args.synthetic_eval:
+    if args.synthetic:
         # Adv patch and mask have to be made compatible with random
         # transformation for synthetic signs
         _, patch_mask = pad_and_center(None, patch_mask, img_size, (obj_size, obj_size))

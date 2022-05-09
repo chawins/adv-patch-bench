@@ -31,7 +31,7 @@ def eval_args_parser(is_detectron, root=None):
     # =========================== Attack arguments ========================== #
     parser.add_argument('--attack-type', type=str, default='none',
                         help='which attack evaluation to run (none, load, per-sign, random, debug)')
-    parser.add_argument('--adv-patch-path', type=str, default='',
+    parser.add_argument('--adv-patch-path', type=str, default=None,
                         help='path to adv patch and mask to load')
     parser.add_argument('--obj-class', type=int, default=-1, help='class of object to attack (-1: all classes)')
     parser.add_argument('--tgt-csv-filepath', required=True,
@@ -58,7 +58,8 @@ def eval_args_parser(is_detectron, root=None):
 
     # ===================== Patch generation arguments ====================== #
     parser.add_argument('--obj-size', type=int, default=-1, help='object width in pixels (default: 0.1 * img_size)')
-    parser.add_argument('--patch-size-inch', type=int, required=True, help='Patch size in inches')
+    parser.add_argument('--patch-size-inch', type=int, default=None, help='Patch size in inches')
+    parser.add_argument('--mask-path', type=str, default='./masks/', help='Path to dir with predefined masks')
     parser.add_argument('--bg-dir', type=str, default='', help='path to background directory')
     parser.add_argument('--num-bg', type=int, default=1, help='Number of backgrounds used to generate patch')
     parser.add_argument('--save-images', action='store_true', help='save generated patch')

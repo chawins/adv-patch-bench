@@ -313,7 +313,7 @@ class RP2AttackModule(DetectorAttackModule):
         metadata_clone = None
         if self.is_detectron:
             assert metadata is not None, 'metadata is needed for detectron'
-            metadata_clone = self._clone_detectron_metadata(metadata)
+            metadata_clone = self._clone_detectron_metadata(objs, metadata)
 
         ema_const = 0.99
         ema_loss = None
@@ -416,15 +416,14 @@ class RP2AttackModule(DetectorAttackModule):
         self.core_model.train(mode)
         return delta.detach()
 
-    def _clone_detectron_metadata(self, metadata):
+    def _clone_detectron_metadata(self, objs, metadata):
         metadata_clone = []
-        for m in metadata:
+        for obj, m in zip(objs, metadata):
             data_dict = {}
             for keys in m:
-                if keys == 'image':
-                    data_dict[keys] = None
-                else:
-                    data_dict[keys] = m[keys]
+                data_dict[keys] = m[keys]
+            data_dict['image'] = None
+            data_dict['height'], data_dict['width'] = obj[0].shape[1:]
             metadata_clone.append(data_dict)
         metadata_clone = np.array(metadata_clone)
         return metadata_clone

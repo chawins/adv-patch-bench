@@ -69,34 +69,16 @@ class DAGAttacker:
         # self.cfg.MODEL.RPN.NMS_THRESH = nms_thresh
         # self.cfg.MODEL.RPN.POST_NMS_TOPK_TEST = 5000
 
-        # # Init model
-        # self.model = build_model(self.cfg)
-
-        # # Load weights
-        # checkpointer = DetectionCheckpointer(self.model)
-        # checkpointer.load(cfg.MODEL.WEIGHTS)
-
-        # self.aug = T.ResizeShortestEdge(
-        #     [cfg.INPUT.MIN_SIZE_TEST, cfg.INPUT.MIN_SIZE_TEST], cfg.INPUT.MAX_SIZE_TEST
-        # )
         self.input_format = cfg.INPUT.FORMAT
-        # assert self.input_format in ["RGB", "BGR"], self.input_format
+        assert self.input_format == 'BGR', 'Only allow BGR input format for now'
 
-        # Init dataloader on test dataset
-        # mapper = BenignMapper(cfg, is_train=False)
-        # dataset_mapper = mapper(cfg, is_train=False)
-        # self.data_loader = build_detection_test_loader(
-        #     cfg, cfg.DATASETS.TEST[0], mapper=dataset_mapper
-        # )
         self.data_loader = dataloader
-
         self.device = self.model.device
         self.n_classes = self.cfg.MODEL.ROI_HEADS.NUM_CLASSES
         self.metadata = MetadataCatalog.get(self.cfg.DATASETS.TEST[0])
-        # self.contiguous_id_to_thing_id = {
-        #     v: k for k, v in self.metadata.thing_dataset_id_to_contiguous_id.items()
-        # }
+        self.evaluator = build_evaluator(cfg, cfg.DATASETS.TEST[0])
 
+        # Attack params
         self.attack = RP2AttackModule(attack_config, model, None, None, None,
                                       rescaling=False, interp=args.interp,
                                       verbose=self.verbose, is_detectron=True)
@@ -114,8 +96,6 @@ class DAGAttacker:
         if args.img_txt_path != '':
             with open(args.img_txt_path, 'r') as f:
                 self.skipped_filename_list = f.read().splitlines()
-
-        self.evaluator = build_evaluator(cfg, cfg.DATASETS.TEST[0])
 
     def log(self, *args, **kwargs):
         if self.verbose:
@@ -188,9 +168,10 @@ class DAGAttacker:
                 vis_gt = visualizer.draw_dataset_dict(batch[0])
                 vis_gt.save(os.path.join(vis_save_dir, f'gt_{i}.jpg'))
 
+            # Image from dataloader is 'BGR' and has shape [C, H, W]
             images = batch[0]['image'].float().to(self.device)
             if self.input_format == 'BGR':
-                images = images.flip(-1)
+                images = images.flip(0)
             perturbed_image = images.clone()
             _, h, w = images.shape
             img_data = (h0, w0, h / h0, w / w0, 0, 0)
@@ -228,10 +209,8 @@ class DAGAttacker:
             if perturbed_image.ndim == 4:
                 # TODO: Remove batch dim
                 perturbed_image = perturbed_image[0]
-            # perturbed_image = perturbed_image.permute(1, 2, 0)
-            # perturbed_image = perturbed_image.cpu().numpy().astype(np.uint8)
 
-            outputs = self(perturbed_image, (h0, w0))
+            outputs = self(perturbed_image)
             self.evaluator.process(batch, [outputs])
 
             # Convert to coco predictions format
@@ -241,15 +220,18 @@ class DAGAttacker:
             if vis_save_dir and i < self.num_vis:
                 # Save adv predictions
                 # Set confidence threshold
+                # NOTE: output bbox follows original size instead of real input size
                 instances = outputs['instances']
                 mask = instances.scores > vis_conf_thresh
                 instances = instances[mask]
 
+                perturbed_image = perturbed_image.permute(1, 2, 0)
+                perturbed_image = perturbed_image.cpu().numpy().astype(np.uint8)
                 v = Visualizer(perturbed_image, self.metadata, scale=0.5)
                 vis_adv = v.draw_instance_predictions(instances.to('cpu')).get_image()
 
                 # Save original predictions
-                outputs = self(original_image, (h0, w0))
+                outputs = self(original_image)
                 instances = outputs["instances"]
                 mask = instances.scores > vis_conf_thresh
                 instances = instances[mask]
@@ -270,7 +252,7 @@ class DAGAttacker:
                 cv2.imwrite(save_adv_path, vis_adv[:, :, ::-1])
                 self.log(f'Saved visualization to {save_path}')
 
-            if self.debug and i >= 5:
+            if self.debug and i >= 50:
                 break
 
         # Save predictions as COCO results json format
@@ -338,12 +320,13 @@ class DAGAttacker:
     def __call__(
         self,
         original_image: Union[np.ndarray, torch.Tensor],
-        size: Tuple[int, int],
+        # size: Tuple[int, int],
     ) -> Dict:
         """Simple inference on a single image
 
         Args:
             original_image (np.ndarray): an image of shape (H, W, C) (in RGB order).
+                or (torch.Tensor): an image of shape (C, H, W) (in RGB order).
         Returns:
             predictions (dict):
                 the output of the model for one image only.
@@ -355,16 +338,17 @@ class DAGAttacker:
                 if self.input_format == 'BGR':
                     # whether the model expects BGR inputs or RGB
                     original_image = original_image[:, :, ::-1]
-                # height, width = original_image.shape[:2]
+                height, width = original_image.shape[:2]
                 # image = self.aug.get_transform(original_image).apply_image(original_image)
                 image = torch.as_tensor(original_image.astype("float32").transpose(2, 0, 1))
             else:
                 # Torch image is already float and has shape [C, H, W]
+                height, width = original_image.shape[1:]
                 image = original_image
                 if self.input_format == 'BGR':
                     image = image.flip(0)
 
-            # inputs = {"image": image, "height": height, "width": width}
-            inputs = {"image": image, "height": size[0], "width": size[1]}
+            inputs = {"image": image, "height": height, "width": width}
+            # inputs = {"image": image, "height": size[0], "width": size[1]}
             predictions = self.model([inputs])[0]
             return predictions

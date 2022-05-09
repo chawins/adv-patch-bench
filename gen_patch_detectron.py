@@ -153,10 +153,9 @@ def generate_adv_patch(
                 if obj_label != class_names[obj_class]:
                     continue
                 data = [obj_label, obj, *img_data]
+                # TODO: has to pad
                 image = T.resize(image, img_size, antialias=True)
                 attack_images.append([image, data, str(filename), batch[0]])
-                # FIXME
-                batch[0]['height'], batch[0]['width'] = h, w
                 metadata.extend(batch)
                 break   # This prevents duplicating the background
 
@@ -265,6 +264,8 @@ if __name__ == "__main__":
     args = eval_args_parser(True)
     print('Command Line Args:', args)
     args.device = 'cuda'
+    if args.patch_size_inch is not None:
+        args.mask_path = None
 
     # Verify some args
     cfg = setup_detectron_test_args(args, OTHER_SIGN_CLASS)

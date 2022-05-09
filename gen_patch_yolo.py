@@ -230,6 +230,7 @@ def main(
     # rescaling=False,
     data=None,
     task='test',
+    mask_path=None,
     **kwargs,
 ):
     cudnn.benchmark = True
@@ -262,7 +263,11 @@ def main(
         obj_size = (round(obj_size * h_w_ratio), obj_size)
 
     # FIXME: get obj size inch
-    patch_mask = generate_mask(obj_numpy, obj_size, 36)
+    if mask_path is not None:
+        # Load path mask from file (generate_patch_mask.py)
+        pass
+    else:
+        patch_mask = generate_mask(obj_numpy, obj_size, 36)
 
     dataloader = None
     if not synthetic:
@@ -292,6 +297,8 @@ def main(
 
 
 if __name__ == "__main__":
-    opt = eval_args_parser(False, root=ROOT)
-    print(opt)
-    main(**vars(opt))
+    args = eval_args_parser(False, root=ROOT)
+    print(args)
+    if args.patch_size_inch is not None:
+        args.mask_path = None
+    main(**vars(args))
