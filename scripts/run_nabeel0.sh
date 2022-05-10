@@ -2,7 +2,7 @@
 GPU=0
 PATCH_NAME=10x10_bottom
 EXP=1
-MODEL_PATH=/datadrive/data/adv-patch-bench/yolov5/runs/train/exp10/weights/best.pt
+MODEL_PATH=~/data/adv-patch-bench/yolov5/runs/train/exp10/weights/best.pt
 CSV_PATH=mapillary_vistas_final_merged.csv
 SYN_OBJ_PATH=attack_assets/octagon-915.0.png
 OBJ_CLASS=10
@@ -11,7 +11,7 @@ CUDA_VISIBLE_DEVICES=$GPU python -u gen_patch_yolo.py \
     --device $GPU --seed 0 \
     --data mapillary_no_color.yaml --dataset mapillary-combined-no_color \
     --weights $MODEL_PATH --name $PATCH_NAME --tgt-csv-filepath $CSV_PATH \
-    --bg-dir /datadrive/data/yolo_data/images/train \
+    --bg-dir ~/data/yolo_data/images/train \
     --save-images --attack-config-path attack_config.yaml \
     --imgsz 2000 --padded-imgsz 1536,2048 \
     --obj-class $OBJ_CLASS --syn-obj-path $SYN_OBJ_PATH \

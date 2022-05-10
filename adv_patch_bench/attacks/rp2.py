@@ -310,7 +310,7 @@ class RP2AttackModule(DetectorAttackModule):
         ymin, xmin, height, width = mask_to_box(patch_mask)
         patch_loc = (ymin, xmin, height, width)
 
-        metadata_clone = None
+        metadata_clone = np.empty(len(objs))
         if self.is_detectron:
             assert metadata is not None, 'metadata is needed for detectron'
             metadata_clone = self._clone_detectron_metadata(objs, metadata)
