@@ -1,9 +1,12 @@
 # adv-patch-bench
 
-Packages
+## Dependencies
 
 ```bash
-conda install -c conda-forge opencv
+conda install pytorch torchvision torchaudio cudatoolkit=11.3 -c pytorch
+conda install -y scipy pandas scikit-learn pip
+conda upgrade -y numpy scipy pandas scikit-learn
+conda install -c conda-forge opencv albumentations kornia
 ```
 
 ## Dataset
