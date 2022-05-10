@@ -111,7 +111,7 @@ def process_batch(detections, labels, iouv, other_class_label=None, other_class_
             matches = matches[np.unique(matches[:, 0], return_index=True)[1]]
         matches = torch.Tensor(matches).to(iouv.device)
         correct[matches[:, 1].long()] = matches[:, 2:3] >= iouv
-    return correct, matches
+    return correct, matches, iou
 
 
 def populate_default_metric(lbl_, min_area, filename, other_class_label):
@@ -120,7 +120,7 @@ def populate_default_metric(lbl_, min_area, filename, other_class_label):
     bbox_area = bbox_width * bbox_height
     current_label_metric = {}
     current_label_metric['filename'] = filename
-    current_label_metric['obj_id'] = obj_id
+    current_label_metric['object_id'] = obj_id
     current_label_metric['label'] = class_label
     current_label_metric['correct_prediction'] = 0
     current_label_metric['prediction'] = None
@@ -128,6 +128,7 @@ def populate_default_metric(lbl_, min_area, filename, other_class_label):
     current_label_metric['sign_height'] = bbox_height
     current_label_metric['confidence'] = None
     current_label_metric['too_small'] = bbox_area < min_area
+    current_label_metric['iou'] = None
     # current_label_metric['too_small'] = bbox_area < min_area or class_label == other_class_label
     current_label_metric['changed_from_other_label'] = 0
     return current_label_metric
@@ -182,6 +183,9 @@ def run(args,
     other_class_confidence_threshold = args.other_class_confidence_threshold
     min_pred_area = args.min_pred_area
     plot_fp = args.plot_fp
+
+    # TODO: add arg instead?
+    annotation_df = pd.read_csv('mapillary_vistas_final_merged.csv')
 
     metrics_conf_thres = args.metrics_confidence_threshold
     img_size = tuple([int(x) for x in args.padded_imgsz.split(',')])
@@ -359,7 +363,7 @@ def run(args,
     metrics_per_image_df = pd.DataFrame(
         columns=['filename', 'num_targeted_sign_class', 'num_patches', 'fn'])
     metrics_per_label_df = pd.DataFrame(
-        columns=['filename', 'obj_id', 'label', 'correct_prediction',
+        columns=['filename', 'object_id', 'label', 'correct_prediction',
                  'sign_width', 'sign_height', 'confidence'])
 
     labels_kept = 0
@@ -554,23 +558,10 @@ def run(args,
                 # matching on bounding boxes and correct predictions, i.e, match label and pred if iou >= 0.5 and label == pred
                 # or match on whether label == 'other' class and iou(label, pred) >= 0.5
                 # correct, matches = process_batch(predn, labelsn, iouv, other_class_label=None)
-                iou_correct, iou_matches = process_batch(predn, labelsn, iouv, match_on_iou_only=True)
-                correct, matches = process_batch(
+                _, iou_matches, _ = process_batch(predn, labelsn, iouv, match_on_iou_only=True)
+                correct, matches, iou = process_batch(
                     predn, labelsn, iouv, other_class_label=other_class_label,
                     other_class_confidence_threshold=other_class_confidence_threshold)
-                # correct, matches = process_batch(predn, labelsn, iouv)
-                # correct, matches = process_batch(predn, labelsn, iouv)
-
-                # if (len(matches) > 0 or len(iou_matches) > 0):
-                #     print(iou_matches)
-                #     print(matches)
-                #     print(iou_matches.shape)
-                #     print(matches.shape)
-                #     print(labels)
-
-                #     print(batch_i, si)
-                #     import pdb
-                #     pdb.set_trace()
 
                 if plots:
                     confusion_matrix.process_batch(predn, labelsn)
@@ -597,12 +588,18 @@ def run(args,
             curr_false_positives_preds = []
 
             for lbl_index, lbl_ in enumerate(labels):
+                annotation_row = annotation_df[(annotation_df['filename'] == filename) & (annotation_df['object_id'] == int(lbl_[5]))]
+                assert len(annotation_row) <= 1
+                if len(annotation_row) == 0:
+                    labels[lbl_index][0] = other_class_label
+                    lbl_ = labels[lbl_index]
+
                 # Find a match with this object label
                 match = matches[matches[:, 0] == lbl_index]
-
                 assert len(match) <= 1  # There can only be one match per object
 
                 current_label_metric = populate_default_metric(lbl_, min_area, filename, other_class_label)
+
                 lbl_index_to_keep[lbl_index] = ~current_label_metric['too_small']
 
                 class_label = lbl_[0]
@@ -610,11 +607,10 @@ def run(args,
                 # If there's no match, just save current metric and continue to
                 # the next label.
                 if len(match) == 0:
-
                     # this can be deleted since we do not count include others when computing metrics all signs
                     # # if ground truth is 'other' and there is NO prediction, we drop the label so it's not counted as a false negative
-                    # if class_label == other_class_label:
-                    #     lbl_index_to_keep[lbl_index] = 0
+                    if class_label == other_class_label:
+                        lbl_index_to_keep[lbl_index] = 0
 
                     try:
                         iou_match = iou_matches[iou_matches[:, 0] == lbl_index]
@@ -642,56 +638,17 @@ def run(args,
                 pred_conf, pred_label = pred[det_idx, 4:6].cpu().numpy()
                 current_label_metric['confidence'] = pred_conf
                 current_label_metric['prediction'] = pred_label
+                current_label_metric['iou'] = iou[lbl_index][det_idx].item()
 
                 # Drop this prediction if the target object is too small
                 pred_index_to_keep[det_idx] = ~current_label_metric['too_small']
 
-                if class_label == other_class_label and pred_label != other_class_label:
+                # if class_label == other_class_label and pred_label != other_class_label:
+                if class_label == other_class_label:
                     # as in the mtsd paper, we drop both label and prediction if the label is 'other' and the prediction is 'non-other'
                     lbl_index_to_keep[lbl_index] = 0
                     pred_index_to_keep[det_idx] = 0
                     correct[det_idx] = torch.BoolTensor([False] * len(iouv))
-                    # if ground truth is 'other' and there is a prediction, we count any detection as a true positive
-                    # we change the label from 'other' to the detected class so there is no false negative
-                    # if other_class_confidence_threshold and pred_conf > other_class_confidence_threshold:
-                    #     labels[lbl_index, 0] = pred_label.item()
-                    #     current_label_metric['label'] = pred_label.item()
-                    #     current_label_metric['changed_from_other_label'] = 1
-                    #     targets[targets[:, 0] == si, 1:] = labels
-
-                # if pred_label == other_class_label:
-                #     # as in the mtsd paper, we drop both label and prediction if the prediction is 'other'
-                #     lbl_index_to_keep[lbl_index] = 0
-                #     pred_index_to_keep[det_idx] = 0
-                #     # correct[det_idx] = torch.BoolTensor([False] * len(iouv))
-
-                # if class_label != pred_label:
-                #     # print(class_label)
-                #     # print(type(class_label))
-                #     # print(pred_label)
-                #     # print(type(pred_label))
-
-                #     # print(det_idx)
-                #     # print()
-                #     # print(correct_v2[det_idx])
-                #     # print(correct[det_idx])
-                #     # print()
-
-                #     # print(matches_v2)
-                #     # print(matches)
-                #     # print()
-                #     # qqq
-
-                #     # print(correct.shape)
-                #     # print(correct)
-                #     # correct[det_idx] = torch.BoolTensor([False] * len(iouv))
-                #     correct[det_idx] = correct_v2[det_idx]
-                #     matched_preds_index[det_idx] = 0
-                #     lbl_index_to_keep[lbl_index] = 1
-                #     pred_index_to_keep[det_idx] = 1
-
-                    # print(correct)
-                    # qqq
 
                 # Get detection boolean at iou_thres
                 iou_idx = torch.where(iouv >= iou_thres)[0][0]

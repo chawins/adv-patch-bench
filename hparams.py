@@ -8,8 +8,9 @@ PATH_MAPILLARY_ANNO = {
     'val': './mapillary_vistas_validation_final_merged.csv',
     'combined': './mapillary_vistas_final_merged.csv',
 }
-PATH_MTSD_BASE = expanduser('~/data/mtsd_v2_fully_annotated/')
-PATH_MAPILLARY_BASE = expanduser('~/data/mapillary_vistas/')
+PATH_MTSD_BASE = '/datadrive/data/mtsd_v2_fully_annotated/'
+# PATH_MAPILLARY_BASE = expanduser('~/data/mapillary_vistas/')
+PATH_MAPILLARY_BASE = '/datadrive/data/mapillary_vistas/'
 PATH_APB_ANNO = expanduser('~/adv-patch-bench/traffic_sign_dimension_v6.csv')
 PATH_SIMILAR_FILES = './similar_files_df.csv'
 
