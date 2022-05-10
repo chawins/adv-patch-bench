@@ -15,8 +15,9 @@ from PIL import Image
 from tqdm.auto import tqdm
 
 from adv_patch_bench.models import build_classifier
-from hparams import (MIN_OBJ_AREA, NUM_CLASSES, PATH_MAPILLARY_ANNO, PATH_MAPILLARY_BASE, TS_COLOR_DICT,
-                     TS_COLOR_LABEL_LIST, TS_COLOR_OFFSET_DICT)
+from hparams import (MIN_OBJ_AREA, NUM_CLASSES, PATH_MAPILLARY_ANNO,
+                     PATH_MAPILLARY_BASE, TS_COLOR_DICT, TS_COLOR_LABEL_LIST,
+                     TS_COLOR_OFFSET_DICT)
 
 
 def set_default_args(parser):
@@ -190,19 +191,6 @@ def write_labels(model, label, panoptic_per_image_id, data_dir,
             continue
         for idx in obj_idx:
             class_label = int(predicted_labels[idx].item())
-
-            # # Exclude labels for "other" class
-            # if class_label == num_classes - 1:
-            #     continue
-
-            # if class_label > 11:
-            #     print()
-            #     print(class_label)
-            #     print(filename)
-            #     print()
-            #     print(predicted_labels[idx])
-            #     qqq
-
             x_center, y_center, obj_width, obj_height = bbox[idx]
             obj_id = idx_to_obj_id[idx]
             text += f'{class_label:d} {x_center} {y_center} {obj_width} {obj_height} {obj_id}\n'
@@ -213,14 +201,6 @@ def write_labels(model, label, panoptic_per_image_id, data_dir,
                 f.write(text)
             with open(join(abs_label_path, filename + '.txt'), 'w') as f:
                 f.write(abs_text)
-
-        # img_pil = Image.open(join(img_path, filename + '.jpg'))
-        # full_filename = join(new_img_path, filename + '.jpg')
-        # img_pil.save(full_filename)
-        # with open(join(new_labels_path, filename + '.txt'), 'w') as f:
-        #     f.write(text)
-        # with open(join(label_path, filename + '.txt'), 'w') as f:
-        #     f.write(text)
 
 
 def main():
