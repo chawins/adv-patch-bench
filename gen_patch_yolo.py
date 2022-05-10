@@ -71,7 +71,7 @@ def generate_adv_patch(
     save_dir: str = './',
     synthetic: bool = False,
     # rescaling: bool = False,
-    csv_path: str = 'mapillary.csv',
+    tgt_csv_filepath: str = 'mapillary.csv',
     dataloader: Any = None,
     attack_config_path: str = None,
     **kwargs,
@@ -153,7 +153,7 @@ def generate_adv_patch(
 
     else:
         print('=> Generating adversarial patch on real signs...')
-        df = pd.read_csv(csv_path)
+        df = pd.read_csv(tgt_csv_filepath)
         df['tgt_final'] = df['tgt_final'].apply(literal_eval)
         df = df[df['final_shape'] != 'other-0.0-0.0']
 
@@ -162,17 +162,21 @@ def generate_adv_patch(
         for batch_i, (im, targets, paths, shapes) in enumerate(dataloader):
             for image_i, path in enumerate(paths):
                 filename = path.split('/')[-1]
+                # bDtPvveUyz0PHka-ssj7ug.jpg
+                # print(filename)
+                # qqq
                 img_df = df[df['filename'] == filename]
 
                 if len(img_df) == 0:
                     continue
+
                 for _, row in img_df.iterrows():
                     (h0, w0), ((h_ratio, w_ratio), (w_pad, h_pad)) = shapes[image_i]
                     predicted_class = row['final_shape']
-                    shape = predicted_class.split('-')[0]
+                    # shape = predicted_class.split('-')[0]
 
                     # Filter out images that do not have the obj_class
-                    if shape != class_names[obj_class]:
+                    if predicted_class != class_names[obj_class]:
                         continue
 
                     # Pad to make sure all images are of same size
@@ -270,7 +274,23 @@ def main(
         # Load path mask from file if specified (gen_mask.py)
         mask_path = join(mask_dir, f'{name}.png')
         patch_mask = torchvision.io.read_image(mask_path)
-        patch_mask = patch_mask.float() / 255
+        patch_mask = patch_mask.float() / 255   
+
+        patch_mask = patch_mask[0]     
+
+        # save_dir = './masks/'
+        # mask_save_path = os.path.join(save_dir, 'test0.png')
+        # torchvision.utils.save_image(patch_mask[0], mask_save_path)
+
+        # mask_save_path = os.path.join(save_dir, 'test1.png')
+        # torchvision.utils.save_image(patch_mask[1], mask_save_path)
+
+        # mask_save_path = os.path.join(save_dir, 'test2.png')
+        # torchvision.utils.save_image(patch_mask[2], mask_save_path)
+
+
+        # print(patch_mask.shape)
+        # qqq
     else:
         # Otherwise, generate a new mask here
         # Get size in inch from sign class
@@ -286,7 +306,7 @@ def main(
 
     adv_patch = generate_adv_patch(
         model, obj_numpy, patch_mask, device=device, img_size=img_size,
-        obj_size=obj_size, save_dir=save_dir, synthetic=synthetic,
+        obj_size=obj_size, obj_class=obj_class, save_dir=save_dir, synthetic=synthetic,
         dataloader=dataloader, **kwargs)
 
     # Save adv patch
