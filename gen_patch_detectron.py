@@ -28,6 +28,7 @@ from adv_patch_bench.dataloaders import register_mapillary, register_mtsd
 from adv_patch_bench.dataloaders.detectron.mapper import BenignMapper
 from adv_patch_bench.utils.argparse import (eval_args_parser,
                                             setup_detectron_test_args)
+from adv_patch_bench.utils.image import get_obj_width
 from gen_mask import generate_mask
 from hparams import DATASETS, LABEL_LIST, OTHER_SIGN_CLASS, SAVE_DIR_DETECTRON
 
@@ -196,10 +197,10 @@ def generate_adv_patch(
 
 def main(
     padded_imgsz='992,1312',
-    patch_size=-1,
     save_dir=Path(''),
     name='exp',  # save to project/name
-    obj_size=-1,
+    obj_class=0,
+    obj_size=None,
     syn_obj_path='',
     seed=0,
     synthetic=False,
@@ -212,7 +213,8 @@ def main(
     assert len(img_size) == 2
 
     # Set up directories
-    save_dir = os.path.join(SAVE_DIR_DETECTRON, name)
+    class_names = LABEL_LIST[args.dataset]
+    save_dir = os.path.join(SAVE_DIR_DETECTRON, name, class_names[obj_class])
     os.makedirs(save_dir, exist_ok=True)
     model = DefaultPredictor(cfg).model
 
@@ -224,13 +226,15 @@ def main(
     obj_numpy = np.array(Image.open(syn_obj_path).convert('RGBA')) / 255
     h_w_ratio = obj_numpy.shape[0] / obj_numpy.shape[1]
 
-    if obj_size == -1:
+    # Deterimine object size in pixels
+    if obj_size is None:
         obj_size = int(min(img_size) * 0.1)
     if isinstance(obj_size, int):
         obj_size = (round(obj_size * h_w_ratio), obj_size)
 
-    # FIXME: get obj inch
-    patch_mask = generate_mask(obj_numpy, obj_size, 36)
+    # Get object width in inch
+    obj_width_inch = get_obj_width(obj_class, class_names)
+    patch_mask = generate_mask(obj_numpy, obj_size, obj_width_inch)
 
     dataloader = None
     if not synthetic:
