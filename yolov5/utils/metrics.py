@@ -104,6 +104,7 @@ def ap_per_class_custom(tp, conf, pred_cls, target_cls, plot=False, save_dir='.'
 
     # Create Precision-Recall curve and compute AP for each class
     px, py = np.linspace(0, 1, 1000), []  # for plotting
+    
     ap, p, r = np.zeros((nc, tp.shape[1])), np.zeros((nc, 1000)), np.zeros((nc, 1000))
     fnr = np.zeros((nc, 1000))
 

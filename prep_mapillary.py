@@ -238,7 +238,11 @@ def main():
     conf_thres = 0.
     # TODO: put these params in hparams.py
     dataset = 'mapillary_color' if args.use_color else 'mapillary_no_color'
-    num_classes = NUM_CLASSES[dataset]
+
+    # use mtsd color because model was trained with on this dataset (mtsd_color)
+    # num_classes = NUM_CLASSES[dataset]
+    num_classes = NUM_CLASSES['mtsd_color']
+    args.num_classes = num_classes
     data_dir = join(PATH_MAPILLARY_BASE, 'training' if args.split == 'train' else 'validation')
     # model_path = '/data/shared/adv-patch-bench/results/6/checkpoint_best.pt'
     # The final CSV file with our annotation. This will be used to check
