@@ -9,6 +9,9 @@ CSV_PATH=mapillary_vistas_final_merged.csv
 SYN_OBJ_PATH=attack_assets/octagon-915.0.png
 OBJ_CLASS=10
 
+# sizes: (1536,2048), (3040,4032)
+IMG_SIZE=1536,2048
+
 # Test a detector on Detectron2
 # CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
 #     --num-gpus $NUM_GPU \
@@ -33,30 +36,28 @@ OBJ_CLASS=10
 #     --syn-obj-path $SYN_OBJ_PATH --dataset mapillary-combined-no_color \
 #     --patch-name $PATCH_NAME --obj-class $OBJ_CLASS --obj-size 256 --save-mask
 
-# sizes: (1536,2048), (3040,4032)
-
-CUDA_VISIBLE_DEVICES=$GPU python -u gen_patch_detectron.py \
-    --num-gpus $NUM_GPU --config-file ./configs/faster_rcnn_R_50_FPN_3x.yaml \
-    --dataset mapillary-combined-no_color --padded-imgsz 1536,2048 \
-    --bg-dir ~/data/mtsd_v2_fully_annotated/test/ --num-bg 1 \
-    --tgt-csv-filepath $CSV_PATH --attack-config-path attack_config.yaml \
-    --name $PATCH_NAME --attack-type real \
-    --obj-class $OBJ_CLASS --syn-obj-path $SYN_OBJ_PATH --verbose --debug \
-    MODEL.ROI_HEADS.NUM_CLASSES 12 \
-    OUTPUT_DIR $OUTPUT_PATH \
-    MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
-    DATALOADER.NUM_WORKERS 8
-
-# CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
+# CUDA_VISIBLE_DEVICES=$GPU python -u gen_patch_detectron.py \
 #     --num-gpus $NUM_GPU --config-file ./configs/faster_rcnn_R_50_FPN_3x.yaml \
-#     --dataset mapillary-combined-no_color --padded-imgsz 1536,2048 --eval-mode drop \
+#     --dataset mapillary-combined-no_color --padded-imgsz $IMG_SIZE \
+#     --bg-dir ~/data/mtsd_v2_fully_annotated/test/ --num-bg 1 \
 #     --tgt-csv-filepath $CSV_PATH --attack-config-path attack_config.yaml \
-#     --adv-patch-path ./runs/val/stop_sign_demo/$PATCH_NAME.pkl --name $PATCH_NAME \
-#     --obj-class $OBJ_CLASS --syn-obj-path $SYN_OBJ_PATH --interp bilinear \
-#     --attack-type per-sign --verbose --debug \
+#     --name $PATCH_NAME --attack-type real \
+#     --obj-class $OBJ_CLASS --syn-obj-path $SYN_OBJ_PATH --verbose --debug \
 #     MODEL.ROI_HEADS.NUM_CLASSES 12 \
 #     OUTPUT_DIR $OUTPUT_PATH \
 #     MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
 #     DATALOADER.NUM_WORKERS 8
+
+CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
+    --num-gpus $NUM_GPU --config-file ./configs/faster_rcnn_R_50_FPN_3x.yaml \
+    --dataset mapillary-combined-no_color --padded-imgsz $IMG_SIZE --eval-mode drop \
+    --tgt-csv-filepath $CSV_PATH --attack-config-path attack_config.yaml \
+    --name $PATCH_NAME --obj-class $OBJ_CLASS --syn-obj-path $SYN_OBJ_PATH \
+    --attack-type per-sign --verbose --debug --run-only-img-txt \
+    MODEL.ROI_HEADS.NUM_CLASSES 12 \
+    OUTPUT_DIR $OUTPUT_PATH \
+    MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
+    DATALOADER.NUM_WORKERS 8
 # --adv-patch-path ./runs/val/exp$EXP/$PATCH_NAME.pkl --name $PATCH_NAME \
 # --compute-metrics --min-area 600
+# --interp bilinear

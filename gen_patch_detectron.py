@@ -53,34 +53,11 @@ def generate_adv_patch(
     interp: str = 'bilinear',
     verbose: bool = False,
     debug: bool = False,
+    dataset: str = None,
     **kwargs,
 ):
-    """Generate adversarial patch
-
-    Args:
-        model (torch.nn.Module): _description_
-        obj_numpy (np.ndarray): _description_
-        patch_mask (torch.Tensor): _description_
-        device (str, optional): _description_. Defaults to 'cuda'.
-        img_size (Tuple[int, int], optional): _description_. Defaults to (992, 1312).
-        obj_class (int, optional): _description_. Defaults to 0.
-        obj_size (int, optional): _description_. Defaults to None.
-        bg_dir (str, optional): _description_. Defaults to './'.
-        num_bg (int, optional): _description_. Defaults to 16.
-        save_images (bool, optional): _description_. Defaults to False.
-        save_dir (str, optional): _description_. Defaults to './'.
-        synthetic (bool, optional): _description_. Defaults to False.
-        tgt_csv_filepath (str, optional): _description_. Defaults to None.
-        dataloader (Any, optional): _description_. Defaults to None.
-        attack_config_path (str, optional): _description_. Defaults to None.
-        interp (str, optional): _description_. Defaults to 'bilinear'.
-        verbose (bool, optional): _description_. Defaults to False.
-        debug (bool, optional): _description_. Defaults to False.
-
-    Returns:
-        _type_: _description_
-    """
-    class_names = LABEL_LIST[args.dataset]
+    """Generate adversarial patch"""
+    class_name = LABEL_LIST[dataset][obj_class]
     print(f'=> Initializing attack...')
     with open(attack_config_path) as file:
         attack_config = yaml.load(file, Loader=yaml.FullLoader)
@@ -149,13 +126,28 @@ def generate_adv_patch(
             _, h, w = image.shape
 
             for _, obj in img_df.iterrows():
-                img_data = (h0, w0, h / h0, w / w0, 0, 0)
                 obj_label = obj['final_shape']
-                if obj_label != class_names[obj_class]:
+                if obj_label != class_name:
                     continue
+
+                assert w == img_size[1]
+                if h > img_size[0]:
+                    # Just resize in this case and avoid padding
+                    image = T.resize(image, img_size, antialias=True)
+                    pad_top = 0
+                else:
+                    # Pad height
+                    pad_top = (img_size[0] - h) // 2
+                    pad_bottom = img_size[0] - h - pad_top
+                    image = T.pad(image, [0, pad_top, 0, pad_bottom])
+
+                _, h, w = image.shape
+                assert (h, w) == img_size
+                # NOTE: img_data: h_orig, w_orig, h, w, w_pad, h_pad
+                # It's (w_pad, h_pad) and not (h_pad, w_pad) due to
+                # compatibility with YOLO dataloader/augmentation
+                img_data = (h0, w0, h / h0, w / w0, 0, pad_top)
                 data = [obj_label, obj, *img_data]
-                # TODO: has to pad
-                image = T.resize(image, img_size, antialias=True)
                 attack_images.append([image, data, str(filename), batch[0]])
                 metadata.extend(batch)
                 break   # This prevents duplicating the background
@@ -247,10 +239,11 @@ def main(
 
     adv_patch = generate_adv_patch(
         model, obj_numpy, patch_mask, img_size=img_size, obj_size=obj_size,
-        save_dir=save_dir, synthetic=synthetic, dataloader=dataloader, **kwargs)
+        save_dir=save_dir, synthetic=synthetic, dataloader=dataloader,
+        obj_class=obj_class, name=name, **kwargs)
 
     # Save adv patch
-    patch_path = join(save_dir, f'adv_patch.pkl')
+    patch_path = join(save_dir, 'adv_patch.pkl')
     print(f'Saving the generated adv patch to {patch_path}...')
     pickle.dump([adv_patch, patch_mask], open(patch_path, 'wb'))
 

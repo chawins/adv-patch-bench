@@ -81,8 +81,10 @@ def main_single(cfg, dataset_params):
 def main_attack(cfg, args, dataset_params):
 
     # Create folder for saving eval results
-    save_dir = os.path.join(SAVE_DIR_DETECTRON, args.name)
+    class_names = LABEL_LIST[args.dataset]
+    save_dir = os.path.join(SAVE_DIR_DETECTRON, args.name, class_names[args.obj_class])
     os.makedirs(save_dir, exist_ok=True)
+    args.adv_patch_path = os.path.join(save_dir, 'adv_patch.pkl')
 
     with open(args.attack_config_path) as file:
         attack_config = yaml.load(file, Loader=yaml.FullLoader)

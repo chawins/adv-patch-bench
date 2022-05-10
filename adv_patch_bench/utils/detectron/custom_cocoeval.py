@@ -170,6 +170,7 @@ class COCOeval:
 
     def computeIoU(self, imgId, catId):
         p = self.params
+        # TODO: new mode
         # EDIT: for gt with "other" class, we want to match and compute iou for
         # all detections
         if self.mode == 'drop' and catId == self.other_catId:
