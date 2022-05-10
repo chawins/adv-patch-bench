@@ -21,8 +21,10 @@ from PIL import Image
 from torch.nn import DataParallel
 
 from adv_patch_bench.attacks.rp2 import RP2AttackModule
-from adv_patch_bench.utils.argparse import eval_args_parser
-from generate_patch_mask import generate_mask
+from adv_patch_bench.utils.argparse import eval_args_parser, parse_dataset_name
+from adv_patch_bench.utils.image import get_obj_width
+from gen_mask import generate_mask
+from hparams import LABEL_LIST
 from yolov5.models.common import DetectMultiBackend
 from yolov5.utils.datasets import create_dataloader
 from yolov5.utils.general import (LOGGER, check_dataset, check_img_size,
@@ -107,7 +109,8 @@ def generate_adv_patch(
         backgrounds[i] = T.resize(bg, bg_size, antialias=True)
 
     # getting object classes names
-    names = {k: v for k, v in enumerate(model.names if hasattr(model, 'names') else model.module.names)}
+    # names = {k: v for k, v in enumerate(model.names if hasattr(model, 'names') else model.module.names)}
+    class_names = LABEL_LIST[args.dataset]
 
     print(f'=> Initializing attack...')
     with open(attack_config_path) as file:
@@ -169,7 +172,7 @@ def generate_adv_patch(
                     shape = predicted_class.split('-')[0]
 
                     # Filter out images that do not have the obj_class
-                    if shape != names[obj_class]:
+                    if shape != class_names[obj_class]:
                         continue
 
                     # Pad to make sure all images are of same size
@@ -230,7 +233,7 @@ def main(
     # rescaling=False,
     data=None,
     task='test',
-    mask_path=None,
+    mask_dir=None,
     **kwargs,
 ):
     cudnn.benchmark = True
@@ -238,6 +241,7 @@ def main(
     np.random.seed(seed)
     img_size = tuple([int(i) for i in padded_imgsz.split(',')])
     assert len(img_size) == 2
+    class_names = LABEL_LIST[args.dataset]
 
     # Set up directories
     save_dir = increment_path(Path(project) / name, exist_ok=exist_ok)  # increment run
@@ -262,12 +266,16 @@ def main(
     if isinstance(obj_size, int):
         obj_size = (round(obj_size * h_w_ratio), obj_size)
 
-    # FIXME: get obj size inch
-    if mask_path is not None:
-        # Load path mask from file (generate_patch_mask.py)
-        pass
+    if mask_dir is not None:
+        # Load path mask from file if specified (gen_mask.py)
+        mask_path = join(mask_dir, f'{name}.png')
+        patch_mask = torchvision.io.read_image(mask_path)
+        patch_mask = patch_mask.float() / 255
     else:
-        patch_mask = generate_mask(obj_numpy, obj_size, 36)
+        # Otherwise, generate a new mask here
+        # Get size in inch from sign class
+        obj_width_inch = get_obj_width(obj_class, class_names)
+        patch_mask = generate_mask(obj_numpy, obj_size, obj_width_inch)
 
     dataloader = None
     if not synthetic:
@@ -298,6 +306,7 @@ def main(
 
 if __name__ == "__main__":
     args = eval_args_parser(False, root=ROOT)
+    parse_dataset_name(args)
     print(args)
     if args.patch_size_inch is not None:
         args.mask_path = None

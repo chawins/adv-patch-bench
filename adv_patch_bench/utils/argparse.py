@@ -33,7 +33,10 @@ def eval_args_parser(is_detectron, root=None):
                         help='which attack evaluation to run (none, load, per-sign, random, debug)')
     parser.add_argument('--adv-patch-path', type=str, default=None,
                         help='path to adv patch and mask to load')
-    parser.add_argument('--obj-class', type=int, default=-1, help='class of object to attack (-1: all classes)')
+    parser.add_argument('--mask-dir', type=str, default='./masks/',
+                        help='Path to dir with predefined masks')
+    parser.add_argument('--obj-class', type=int, default=-1,
+                        help='class of object to attack (-1: all classes)')
     parser.add_argument('--tgt-csv-filepath', required=True,
                         help='path to csv which contains target points for transform')
     parser.add_argument('--attack-config-path',
@@ -59,7 +62,6 @@ def eval_args_parser(is_detectron, root=None):
     # ===================== Patch generation arguments ====================== #
     parser.add_argument('--obj-size', type=int, default=-1, help='object width in pixels (default: 0.1 * img_size)')
     parser.add_argument('--patch-size-inch', type=int, default=None, help='Patch size in inches')
-    parser.add_argument('--mask-path', type=str, default='./masks/', help='Path to dir with predefined masks')
     parser.add_argument('--bg-dir', type=str, default='', help='path to background directory')
     parser.add_argument('--num-bg', type=int, default=1, help='Number of backgrounds used to generate patch')
     parser.add_argument('--save-images', action='store_true', help='save generated patch')
@@ -106,6 +108,14 @@ def eval_args_parser(is_detectron, root=None):
     return parser.parse_args()
 
 
+def parse_dataset_name(args):
+    tokens = args.dataset.split('-')
+    assert len(tokens) in (2, 3)
+    args.dataset = f'{tokens[0]}_{tokens[2]}' if len(tokens) == 3 else f'{tokens[0]}_no_color'
+    args.use_color = 'no_color' not in tokens
+    return tokens
+
+
 def setup_detectron_test_args(args, other_sign_class):
     """
     Create configs and perform basic setups.
@@ -115,11 +125,9 @@ def setup_detectron_test_args(args, other_sign_class):
     cfg.merge_from_list(args.opts)
 
     # Copy dataset from args
-    tokens = args.dataset.split('-')
-    assert len(tokens) in (2, 3)
+    tokens = parse_dataset_name(args)
     cfg.DATASETS.TEST = (f'{tokens[0]}_{tokens[1]}', )
-    args.dataset = f'{tokens[0]}_{tokens[2]}' if len(tokens) == 3 else f'{tokens[0]}_no_color'
-    args.use_color = 'no_color' not in tokens
+
     # Copy test dataset to train one since we will use
     # `build_detection_train_loader` to get labels
     cfg.DATASETS.TRAIN = cfg.DATASETS.TEST

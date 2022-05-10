@@ -268,7 +268,7 @@ def apply_transform(
     tf_patch: Any = None,
     tf_bg: Any = None,
     interp: str = 'bilinear',
-    use_relight: bool = False
+    use_relight: bool = False,
 ) -> torch.Tensor:
     """
     Apply patch with transformation specified by `tf_data` and `transform_func`.
@@ -331,8 +331,8 @@ def transform_and_apply_patch(
     img_data: List,
     use_transform: bool = True,
     use_relight: bool = True,
-    interp: str = 'bilinear'
-):
+    interp: str = 'bilinear',
+) -> torch.Tensor:
 
     # Does not support batch mode. Add singleton dims to 4D if needed.
     image = add_singleton_dim(image, 4)

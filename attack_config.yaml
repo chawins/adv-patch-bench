@@ -20,4 +20,4 @@ rp2_augment_real: False
 attack_mode: ''
 use_patch_transform: True
 use_patch_relight: True
-interp: 'bilinear'
+interp: 'bilinear'  # This is only used when args.interp is None

@@ -137,7 +137,7 @@ class DAGAttacker:
         # Prepare attack data
         _, adv_patch, patch_mask, patch_loc = prep_attack(self.args, self.device)
 
-        total_num_patches = 0
+        total_num_patches, num_vis = 0, 0
         self.evaluator.reset()
 
         for i, batch in tqdm(enumerate(self.data_loader)):
@@ -161,12 +161,8 @@ class DAGAttacker:
             # Have to preprocess image here [0, 255] -> [-123.675, 151.470]
             # i.e., centered with mean [103.530, 116.280, 123.675], no std
             # normalization so scale is still 255
+            # NOTE: this is done inside attack
             # images = self.model.preprocess_image(batch)
-            if vis_save_dir and i < self.num_vis:
-                original_image = batch[0]['image'].permute(1, 2, 0).numpy()[:, :, ::-1]
-                visualizer = Visualizer(original_image, self.metadata, scale=0.5)
-                vis_gt = visualizer.draw_dataset_dict(batch[0])
-                vis_gt.save(os.path.join(vis_save_dir, f'gt_{i}.jpg'))
 
             # Image from dataloader is 'BGR' and has shape [C, H, W]
             images = batch[0]['image'].float().to(self.device)
@@ -176,10 +172,12 @@ class DAGAttacker:
             _, h, w = images.shape
             img_data = (h0, w0, h / h0, w / w0, 0, 0)
 
+            attacked = False
             if self.synthetic:
                 # Apply synthetic sign and patch to image
                 perturbed_image = apply_synthetic_sign(
                     images, adv_patch, patch_mask, *syn_data, apply_patch=self.use_attack)
+                attacked = True
             else:
                 # Iterate through objects in the current image
                 for _, obj in img_df.iterrows():
@@ -203,6 +201,7 @@ class DAGAttacker:
                         use_relight=not self.no_patch_relight,
                         interp=self.args.interp) * 255
                     total_num_patches += 1
+                    attacked = True
 
             # Perform inference on perturbed image
             # perturbed_image = self._post_process_image(perturbed_image)
@@ -217,7 +216,13 @@ class DAGAttacker:
             instance_dicts = self._create_instance_dicts(outputs, image_id)
             coco_instances_results.extend(instance_dicts)
 
-            if vis_save_dir and i < self.num_vis:
+            if vis_save_dir and num_vis < self.num_vis and attacked:
+                # Visualize ground truth
+                original_image = batch[0]['image'].permute(1, 2, 0).numpy()[:, :, ::-1]
+                visualizer = Visualizer(original_image, self.metadata, scale=0.5)
+                vis_gt = visualizer.draw_dataset_dict(batch[0])
+                vis_gt.save(os.path.join(vis_save_dir, f'gt_{i}.jpg'))
+
                 # Save adv predictions
                 # Set confidence threshold
                 # NOTE: output bbox follows original size instead of real input size
@@ -251,6 +256,7 @@ class DAGAttacker:
                 cv2.imwrite(save_path, vis_og[:, :, ::-1])
                 cv2.imwrite(save_adv_path, vis_adv[:, :, ::-1])
                 self.log(f'Saved visualization to {save_path}')
+                num_vis += 1
 
             if self.debug and i >= 50:
                 break

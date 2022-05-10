@@ -28,7 +28,7 @@ from adv_patch_bench.dataloaders import register_mapillary, register_mtsd
 from adv_patch_bench.dataloaders.detectron.mapper import BenignMapper
 from adv_patch_bench.utils.argparse import (eval_args_parser,
                                             setup_detectron_test_args)
-from generate_patch_mask import generate_mask
+from gen_mask import generate_mask
 from hparams import DATASETS, LABEL_LIST, OTHER_SIGN_CLASS, SAVE_DIR_DETECTRON
 
 

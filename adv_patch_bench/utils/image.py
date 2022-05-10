@@ -170,3 +170,7 @@ def pad_and_center(obj, obj_mask, img_size, obj_size):
     obj_mask = T.resize(obj_mask, obj_size, interpolation=T.InterpolationMode.NEAREST)
     obj_mask = T.pad(obj_mask, pad_size)
     return obj, obj_mask
+
+
+def get_obj_width(obj_class, class_names):
+    return float(class_names[obj_class].split('-')[1]) * 0.0393701
