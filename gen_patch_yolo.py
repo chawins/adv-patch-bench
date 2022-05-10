@@ -193,6 +193,7 @@ def generate_adv_patch(
 
         # DEBUG: Save all the background images
         for img in attack_images:
+            os.makedirs('tmp', exist_ok=True)
             torchvision.utils.save_image(img[0] / 255, f'tmp/{img[2]}')
 
         # Save background filenames in txt file
