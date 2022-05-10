@@ -246,7 +246,7 @@ def main(
     # Set up directories
     save_dir = increment_path(Path(project) / name, exist_ok=exist_ok)  # increment run
     # (save_dir / 'labels' if save_txt else save_dir).mkdir(parents=True, exist_ok=True)  # make dir
-    save_dir = save_dir / str(obj_class)
+    save_dir = save_dir / class_names[obj_class]
     os.makedirs(save_dir, exist_ok=True)
 
     # Load model (YOLO)
