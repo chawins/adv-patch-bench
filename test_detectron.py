@@ -95,8 +95,8 @@ def main_attack(cfg, args, dataset_params):
     model = DefaultPredictor(cfg).model
     # Build dataloader
     val_loader = build_detection_test_loader(
-        # cfg, cfg.DATASETS.TEST[0], mapper=BenignMapper(cfg, is_train=False),
-        cfg, cfg.DATASETS.TEST[0],
+        cfg, cfg.DATASETS.TEST[0], mapper=BenignMapper(cfg, is_train=False),
+        # cfg, cfg.DATASETS.TEST[0],
         batch_size=1, num_workers=cfg.DATALOADER.NUM_WORKERS
     )
     # TODO: To generate more dense proposals

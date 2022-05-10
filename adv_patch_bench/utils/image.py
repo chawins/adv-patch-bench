@@ -132,6 +132,8 @@ def mask_to_box(mask):
     if mask.ndim == 3:
         mask = mask.squeeze(0)
     assert mask.ndim == 2
+    if mask.sum() <= 0:
+        raise ValueError('mask is all zeros!')
     y, x = torch.where(mask)
     y_min, x_min = y.min(), x.min()
     return y_min, x_min, y.max() - y_min, x.max() - x_min

@@ -215,7 +215,6 @@ def main(
     weights=None,  # model.pt path(s)
     imgsz=1280,  # image width
     padded_imgsz='992,1312',
-    patch_size_inch=-1,
     dnn=False,  # use OpenCV DNN for ONNX inference
     half=False,
     save_dir=Path(''),
@@ -231,6 +230,7 @@ def main(
     # rescaling=False,
     data=None,
     task='test',
+    mask_path=None,
     **kwargs,
 ):
     cudnn.benchmark = True
@@ -262,8 +262,12 @@ def main(
     if isinstance(obj_size, int):
         obj_size = (round(obj_size * h_w_ratio), obj_size)
 
-    patch_mask = generate_mask(syn_obj_path, obj_size, patch_size_inch,
-                               patch_name=None, save_mask=False)
+    # FIXME: get obj size inch
+    if mask_path is not None:
+        # Load path mask from file (generate_patch_mask.py)
+        pass
+    else:
+        patch_mask = generate_mask(obj_numpy, obj_size, 36)
 
     dataloader = None
     if not synthetic:
@@ -293,6 +297,8 @@ def main(
 
 
 if __name__ == "__main__":
-    opt = eval_args_parser(False, root=ROOT)
-    print(opt)
-    main(**vars(opt))
+    args = eval_args_parser(False, root=ROOT)
+    print(args)
+    if args.patch_size_inch is not None:
+        args.mask_path = None
+    main(**vars(args))

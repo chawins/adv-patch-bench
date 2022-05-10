@@ -6,48 +6,43 @@ from typing import Tuple, Union
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-import torchvision.transforms.functional as T
 from PIL import Image
+from adv_patch_bench.attacks.utils import get_object_and_mask_from_numpy
 
 
 def generate_mask(
-    syn_obj_path: str,
-    obj_size: Union[int, Tuple[int, int]],
-    patch_size_inch: Union[int, Tuple[int, int]],
-    patch_name: str,
-    save_mask: bool = False,
+    obj_numpy: np.ndarray,
+    obj_size_px: Union[int, Tuple[int, int]],
+    obj_width_inch: float,
 ) -> torch.Tensor:
-    obj_numpy = np.array(Image.open(syn_obj_path).convert('RGBA')) / 255
 
+    # Get height to width ratio of the object
     h_w_ratio = obj_numpy.shape[0] / obj_numpy.shape[1]
-    if isinstance(obj_size, int):
-        obj_size = (round(obj_size * h_w_ratio), obj_size)
+    if isinstance(obj_size_px, int):
+        obj_size_px = (round(obj_size_px * h_w_ratio), obj_size_px)
+    obj_w_inch = obj_width_inch
+    obj_h_inch = h_w_ratio * obj_w_inch
+    obj_h_px, obj_w_px = obj_size_px
+    patch_mask = torch.zeros((1, ) + obj_size_px)
 
+    # EDIT: User defines from this point on
+    patch_size_inch = 10
     if isinstance(patch_size_inch, int):
         patch_size_inch = (patch_size_inch, patch_size_inch)
-
-    obj_mask = torch.from_numpy(obj_numpy[:, :, -1] == 1).float().unsqueeze(0)
-    obj = torch.from_numpy(obj_numpy[:, :, :-1]).float().permute(2, 0, 1)
-    obj = T.resize(obj, obj_size, antialias=True)
-    obj = obj.permute(1, 2, 0)
-    obj_mask = T.resize(obj_mask, obj_size, interpolation=T.InterpolationMode.NEAREST)
-    obj_mask = obj_mask.permute(1, 2, 0)
+    patch_h_inch, patch_w_inch = patch_size_inch
+    patch_h_px = round(patch_h_inch / obj_h_inch * obj_h_px)
+    patch_w_px = round(patch_w_inch / obj_w_inch * obj_w_px)
 
     # Define patch location and size
-    patch_mask = torch.zeros((1, ) + obj_size)
     # Example: 10x10-inch patch in the middle of 36x36-inch sign
-    # (1) 1 square
-    mid_height = obj_size[0] // 2
-    mid_width = obj_size[1] // 2
-
+    # (1) 1 square (bottom)
+    mid_height, mid_width = obj_h_px // 2, obj_w_px // 2
     patch_x_shift = 0
-    patch_y_shift = round(40 / 128 * obj_size[0])
-
+    shift_inch = (obj_h_inch - patch_h_inch) / 2
+    patch_y_shift = round(shift_inch / obj_h_inch * obj_h_px)
     patch_x_pos = mid_width + patch_x_shift
     patch_y_pos = mid_height + patch_y_shift
-
-    h = round(patch_size_inch[0] / 36 / 2 * obj_size[0])
-    w = round(patch_size_inch[1] / 36 / 2 * obj_size[1])
+    hh, hw = patch_h_px // 2, patch_w_px // 2
 
     # # (2) 2 rectangles
     # patch_width = 20
@@ -59,26 +54,7 @@ def generate_mask(
     # patch_mask[:, offset_h - h:offset_h + h, offset_w - w:offset_w + w] = 1
     # patch_mask[:, obj_size[0] - offset_h - h:obj_size[0] - offset_h + h, offset_w - w:offset_w + w] = 1
 
-    patch_mask[:, patch_y_pos - h:patch_y_pos + h, patch_x_pos - w:patch_x_pos + w] = 1
-    patch_mask = patch_mask.permute(1, 2, 0)
-
-    if save_mask and patch_name is not None:
-        save_dir = './masks/'
-        os.makedirs(save_dir, exist_ok=True)
-
-        plt.imshow(patch_mask, cmap='gray')
-        mask_save_path = os.path.join(save_dir, f'{patch_name}.png')
-        plt.savefig(mask_save_path, bbox_inches='tight')
-        plt.close()
-
-        plot_image = obj * (1 - patch_mask)
-        plt.imshow(plot_image)
-        mask_save_path = os.path.join(save_dir, f'{patch_name}_mask_on_sign.jpg')
-        plt.savefig(mask_save_path, bbox_inches='tight')
-        plt.close()
-
-    # pickle.dump(patch_mask, open(mask_save_path, 'wb'))
-    patch_mask = patch_mask.permute(2, 0, 1)
+    patch_mask[:, patch_y_pos - hh:patch_y_pos + hh, patch_x_pos - hw:patch_x_pos + hw] = 1
     return patch_mask
 
 
@@ -87,7 +63,27 @@ if __name__ == '__main__':
     parser.add_argument('--syn-obj-path', type=str, default='', help='path to synthetic image of the object')
     parser.add_argument('--obj-size', type=int, required=True)
     parser.add_argument('--patch-size', type=int, required=True)
-    parser.add_argument('--patch-name', type=str, required=True)
+    parser.add_argument('--patch-name', type=str, default=None)
     parser.add_argument('--save-mask', action='store_true')
     args = parser.parse_args()
-    generate_mask(**vars(args))
+    # FIXME: get obj size in inch
+    obj_numpy = np.array(Image.open(args.syn_obj_path).convert('RGBA')) / 255
+    patch_mask = generate_mask(obj_numpy, **vars(args))
+
+    if args.save_mask and args.patch_name is not None:
+        save_dir = './masks/'
+        patch_mask = patch_mask.permute(1, 2, 0)
+        os.makedirs(save_dir, exist_ok=True)
+        print(f'=> Saving patch mask in {save_dir}...')
+
+        plt.imshow(patch_mask, cmap='gray')
+        mask_save_path = os.path.join(save_dir, f'{args.patch_name}.png')
+        plt.savefig(mask_save_path, bbox_inches='tight')
+        plt.close()
+
+        obj, _ = get_object_and_mask_from_numpy(obj_numpy, patch_mask.shape[1:])
+        plot_image = obj * (1 - patch_mask)
+        plt.imshow(plot_image)
+        mask_save_path = os.path.join(save_dir, f'{args.patch_name}_mask_on_sign.jpg')
+        plt.savefig(mask_save_path, bbox_inches='tight')
+        plt.close()

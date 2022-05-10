@@ -1,13 +1,13 @@
-from typing import Any, Callable, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 
 import torch
 import torch.nn.functional as F
 from detectron2.structures import Boxes, pairwise_iou
 
 
-@torch.no_grad()
+# @torch.no_grad()
 def get_targets(
-    model,
+    model: torch.nn.Module,
     inputs: List[Dict[Any, Any]],
     device: str = 'cuda',
     iou_thres: float = 0.1,
@@ -25,21 +25,15 @@ def get_targets(
     Tuple[Boxes, torch.Tensor]
         target_boxes, target_labels
     """
-    # TODO: make this handle batch
-    instances = inputs[0]['instances']
-    gt_boxes = instances.gt_boxes.to(device)
-    gt_classes = instances.gt_classes
-
     images = model.preprocess_image(inputs)
 
     # Get features
     features = model.backbone(images.tensor)
 
-    # Get bounding box proposals
-    # For API, see https://github.com/facebookresearch/detectron2/blob/main/detectron2/modeling/proposal_generator/rpn.py#L431
+    # Get bounding box proposals. For API, see
+    # https://github.com/facebookresearch/detectron2/blob/main/detectron2/modeling/proposal_generator/rpn.py#L431
     proposals, _ = model.proposal_generator(images, features, None)
-    proposal_boxes = proposals[0].proposal_boxes
-    objectness_logits = proposals[0].objectness_logits
+    proposal_boxes = [x.proposal_boxes for x in proposals]
 
     # Get proposal boxes' classification scores
     predictions = get_roi_heads_predictions(model, features, proposal_boxes)
@@ -47,13 +41,17 @@ def get_targets(
     # scores = model.roi_heads.box_predictor.predict_probs(
     #     predictions, proposals
     # )[0]
-    # Instead, we want to get logit scores without softmax
-    # For API, see https://github.com/facebookresearch/detectron2/blob/main/detectron2/modeling/roi_heads/fast_rcnn.py#L547
+    # Instead, we want to get logit scores without softmax. For API, see
+    # https://github.com/facebookresearch/detectron2/blob/main/detectron2/modeling/roi_heads/fast_rcnn.py#L547
     class_logits, _ = predictions
     num_inst_per_image = [len(p) for p in proposals]
-    class_logits = class_logits.split(num_inst_per_image, dim=0)[0]
+    class_logits = class_logits.split(num_inst_per_image, dim=0)
 
     # NOTE: class_logits dim [[1000, num_classes + 1], ...]
+
+    gt_boxes = [i['instances'].gt_boxes.to(device) for i in inputs]
+    gt_classes = [i['instances'].gt_classes for i in inputs]
+    objectness_logits = [x.objectness_logits for x in proposals]
 
     return filter_positive_proposals(
         proposal_boxes, class_logits, gt_boxes, gt_classes, objectness_logits,
@@ -63,21 +61,46 @@ def get_targets(
 def get_roi_heads_predictions(
     model,
     features: Dict[str, torch.Tensor],
-    proposal_boxes: Boxes,
+    proposal_boxes: List[Boxes],
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     roi_heads = model.roi_heads
     features = [features[f] for f in roi_heads.box_in_features]
-    box_features = roi_heads.box_pooler(features, [proposal_boxes])
+    # Defn: https://github.com/facebookresearch/detectron2/blob/main/detectron2/modeling/poolers.py#L205
+    # Usage: https://github.com/facebookresearch/detectron2/blob/main/detectron2/modeling/roi_heads/roi_heads.py#L780
+    box_features = roi_heads.box_pooler(features, proposal_boxes)
     box_features = roi_heads.box_head(box_features)
-
     logits, proposal_deltas = roi_heads.box_predictor(box_features)
     del box_features
 
     return logits, proposal_deltas
 
 
-@torch.no_grad()
+# @torch.no_grad()
 def filter_positive_proposals(
+    proposal_boxes: List[Boxes],
+    class_logits: List[torch.Tensor],
+    gt_boxes: List[Boxes],
+    gt_classes: List[torch.Tensor],
+    objectness_logits: List[torch.Tensor],
+    device: str = 'cuda',
+    iou_thres: float = 0.1,
+    score_thres: float = 0.1,
+) -> Tuple[Boxes, torch.Tensor, torch.Tensor]:
+
+    outputs = [[], [], [], []]
+    for inpt in zip(proposal_boxes, class_logits, gt_boxes, gt_classes, objectness_logits):
+        out = filter_positive_proposals_single(
+            *inpt,
+            device=device,
+            iou_thres=iou_thres,
+            score_thres=score_thres,
+        )
+        for i in range(4):
+            outputs[i].append(out[i])
+    return outputs
+
+
+def filter_positive_proposals_single(
     proposal_boxes: Boxes,
     class_logits: torch.Tensor,
     gt_boxes: Boxes,

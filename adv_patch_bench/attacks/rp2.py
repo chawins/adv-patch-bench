@@ -34,8 +34,6 @@ class RP2AttackModule(DetectorAttackModule):
         self.min_conf = attack_config['rp2_min_conf']
         self.input_size = attack_config['input_size']
         self.attack_mode = attack_config['attack_mode']
-
-        # TODO: rename a lot of these to be less confusing
         self.use_transform = attack_config['use_patch_transform']
         self.use_relight = attack_config['use_patch_relight']
 
@@ -78,15 +76,15 @@ class RP2AttackModule(DetectorAttackModule):
             raise NotImplementedError('Given optimizer not implemented.')
         return opt
 
-    def compute_loss(self, adv_img, obj_class):
+    def compute_loss(self, adv_img, obj_class, metadata):
         if self.is_detectron:
-            loss = self._compute_loss_rcnn(adv_img, obj_class)
+            loss = self._compute_loss_rcnn(adv_img, obj_class, metadata)
         else:
-            loss = self._compute_loss_yolo(adv_img, obj_class)
+            loss = self._compute_loss_yolo(adv_img, obj_class, metadata)
         return loss
 
-    # ======================== YOLO-specific methods ======================== #
-    def _compute_loss_yolo(self, adv_img, obj_class):
+    def _compute_loss_yolo(self, adv_img, obj_class, metadata):
+        """Compute loss for YOLO models"""
         # Compute logits, loss, gradients
         out, _ = self.core_model(adv_img, val=True)
         conf = out[:, :, 4:5] * out[:, :, 5:]
@@ -104,39 +102,55 @@ class RP2AttackModule(DetectorAttackModule):
             loss = conf.max(1)[0].clamp_min(self.min_conf).mean()
         return loss
 
-    # ==================== Faster R-CNN-specific methods ==================== #
-    def _compute_loss_rcnn(self, adv_img, metadata):
+    def _compute_loss_rcnn(self, adv_img, obj_class, metadata):
+        """Compute loss for Faster R-CNN models"""
         for i, m in enumerate(metadata):
-            m['image'] = adv_img[i]
+            # Flip image from RGB to BGR
+            m['image'] = adv_img[i].flip(0) * 255
         # NOTE: IoU threshold for ROI is 0.5 and for RPN is 0.7 so we pick the
         # smaller of the two, 0.5
-        target_boxes, target_labels, target_logits, obj_logits = get_targets(
+        _, target_labels, target_logits, obj_logits = get_targets(
             self.core_model, metadata, device=self.core_model.device,
             iou_thres=0.5, score_thres=self.min_conf)
-        # features = self.core_model.backbone(adv_img)
-        # # Get classification logits
-        # logits, _ = get_roi_heads_predictions(features, target_boxes)
 
-        # TODO: If there's no matched gt/prediction, then attack already
-        # succeeds. This has to be changed for appearing or misclassification attacks.
-        if len(target_logits) == 0 or len(target_labels) == 0:
-            target_loss = 0
-        else:
-            target_loss = F.cross_entropy(target_logits, target_labels,
-                                          reduction='sum')
+        # DEBUG
+        # import cv2
+        # from detectron2.utils.visualizer import Visualizer
+        # from detectron2.data import MetadataCatalog
+        # with torch.no_grad():
+        #     idx = 1
+        #     metadata[idx]['height'], metadata[idx]['width'] = adv_img.shape[2:]
+        #     outputs = self.core_model(metadata)[idx]
+        #     instances = outputs["instances"]
+        #     mask = instances.scores > 0.5
+        #     instances = instances[mask]
+        #     self.metadata = MetadataCatalog.get('mapillary_combined')
+        #     img = metadata[idx]['image'].cpu().numpy().transpose(1, 2, 0)[:, :, ::-1]
+        #     v = Visualizer(img, self.metadata, scale=0.5)
+        #     vis_og = v.draw_instance_predictions(instances.to('cpu')).get_image()
+        #     cv2.imwrite('temp.png', vis_og[:, :, ::-1])
+        #     import pdb
+        #     pdb.set_trace()
+        #     print('ok')
 
-        if len(obj_logits) == 0:
-            obj_loss = 0
-        else:
-            # obj_labels = torch.ones(len(obj_logits),
-            #                         device=self.core_model.device,
-            #                         dtype=torch.float32)
-            obj_labels = torch.ones_like(obj_logits)
-            obj_loss = F.binary_cross_entropy_with_logits(
-                obj_logits, obj_labels, reduction='sum')
+        loss = 0
+        for tgt_lb, tgt_log, obj_log in zip(target_labels, target_logits, obj_logits):
+            # Filter obj_class
+            idx = obj_class == tgt_lb
+            tgt_lb, tgt_log, obj_log = tgt_lb[idx], tgt_log[idx], obj_log[idx]
+            # TODO: If there's no matched gt/prediction, then attack already
+            # succeeds. This has to be changed for appearing or misclassification attacks.
+            target_loss, obj_loss = 0, 0
+            if len(tgt_log) > 0 and len(tgt_lb) > 0:
+                target_loss = - F.cross_entropy(tgt_log, tgt_lb, reduction='sum')
+            if len(obj_logits) > 0:
+                obj_lb = torch.zeros_like(obj_log)
+                obj_loss = F.binary_cross_entropy_with_logits(obj_log, obj_lb, reduction='sum')
 
-        # TODO: constant?
-        return target_loss + obj_loss
+            # TODO: constant?
+            loss += target_loss + obj_loss
+
+        return loss
 
     def attack(
         self,
@@ -169,13 +183,11 @@ class RP2AttackModule(DetectorAttackModule):
         backgrounds.detach_()
         obj_mask_dup = obj_mask.expand(self.num_eot, -1, -1, -1)
         ymin, xmin, height, width = mask_to_box(patch_mask)
-        # patch_full = torch.zeros_like(obj)
         all_bg_idx = np.arange(len(backgrounds))
 
         # TODO: Initialize worst-case inputs, use moving average
         # x_adv_worst = x.clone().detach()
         ema_const = 0.99
-        # ema_const = 0
         ema_loss = None
 
         for _ in range(self.num_restarts):
@@ -258,7 +270,7 @@ class RP2AttackModule(DetectorAttackModule):
 
                 if step % 100 == 0 and self.verbose:
                     # print(self.compute_loss(adv_img, obj_class))
-                    print(f'step: {step}   loss: {ema_loss:.6f}   time: {time.time() - start_time:.2f}s')
+                    print(f'step: {step}  loss: {ema_loss:.6f}  time: {time.time() - start_time:.2f}s')
                     start_time = time.time()
 
             # if self.num_restarts == 1:
@@ -300,12 +312,11 @@ class RP2AttackModule(DetectorAttackModule):
 
         metadata_clone = None
         if self.is_detectron:
-            metadata_clone = self._clone_detectron_metadata(metadata)
+            assert metadata is not None, 'metadata is needed for detectron'
+            metadata_clone = self._clone_detectron_metadata(objs, metadata)
 
         ema_const = 0.99
-        # ema_const = 0
         ema_loss = None
-
         self.alpha = 1e-2
 
         # Process transform data and create batch tensors
@@ -349,10 +360,9 @@ class RP2AttackModule(DetectorAttackModule):
                 else:
                     delta = self._to_model_space(z_delta, 0, 1)
 
-                # Randomly select background and apply transforms (crop and scale)
+                # Randomly select background and place patch with transforms
                 np.random.shuffle(all_bg_idx)
                 bg_idx = all_bg_idx[:self.num_eot]
-
                 curr_tf_data = [data[bg_idx] for data in tf_data]
                 delta = delta.repeat(self.num_eot, 1, 1, 1)
                 adv_img = apply_transform(
@@ -367,7 +377,7 @@ class RP2AttackModule(DetectorAttackModule):
                 # import pdb
                 # pdb.set_trace()
 
-                loss = self.compute_loss(adv_img, metadata_clone if self.is_detectron else obj_class)
+                loss = self.compute_loss(adv_img, obj_class, metadata_clone[bg_idx])
                 tv = ((delta[:, :, :-1, :] - delta[:, :, 1:, :]).abs().mean() +
                       (delta[:, :, :, :-1] - delta[:, :, :, 1:]).abs().mean())
                 # loss = out[:, :, 4].mean() + self.lmbda * tv
@@ -389,7 +399,7 @@ class RP2AttackModule(DetectorAttackModule):
                 # lr_schedule.step(loss)
 
                 if step % 100 == 0 and self.verbose:
-                    print(f'step: {step:4d}   loss: {ema_loss:.4f}   time: {time.time() - start_time:.2f}s')
+                    print(f'step: {step:4d}  loss: {ema_loss:.4f}  time: {time.time() - start_time:.2f}s')
                     start_time = time.time()
                     # DEBUG
                     # import os
@@ -406,16 +416,16 @@ class RP2AttackModule(DetectorAttackModule):
         self.core_model.train(mode)
         return delta.detach()
 
-    def _clone_detectron_metadata(self, metadata):
+    def _clone_detectron_metadata(self, objs, metadata):
         metadata_clone = []
-        for m in metadata:
+        for obj, m in zip(objs, metadata):
             data_dict = {}
             for keys in m:
-                if keys == 'image':
-                    data_dict[keys] = None
-                else:
-                    data_dict[keys] = m[keys]
+                data_dict[keys] = m[keys]
+            data_dict['image'] = None
+            data_dict['height'], data_dict['width'] = obj[0].shape[1:]
             metadata_clone.append(data_dict)
+        metadata_clone = np.array(metadata_clone)
         return metadata_clone
 
     def _to_attack_space(self, x, min_, max_):

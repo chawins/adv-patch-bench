@@ -4,7 +4,6 @@ Generate adversarial patch
 
 import os
 import pickle
-import sys
 from ast import literal_eval
 from os.path import join
 from pathlib import Path
@@ -17,11 +16,6 @@ import torch.backends.cudnn as cudnn
 import torchvision
 import torchvision.transforms.functional as T
 import yaml
-# from yolov5.models.common import DetectMultiBackend
-# from yolov5.utils.datasets import create_dataloader
-# from yolov5.utils.general import (LOGGER, check_dataset, check_img_size,
-#                                   check_yaml, colorstr, increment_path)
-# from yolov5.utils.torch_utils import select_device
 from detectron2.data import build_detection_test_loader
 from detectron2.engine import DefaultPredictor
 from PIL import Image
@@ -29,23 +23,19 @@ from torch.nn import DataParallel
 from tqdm import tqdm
 
 from adv_patch_bench.attacks.rp2 import RP2AttackModule
+from adv_patch_bench.attacks.utils import get_object_and_mask_from_numpy
 from adv_patch_bench.dataloaders import register_mapillary, register_mtsd
+from adv_patch_bench.dataloaders.detectron.mapper import BenignMapper
 from adv_patch_bench.utils.argparse import (eval_args_parser,
                                             setup_detectron_test_args)
 from generate_patch_mask import generate_mask
-from hparams import DATASETS, OTHER_SIGN_CLASS, SAVE_DIR_DETECTRON, LABEL_LIST
-
-FILE = Path(__file__).resolve()
-ROOT = FILE.parents[0]  # YOLOv5 root directory
-if str(ROOT) not in sys.path:
-    sys.path.append(str(ROOT))  # add ROOT to PATH
-ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
+from hparams import DATASETS, LABEL_LIST, OTHER_SIGN_CLASS, SAVE_DIR_DETECTRON
 
 
 def generate_adv_patch(
     model: torch.nn.Module,
     obj_numpy: np.ndarray,
-    patch_mask,
+    patch_mask: torch.Tensor,
     device: str = 'cuda',
     img_size: Tuple[int, int] = (992, 1312),
     obj_class: int = 0,
@@ -61,40 +51,35 @@ def generate_adv_patch(
     attack_config_path: str = None,
     interp: str = 'bilinear',
     verbose: bool = False,
+    debug: bool = False,
     **kwargs,
 ):
     """Generate adversarial patch
 
     Args:
-        model ([type]): [description]
-        obj_numpy (np.ndarray): Image of object in numpy with RGBA channels
-        patch_mask ([type]): [description]
-        device (str, optional): [description]. Defaults to 'cuda'.
-        img_size (tuple, optional): [description]. Defaults to (960, 1280).
-        obj_class (int, optional): [description]. Defaults to 0.
-        obj_size ([type], optional): [description]. Defaults to None.
-        bg_dir (str, optional): [description]. Defaults to './'.
-        num_bg (int, optional): [description]. Defaults to 16.
-        save_images (bool, optional): [description]. Defaults to False.
-        save_dir (str, optional): [description]. Defaults to './'.
+        model (torch.nn.Module): _description_
+        obj_numpy (np.ndarray): _description_
+        patch_mask (torch.Tensor): _description_
+        device (str, optional): _description_. Defaults to 'cuda'.
+        img_size (Tuple[int, int], optional): _description_. Defaults to (992, 1312).
+        obj_class (int, optional): _description_. Defaults to 0.
+        obj_size (int, optional): _description_. Defaults to None.
+        bg_dir (str, optional): _description_. Defaults to './'.
+        num_bg (int, optional): _description_. Defaults to 16.
+        save_images (bool, optional): _description_. Defaults to False.
+        save_dir (str, optional): _description_. Defaults to './'.
+        synthetic (bool, optional): _description_. Defaults to False.
+        tgt_csv_filepath (str, optional): _description_. Defaults to None.
+        dataloader (Any, optional): _description_. Defaults to None.
+        attack_config_path (str, optional): _description_. Defaults to None.
+        interp (str, optional): _description_. Defaults to 'bilinear'.
+        verbose (bool, optional): _description_. Defaults to False.
+        debug (bool, optional): _description_. Defaults to False.
 
     Returns:
-        [type]: [description]
+        _type_: _description_
     """
     class_names = LABEL_LIST[args.dataset]
-    # Randomly select backgrounds from `bg_dir` and resize them
-    all_bgs = os.listdir(os.path.expanduser(bg_dir))
-    print(f'There are {len(all_bgs)} background images in {bg_dir}.')
-    idx = np.arange(len(all_bgs))
-    np.random.shuffle(idx)
-    # FIXME: does this break anything?
-    # bg_size = (img_size[0] - 32, img_size[1] - 32)
-    bg_size = img_size
-    backgrounds = torch.zeros((num_bg, 3) + bg_size, )
-    for i, index in enumerate(idx[:num_bg]):
-        bg = torchvision.io.read_image(join(bg_dir, all_bgs[index])) / 255
-        backgrounds[i] = T.resize(bg, bg_size, antialias=True)
-
     print(f'=> Initializing attack...')
     with open(attack_config_path) as file:
         attack_config = yaml.load(file, Loader=yaml.FullLoader)
@@ -104,20 +89,27 @@ def generate_adv_patch(
     attack = RP2AttackModule(attack_config, model, None, None, None,
                              interp=interp, verbose=verbose, is_detectron=True)
 
+    # Randomly select backgrounds from `bg_dir` and resize them
+    # NOTE: we might not need this anymore?
+    # all_bgs = os.listdir(os.path.expanduser(bg_dir))
+    # print(f'There are {len(all_bgs)} background images in {bg_dir}.')
+    # idx = np.arange(len(all_bgs))
+    # np.random.shuffle(idx)
+    # bg_size = img_size
+    # backgrounds = torch.zeros((num_bg, 3) + bg_size, )
+    # for i, index in enumerate(idx[:num_bg]):
+    #     bg = torchvision.io.read_image(join(bg_dir, all_bgs[index])) / 255
+    #     backgrounds[i] = T.resize(bg, bg_size, antialias=True)
+
     # Generate an adversarial patch
     if synthetic:
         print('=> Generating adversarial patch on synthetic signs...')
-        obj_mask = torch.from_numpy(obj_numpy[:, :, -1] == 1).float().unsqueeze(0)
-        obj = torch.from_numpy(obj_numpy[:, :, :-1]).float().permute(2, 0, 1)
         # Resize object to the specify size and pad obj and masks to image size
         pad_size = [(img_size[1] - obj_size[1]) // 2,
                     (img_size[0] - obj_size[0]) // 2,
                     (img_size[1] - obj_size[1]) // 2 + obj_size[1] % 2,
                     (img_size[0] - obj_size[0]) // 2 + obj_size[0] % 2]  # left, top, right, bottom
-        obj = T.resize(obj, obj_size, antialias=True)
-        obj = T.pad(obj, pad_size)
-        obj_mask = T.resize(obj_mask, obj_size, interpolation=T.InterpolationMode.NEAREST)
-        obj_mask = T.pad(obj_mask, pad_size)
+        obj, obj_mask = get_object_and_mask_from_numpy(obj_numpy, obj_size, pad_size=pad_size)
         patch_mask_ = T.resize(patch_mask, obj_size, interpolation=T.InterpolationMode.NEAREST)
         patch_mask_ = T.pad(patch_mask_, pad_size)
 
@@ -141,7 +133,7 @@ def generate_adv_patch(
         df['tgt_final'] = df['tgt_final'].apply(literal_eval)
         df = df[df['final_shape'] != 'other-0.0-0.0']
 
-        attack_images = []
+        attack_images, metadata = [], []
         print('=> Collecting background images...')
         for i, batch in tqdm(enumerate(dataloader)):
             file_name = batch[0]['file_name']
@@ -150,9 +142,10 @@ def generate_adv_patch(
             if len(img_df) == 0:
                 continue
 
-            images = batch[0]['image'].float().to(device)
+            # Flip BGR to RGB and then flip back when feeding to model
+            image = batch[0]['image'].float().to(device).flip(0)
             h0, w0 = batch[0]['height'], batch[0]['width']
-            _, h, w = images.shape
+            _, h, w = image.shape
 
             for _, obj in img_df.iterrows():
                 img_data = (h0, w0, h / h0, w / w0, 0, 0)
@@ -160,7 +153,10 @@ def generate_adv_patch(
                 if obj_label != class_names[obj_class]:
                     continue
                 data = [obj_label, obj, *img_data]
-                attack_images.append([img, data, str(filename)])
+                # TODO: has to pad
+                image = T.resize(image, img_size, antialias=True)
+                attack_images.append([image, data, str(filename), batch[0]])
+                metadata.extend(batch)
                 break   # This prevents duplicating the background
 
             if len(attack_images) >= num_bg:
@@ -170,8 +166,11 @@ def generate_adv_patch(
         attack_images = attack_images[:num_bg]
 
         # DEBUG: Save all the background images
-        for img in attack_images:
-            torchvision.utils.save_image(img[0] / 255, f'tmp/{img[2]}')
+        if debug:
+            for img in attack_images:
+                os.makedirs(join(save_dir, 'backgrounds'), exist_ok=True)
+                torchvision.utils.save_image(
+                    img[0] / 255, join(save_dir, 'backgrounds', img[2]))
 
         # Save background filenames in txt file
         print(f'=> Saving used backgrounds in a txt file.')
@@ -183,7 +182,8 @@ def generate_adv_patch(
         with torch.enable_grad():
             adv_patch = attack.attack_real(attack_images,
                                            patch_mask=patch_mask.to(device),
-                                           obj_class=obj_class)
+                                           obj_class=obj_class,
+                                           metadata=metadata)
 
     adv_patch = adv_patch[0].detach().cpu().float()
 
@@ -195,7 +195,6 @@ def generate_adv_patch(
 
 
 def main(
-    device='',
     padded_imgsz='992,1312',
     patch_size=-1,
     save_dir=Path(''),
@@ -230,22 +229,21 @@ def main(
     if isinstance(obj_size, int):
         obj_size = (round(obj_size * h_w_ratio), obj_size)
 
-    patch_mask = generate_mask(syn_obj_path, obj_size, patch_size,
-                               patch_name=None, save_mask=False)
+    # FIXME: get obj inch
+    patch_mask = generate_mask(obj_numpy, obj_size, 36)
 
     dataloader = None
     if not synthetic:
         # Build dataloader
         dataloader = build_detection_test_loader(
-            # cfg, cfg.DATASETS.TEST[0], mapper=BenignMapper(cfg, is_train=False),
-            cfg, cfg.DATASETS.TEST[0],
+            cfg, cfg.DATASETS.TEST[0], mapper=BenignMapper(cfg, is_train=False),
+            # cfg, cfg.DATASETS.TEST[0],
             batch_size=1, num_workers=cfg.DATALOADER.NUM_WORKERS
         )
 
     adv_patch = generate_adv_patch(
-        model, obj_numpy, patch_mask, device=device, img_size=img_size,
-        obj_size=obj_size, save_dir=save_dir, synthetic=synthetic,
-        dataloader=dataloader, **kwargs)
+        model, obj_numpy, patch_mask, img_size=img_size, obj_size=obj_size,
+        save_dir=save_dir, synthetic=synthetic, dataloader=dataloader, **kwargs)
 
     # Save adv patch
     patch_path = join(save_dir, f'adv_patch.pkl')
@@ -265,7 +263,9 @@ def main(
 if __name__ == "__main__":
     args = eval_args_parser(True)
     print('Command Line Args:', args)
-    # args.img_size = args.padded_imgsz
+    args.device = 'cuda'
+    if args.patch_size_inch is not None:
+        args.mask_path = None
 
     # Verify some args
     cfg = setup_detectron_test_args(args, OTHER_SIGN_CLASS)
