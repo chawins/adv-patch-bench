@@ -82,7 +82,7 @@ class COCOeval:
         if not cocoGt is None:
             self.params.imgIds = sorted(cocoGt.getImgIds())
             self.params.catIds = sorted(cocoGt.getCatIds())
-        # EDIT: set mode (None, 'drop', 'match')
+        # Set mode (None, 'mtsd', 'drop')
         self.mode = mode
         self.other_catId = other_catId
 
@@ -109,8 +109,6 @@ class COCOeval:
             _toMask(gts, self.cocoGt)
             _toMask(dts, self.cocoDt)
         # set ignore flag
-        # bg_cat_id = max(p.catIds)
-        # num_ignore = 0
         for gt in gts:
             gt['ignore'] = gt['ignore'] if 'ignore' in gt else 0
             gt['ignore'] = 'iscrowd' in gt and gt['iscrowd']
@@ -170,13 +168,12 @@ class COCOeval:
 
     def computeIoU(self, imgId, catId):
         p = self.params
-        # TODO: new mode
         # EDIT: for gt with "other" class, we want to match and compute iou for
         # all detections
-        if self.mode == 'drop' and catId == self.other_catId:
+        if self.mode is not None and catId == self.other_catId:
             gt = self._gts[imgId, catId]
             dt = [_ for cId in p.catIds for _ in self._dts[imgId, cId]]
-        elif self.mode == 'drop':
+        elif self.mode == 'mtsd':
             # TODO: potential bug (low impact): this way, one "other" gt can be
             # matched to multiple dt's.
             # Match non-other dt to either other or non-other dt
@@ -265,12 +262,12 @@ class COCOeval:
         p = self.params
         # EDIT: ============================================================= #
         catId_is_other = catId == self.other_catId
-        if self.mode == 'drop' and catId_is_other:
+        if self.mode is not None and catId_is_other:
             # For other catId , we want to consider all detections regardless
             # of their catId.
             gt = self._gts[imgId, catId]
             dt = [_ for cId in p.catIds for _ in self._dts[imgId, cId]]
-        elif self.mode == 'drop':
+        elif self.mode == 'mtsd':
             # Match non-other dt to either other or non-other dt
             gt = [*self._gts[imgId, catId], *self._gts[imgId, self.other_catId]]
             dt = self._dts[imgId, catId]
@@ -337,7 +334,7 @@ class COCOeval:
                     gtm[tind, m] = d['id']  # gtm contains matched dt id
 
         # EDIT: ============================================================= #
-        if self.mode == 'drop' and catId_is_other:
+        if self.mode is not None and catId_is_other:
             # When in drop mode, set ignore flag of *all* other gt to 1 and set
             # ignore flag of *matched* dt to 1
             gtIg[:] = 1
@@ -348,7 +345,7 @@ class COCOeval:
                 # Ignore the remaining unmatched "other" dt
                 if d['category_id'] == self.other_catId:
                     dtIg[:, dind] = 1
-        elif self.mode == 'drop':
+        elif self.mode == 'mtsd':
             # Set ignore flag for other gt and any matched (non-other) dt
             gt_other_id = []
             for gind, g in enumerate(gt):
@@ -416,6 +413,11 @@ class COCOeval:
         i_list = [n for n, i in enumerate(p.imgIds) if i in setI]  # list of indices of image id's to eval
         I0 = len(_pe.imgIds)
         A0 = len(_pe.areaRng)
+
+        # EDIT:
+        tp_cmb = np.zeros(T)
+        fp_cmb = np.zeros(T)
+
         # retrieve E at each category, area range, and max number of detections
         for k, k0 in enumerate(k_list):
             Nk = k0*A0*I0
@@ -477,6 +479,22 @@ class COCOeval:
                             pass
                         precision[t, :, k, a, m] = np.array(q)
                         scores[t, :, k, a, m] = np.array(ss)
+
+                        # EDIT: Aggregate tp and fp over all clsses at every iou thres
+                        if a == 0 and m == -1:
+                            tp_cmb[t] += tp
+                            fp_cmb[t] += fp
+
+        # EDIT
+        import pdb
+        pdb.set_trace()
+        # iou_thres = 0.5
+        # iou_idx = p.iouThrs.index(iou_thres)
+        tp_cmb
+        recall_ = recall[:, :, 0, -1]
+        f1 = (2 * recall * pr) / (rc + pr)
+        idx_max_f1 = f1[:, :, :, 0, -1].mean(2).argmax()
+
         self.eval = {
             'params': p,
             'counts': [T, R, K, A, M],

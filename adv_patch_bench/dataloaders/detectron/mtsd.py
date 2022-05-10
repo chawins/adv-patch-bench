@@ -94,7 +94,7 @@ def register_mtsd(
     data = pd.read_csv(csv_path)
     similar_files_df = pd.read_csv(similarity_df_csv_path)
 
-    if mtsd_label_to_class_index:
+    if use_mtsd_original_labels:
         dataset = 'mtsd_original'
     else:
         if use_color:

@@ -50,7 +50,7 @@ class CustomCOCOEvaluator(DatasetEvaluator):
         *,
         use_fast_impl=True,
         kpt_oks_sigmas=(),
-        eval_mode='drop',
+        eval_mode=None,
         other_catId=None,
     ):
         """
@@ -354,15 +354,6 @@ class CustomCOCOEvaluator(DatasetEvaluator):
             precision = precision[precision > -1]
             ap = np.mean(precision) if precision.size else float("nan")
             ap_50.append(ap if not np.isnan(ap) else 0)
-
-        # EDIT
-        # print('=================== HERE ===================')
-        # map_50_95 = np.mean(ap_50_95)
-        # map_50 = np.mean(ap_50)
-        # results.update({'mAP@0.5:0.95': map_50_95})
-        # results.update({'mAP@0.5': map_50})
-        # print(f'mAP@0.5: {map_50:.4f}')
-        # print(f'mAP@0.5:0.95: {map_50_95:.4f}')
 
         # tabulate it
         N_COLS = min(6, len(results_per_category) * 2)

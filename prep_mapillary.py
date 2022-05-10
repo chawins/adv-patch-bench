@@ -204,24 +204,25 @@ def write_labels(model, label, panoptic_per_image_id, data_dir,
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Manually set args', add_help=False)
+    parser = argparse.ArgumentParser(description='Prepare Mapillary dataset', 
+                                     add_help=True)
     set_default_args(parser)
-    parser.add_argument('--split', type=str, required=True, help='training or validation')
-    parser.add_argument('--resume', type=str, required=True, help='path to latest checkpoint')
+    parser.add_argument('--split', type=str, required=True, help='train or val')
+    parser.add_argument('--resume', type=str, required=True, 
+                        help='Path to latest checkpoint')
     parser.add_argument('--use-color', action='store_true',
                         help='Labels will contain sign color in addition to shape')
+    parser.add_argument('--dataset', type=str, default='mapillary_color',
+                        help='Dataset the classifier is trained on (default: mapillary_color)')
     args = parser.parse_args()
 
     # Arguments
     min_area = MIN_OBJ_AREA
     label_to_classify = 95      # Class id of traffic signs on Vistas
     conf_thres = 0.
-    # TODO: put these params in hparams.py
-    dataset = 'mapillary_color' if args.use_color else 'mapillary_no_color'
 
-    # use mtsd color because model was trained with on this dataset (mtsd_color)
-    # num_classes = NUM_CLASSES[dataset]
-    num_classes = NUM_CLASSES['mtsd_color']
+    # use mapillary color because model was trained with on this dataset
+    num_classes = NUM_CLASSES[args.dataset]
     args.num_classes = num_classes
     data_dir = join(PATH_MAPILLARY_BASE, 'training' if args.split == 'train' else 'validation')
     # model_path = '/data/shared/adv-patch-bench/results/6/checkpoint_best.pt'

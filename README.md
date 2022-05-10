@@ -3,17 +3,45 @@
 ## Dependencies
 
 ```bash
-conda install pytorch torchvision torchaudio cudatoolkit=11.3 -c pytorch
+conda install -y pytorch torchvision torchaudio cudatoolkit=11.3 -c pytorch
 conda install -y scipy pandas scikit-learn pip
 conda upgrade -y numpy scipy pandas scikit-learn
-conda install -c conda-forge opencv albumentations kornia
+conda install -y -c anaconda seaborn
+conda install -y -c conda-forge opencv albumentations kornia
+python -m pip install 'git+https://github.com/facebookresearch/detectron2.git'
 ```
 
 ## Dataset
 
-### BDD100K
+### MTSD
 
-### Cityscapes
+- MTSD: [link](https://www.mapillary.com/dataset/trafficsign)
+- Have not found a way to automatically download the dataset.
+- `prep_mtsd_for_yolo.py`: Prepare MTSD dataset for YOLOv5.
+- YOLO expects samples and labels in `root_dir/images/*` and `root_dir/labels/*`, respectively. See [this link](https://github.com/ultralytics/yolov5/wiki/Train-Custom-Data#13-organize-directories) for more detail.
+- Training set: MTSD training. Symlink to `~/data/yolo_data/(images or labels)/train`.
+- Validation set: MTSD validation Symlink to `~/data/yolo_data/(images or labels)/val`.
+- Test set: Combine Vistas training and validation. Symlink to `~/data/yolo_data/(images or labels)/test`.
+- If you run into `Argument list too long` error, try to raise limit of argument stack size by `ulimit -S -s 100000000`. [link](https://unix.stackexchange.com/a/401797)
+
+```bash
+# Prepare MTSD dataset
+# Dataset should be extracted to ~/data/mtsd_v2_fully_annotated
+python prep_mtsd_for_yolo.py
+python prep_mtsd_for_detectron.py
+# FIXME: change yolo_data
+LABEL_NAME=labels_no_color
+cd ~/data/ && mkdir yolo_data && mkdir yolo_data/images yolo_data/labels
+
+cd ~/data/yolo_data/images/
+ln -s ~/data/mtsd_v2_fully_annotated/images/train train
+ln -s ~/data/mtsd_v2_fully_annotated/images/val val
+cd ~/data/yolo_data/labels/
+ln -s ~/data/mtsd_v2_fully_annotated/$LABEL_NAME/train train
+ln -s ~/data/mtsd_v2_fully_annotated/$LABEL_NAME/val val
+```
+
+<!-- ### Cityscapes
 
 See instructions at [https://github.com/mcordts/cityscapesScripts](https://github.com/mcordts/cityscapesScripts).
 
@@ -27,65 +55,14 @@ export PYTHONPATH="${PYTHONPATH}:/home/chawin/adv-patch-bench/datasets/panoptic_
 ```
 
 - We use `leftImg8bit_trainvaltest.zip` for the raw images and `gtFinePanopticParts_trainval.zip` for segmentation labels.
-- Use API at this [link](https://panoptic-parts.readthedocs.io/en/stable/api_and_code.html#visualization) to visualize the labels.
+- Use API at this [link](https://panoptic-parts.readthedocs.io/en/stable/api_and_code.html#visualization) to visualize the labels. -->
 
 ### Mapillary
 
-- MTSD: [link](https://www.mapillary.com/dataset/trafficsign)
-- Have not found a way to automatically download the dataset.
-
-Get MTSD data ready to train YOLOv5.
-
-```bash
-# Place the downloaded and extracted `mtsd_v2_fully_annotated` in ~/data/
-python prep_mtsd_for_yolo.py
-cd ~/data/mtsd_v2_fully_annotated
-mkdir images && cd images
-ln -s ../train/ train
-ln -s ../test/ test
-ln -s ../val/ val
-```
-
-TODO: Get Mapillary data ready for testing and the benchmark.
-
-## YOLOv5
-
-- Install required packages: `pip install -r requirements.txt`
-
-## YOLOR
-
-```bash
-# Download yolor-p6 pretrained weights
-cd ./yolor/scripts && gdown 1Tdn3yqpZ79X7R1Ql0zNlNScB1Dv9Fp76
-```
-
-### Data Preparation
-
-- `prep_mtsd_for_yolo.py`: Prepare MTSD dataset for YOLOv5.
 - `prep_mapillary.py`: Prepare Vistas dataset for YOLOv5 using a pretrained classifier to determine classes of the signs. May require substantial memory to run. Insufficient memory can lead to the script getting killed with no error message.
-- YOLO expects samples and labels in `root_dir/images/*` and `root_dir/labels/*`, respectively. See [this link](https://github.com/ultralytics/yolov5/wiki/Train-Custom-Data#13-organize-directories) for more detail.
-- Training set: MTSD training. Symlink to `~/data/yolo_data/(images or labels)/train`.
-- Validation set: MTSD validation Symlink to `~/data/yolo_data/(images or labels)/val`.
-- Test set: Combine Vistas training and validation. Symlink to `~/data/yolo_data/(images or labels)/test`.
-- If you run into `Argument list too long` error, try to raise limit of argument stack size by `ulimit -S -s 100000000`. [Ref.](https://unix.stackexchange.com/a/401797)
 
 ```bash
-# Prepare MTSD dataset
-# Dataset should be extracted to ~/data/mtsd_v2_fully_annotated
-python prep_mtsd_for_yolo.py
-# FIXME: change yolo_data
-LABEL_NAME=labels_no_color
-cd ~/data/ && mkdir yolo_data && mkdir yolo_data/images yolo_data/labels
-
-cd ~/data/yolo_data/images/
-ln -s ~/data/mtsd_v2_fully_annotated/images/train train
-ln -s ~/data/mtsd_v2_fully_annotated/images/val val
-cd ~/data/yolo_data/labels/
-ln -s ~/data/mtsd_v2_fully_annotated/$LABEL_NAME/train train
-ln -s ~/data/mtsd_v2_fully_annotated/$LABEL_NAME/val val
-
-# Prepare Mapillary dataset
-# Dataset should be extracted to ~/data/mapillary_vistas
+# Dataset should be extracted to ~/data/mapillary_vistas (use symlink if needed)
 CUDA_VISIBLE_DEVICES=0 python prep_mapillary.py --split train --resume PATH_TO_CLASSIFIER
 CUDA_VISIBLE_DEVICES=0 python prep_mapillary.py --split val --resume PATH_TO_CLASSIFIER
 
@@ -100,13 +77,20 @@ ln -s ~/data/mapillary_vistas/training/labels_no_color/* labels/
 ln -s ~/data/mapillary_vistas/validation/labels_no_color/* labels/
 ln -s ~/data/mapillary_vistas/training/detectron_labels_no_color/* detectron_labels/
 ln -s ~/data/mapillary_vistas/validation/detectron_labels_no_color/* detectron_labels/
-
-# FIXME
-# Change data path in mtsd.yml in adv-patch-bench/yolov5/data/ to the absolute
-# path to yolo_data
 ```
 
-### Training
+## YOLOv5
+
+- Install required packages: `pip install -r requirements.txt`
+
+## YOLOR
+
+```bash
+# Download yolor-p6 pretrained weights
+cd ./yolor/scripts && gdown 1Tdn3yqpZ79X7R1Ql0zNlNScB1Dv9Fp76
+```
+
+## Training
 
 - Extremely small objects are filtered out by default by YOLO. This is in `utils/autoanchor.py` on line 120.
 - We use the default training hyperparameters: `hyp.scratch.yaml`.
@@ -117,6 +101,5 @@ ln -s ~/data/mapillary_vistas/validation/detectron_labels_no_color/* detectron_l
 sh train_yolo.sh
 ```
 
-### Other Tips
+## Other Tips
 
-- If you run into `Argument list too long` error when doing symlink. Try `ulimit -s 65536`.

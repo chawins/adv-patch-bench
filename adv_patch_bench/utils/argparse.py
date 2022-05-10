@@ -16,7 +16,7 @@ def eval_args_parser(is_detectron, root=None):
     parser.add_argument('--data-no-other', action='store_true',
                         help='If True, do not load "other" or "background" class to the dataset.')
     parser.add_argument('--other-class-label', type=int, default=None, help="Class for the 'other' label")
-    parser.add_argument('--eval-mode', type=str, default='default')
+    parser.add_argument('--eval-mode', type=str, default=None)
 
     parser.add_argument('--interp', type=str, default=None,
                         help='interpolation method (nearest, bilinear, bicubic)')
