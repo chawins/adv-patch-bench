@@ -4,9 +4,8 @@
 
 ```bash
 conda install -y pytorch torchvision torchaudio cudatoolkit=11.3 -c pytorch
-conda install -y scipy pandas scikit-learn pip
+conda install -y scipy pandas scikit-learn pip seaborn
 conda upgrade -y numpy scipy pandas scikit-learn
-conda install -y -c anaconda seaborn
 conda install -y -c conda-forge opencv albumentations kornia
 python -m pip install 'git+https://github.com/facebookresearch/detectron2.git'
 ```
