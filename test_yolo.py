@@ -25,8 +25,9 @@ from tqdm import tqdm
 from adv_patch_bench.attacks.rp2 import RP2AttackModule
 from adv_patch_bench.attacks.utils import (apply_synthetic_sign, prep_attack,
                                            prep_synthetic_eval)
-from adv_patch_bench.utils.argparse import eval_args_parser
 from adv_patch_bench.transforms import transform_and_apply_patch
+from adv_patch_bench.utils.argparse import eval_args_parser, parse_dataset_name
+from hparams import OTHER_SIGN_CLASS
 from yolor.models.models import Darknet
 from yolov5.models.common import DetectMultiBackend
 from yolov5.utils.callbacks import Callbacks
@@ -74,7 +75,8 @@ def save_one_json(predn, jdict, path, class_map):
                       'score': round(p[4], 5)})
 
 
-def process_batch(detections, labels, iouv, other_class_label=None, other_class_confidence_threshold=0,
+def process_batch(detections, labels, iouv, other_class_label=None,
+                  other_class_confidence_threshold=0,
                   match_on_iou_only=False):
     """
     Return correct predictions matrix. Both sets of boxes are in (x1, y1, x2, y2) format.
@@ -178,16 +180,15 @@ def run(args,
     adv_sign_class = args.obj_class
     min_area = args.min_area
     model_name = args.model_name
-    other_class_label = args.other_class_label
+    # other_class_label = args.other_class_label
+    other_class_label = OTHER_SIGN_CLASS[args.dataset]
     # model_trained_without_other = args.model_trained_without_other
     other_class_confidence_threshold = args.other_class_confidence_threshold
     min_pred_area = args.min_pred_area
     plot_fp = args.plot_fp
-
-    # TODO: add arg instead?
-    annotation_df = pd.read_csv('mapillary_vistas_final_merged.csv')
-
     metrics_conf_thres = args.metrics_confidence_threshold
+
+    annotation_df = pd.read_csv(args.tgt_csv_filepath)
     img_size = tuple([int(x) for x in args.padded_imgsz.split(',')])
 
     false_positive_images = []
@@ -379,8 +380,7 @@ def run(args,
         #     targets = targets[targets[:, 1] != other_class_label]
 
         # DEBUG
-        # if args.debug and batch_i == 20:
-        if args.debug and batch_i == 100:
+        if args.debug and batch_i == 20:
             break
 
         if num_apply_imgs >= len(filename_list) and args.run_only_img_txt:
@@ -558,7 +558,9 @@ def run(args,
                 # matching on bounding boxes and correct predictions, i.e, match label and pred if iou >= 0.5 and label == pred
                 # or match on whether label == 'other' class and iou(label, pred) >= 0.5
                 # correct, matches = process_batch(predn, labelsn, iouv, other_class_label=None)
-                _, iou_matches, _ = process_batch(predn, labelsn, iouv, match_on_iou_only=True)
+                # FIXME:
+                # _, iou_matches, _ = process_batch(predn, labelsn, iouv, match_on_iou_only=True)
+                iou_matches = []
                 correct, matches, iou = process_batch(
                     predn, labelsn, iouv, other_class_label=other_class_label,
                     other_class_confidence_threshold=other_class_confidence_threshold)
@@ -588,7 +590,8 @@ def run(args,
             curr_false_positives_preds = []
 
             for lbl_index, lbl_ in enumerate(labels):
-                annotation_row = annotation_df[(annotation_df['filename'] == filename) & (annotation_df['object_id'] == int(lbl_[5]))]
+                annotation_row = annotation_df[(annotation_df['filename'] == filename) &
+                                               (annotation_df['object_id'] == int(lbl_[5]))]
                 assert len(annotation_row) <= 1
                 if len(annotation_row) == 0:
                     labels[lbl_index][0] = other_class_label
@@ -664,7 +667,7 @@ def run(args,
             curr_false_positives_preds = pred[false_positives_index]
 
             if len(false_positive_images) < 250 and len(curr_false_positives_preds) > 0:
-                false_positive_images.append(im[si].clone())
+                false_positive_images.append(im[si].cpu())
                 false_positives_preds.append(curr_false_positives_preds)
                 false_positives_filenames.append(filename)
 
@@ -700,9 +703,14 @@ def run(args,
                     class_name = names[int(class_index.item())]
                     if len(shape_to_plot_data[class_name]) < 10:
                         fn = str(path).split('/')[-1]
-                        shape_to_plot_data[class_name].append(
-                            [im[si: si + 1], targets[targets[:, 0] == si, :], path,
-                             predictions_for_plotting[predictions_for_plotting[:, 0] == si]])
+                        plot_data = [
+                            im[si: si + 1],
+                            targets[targets[:, 0] == si, :],
+                            path,
+                            predictions_for_plotting[predictions_for_plotting[:, 0] == si],
+                        ]
+                        plot_data = [d.cpu() if isinstance(d, torch.Tensor) else d for d in plot_data]
+                        shape_to_plot_data[class_name].append(plot_data)
                         break
 
         # Plot images
@@ -925,6 +933,7 @@ def run(args,
 
 def parse_opt():
     opt = eval_args_parser(False, root=ROOT)
+    parse_dataset_name(opt)
     opt.data = check_yaml(opt.data)  # check YAML
 
     opt.save_json |= opt.data.endswith('coco.yaml')

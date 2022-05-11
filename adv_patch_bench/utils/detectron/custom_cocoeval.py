@@ -482,6 +482,7 @@ class COCOeval:
 
                         # EDIT: Aggregate tp and fp over all clsses at every iou thres
                         if a == 0 and m == -1:
+                            print(tp)
                             tp_cmb[t] += tp
                             fp_cmb[t] += fp
 
