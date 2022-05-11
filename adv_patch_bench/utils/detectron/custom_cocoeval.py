@@ -85,7 +85,6 @@ class COCOeval:
         # Set mode (None, 'mtsd', 'drop')
         self.mode = mode
         self.other_catId = other_catId
-        # TODO Count only annotated signs
 
     def _prepare(self):
         '''
@@ -352,40 +351,6 @@ class COCOeval:
             dtIg[:, :] = 1
         elif self.mode == 'mtsd':
             # When gt is non-other, ignore all other dt and corresponding gt
-
-            # Set ignore flag for other gt and any matched (non-other) dt
-            # gt_other_id = []
-            # TODO: this loop shouldn't be needed
-            # for gind, g in enumerate(gt):
-            #     if g['category_id'] == self.other_catId:
-            #         gtIg[gind] = 1
-            #         gt_other_id.append(g['id'])
-            # matched_gt = []
-            # for dind, d in enumerate(dt):
-            #     if d['category_id'] == self.other_catId:
-            #         if dtm[0, dind] > 0:
-            #             # Collect matched dt
-            #             matched_gt.append(dtm[0, dind])
-            #         # Just ignore all other dt
-            #         dtIg[tind, dind] = 1
-            #         if self.mode == 'drop':
-            #             # In ours, unmatch matched (or same as all) dt
-            #             dtm[:, dind] = 0
-            # matched_gt = set(matched_gt)
-            # for gind, g in enumerate(gt):
-            #     if g['id'] in matched_gt:
-            #         if self.mode == 'mtsd':
-            #             # In MTSD, also ignore matched gt
-            #             gtIg[gind] = 1
-            #         else:
-            #             # In ours, unmatch matched gt
-            #             gtm[:, gind] = 0
-
-            # for tind, t in enumerate(p.iouThrs):
-            # if dtm[tind, dind] in gt_other_id or d['category_id'] == self.other_catId:
-            # if d['category_id'] == self.other_catId:
-            #     dtIg[tind, dind] = 1
-
             matched_gt = []
             for dind, d in enumerate(dt):
                 if d['category_id'] == self.other_catId:
