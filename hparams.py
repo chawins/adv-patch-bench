@@ -48,17 +48,17 @@ MAPILLARY_TOTAL_LABEL_COUNTS = sum(MAPILLARY_LABEL_COUNTS_DICT.values())
 
 # Counts of images where sign is present in
 MAPILLARY_IMG_COUNTS_DICT = {
-    'circle-750.0': 7972,
-    'triangle-900.0': 637,
-    'triangle_inverted-1220.0': 825,
-    'diamond-600.0': 317,
-    'diamond-915.0': 1435,
-    'square-600.0': 1075,
-    'rect-458.0-610.0': 715,
-    'rect-762.0-915.0': 544,
-    'rect-915.0-1220.0': 361,
-    'pentagon-915.0': 133,
-    'octagon-915.0': 637,
+    'circle-750.0': 5325,
+    'triangle-900.0': 548,
+    'triangle_inverted-1220.0': 706,
+    'diamond-600.0': 293,
+    'diamond-915.0': 1195,
+    'square-600.0': 729,
+    'rect-458.0-610.0': 490,
+    'rect-762.0-915.0': 401,
+    'rect-915.0-1220.0': 333,
+    'pentagon-915.0': 116,
+    'octagon-915.0': 564,
     'other-0.0-0.0': 0,
 }
 

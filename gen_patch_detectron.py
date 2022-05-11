@@ -65,10 +65,11 @@ def collect_backgrounds(dataloader, img_size, num_bg, device,
                 if obj_label == class_name:
                     found = True
                     break
-                # DEBUG
-                # lb = class_names.index(obj_label)
-                # counts[lb] += 1
-                # num_collected += 1
+            # DEBUG
+            # obj_labels = np.unique(img_df['final_shape'])
+            # for obj_label in obj_labels:
+            #     lb = class_names.index(obj_label)
+            #     counts[lb] += 1
         else:
             # No df provided or don't care about class
             found = True
@@ -103,10 +104,11 @@ def collect_backgrounds(dataloader, img_size, num_bg, device,
                 backgrounds[num_collected] = image
             num_collected += 1
 
+        # num_collected += 1
         if num_collected >= num_bg:
             break
 
-    # print('======> ', counts)
+    # print('======> ', counts, num_collected)
 
     print(f'=> {len(attack_images)} backgrounds collected.')
     return attack_images[:num_bg], metadata[:num_bg], backgrounds
@@ -325,6 +327,7 @@ if __name__ == "__main__":
         dataset_params = register_mapillary(
             use_color=args.use_color,
             ignore_other=args.data_no_other,
+            only_annotated=args.annotated_signs_only,  # This should be False in this case
         )
         data_list = get_mapillary_dict(args.split, *dataset_params)
     num_samples = len(data_list)
