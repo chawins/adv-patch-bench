@@ -2,6 +2,7 @@
 Generate adversarial patch
 """
 
+from importlib.metadata import metadata
 import os
 import pickle
 from ast import literal_eval
@@ -33,6 +34,71 @@ from gen_mask import generate_mask
 from hparams import DATASETS, LABEL_LIST, OTHER_SIGN_CLASS, SAVE_DIR_DETECTRON
 
 
+def collect_backgrounds(dataloader, img_size, num_bg, device,
+                        df=None, class_name=None):
+    attack_images, metadata = [], []
+    backgrounds = torch.zeros((num_bg, 3) + img_size, )
+    num_collected = 0
+    print('=> Collecting background images...')
+    for i, batch in tqdm(enumerate(dataloader)):
+        file_name = batch[0]['file_name']
+        filename = file_name.split('/')[-1]
+
+        if df is not None:
+            img_df = df[df['filename'] == filename]
+            if len(img_df) == 0:
+                continue
+
+        found = False
+        obj, obj_label = None, None
+        if class_name is not None:
+            assert img_df is not None
+            for _, obj in img_df.iterrows():
+                obj_label = obj['final_shape']
+                if obj_label == class_name:
+                    found = True
+                    break
+        else:
+            # No df provided or don't care about class
+            found = True
+
+        if found:
+            # Flip BGR to RGB and then flip back when feeding to model
+            image = batch[0]['image'].float().to(device).flip(0)
+            h0, w0 = batch[0]['height'], batch[0]['width']
+            _, h, w = image.shape
+
+            assert w == img_size[1]
+            if h > img_size[0]:
+                # Just resize in this case and avoid padding
+                image = T.resize(image, img_size, antialias=True)
+                pad_top = 0
+            else:
+                # Pad height
+                pad_top = (img_size[0] - h) // 2
+                pad_bottom = img_size[0] - h - pad_top
+                image = T.pad(image, [0, pad_top, 0, pad_bottom])
+
+            _, h, w = image.shape
+            assert (h, w) == img_size
+            # NOTE: img_data: h_orig, w_orig, h, w, w_pad, h_pad
+            # It's (w_pad, h_pad) and not (h_pad, w_pad) due to
+            # compatibility with YOLO dataloader/augmentation
+            img_data = (h0, w0, h / h0, w / w0, 0, pad_top)
+            data = [obj_label, obj, *img_data]
+            attack_images.append([image, data, str(filename), batch[0]])
+            metadata.extend(batch)
+            if num_collected < num_bg:
+                backgrounds[num_collected] = image
+            num_collected += 1
+
+        if num_collected >= num_bg:
+            break
+
+    print(f'=> {len(attack_images)} backgrounds collected.')
+    return attack_images[:num_bg], metadata[:num_bg], backgrounds
+
+
 def generate_adv_patch(
     model: torch.nn.Module,
     obj_numpy: np.ndarray,
@@ -41,7 +107,7 @@ def generate_adv_patch(
     img_size: Tuple[int, int] = (992, 1312),
     obj_class: int = 0,
     obj_size: int = None,
-    bg_dir: str = './',
+    # bg_dir: str = './',
     num_bg: int = 16,
     save_images: bool = False,
     save_dir: str = './',
@@ -57,7 +123,6 @@ def generate_adv_patch(
     **kwargs,
 ):
     """Generate adversarial patch"""
-    class_name = LABEL_LIST[dataset][obj_class]
     print(f'=> Initializing attack...')
     with open(attack_config_path) as file:
         attack_config = yaml.load(file, Loader=yaml.FullLoader)
@@ -78,6 +143,19 @@ def generate_adv_patch(
     # for i, index in enumerate(idx[:num_bg]):
     #     bg = torchvision.io.read_image(join(bg_dir, all_bgs[index])) / 255
     #     backgrounds[i] = T.resize(bg, bg_size, antialias=True)
+
+    if not synthetic:
+        # For synthetic sign, we don't care about transforms and classes
+        df = pd.read_csv(tgt_csv_filepath)
+        df['tgt_final'] = df['tgt_final'].apply(literal_eval)
+        df = df[df['final_shape'] != 'other-0.0-0.0']
+        class_name = LABEL_LIST[dataset][obj_class]
+    else:
+        df = None
+        class_name = None
+
+    attack_images, metadata, backgrounds = collect_backgrounds(
+        dataloader, img_size, num_bg, device, df=df, class_name=class_name)
 
     # Generate an adversarial patch
     if synthetic:
@@ -107,56 +185,6 @@ def generate_adv_patch(
 
     else:
         print('=> Generating adversarial patch on real signs...')
-        df = pd.read_csv(tgt_csv_filepath)
-        df['tgt_final'] = df['tgt_final'].apply(literal_eval)
-        df = df[df['final_shape'] != 'other-0.0-0.0']
-
-        attack_images, metadata = [], []
-        print('=> Collecting background images...')
-        for i, batch in tqdm(enumerate(dataloader)):
-            file_name = batch[0]['file_name']
-            filename = file_name.split('/')[-1]
-            img_df = df[df['filename'] == filename]
-            if len(img_df) == 0:
-                continue
-
-            # Flip BGR to RGB and then flip back when feeding to model
-            image = batch[0]['image'].float().to(device).flip(0)
-            h0, w0 = batch[0]['height'], batch[0]['width']
-            _, h, w = image.shape
-
-            for _, obj in img_df.iterrows():
-                obj_label = obj['final_shape']
-                if obj_label != class_name:
-                    continue
-
-                assert w == img_size[1]
-                if h > img_size[0]:
-                    # Just resize in this case and avoid padding
-                    image = T.resize(image, img_size, antialias=True)
-                    pad_top = 0
-                else:
-                    # Pad height
-                    pad_top = (img_size[0] - h) // 2
-                    pad_bottom = img_size[0] - h - pad_top
-                    image = T.pad(image, [0, pad_top, 0, pad_bottom])
-
-                _, h, w = image.shape
-                assert (h, w) == img_size
-                # NOTE: img_data: h_orig, w_orig, h, w, w_pad, h_pad
-                # It's (w_pad, h_pad) and not (h_pad, w_pad) due to
-                # compatibility with YOLO dataloader/augmentation
-                img_data = (h0, w0, h / h0, w / w0, 0, pad_top)
-                data = [obj_label, obj, *img_data]
-                attack_images.append([image, data, str(filename), batch[0]])
-                metadata.extend(batch)
-                break   # This prevents duplicating the background
-
-            if len(attack_images) >= num_bg:
-                break
-
-        print(f'=> {len(attack_images)} backgrounds collected.')
-        attack_images = attack_images[:num_bg]
 
         # DEBUG: Save all the background images
         if debug:

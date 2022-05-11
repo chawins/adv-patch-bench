@@ -2,21 +2,23 @@
 GPU=0
 PATCH_NAME=10x10_bottom
 EXP=1
-MODEL_PATH=~/data/adv-patch-bench/yolov5/runs/train/exp10/weights/best.pt
+MODEL_PATH=~/data/adv-patch-bench/yolov5/runs/train/exp11/weights/best.pt
 CSV_PATH=mapillary_vistas_final_merged.csv
 SYN_OBJ_PATH=attack_assets/octagon-915.0.png
 OBJ_CLASS=10
 YOLO_IMG_SIZE=2016
 IMG_SIZE=1536,2048 # sizes: (1536,2048), (3040,4032)
 
+# --data mtsd_no_color.yaml --task val \
+
 # Test a detector on Detectron2 without attack
 CUDA_VISIBLE_DEVICES=$GPU python -u test_yolo.py \
-    --data mapillary_no_color.yaml --dataset mapillary-combined-no_color --task test \
     --tgt-csv-filepath $CSV_PATH --save-exp-metrics \
+    --data mapillary_no_color.yaml --dataset mapillary-combined-no_color --task test \
     --weights $MODEL_PATH --exist-ok --workers 8 \
     --attack-config-path attack_config.yaml --name $PATCH_NAME \
     --obj-class $OBJ_CLASS --plot-class-examples $OBJ_CLASS --syn-obj-path $SYN_OBJ_PATH \
-    --imgsz $YOLO_IMG_SIZE --padded-imgsz $IMG_SIZE --batch-size 16 \
+    --imgsz $YOLO_IMG_SIZE --padded-imgsz $IMG_SIZE --batch-size 16 --debug \
     --attack-type none
 
 # Generate mask for adversarial patch

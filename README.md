@@ -6,7 +6,7 @@
 conda install -y pytorch torchvision torchaudio cudatoolkit=11.3 -c pytorch
 conda install -y scipy pandas scikit-learn pip seaborn
 conda upgrade -y numpy scipy pandas scikit-learn
-conda install -y -c conda-forge opencv albumentations kornia
+conda install -y -c conda-forge opencv albumentations kornia timm
 python -m pip install 'git+https://github.com/facebookresearch/detectron2.git'
 ```
 
@@ -100,5 +100,4 @@ cd ./yolor/scripts && gdown 1Tdn3yqpZ79X7R1Ql0zNlNScB1Dv9Fp76
 sh train_yolo.sh
 ```
 
-## Other Tips
-
+<!-- ## Other Tips -->

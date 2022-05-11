@@ -37,7 +37,6 @@ def set_default_args(parser):
     parser.add_argument('--eps', default=1e-8, type=float)
     parser.add_argument('--seed', default=0, type=int)
     parser.add_argument('--gpu', default=None, type=int, help='GPU id to use.')
-    parser.add_argument('--dataset', default='mtsd', type=str, help='Dataset')
 
 
 def write_labels(model, label, panoptic_per_image_id, data_dir,
@@ -204,11 +203,11 @@ def write_labels(model, label, panoptic_per_image_id, data_dir,
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Prepare Mapillary dataset', 
+    parser = argparse.ArgumentParser(description='Prepare Mapillary dataset',
                                      add_help=True)
     set_default_args(parser)
     parser.add_argument('--split', type=str, required=True, help='train or val')
-    parser.add_argument('--resume', type=str, required=True, 
+    parser.add_argument('--resume', type=str, required=True,
                         help='Path to latest checkpoint')
     parser.add_argument('--use-color', action='store_true',
                         help='Labels will contain sign color in addition to shape')

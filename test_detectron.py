@@ -1,8 +1,11 @@
 import json
 import os
 import pickle
+import random
 
 import cv2
+import numpy as np
+import torch
 import yaml
 from detectron2.data import (MetadataCatalog, build_detection_test_loader,
                              build_detection_train_loader)
@@ -13,8 +16,9 @@ from tqdm import tqdm
 
 import adv_patch_bench.utils.detectron.custom_coco_evaluator as cocoeval
 from adv_patch_bench.attacks.detectron_attack_wrapper import DAGAttacker
-from adv_patch_bench.dataloaders import (BenignMapper, get_mtsd_dict,
-                                         register_mapillary, register_mtsd)
+from adv_patch_bench.dataloaders import (BenignMapper, get_mapillary_dict,
+                                         get_mtsd_dict, register_mapillary,
+                                         register_mtsd)
 from adv_patch_bench.utils.argparse import (eval_args_parser,
                                             setup_detectron_test_args)
 from adv_patch_bench.utils.detectron import build_evaluator
@@ -28,7 +32,7 @@ def main(cfg, args):
     evaluator = build_evaluator(cfg, dataset_name)
     if args.debug:
         print(f'=> Running debug mode...')
-        sampler = list(range(5))
+        sampler = list(range(20))
     else:
         sampler = None
     print(f'=> Building {dataset_name} dataloader...')
@@ -55,27 +59,31 @@ def main_single(cfg, dataset_params):
     #                                          num_workers=cfg.DATALOADER.NUM_WORKERS)
     # val_loader = build_detection_train_loader(cfg)
     split = cfg.DATASETS.TEST[0].split('_')[1]
-    val_loader = get_mtsd_dict(split, *dataset_params)
+    # val_loader = get_mtsd_dict(split, *dataset_params)
+    val_loader = get_mapillary_dict(split, *dataset_params)
     for i, inpt in enumerate(val_loader):
 
         img = cv2.imread(inpt['file_name'])
 
         # DEBUG
         if args.debug:
-            import pdb
-            pdb.set_trace()
+            print(inpt['file_name'])
+        if i == 10:
+            break
+            # import pdb
+            # pdb.set_trace()
         # img = inpt[0]['image'].permute(1, 2, 0).numpy()
         # prediction = model(img)
         # visualizer = Visualizer(img[:, :, ::-1], metadata=metadata, scale=0.5)
         # out_gt = visualizer.draw_dataset_dict(inpt[0])
 
-        visualizer = Visualizer(img[:, :, ::-1], metadata=metadata, scale=0.5)
-        out_gt = visualizer.draw_dataset_dict(inpt)
-        out_gt.save('gt.png')
-        visualizer = Visualizer(img[:, :, ::-1], metadata=metadata, scale=0.5)
-        prediction = model(img)
-        out_pred = visualizer.draw_instance_predictions(prediction['instances'].to('cpu'))
-        out_pred.save('pred.png')
+        # visualizer = Visualizer(img[:, :, ::-1], metadata=metadata, scale=0.5)
+        # out_gt = visualizer.draw_dataset_dict(inpt)
+        # out_gt.save('gt.png')
+        # visualizer = Visualizer(img[:, :, ::-1], metadata=metadata, scale=0.5)
+        # prediction = model(img)
+        # out_pred = visualizer.draw_instance_predictions(prediction['instances'].to('cpu'))
+        # out_pred.save('pred.png')
 
 
 def main_attack(cfg, args, dataset_params):
@@ -175,6 +183,10 @@ if __name__ == "__main__":
     # Verify some args
     cfg = setup_detectron_test_args(args, OTHER_SIGN_CLASS)
     assert args.dataset in DATASETS
+
+    torch.random.manual_seed(cfg.SEED)
+    np.random.seed(cfg.SEED)
+    random.seed(cfg.SEED)
 
     # Register dataset
     if 'mtsd' in args.dataset:
