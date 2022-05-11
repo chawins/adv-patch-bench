@@ -181,6 +181,7 @@ def run(args,
     adv_sign_class = args.obj_class
     min_area = args.min_area
     model_name = args.model_name
+    annotated_signs_only = args.annotated_signs_only
     # other_class_label = args.other_class_label
     other_class_label = OTHER_SIGN_CLASS[args.dataset]
     # model_trained_without_other = args.model_trained_without_other
@@ -587,12 +588,13 @@ def run(args,
             curr_false_positives_preds = []
 
             for lbl_index, lbl_ in enumerate(labels):
-                annotation_row = annotation_df[(annotation_df['filename'] == filename) &
-                                               (annotation_df['object_id'] == int(lbl_[5]))]
-                assert len(annotation_row) <= 1
-                if len(annotation_row) == 0:
-                    labels[lbl_index][0] = other_class_label
-                    lbl_ = labels[lbl_index]
+                if annotated_signs_only:
+                    annotation_row = annotation_df[(annotation_df['filename'] == filename) &
+                                                (annotation_df['object_id'] == int(lbl_[5]))]
+                    assert len(annotation_row) <= 1
+                    if len(annotation_row) == 0:
+                        labels[lbl_index][0] = other_class_label
+                        lbl_ = labels[lbl_index]
 
                 # Find a match with this object label
                 match = matches[matches[:, 0] == lbl_index]

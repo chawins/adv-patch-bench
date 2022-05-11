@@ -97,6 +97,7 @@ def eval_args_parser(is_detectron, root=None):
         parser.add_argument('--half', action='store_true', help='use FP16 half-precision inference')
         parser.add_argument('--dnn', action='store_true', help='use OpenCV DNN for ONNX inference')
         parser.add_argument('--model-name', default='yolov5', help='yolov5 or yolor')
+        parser.add_argument('--annotated-signs-only', action='store_true', help='if True, only calculate metrics on annotated signs')
 
     # ============================== Plot / log ============================= #
     parser.add_argument('--save-exp-metrics', action='store_true', help='save metrics for this experiment to dataframe')
