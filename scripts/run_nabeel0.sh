@@ -7,15 +7,69 @@ CSV_PATH=mapillary_vistas_final_merged.csv
 SYN_OBJ_PATH=attack_assets/octagon-915.0.png
 OBJ_CLASS=10
 
-CUDA_VISIBLE_DEVICES=$GPU python -u gen_patch_yolo.py \
-    --device $GPU --seed 0 \
-    --data mapillary_no_color.yaml --dataset mapillary-combined-no_color \
-    --weights $MODEL_PATH --name $PATCH_NAME --tgt-csv-filepath $CSV_PATH \
-    --bg-dir ~/data/yolo_data/images/train \
-    --save-images --attack-config-path attack_config.yaml \
-    --imgsz 2000 --padded-imgsz 1536,2048 \
-    --obj-class $OBJ_CLASS --syn-obj-path $SYN_OBJ_PATH \
-    --obj-size 256 --num-bg 5 --attack-type real
+# CUDA_VISIBLE_DEVICES=$GPU python -u gen_patch_yolo.py \
+#     --device $GPU --seed 0 \
+#     --data mapillary_no_color.yaml --dataset mapillary-combined-no_color \
+#     --weights $MODEL_PATH --name $PATCH_NAME --tgt-csv-filepath $CSV_PATH \
+#     --bg-dir ~/data/yolo_data/images/train \
+#     --save-images --attack-config-path attack_config.yaml \
+#     --imgsz 2000 --padded-imgsz 1536,2048 \
+#     --obj-class $OBJ_CLASS --syn-obj-path $SYN_OBJ_PATH \
+#     --obj-size 256 --num-bg 56 --attack-type real
+
+
+
+# Test patch on real dataset
+# CUDA_VISIBLE_DEVICES=$GPU python -u test_yolo.py \
+#     --imgsz 2000 \
+#     --padded-imgsz 1536,2048 \
+#     --batch-size 8 \
+#     --data mapillary_no_color.yaml \
+#     --weights $MODEL_PATH \
+#     --exist-ok \
+#     --workers 8 \
+#     --task train \
+#     --save-exp-metrics \
+#     --tgt-csv-filepath mapillary_vistas_final_merged.csv \
+#     --obj-class 10 \
+#     --plot-class-examples 10 \
+#     --other-class-label 11 \
+#     --other-class-confidence-threshold 0 \
+#     --interp bilinear \
+#     --attack-type none \
+#     --min-pred-area 0 \
+#     --debug
+
+# old vm
+CUDA_VISIBLE_DEVICES=0 python -u test_yolo.py \
+    --imgsz 2000 \
+    --padded-imgsz 1536,2048 \
+    --batch-size 8 \
+    --data mapillary_no_color.yaml \
+    --weights /datadrive/data/adv-patch-bench/yolov5/runs/train/exp10/weights/best.pt \
+    --exist-ok \
+    --workers 8 \
+    --task train \
+    --save-exp-metrics \
+    --tgt-csv-filepath mapillary_vistas_final_merged.csv \
+    --obj-class 10 \
+    --interp bicubic \
+    --attack-type none \
+    --other-class-label 11 \
+    --min-pred-area 0 \
+    --other-class-confidence-threshold 0.0 \
+    --patch-size-inch 0 \
+    --debug
+
+
+
+
+
+    # --metrics-confidence-threshold 0.359 \
+    # --apply-patch \
+    # --load-patch ./runs/val/exp5/stop_sign_synthetic_generated.pkl \
+
+
 # --imgsz 2560 --padded_imgsz 1952,2592 \
 
 # --imgsz 1280 --padded_imgsz 960,1280 \
