@@ -417,6 +417,7 @@ class COCOeval:
         # EDIT:
         tp_cmb = np.zeros(T)
         fp_cmb = np.zeros(T)
+        num_all_classes = 0
 
         # retrieve E at each category, area range, and max number of detections
         for k, k0 in enumerate(k_list):
@@ -444,6 +445,10 @@ class COCOeval:
                         continue
                     tps = np.logical_and(dtm,  np.logical_not(dtIg))
                     fps = np.logical_and(np.logical_not(dtm), np.logical_not(dtIg))
+
+                    # EDIT:
+                    if a == 0 and m == M - 1:
+                        num_all_classes += npig
 
                     tp_sum = np.cumsum(tps, axis=1).astype(dtype=np.float)
                     fp_sum = np.cumsum(fps, axis=1).astype(dtype=np.float)
@@ -480,29 +485,26 @@ class COCOeval:
                         precision[t, :, k, a, m] = np.array(q)
                         scores[t, :, k, a, m] = np.array(ss)
 
-                        # EDIT: Aggregate tp and fp over all clsses at every iou thres
-                        # if a == 0 and m == -1:
-                        #     print(tp)
-                        #     tp_cmb[t] += tp
-                        #     fp_cmb[t] += fp
+                        # EDIT: Aggregate tp and fp over all classes at every
+                        # IoU threshold
+                        if a == 0 and m == M - 1 and nd:
+                            tp_cmb[t] += tp[-1]
+                            fp_cmb[t] += fp[-1]
 
         # EDIT
-        # import pdb
-        # pdb.set_trace()
-        # # iou_thres = 0.5
-        # # iou_idx = p.iouThrs.index(iou_thres)
-        # tp_cmb
-        # recall_ = recall[:, :, 0, -1]
-        # f1 = (2 * recall * pr) / (rc + pr)
-        # idx_max_f1 = f1[:, :, :, 0, -1].mean(2).argmax()
+        iou_thres = 0.5
+        iou_idx = np.where(p.iouThrs == iou_thres)[0]
+        tp, fp = float(tp_cmb[iou_idx]), float(fp_cmb[iou_idx])
+        recall_cmb = tp / num_all_classes
 
         self.eval = {
             'params': p,
             'counts': [T, R, K, A, M],
             'date': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             'precision': precision,
-            'recall':   recall,
+            'recall': recall,
             'scores': scores,
+            'recall_cmb': recall_cmb,
         }
         toc = time.time()
         print('DONE (t={:0.2f}s).'.format(toc-tic))
