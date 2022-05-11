@@ -16,7 +16,7 @@ CUDA_VISIBLE_DEVICES=$GPU python -u test_yolo.py \
     --weights $MODEL_PATH --exist-ok --workers 8 \
     --attack-config-path attack_config.yaml --name $PATCH_NAME \
     --obj-class $OBJ_CLASS --plot-class-examples $OBJ_CLASS --syn-obj-path $SYN_OBJ_PATH \
-    --imgsz $YOLO_IMG_SIZE --padded-imgsz $IMG_SIZE --batch-size 16 \
+    --imgsz $YOLO_IMG_SIZE --padded-imgsz $IMG_SIZE --batch-size 16 --debug \
     --attack-type none
 
 # Generate mask for adversarial patch
