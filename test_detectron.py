@@ -1,8 +1,11 @@
 import json
 import os
 import pickle
+import random
 
 import cv2
+import numpy as np
+import torch
 import yaml
 from detectron2.data import (MetadataCatalog, build_detection_test_loader,
                              build_detection_train_loader)
@@ -13,8 +16,9 @@ from tqdm import tqdm
 
 import adv_patch_bench.utils.detectron.custom_coco_evaluator as cocoeval
 from adv_patch_bench.attacks.detectron_attack_wrapper import DAGAttacker
-from adv_patch_bench.dataloaders import (BenignMapper, get_mtsd_dict, get_mapillary_dict,
-                                         register_mapillary, register_mtsd)
+from adv_patch_bench.dataloaders import (BenignMapper, get_mapillary_dict,
+                                         get_mtsd_dict, register_mapillary,
+                                         register_mtsd)
 from adv_patch_bench.utils.argparse import (eval_args_parser,
                                             setup_detectron_test_args)
 from adv_patch_bench.utils.detectron import build_evaluator
@@ -179,6 +183,10 @@ if __name__ == "__main__":
     # Verify some args
     cfg = setup_detectron_test_args(args, OTHER_SIGN_CLASS)
     assert args.dataset in DATASETS
+
+    torch.random.manual_seed(cfg.SEED)
+    np.random.seed(cfg.SEED)
+    random.seed(cfg.SEED)
 
     # Register dataset
     if 'mtsd' in args.dataset:
