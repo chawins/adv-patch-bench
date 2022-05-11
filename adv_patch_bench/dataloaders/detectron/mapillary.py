@@ -34,6 +34,7 @@ def get_mapillary_dict(
 
     dataset_dicts = []
     anno_files = [join(anno_path, f) for f in os.listdir(anno_path) if isfile(join(anno_path, f))]
+    anno_files = sorted(anno_files)
 
     for idx, anno_file in tqdm(enumerate(anno_files)):
 
