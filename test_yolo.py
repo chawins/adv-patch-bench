@@ -980,7 +980,7 @@ def main(opt):
 
 if __name__ == "__main__":
     opt = parse_opt()
-    torch.random.manual_seed(opt.SEED)
-    np.random.seed(opt.SEED)
-    random.seed(opt.SEED)
+    torch.random.manual_seed(opt.seed)
+    np.random.seed(opt.seed)
+    random.seed(opt.seed)
     main(opt)
