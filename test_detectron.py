@@ -13,7 +13,7 @@ from tqdm import tqdm
 
 import adv_patch_bench.utils.detectron.custom_coco_evaluator as cocoeval
 from adv_patch_bench.attacks.detectron_attack_wrapper import DAGAttacker
-from adv_patch_bench.dataloaders import (BenignMapper, get_mtsd_dict,
+from adv_patch_bench.dataloaders import (BenignMapper, get_mtsd_dict, get_mapillary_dict,
                                          register_mapillary, register_mtsd)
 from adv_patch_bench.utils.argparse import (eval_args_parser,
                                             setup_detectron_test_args)
@@ -55,7 +55,8 @@ def main_single(cfg, dataset_params):
     #                                          num_workers=cfg.DATALOADER.NUM_WORKERS)
     # val_loader = build_detection_train_loader(cfg)
     split = cfg.DATASETS.TEST[0].split('_')[1]
-    val_loader = get_mtsd_dict(split, *dataset_params)
+    # val_loader = get_mtsd_dict(split, *dataset_params)
+    val_loader = get_mapillary_dict(split, *dataset_params)
     for i, inpt in enumerate(val_loader):
 
         img = cv2.imread(inpt['file_name'])
