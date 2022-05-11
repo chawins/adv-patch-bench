@@ -28,7 +28,7 @@ def main(cfg, args):
     evaluator = build_evaluator(cfg, dataset_name)
     if args.debug:
         print(f'=> Running debug mode...')
-        sampler = list(range(5))
+        sampler = list(range(20))
     else:
         sampler = None
     print(f'=> Building {dataset_name} dataloader...')
