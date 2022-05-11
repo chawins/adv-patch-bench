@@ -50,7 +50,7 @@ def collect_backgrounds(dataloader, img_size, num_bg, device,
                 continue
 
         found = False
-        obj = None
+        obj, obj_label = None, None
         if class_name is not None:
             assert img_df is not None
             for _, obj in img_df.iterrows():

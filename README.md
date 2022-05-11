@@ -100,5 +100,4 @@ cd ./yolor/scripts && gdown 1Tdn3yqpZ79X7R1Ql0zNlNScB1Dv9Fp76
 sh train_yolo.sh
 ```
 
-## Other Tips
-
+<!-- ## Other Tips -->
