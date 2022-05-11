@@ -10,6 +10,7 @@ import json
 import os
 import pdb
 import pickle
+import random
 import sys
 import warnings
 from pathlib import Path
@@ -979,4 +980,7 @@ def main(opt):
 
 if __name__ == "__main__":
     opt = parse_opt()
+    torch.random.manual_seed(opt.SEED)
+    np.random.seed(opt.SEED)
+    random.seed(opt.SEED)
     main(opt)
