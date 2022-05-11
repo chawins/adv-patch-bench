@@ -107,7 +107,7 @@ def generate_adv_patch(
     img_size: Tuple[int, int] = (992, 1312),
     obj_class: int = 0,
     obj_size: int = None,
-    bg_dir: str = './',
+    # bg_dir: str = './',
     num_bg: int = 16,
     save_images: bool = False,
     save_dir: str = './',
@@ -123,7 +123,6 @@ def generate_adv_patch(
     **kwargs,
 ):
     """Generate adversarial patch"""
-    class_name = LABEL_LIST[dataset][obj_class]
     print(f'=> Initializing attack...')
     with open(attack_config_path) as file:
         attack_config = yaml.load(file, Loader=yaml.FullLoader)
@@ -145,12 +144,14 @@ def generate_adv_patch(
     #     bg = torchvision.io.read_image(join(bg_dir, all_bgs[index])) / 255
     #     backgrounds[i] = T.resize(bg, bg_size, antialias=True)
 
-    df = None
     if not synthetic:
         # For synthetic sign, we don't care about transforms and classes
         df = pd.read_csv(tgt_csv_filepath)
         df['tgt_final'] = df['tgt_final'].apply(literal_eval)
         df = df[df['final_shape'] != 'other-0.0-0.0']
+        class_name = LABEL_LIST[dataset][obj_class]
+    else:
+        df = None
         class_name = None
 
     attack_images, metadata, backgrounds = collect_backgrounds(
