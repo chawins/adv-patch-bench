@@ -2,7 +2,7 @@
 GPU=0
 PATCH_NAME=10x10_bottom
 EXP=1
-MODEL_PATH=~/data/adv-patch-bench/yolov5/runs/train/exp10/weights/best.pt
+MODEL_PATH=~/data/adv-patch-bench/yolov5/runs/train/exp11/weights/best.pt
 CSV_PATH=mapillary_vistas_final_merged.csv
 SYN_OBJ_PATH=attack_assets/octagon-915.0.png
 OBJ_CLASS=10
