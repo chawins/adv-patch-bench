@@ -18,7 +18,7 @@ IMG_SIZE=1536,2048 # sizes: (1536,2048), (3040,4032)
 CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
     --num-gpus $NUM_GPU --config-file ./configs/faster_rcnn_R_50_FPN_3x.yaml \
     --padded-imgsz $IMG_SIZE --name no_patch --tgt-csv-filepath $CSV_PATH \
-    --dataset mapillary-combined-no_color --eval-mode mtsd --verbose --debug \
+    --dataset mapillary-combined-no_color --eval-mode mtsd --verbose --debug --single-image \
     MODEL.ROI_HEADS.NUM_CLASSES 12 \
     OUTPUT_DIR $OUTPUT_PATH \
     MODEL.WEIGHTS $OUTPUT_PATH/model_final.pth \
