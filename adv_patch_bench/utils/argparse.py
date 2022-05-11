@@ -60,20 +60,20 @@ def eval_args_parser(is_detectron, root=None):
                               'that prediction is not matched to any label, it will be discarded'))
 
     # ===================== Patch generation arguments ====================== #
-    parser.add_argument('--obj-size', type=int, default=None, 
+    parser.add_argument('--obj-size', type=int, default=None,
                         help='Object width in pixels (default: 0.1 * img_size)')
-    parser.add_argument('--patch-size-inch', type=int, default=None, 
+    parser.add_argument('--patch-size-inch', type=int, default=None,
                         help='Patch size in inches (deprecated)')
-    parser.add_argument('--bg-dir', type=str, default='', 
+    parser.add_argument('--bg-dir', type=str, default='',
                         help='path to background directory')
-    parser.add_argument('--num-bg', type=int, default=1, 
+    parser.add_argument('--num-bg', type=int, default=1,
                         help='Number of backgrounds used to generate patch')
-    parser.add_argument('--save-images', action='store_true', 
+    parser.add_argument('--save-images', action='store_true',
                         help='Save generated patch')
     # parser.add_argument('--detectron', action='store_true', help='Model is detectron else YOLO')
 
     if is_detectron:
-        parser.add_argument('--compute-metrics', action='store_true', 
+        parser.add_argument('--compute-metrics', action='store_true',
                             help='Compute metrics after running attack')
     else:
         # ========================= YOLO arguments ========================== #
@@ -107,8 +107,9 @@ def eval_args_parser(is_detectron, root=None):
     parser.add_argument('--metrics-confidence-threshold', type=float, default=None, help='confidence threshold')
     parser.add_argument('--plot-fp', action='store_true', help='save images containing false positives')
 
+    # TODO: remove in the future
     parser.add_argument(
-        '--other-class-confidence-threshold', type=float, default=None,
+        '--other-class-confidence-threshold', type=float, default=0,
         help='confidence threshold at which other labels are changed if there is a match with a prediction')
 
     return parser.parse_args()
@@ -119,6 +120,8 @@ def parse_dataset_name(args):
     assert len(tokens) in (2, 3)
     args.dataset = f'{tokens[0]}_{tokens[2]}' if len(tokens) == 3 else f'{tokens[0]}_no_color'
     args.use_color = 'no_color' not in tokens
+    # Set YOLO data yaml file
+    args.data = f'{args.dataset}.yaml'
     return tokens
 
 
