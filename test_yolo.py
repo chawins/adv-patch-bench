@@ -294,8 +294,6 @@ def run(args,
 
     try:
         names = {k: v for k, v in enumerate(model.names if hasattr(model, 'names') else model.module.names)}
-        # TODO: temporary fix # FIXME: ?
-        # names[11] = 'other'
     except:
         names = {k: v for k, v in enumerate(data['names'])}
 
@@ -329,6 +327,8 @@ def run(args,
     if use_attack:
         # Prepare attack data
         df, adv_patch, patch_mask, patch_loc = prep_attack(args, device)
+        # import pdb
+        # pdb.set_trace()
 
     # Initialize attack
     if attack_type == 'per-sign':
@@ -387,13 +387,11 @@ def run(args,
             break
         # ======================= BEGIN: apply patch ======================== #
         for image_i, path in enumerate(paths):
-
             if use_attack and not synthetic:
                 filename = path.split('/')[-1]
                 img_df = df[df['filename'] == filename]
                 if len(img_df) == 0:
                     continue
-
                 # Skip (or only run on) files listed in the txt file
                 in_list = filename in filename_list
                 if ((in_list and not args.run_only_img_txt) or
@@ -406,11 +404,12 @@ def run(args,
                     (h0, w0), ((h_ratio, w_ratio), (w_pad, h_pad)) = shapes[image_i]
                     img_data = (h0, w0, h_ratio, w_ratio, w_pad, h_pad)
                     predicted_class = row['final_shape']
-
-                    shape = predicted_class.split('-')[0]
-                    if shape != names[adv_sign_class]:
+                    
+                    # shape = predicted_class.split('-')[0]
+                    # print(shape)
+                    # print(names[adv_sign_class])
+                    if predicted_class != names[adv_sign_class]:
                         continue
-
                     # Run attack for each sign
                     if attack_type == 'per-sign':
                         print('=> Generating adv patch...')
@@ -555,11 +554,7 @@ def run(args,
                 # `label_idx`: idx of object in `labels`
                 # `pred_idx`: idx of object in `predn`
 
-                # matching on bounding boxes and correct predictions, i.e, match label and pred if iou >= 0.5 and label == pred
-                # or match on whether label == 'other' class and iou(label, pred) >= 0.5
-                # correct, matches = process_batch(predn, labelsn, iouv, other_class_label=None)
-                # FIXME:
-                # _, iou_matches, _ = process_batch(predn, labelsn, iouv, match_on_iou_only=True)
+                _, iou_matches, _ = process_batch(predn, labelsn, iouv, match_on_iou_only=True)
                 iou_matches = []
                 correct, matches, iou = process_batch(
                     predn, labelsn, iouv, other_class_label=other_class_label,
@@ -568,6 +563,7 @@ def run(args,
                 if plots:
                     confusion_matrix.process_batch(predn, labelsn)
             else:
+                iou_matches = []
                 correct, matches = torch.zeros(pred.shape[0], niou, dtype=torch.bool), []
 
             # When there's no match, create a dummy match to make next steps easier
@@ -765,10 +761,10 @@ def run(args,
     current_exp_metrics = {}
 
     if len(stats) and stats[0].any():
-        # metrics = ap_per_class_custom(*stats, plot=plots, save_dir=save_dir, names=names,
-        #                               metrics_conf_thres=metrics_conf_thres, other_class_label=other_class_label)
         metrics = ap_per_class_custom(*stats, plot=plots, save_dir=save_dir, names=names,
-                                      metrics_conf_thres=None, other_class_label=other_class_label)
+                                      metrics_conf_thres=metrics_conf_thres, other_class_label=other_class_label)
+        # metrics = ap_per_class_custom(*stats, plot=plots, save_dir=save_dir, names=names,
+        #                               metrics_conf_thres=None, other_class_label=other_class_label)
         tp, p, r, ap, ap_class, fnr, fn, max_f1_index, precision_cmb, fnr_cmb, fp = metrics
         ap50, ap = ap[:, 0], ap.mean(1)  # AP@0.5, AP@0.5:0.95
         mp, mr, map50, map = p.mean(), r.mean(), ap50.mean(), ap.mean()
