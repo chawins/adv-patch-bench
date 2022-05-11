@@ -27,6 +27,8 @@ def eval_args_parser(is_detectron, root=None):
     parser.add_argument('--seed', type=int, default=0, help='set random seed')
     parser.add_argument('--padded-imgsz', type=str, default='3000,4000',
                         help='final image size including padding (height,width). Default: 3000,4000')
+    parser.add_argument('--annotated-signs-only', action='store_true',
+                        help='if True, only calculate metrics on annotated signs')
 
     # =========================== Attack arguments ========================== #
     parser.add_argument('--attack-type', type=str, default='none',
@@ -97,7 +99,6 @@ def eval_args_parser(is_detectron, root=None):
         parser.add_argument('--half', action='store_true', help='use FP16 half-precision inference')
         parser.add_argument('--dnn', action='store_true', help='use OpenCV DNN for ONNX inference')
         parser.add_argument('--model-name', default='yolov5', help='yolov5 or yolor')
-        parser.add_argument('--annotated-signs-only', action='store_true', help='if True, only calculate metrics on annotated signs')
 
     # ============================== Plot / log ============================= #
     parser.add_argument('--save-exp-metrics', action='store_true', help='save metrics for this experiment to dataframe')
