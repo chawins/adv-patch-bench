@@ -481,20 +481,20 @@ class COCOeval:
                         scores[t, :, k, a, m] = np.array(ss)
 
                         # EDIT: Aggregate tp and fp over all clsses at every iou thres
-                        if a == 0 and m == -1:
-                            print(tp)
-                            tp_cmb[t] += tp
-                            fp_cmb[t] += fp
+                        # if a == 0 and m == -1:
+                        #     print(tp)
+                        #     tp_cmb[t] += tp
+                        #     fp_cmb[t] += fp
 
         # EDIT
-        import pdb
-        pdb.set_trace()
-        # iou_thres = 0.5
-        # iou_idx = p.iouThrs.index(iou_thres)
-        tp_cmb
-        recall_ = recall[:, :, 0, -1]
-        f1 = (2 * recall * pr) / (rc + pr)
-        idx_max_f1 = f1[:, :, :, 0, -1].mean(2).argmax()
+        # import pdb
+        # pdb.set_trace()
+        # # iou_thres = 0.5
+        # # iou_idx = p.iouThrs.index(iou_thres)
+        # tp_cmb
+        # recall_ = recall[:, :, 0, -1]
+        # f1 = (2 * recall * pr) / (rc + pr)
+        # idx_max_f1 = f1[:, :, :, 0, -1].mean(2).argmax()
 
         self.eval = {
             'params': p,
