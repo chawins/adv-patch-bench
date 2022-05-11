@@ -2,9 +2,9 @@
 Generate adversarial patch
 """
 
-from importlib.metadata import metadata
 import os
 import pickle
+import random
 from ast import literal_eval
 from os.path import join
 from pathlib import Path
@@ -25,10 +25,12 @@ from tqdm import tqdm
 
 from adv_patch_bench.attacks.rp2 import RP2AttackModule
 from adv_patch_bench.attacks.utils import get_object_and_mask_from_numpy
-from adv_patch_bench.dataloaders import register_mapillary, register_mtsd
+from adv_patch_bench.dataloaders import (get_mapillary_dict, get_mtsd_dict,
+                                         register_mapillary, register_mtsd)
 from adv_patch_bench.dataloaders.detectron.mapper import BenignMapper
 from adv_patch_bench.utils.argparse import (eval_args_parser,
                                             setup_detectron_test_args)
+from adv_patch_bench.utils.detectron import ShuffleInferenceSampler
 from adv_patch_bench.utils.image import get_obj_width
 from gen_mask import generate_mask
 from hparams import DATASETS, LABEL_LIST, OTHER_SIGN_CLASS, SAVE_DIR_DETECTRON
@@ -133,7 +135,7 @@ def generate_adv_patch(
                              interp=interp, verbose=verbose, is_detectron=True)
 
     # Randomly select backgrounds from `bg_dir` and resize them
-    # NOTE: we might not need this anymore?
+    # TODO: Remoev in the future
     # all_bgs = os.listdir(os.path.expanduser(bg_dir))
     # print(f'There are {len(all_bgs)} background images in {bg_dir}.')
     # idx = np.arange(len(all_bgs))
@@ -224,11 +226,13 @@ def main(
     syn_obj_path='',
     seed=0,
     synthetic=False,
+    num_samples=0,
     **kwargs,
 ):
     cudnn.benchmark = True
     torch.manual_seed(seed)
     np.random.seed(seed)
+    random.seed(seed)
     img_size = tuple([int(i) for i in padded_imgsz.split(',')])
     assert len(img_size) == 2
 
@@ -256,14 +260,12 @@ def main(
     obj_width_inch = get_obj_width(obj_class, class_names)
     patch_mask = generate_mask(obj_numpy, obj_size, obj_width_inch)
 
-    dataloader = None
-    if not synthetic:
-        # Build dataloader
-        dataloader = build_detection_test_loader(
-            cfg, cfg.DATASETS.TEST[0], mapper=BenignMapper(cfg, is_train=False),
-            # cfg, cfg.DATASETS.TEST[0],
-            batch_size=1, num_workers=cfg.DATALOADER.NUM_WORKERS
-        )
+    # Build dataloader
+    dataloader = build_detection_test_loader(
+        cfg, cfg.DATASETS.TEST[0], mapper=BenignMapper(cfg, is_train=False),
+        batch_size=1, num_workers=cfg.DATALOADER.NUM_WORKERS,
+        sampler=ShuffleInferenceSampler(num_samples)
+    )
 
     adv_patch = generate_adv_patch(
         model, obj_numpy, patch_mask, img_size=img_size, obj_size=obj_size,
@@ -305,6 +307,7 @@ if __name__ == "__main__":
             use_color=args.use_color,
             ignore_other=args.data_no_other,
         )
+        data_list = get_mtsd_dict(*dataset_params)
     else:
         assert 'mapillary' in cfg.DATASETS.TEST[0], \
             'Mapillary is specified as dataset in args but not config file'
@@ -312,6 +315,8 @@ if __name__ == "__main__":
             use_color=args.use_color,
             ignore_other=args.data_no_other,
         )
+        data_list = get_mapillary_dict(*dataset_params)
+    num_samples = len(data_list)
 
     print(args)
-    main(**vars(args))
+    main(**vars(args), num_samples=num_samples)

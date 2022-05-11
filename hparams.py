@@ -7,15 +7,44 @@ PATH_MAPILLARY_ANNO = {
     'combined': './mapillary_vistas_final_merged.csv',
 }
 PATH_MTSD_BASE = expanduser('~/data/mtsd_v2_fully_annotated/')
-# PATH_MTSD_BASE = '/datadrive/data/mtsd_v2_fully_annotated/'
 PATH_MAPILLARY_BASE = expanduser('~/data/mapillary_vistas/')
-# PATH_MAPILLARY_BASE = '/datadrive/data/mapillary_vistas/'
-PATH_APB_ANNO = expanduser('~/adv-patch-bench/traffic_sign_dimension_v6.csv')
+PATH_APB_ANNO = expanduser('./traffic_sign_dimension_v6.csv')
 PATH_SIMILAR_FILES = './similar_files_df.csv'
 
 # TODO: move to args in the future
 SAVE_DIR_DETECTRON = './detectron_output'
 
+MTSD_VAL_LABEL_COUNTS_DICT = {
+    'circle-750.0': 2999,
+    'triangle-900.0': 711,
+    'triangle_inverted-1220.0': 347,
+    'diamond-600.0': 176,
+    'diamond-915.0': 1278,
+    'square-600.0': 287,
+    'rect-458.0-610.0': 585,
+    'rect-762.0-915.0': 117,
+    'rect-915.0-1220.0': 135,
+    'pentagon-915.0': 30,
+    'octagon-915.0': 181,
+    'other-0.0-0.0': 19241,
+}
+MTSD_VAL_TOTAL_LABEL_COUNTS = sum(MTSD_VAL_LABEL_COUNTS_DICT.values())
+
+MAPILLARY_LABEL_COUNTS_DICT = {
+    'circle-750.0': 18144,
+    'triangle-900.0': 1473,
+    'triangle_inverted-1220.0': 1961,
+    'diamond-600.0': 1107,
+    'diamond-915.0': 3539,
+    'square-600.0': 1898,
+    'rect-458.0-610.0': 1580,
+    'rect-762.0-915.0': 839,
+    'rect-915.0-1220.0': 638,
+    'pentagon-915.0': 204,
+    'octagon-915.0': 1001,
+    'other-0.0-0.0': 60104,
+}
+MAPILLARY_TOTAL_LABEL_COUNTS = sum(MAPILLARY_LABEL_COUNTS_DICT.values())
 
 # Traffic sign classes and colors
 TS_COLOR_DICT = {
