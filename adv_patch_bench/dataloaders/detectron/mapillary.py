@@ -67,7 +67,7 @@ def get_mapillary_dict(
             xmin, ymin, xmax, ymax = [float(x) for x in [xmin, ymin, xmax, ymax]]
             class_index, obj_id = int(class_index), int(obj_id)
             if only_annotated:
-                if not any(row['object_id'] == row['id']):
+                if not any(row['object_id'] == obj_id):
                     class_index = bg_idx
             # Compute object area if the image were to be resized to have width of 1280 pixels
             obj_width = xmax - xmin
