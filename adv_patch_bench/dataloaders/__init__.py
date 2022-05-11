@@ -6,6 +6,9 @@ from .mtsd import MTSD
 
 DATASET_DICT = {
     'mtsd': MTSD,
+    # TODO: quick fix
+    'mapillary_no_color': MTSD,
+    'mapillary_color': MTSD,
 }
 
 
