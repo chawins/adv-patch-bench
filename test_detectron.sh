@@ -8,7 +8,7 @@ PATCH_NAME=10x10_bottom
 CSV_PATH=mapillary_vistas_final_merged.csv
 SYN_OBJ_PATH=attack_assets/octagon-915.0.png
 OBJ_CLASS=10
-IMG_SIZE=3040,4032 # sizes: (1536,2048), (3040,4032)
+IMG_SIZE=1536,2048 # sizes: (1536,2048), (3040,4032)
 
 # MODEL.ROI_HEADS.NUM_CLASSES 11(12), 15(16), 401  # This should match model not data
 # MODEL.ROI_HEADS.IOU_THRESHOLDS = [0.5]
