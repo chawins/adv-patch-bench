@@ -85,6 +85,7 @@ class COCOeval:
         # Set mode (None, 'mtsd', 'drop')
         self.mode = mode
         self.other_catId = other_catId
+        # TODO Count only annotated signs
 
     def _prepare(self):
         '''

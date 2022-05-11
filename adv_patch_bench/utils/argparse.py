@@ -122,6 +122,7 @@ def parse_dataset_name(args):
     args.use_color = 'no_color' not in tokens
     # Set YOLO data yaml file
     args.data = f'{args.dataset}.yaml'
+    args.split = tokens[1]
     return tokens
 
 

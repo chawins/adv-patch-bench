@@ -42,6 +42,11 @@ def collect_backgrounds(dataloader, img_size, num_bg, device,
     backgrounds = torch.zeros((num_bg, 3) + img_size, )
     num_collected = 0
     print('=> Collecting background images...')
+
+    # DEBUG: count images
+    # counts = [0] * 12
+    # class_names = LABEL_LIST[args.dataset]
+
     for i, batch in tqdm(enumerate(dataloader)):
         file_name = batch[0]['file_name']
         filename = file_name.split('/')[-1]
@@ -54,12 +59,16 @@ def collect_backgrounds(dataloader, img_size, num_bg, device,
         found = False
         obj, obj_label = None, None
         if class_name is not None:
-            assert img_df is not None
+            assert df is not None
             for _, obj in img_df.iterrows():
                 obj_label = obj['final_shape']
                 if obj_label == class_name:
                     found = True
                     break
+                # DEBUG
+                # lb = class_names.index(obj_label)
+                # counts[lb] += 1
+                # num_collected += 1
         else:
             # No df provided or don't care about class
             found = True
@@ -96,6 +105,8 @@ def collect_backgrounds(dataloader, img_size, num_bg, device,
 
         if num_collected >= num_bg:
             break
+
+    # print('======> ', counts)
 
     print(f'=> {len(attack_images)} backgrounds collected.')
     return attack_images[:num_bg], metadata[:num_bg], backgrounds
@@ -307,7 +318,7 @@ if __name__ == "__main__":
             use_color=args.use_color,
             ignore_other=args.data_no_other,
         )
-        data_list = get_mtsd_dict(*dataset_params)
+        data_list = get_mtsd_dict(args.split, *dataset_params)
     else:
         assert 'mapillary' in cfg.DATASETS.TEST[0], \
             'Mapillary is specified as dataset in args but not config file'
@@ -315,7 +326,7 @@ if __name__ == "__main__":
             use_color=args.use_color,
             ignore_other=args.data_no_other,
         )
-        data_list = get_mapillary_dict(*dataset_params)
+        data_list = get_mapillary_dict(args.split, *dataset_params)
     num_samples = len(data_list)
 
     print(args)

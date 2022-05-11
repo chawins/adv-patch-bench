@@ -203,6 +203,7 @@ if __name__ == "__main__":
         dataset_params = register_mapillary(
             use_color=args.use_color,
             ignore_other=args.data_no_other,
+            only_annotated=args.annotated_signs_only,
         )
 
     if args.compute_metrics:
