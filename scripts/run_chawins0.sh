@@ -9,9 +9,11 @@ OBJ_CLASS=10
 YOLO_IMG_SIZE=2016
 IMG_SIZE=1536,2048 # sizes: (1536,2048), (3040,4032)
 
+# --data mapillary_no_color.yaml --dataset mapillary-combined-no_color --task test \
+
 # Test a detector on Detectron2 without attack
 CUDA_VISIBLE_DEVICES=$GPU python -u test_yolo.py \
-    --data mapillary_no_color.yaml --dataset mapillary-combined-no_color --task test \
+    --data mtsd_no_color.yaml --task val \
     --tgt-csv-filepath $CSV_PATH --save-exp-metrics \
     --weights $MODEL_PATH --exist-ok --workers 8 \
     --attack-config-path attack_config.yaml --name $PATCH_NAME \
