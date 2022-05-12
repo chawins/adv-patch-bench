@@ -504,6 +504,7 @@ class COCOeval:
         iou_idx = np.where(p.iouThrs == iou_thres)[0]
         tp, fp = float(tp_cmb[iou_idx]), float(fp_cmb[iou_idx])
         recall_cmb = tp / num_all_classes
+        print(f'[DEBUG] tp: {tp}, all: {num_all_classes}')
 
         self.eval = {
             'params': p,

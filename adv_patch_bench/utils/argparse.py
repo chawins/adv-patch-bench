@@ -68,8 +68,8 @@ def eval_args_parser(is_detectron, root=None):
                         help='Patch size in inches (deprecated)')
     parser.add_argument('--bg-dir', type=str, default='',
                         help='path to background directory')
-    parser.add_argument('--num-bg', type=int, default=1,
-                        help='Number of backgrounds used to generate patch')
+    parser.add_argument('--num-bg', type=float, default=1,
+                        help='Number of backgrounds used to generate patch (use fraction if < 1)')
     parser.add_argument('--save-images', action='store_true',
                         help='Save generated patch')
     # parser.add_argument('--detectron', action='store_true', help='Model is detectron else YOLO')
