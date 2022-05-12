@@ -33,7 +33,8 @@ from adv_patch_bench.utils.argparse import (eval_args_parser,
 from adv_patch_bench.utils.detectron import ShuffleInferenceSampler
 from adv_patch_bench.utils.image import get_obj_width
 from gen_mask import generate_mask
-from hparams import DATASETS, LABEL_LIST, OTHER_SIGN_CLASS, SAVE_DIR_DETECTRON, MAPILLARY_IMG_COUNTS_DICT
+from hparams import (DATASETS, LABEL_LIST, MAPILLARY_IMG_COUNTS_DICT,
+                     OTHER_SIGN_CLASS, SAVE_DIR_DETECTRON)
 
 
 def collect_backgrounds(dataloader, img_size, num_bg, device,
@@ -100,8 +101,8 @@ def collect_backgrounds(dataloader, img_size, num_bg, device,
             _, h, w = image.shape
             assert (h, w) == img_size
             # NOTE: img_data: h_orig, w_orig, h, w, w_pad, h_pad
-            # It's (w_pad, h_pad) and not (h_pad, w_pad) due to
-            # compatibility with YOLO dataloader/augmentation
+            # It's (w_pad, h_pad) and not (h_pad, w_pad) due to compatibility 
+            # with YOLO dataloader/augmentation
             img_data = (h0, w0, h / h0, w / w0, 0, pad_top)
             data = [obj_label, obj, *img_data]
             attack_images.append([image, data, str(filename), batch[0]])
