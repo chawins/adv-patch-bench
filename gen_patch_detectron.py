@@ -220,11 +220,11 @@ def generate_adv_patch(
                 f.write(f'{img[2]}\n')
 
         print(f'=> Start attacking...')
-        with torch.enable_grad():
-            adv_patch = attack.attack_real(attack_images,
-                                           patch_mask=patch_mask.to(device),
-                                           obj_class=obj_class,
-                                           metadata=metadata)
+        # with torch.enable_grad():
+        adv_patch = attack.attack_real(attack_images,
+                                       patch_mask=patch_mask.to(device),
+                                       obj_class=obj_class,
+                                       metadata=metadata)
 
     adv_patch = adv_patch[0].detach().cpu().float()
 

@@ -282,9 +282,9 @@ def apply_transform(
         patch_loc (Tuple[float]): Patch bounding box w.r.t. canonical sign
         transform_func (Any): Transform function from `get_transform`
         tf_data (Tuple[Any]): Parameters of the transform
-        tf_patch (Any, optional): Additional transformation applied to 
+        tf_patch (Any, optional): Additional transformation applied to
             `adv_patch`. Used for random augmentation. Defaults to None.
-        tf_bg (Any, optional): Additional transformation applied to `image`. 
+        tf_bg (Any, optional): Additional transformation applied to `image`.
             Used for random augmentation.. Defaults to None.
 
     Returns:
@@ -296,6 +296,7 @@ def apply_transform(
         adv_patch.clamp_(0, 1).mul_(alpha).add_(beta).clamp_(0, 1)
     else:
         adv_patch.clamp_(0, 1).mul_(1).add_(0).clamp_(0, 1)
+    sign_canonical = sign_canonical.clone()
     sign_canonical[:, :-1, ymin:ymin + height, xmin:xmin + width] = adv_patch
     sign_canonical[:, -1, ymin:ymin + height, xmin:xmin + width] = 1
     sign_canonical = sign_mask * patch_mask * sign_canonical
