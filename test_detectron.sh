@@ -38,7 +38,7 @@ CUDA_VISIBLE_DEVICES=$GPU python -u gen_patch_detectron.py \
     --dataset mapillary-combined-no_color --padded-imgsz $IMG_SIZE \
     --bg-dir ~/data/mtsd_v2_fully_annotated/test/ --num-bg 1 \
     --tgt-csv-filepath $CSV_PATH --attack-config-path attack_config2.yaml \
-    --name $PATCH_NAME --synthetic \
+    --name $PATCH_NAME \
     --obj-class $OBJ_CLASS --syn-obj-path $SYN_OBJ_PATH --verbose --debug \
     MODEL.ROI_HEADS.NUM_CLASSES 12 \
     OUTPUT_DIR $OUTPUT_PATH \

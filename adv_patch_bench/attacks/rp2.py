@@ -52,13 +52,14 @@ class RP2AttackModule(DetectorAttackModule):
         # Defind EoT data augmentation when generating adversarial examples
         # bg_size = (self.input_size[0] - 32, self.input_size[1] - 32)
         bg_size = self.input_size
-        self.bg_transforms = K.RandomResizedCrop(bg_size, scale=(0.8, 1), p=1.0,
+        self.bg_transforms = K.RandomResizedCrop(bg_size, scale=(0.8, 1), p=.0,
                                                  resample=self.interp)
-        self.obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0,
+        self.obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=.0,
                                              return_transform=True, resample=self.interp)
-        self.mask_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0,
+        self.mask_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=.0,
                                               resample=Resample.NEAREST)
-        self.jitter_transform = K.ColorJitter(brightness=0.3, contrast=0.3, p=1.0)
+        self.jitter_transform = K.ColorJitter(brightness=0.3, contrast=0.3, p=.0)
+        # TODO: Add EoT on the patch?
         self.real_transform = {}
         if self.augment_real:
             self.real_transform['tf_patch'] = K.RandomAffine(
@@ -119,7 +120,7 @@ class RP2AttackModule(DetectorAttackModule):
         # from detectron2.utils.visualizer import Visualizer
         # from detectron2.data import MetadataCatalog
         # with torch.no_grad():
-        #     idx = 1
+        #     idx = 0
         #     metadata[idx]['height'], metadata[idx]['width'] = adv_img.shape[2:]
         #     outputs = self.core_model(metadata)[idx]
         #     instances = outputs["instances"]
@@ -206,7 +207,7 @@ class RP2AttackModule(DetectorAttackModule):
             # lr_schedule = optim.lr_scheduler.MultiStepLR(opt, [500, 1000, 1500], gamma=0.1)
             lr_schedule = optim.lr_scheduler.ReduceLROnPlateau(
                 opt, factor=0.5, patience=int(self.num_steps / 10),
-                threshold=1e-9, min_lr=self.step_size * 1e-6, verbose=True)
+                threshold=1e-9, min_lr=self.step_size * 1e-6, verbose=self.verbose)
             start_time = time.time()
 
             # Run PGD on inputs for specified number of steps
@@ -286,10 +287,9 @@ class RP2AttackModule(DetectorAttackModule):
                     ema_loss = loss.item()
                 else:
                     ema_loss = ema_const * ema_loss + (1 - ema_const) * loss.item()
-                # lr_schedule.step(ema_loss)
+                lr_schedule.step(ema_loss)
 
-                if step % 100 == 0 and self.verbose:
-                    # print(self.compute_loss(adv_img, obj_class))
+                if step % 10 == 0 and self.verbose:
                     print(f'step: {step}  loss: {ema_loss:.6f}  time: {time.time() - start_time:.2f}s')
                     start_time = time.time()
 
@@ -302,7 +302,7 @@ class RP2AttackModule(DetectorAttackModule):
             #     x_adv_worst = x_adv * up_mask + x_adv_worst * (1 - up_mask)
             #     worst_losses = fin_losses * up_mask + worst_losses * (1 - up_mask)
 
-        # DEBUG
+        # DEBUG: YOLO
         # outt = non_max_suppression(out.detach(), conf_thres=0.25, iou_thres=0.6)
         # plot_images(adv_img.clamp(0, 1).detach(), c)
 
@@ -391,9 +391,7 @@ class RP2AttackModule(DetectorAttackModule):
                     patch_loc, tf_function, curr_tf_data, interp=self.interp,
                     **self.real_transform, use_relight=self.use_relight)
 
-                # TODO: Add EoT on the patch?
-
-                # # DEBUG
+                # DEBUG
                 # torchvision.utils.save_image(adv_img, 'temp_img.png')
                 # import pdb
                 # pdb.set_trace()
@@ -420,7 +418,8 @@ class RP2AttackModule(DetectorAttackModule):
                 # lr_schedule.step(loss)
 
                 if step % 100 == 0 and self.verbose:
-                    print(f'step: {step:4d}  loss: {ema_loss:.4f}  time: {time.time() - start_time:.2f}s')
+                    print(f'step: {step:4d}  loss: {ema_loss:.4f}  '
+                          f'time: {time.time() - start_time:.2f}s')
                     start_time = time.time()
                     # DEBUG
                     # import os
