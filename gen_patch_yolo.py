@@ -162,9 +162,6 @@ def generate_adv_patch(
         for batch_i, (im, targets, paths, shapes) in enumerate(dataloader):
             for image_i, path in enumerate(paths):
                 filename = path.split('/')[-1]
-                # bDtPvveUyz0PHka-ssj7ug.jpg
-                # print(filename)
-                # qqq
                 img_df = df[df['filename'] == filename]
 
                 if len(img_df) == 0:
@@ -278,20 +275,6 @@ def main(
         patch_mask = patch_mask.float() / 255   
 
         patch_mask = patch_mask[0]     
-
-        # save_dir = './masks/'
-        # mask_save_path = os.path.join(save_dir, 'test0.png')
-        # torchvision.utils.save_image(patch_mask[0], mask_save_path)
-
-        # mask_save_path = os.path.join(save_dir, 'test1.png')
-        # torchvision.utils.save_image(patch_mask[1], mask_save_path)
-
-        # mask_save_path = os.path.join(save_dir, 'test2.png')
-        # torchvision.utils.save_image(patch_mask[2], mask_save_path)
-
-
-        # print(patch_mask.shape)
-        # qqq
     else:
         # Otherwise, generate a new mask here
         # Get size in inch from sign class

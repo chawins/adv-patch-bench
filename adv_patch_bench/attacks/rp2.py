@@ -390,11 +390,12 @@ class RP2AttackModule(DetectorAttackModule):
                     backgrounds[bg_idx].clone(), delta.clone(), patch_mask,
                     patch_loc, tf_function, curr_tf_data, interp=self.interp,
                     **self.real_transform, use_relight=self.use_relight)
+                    
 
                 # TODO: Add EoT on the patch?
 
-                # DEBUG
-                # torchvision.utils.save_image(adv_img, 'temp.png')
+                # # DEBUG
+                # torchvision.utils.save_image(adv_img, 'temp_img.png')
                 # import pdb
                 # pdb.set_trace()
 
