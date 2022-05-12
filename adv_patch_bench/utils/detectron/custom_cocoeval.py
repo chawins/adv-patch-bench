@@ -355,7 +355,7 @@ class COCOeval:
             for dind, d in enumerate(dt):
                 if d['category_id'] == self.other_catId:
                     if dtm[0, dind] > 0:
-                        # Collect matched dt
+                        # Collect matched dt (IoU 0.5)
                         matched_gt.append(dtm[0, dind])
                     # Just ignore all other dt
                     dtIg[:, dind] = 1
