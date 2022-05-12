@@ -27,6 +27,8 @@ def eval_args_parser(is_detectron, root=None):
     parser.add_argument('--seed', type=int, default=0, help='set random seed')
     parser.add_argument('--padded-imgsz', type=str, default='3000,4000',
                         help='final image size including padding (height,width). Default: 3000,4000')
+    parser.add_argument('--annotated-signs-only', action='store_true',
+                        help='if True, only calculate metrics on annotated signs')
 
     # =========================== Attack arguments ========================== #
     parser.add_argument('--attack-type', type=str, default='none',
@@ -66,8 +68,8 @@ def eval_args_parser(is_detectron, root=None):
                         help='Patch size in inches (deprecated)')
     parser.add_argument('--bg-dir', type=str, default='',
                         help='path to background directory')
-    parser.add_argument('--num-bg', type=int, default=1,
-                        help='Number of backgrounds used to generate patch')
+    parser.add_argument('--num-bg', type=float, default=1,
+                        help='Number of backgrounds used to generate patch (use fraction if < 1)')
     parser.add_argument('--save-images', action='store_true',
                         help='Save generated patch')
     # parser.add_argument('--detectron', action='store_true', help='Model is detectron else YOLO')
@@ -97,7 +99,6 @@ def eval_args_parser(is_detectron, root=None):
         parser.add_argument('--half', action='store_true', help='use FP16 half-precision inference')
         parser.add_argument('--dnn', action='store_true', help='use OpenCV DNN for ONNX inference')
         parser.add_argument('--model-name', default='yolov5', help='yolov5 or yolor')
-        parser.add_argument('--annotated-signs-only', action='store_true', help='if True, only calculate metrics on annotated signs')
 
     # ============================== Plot / log ============================= #
     parser.add_argument('--save-exp-metrics', action='store_true', help='save metrics for this experiment to dataframe')
@@ -123,6 +124,7 @@ def parse_dataset_name(args):
     args.use_color = 'no_color' not in tokens
     # Set YOLO data yaml file
     args.data = f'{args.dataset}.yaml'
+    args.split = tokens[1]
     return tokens
 
 

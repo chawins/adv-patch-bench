@@ -177,8 +177,10 @@ class COCOeval:
             # TODO: potential bug (low impact): this way, one "other" gt can be
             # matched to multiple dt's.
             # Match non-other dt to either other or non-other dt
-            gt = [*self._gts[imgId, catId], *self._gts[imgId, self.other_catId]]
-            dt = self._dts[imgId, catId]
+            # gt = [*self._gts[imgId, catId], *self._gts[imgId, self.other_catId]]
+            # dt = self._dts[imgId, catId]
+            gt = self._gts[imgId, catId]
+            dt = [*self._dts[imgId, catId], *self._dts[imgId, self.other_catId]]
         elif p.useCats:
             gt = self._gts[imgId, catId]
             dt = self._dts[imgId, catId]
@@ -263,14 +265,15 @@ class COCOeval:
         # EDIT: ============================================================= #
         catId_is_other = catId == self.other_catId
         if self.mode is not None and catId_is_other:
-            # For other catId , we want to consider all detections regardless
-            # of their catId.
+            # For other gt, consider all detections regardless of their catId
             gt = self._gts[imgId, catId]
             dt = [_ for cId in p.catIds for _ in self._dts[imgId, cId]]
         elif self.mode == 'mtsd':
-            # Match non-other dt to either other or non-other dt
-            gt = [*self._gts[imgId, catId], *self._gts[imgId, self.other_catId]]
-            dt = self._dts[imgId, catId]
+            # In MTSD, for non-other gt, match to either other or non-other dt
+            # gt = [*self._gts[imgId, catId], *self._gts[imgId, self.other_catId]]
+            # dt = self._dts[imgId, catId]
+            gt = self._gts[imgId, catId]
+            dt = [*self._dts[imgId, catId], *self._dts[imgId, self.other_catId]]
         # =================================================================== #
         elif p.useCats:
             gt = self._gts[imgId, catId]
@@ -335,27 +338,32 @@ class COCOeval:
 
         # EDIT: ============================================================= #
         if self.mode is not None and catId_is_other:
-            # When in drop mode, set ignore flag of *all* other gt to 1 and set
-            # ignore flag of *matched* dt to 1
+            # When gt is other, ignore all gt and ignore all dt
+            # TODO: don't even need matching in this case
             gtIg[:] = 1
-            for dind, d in enumerate(dt):
-                # Ignore any dt matched with "other" gt
-                is_matched = dtm[:, dind] > 0
-                dtIg[is_matched, dind] = 1
-                # Ignore the remaining unmatched "other" dt
-                if d['category_id'] == self.other_catId:
-                    dtIg[:, dind] = 1
+            # for dind, d in enumerate(dt):
+            #     # Ignore any dt matched with "other" gt
+            #     is_matched = dtm[:, dind] > 0
+            #     dtIg[is_matched, dind] = 1
+            #     # Ignore the remaining unmatched "other" dt
+            #     if d['category_id'] == self.other_catId:
+            #         dtIg[:, dind] = 1
+            dtIg[:, :] = 1
         elif self.mode == 'mtsd':
-            # Set ignore flag for other gt and any matched (non-other) dt
-            gt_other_id = []
+            # When gt is non-other, ignore all other dt and corresponding gt
+            matched_gt = []
+            for dind, d in enumerate(dt):
+                if d['category_id'] == self.other_catId:
+                    if dtm[0, dind] > 0:
+                        # Collect matched dt
+                        matched_gt.append(dtm[0, dind])
+                    # Just ignore all other dt
+                    dtIg[:, dind] = 1
+            matched_gt = set(matched_gt)
             for gind, g in enumerate(gt):
-                if g['category_id'] == self.other_catId:
+                if g['id'] in matched_gt:
+                    # In MTSD, also ignore matched gt
                     gtIg[gind] = 1
-                    gt_other_id.append(g['id'])
-            for tind, t in enumerate(p.iouThrs):
-                for dind, d in enumerate(dt):
-                    if dtm[tind, dind] in gt_other_id:
-                        dtIg[tind, dind] = 1
         # =================================================================== #
 
         # set unmatched detections outside of area range to ignore
@@ -496,6 +504,7 @@ class COCOeval:
         iou_idx = np.where(p.iouThrs == iou_thres)[0]
         tp, fp = float(tp_cmb[iou_idx]), float(fp_cmb[iou_idx])
         recall_cmb = tp / num_all_classes
+        print(f'[DEBUG] tp: {tp}, all: {num_all_classes}')
 
         self.eval = {
             'params': p,

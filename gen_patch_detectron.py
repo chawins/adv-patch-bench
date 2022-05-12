@@ -33,15 +33,27 @@ from adv_patch_bench.utils.argparse import (eval_args_parser,
 from adv_patch_bench.utils.detectron import ShuffleInferenceSampler
 from adv_patch_bench.utils.image import get_obj_width
 from gen_mask import generate_mask
-from hparams import DATASETS, LABEL_LIST, OTHER_SIGN_CLASS, SAVE_DIR_DETECTRON
+from hparams import DATASETS, LABEL_LIST, OTHER_SIGN_CLASS, SAVE_DIR_DETECTRON, MAPILLARY_IMG_COUNTS_DICT
 
 
 def collect_backgrounds(dataloader, img_size, num_bg, device,
                         df=None, class_name=None):
+    if num_bg < 1:
+        assert class_name is not None
+        print(f'num_bg is a fraction ({num_bg}).')
+        num_bg = round(MAPILLARY_IMG_COUNTS_DICT[class_name] * num_bg)
+        print(f'For {class_name}, this is {num_bg} images.')
+    num_bg = int(num_bg)
+
     attack_images, metadata = [], []
     backgrounds = torch.zeros((num_bg, 3) + img_size, )
     num_collected = 0
     print('=> Collecting background images...')
+
+    # DEBUG: count images
+    # counts = [0] * 12
+    # class_names = LABEL_LIST[args.dataset]
+
     for i, batch in tqdm(enumerate(dataloader)):
         file_name = batch[0]['file_name']
         filename = file_name.split('/')[-1]
@@ -52,14 +64,18 @@ def collect_backgrounds(dataloader, img_size, num_bg, device,
                 continue
 
         found = False
-        obj, obj_label = None, None
-        if class_name is not None:
-            assert img_df is not None
+        obj, obj_label = None, class_name
+        if class_name is not None and df is not None:
             for _, obj in img_df.iterrows():
                 obj_label = obj['final_shape']
                 if obj_label == class_name:
                     found = True
                     break
+            # DEBUG
+            # obj_labels = np.unique(img_df['final_shape'])
+            # for obj_label in obj_labels:
+            #     lb = class_names.index(obj_label)
+            #     counts[lb] += 1
         else:
             # No df provided or don't care about class
             found = True
@@ -94,11 +110,14 @@ def collect_backgrounds(dataloader, img_size, num_bg, device,
                 backgrounds[num_collected] = image
             num_collected += 1
 
+        # num_collected += 1
         if num_collected >= num_bg:
             break
 
+    # print('======> ', counts, num_collected)
+
     print(f'=> {len(attack_images)} backgrounds collected.')
-    return attack_images[:num_bg], metadata[:num_bg], backgrounds
+    return attack_images[:num_bg], metadata[:num_bg], backgrounds / 255
 
 
 def generate_adv_patch(
@@ -146,15 +165,13 @@ def generate_adv_patch(
     #     bg = torchvision.io.read_image(join(bg_dir, all_bgs[index])) / 255
     #     backgrounds[i] = T.resize(bg, bg_size, antialias=True)
 
+    df = None
+    class_name = LABEL_LIST[dataset][obj_class]
     if not synthetic:
         # For synthetic sign, we don't care about transforms and classes
         df = pd.read_csv(tgt_csv_filepath)
         df['tgt_final'] = df['tgt_final'].apply(literal_eval)
         df = df[df['final_shape'] != 'other-0.0-0.0']
-        class_name = LABEL_LIST[dataset][obj_class]
-    else:
-        df = None
-        class_name = None
 
     attack_images, metadata, backgrounds = collect_backgrounds(
         dataloader, img_size, num_bg, device, df=df, class_name=class_name)
@@ -178,7 +195,8 @@ def generate_adv_patch(
                                       patch_mask_.to(device),
                                       backgrounds.to(device),
                                       obj_class=obj_class,
-                                      obj_size=obj_size)
+                                      obj_size=obj_size,
+                                      metadata=metadata)
 
         if save_images:
             torchvision.utils.save_image(obj, join(save_dir, 'obj.png'))
@@ -307,15 +325,16 @@ if __name__ == "__main__":
             use_color=args.use_color,
             ignore_other=args.data_no_other,
         )
-        data_list = get_mtsd_dict(*dataset_params)
+        data_list = get_mtsd_dict(args.split, *dataset_params)
     else:
         assert 'mapillary' in cfg.DATASETS.TEST[0], \
             'Mapillary is specified as dataset in args but not config file'
         dataset_params = register_mapillary(
             use_color=args.use_color,
             ignore_other=args.data_no_other,
+            only_annotated=args.annotated_signs_only,  # This should be False in this case
         )
-        data_list = get_mapillary_dict(*dataset_params)
+        data_list = get_mapillary_dict(args.split, *dataset_params)
     num_samples = len(data_list)
 
     print(args)

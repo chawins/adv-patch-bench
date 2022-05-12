@@ -11,6 +11,7 @@ from kornia import augmentation as K
 from kornia.constants import Resample
 from yolov5.utils.general import non_max_suppression
 from yolov5.utils.plots import output_to_target, plot_images
+from detectron2.structures import Boxes, Instances
 
 from ..utils.image import letterbox, mask_to_box
 from .base_detector import DetectorAttackModule
@@ -160,6 +161,7 @@ class RP2AttackModule(DetectorAttackModule):
         backgrounds: torch.Tensor,
         obj_class: int = None,
         obj_size: tuple = None,
+        metadata: Optional[List] = None,
     ) -> torch.Tensor:
         """Run RP2 Attack.
 
@@ -176,6 +178,11 @@ class RP2AttackModule(DetectorAttackModule):
         self.core_model.eval()
         device = obj.device
         dtype = obj.dtype
+
+        metadata_clone = np.empty(len(backgrounds))
+        if self.is_detectron:
+            assert metadata is not None, 'metadata is needed for detectron'
+            metadata_clone = self._clone_detectron_metadata(backgrounds, metadata)
 
         obj.detach_()
         obj_mask.detach_()
@@ -204,9 +211,6 @@ class RP2AttackModule(DetectorAttackModule):
 
             # Run PGD on inputs for specified number of steps
             for step in range(self.num_steps):
-                z_delta.requires_grad_()
-                delta = self._to_model_space(z_delta, 0, 1)
-
                 # Randomly select background and apply transforms (crop and scale)
                 np.random.shuffle(all_bg_idx)
                 bg_idx = all_bg_idx[:self.num_eot]
@@ -215,9 +219,22 @@ class RP2AttackModule(DetectorAttackModule):
                 if not self.is_detectron:
                     # Patch image the same way as YOLO
                     bgs = letterbox(bgs, new_shape=self.input_size, color=114/255)[0]
-                synthetic_sign_size = obj_size[0]
+
+                if self.is_detectron:
+                    # Update metada with location of transformed synthetic sign
+                    for i in range(self.num_eot):
+                        m = metadata_clone[bg_idx[i]]
+                        instances = m['instances']
+                        new_instances = Instances(instances.image_size)
+                        # Turn o_mask to gt_boxes
+                        ymin, xmin, height, width = mask_to_box(o_mask[i])
+                        box = torch.tensor([[xmin, ymin, xmin + width, ymin + height]])
+                        new_instances.gt_boxes = Boxes(box)
+                        new_instances.gt_classes = [obj_class]
+                        m['instances'] = new_instances
 
                 if self.rescaling:
+                    synthetic_sign_size = obj_size[0]
                     # TODO: clean this and generalize this to other signs?
                     old_ratio = synthetic_sign_size / self.input_size[0]
                     prob_array = [0.38879158, 0.26970227, 0.16462349, 0.07530647, 0.04378284,
@@ -231,36 +248,39 @@ class RP2AttackModule(DetectorAttackModule):
                         30, translate=(0.45, 0.45),
                         p=1.0, return_transform=True, scale=(low_bin_edge / old_ratio, high_bin_edge / old_ratio))
 
-                # Copy patch to synthetic sign
                 adv_obj = obj.clone()
-                adv_obj[:, ymin:ymin + height, xmin:xmin + width] = delta
+                with torch.enable_grad():
+                    z_delta.requires_grad_()
+                    delta = self._to_model_space(z_delta, 0, 1)
+                    # Copy patch to synthetic sign
+                    adv_obj[:, ymin:ymin + height, xmin:xmin + width] = delta
 
-                # Apply random transformations to both sign and patch
-                adv_obj = adv_obj.expand(self.num_eot, -1, -1, -1)
-                if self.use_relight:
-                    adv_obj = self.jitter_transform(adv_obj)
-                adv_obj, tf_params = self.obj_transforms(adv_obj)
-                o_mask = self.mask_transforms.apply_transform(
-                    obj_mask_dup, None, transform=tf_params)
+                    # Apply random transformations to both sign and patch
+                    adv_obj = adv_obj.expand(self.num_eot, -1, -1, -1)
+                    if self.use_relight:
+                        adv_obj = self.jitter_transform(adv_obj)
+                    adv_obj, tf_params = self.obj_transforms(adv_obj)
+                    o_mask = self.mask_transforms.apply_transform(
+                        obj_mask_dup, None, transform=tf_params)
 
-                # Apply sign on background
-                adv_img = o_mask * adv_obj + (1 - o_mask) * bgs
-                adv_img = adv_img.clamp(0, 1)
+                    # Apply sign on background
+                    adv_img = o_mask * adv_obj + (1 - o_mask) * bgs
+                    adv_img = adv_img.clamp(0, 1)
 
-                # DEBUG
-                # if step % 100 == 0:
-                #     torchvision.utils.save_image(adv_img[0], f'gen_synthetic_adv_{step}.png')
-                #     import pdb
-                #     pdb.set_trace()
+                    # DEBUG
+                    # if step % 100 == 0:
+                    #     torchvision.utils.save_image(adv_img[0], f'gen_synthetic_adv_{step}.png')
+                    #     import pdb
+                    #     pdb.set_trace()
 
-                tv = ((delta[:, :, :-1, :] - delta[:, :, 1:, :]).abs().mean() +
-                      (delta[:, :, :, :-1] - delta[:, :, :, 1:]).abs().mean())
-                loss = self.compute_loss(adv_img, obj_class)
-                loss += self.lmbda * tv
-                # out, _ = self.core_model(adv_img, val=True)
-                # loss = out[:, :, 4].mean() + self.lmbda * tv
-                loss.backward(retain_graph=True)
-                opt.step()
+                    tv = ((delta[:, :, :-1, :] - delta[:, :, 1:, :]).abs().mean() +
+                          (delta[:, :, :, :-1] - delta[:, :, :, 1:]).abs().mean())
+                    loss = self.compute_loss(adv_img, obj_class, metadata_clone[bg_idx])
+                    loss += self.lmbda * tv
+                    # out, _ = self.core_model(adv_img, val=True)
+                    # loss = out[:, :, 4].mean() + self.lmbda * tv
+                    loss.backward(retain_graph=True)
+                    opt.step()
 
                 if ema_loss is None:
                     ema_loss = loss.item()
@@ -313,7 +333,8 @@ class RP2AttackModule(DetectorAttackModule):
         metadata_clone = np.empty(len(objs))
         if self.is_detectron:
             assert metadata is not None, 'metadata is needed for detectron'
-            metadata_clone = self._clone_detectron_metadata(objs, metadata)
+            metadata_clone = self._clone_detectron_metadata(
+                [obj[0] for obj in objs], metadata)
 
         ema_const = 0.99
         ema_loss = None
@@ -417,14 +438,14 @@ class RP2AttackModule(DetectorAttackModule):
         self.core_model.train(mode)
         return delta.detach()
 
-    def _clone_detectron_metadata(self, objs, metadata):
+    def _clone_detectron_metadata(self, imgs, metadata):
         metadata_clone = []
-        for obj, m in zip(objs, metadata):
+        for img, m in zip(imgs, metadata):
             data_dict = {}
             for keys in m:
                 data_dict[keys] = m[keys]
             data_dict['image'] = None
-            data_dict['height'], data_dict['width'] = obj[0].shape[1:]
+            data_dict['height'], data_dict['width'] = img.shape[1:]
             metadata_clone.append(data_dict)
         metadata_clone = np.array(metadata_clone)
         return metadata_clone
