@@ -2,11 +2,16 @@
 
 ## Dependencies
 
+Test with
+
+- `python == 3.8`
+- `cuda >= 11.2`
+
 ```bash
 conda install -y pytorch torchvision torchaudio cudatoolkit=11.3 -c pytorch
 conda install -y scipy pandas scikit-learn pip seaborn
 conda upgrade -y numpy scipy pandas scikit-learn
-conda install -y -c conda-forge opencv albumentations kornia timm
+conda install -y -c conda-forge opencv albumentations timm kornia==0.6.3
 python -m pip install 'git+https://github.com/facebookresearch/detectron2.git'
 ```
 

@@ -119,7 +119,7 @@ class RP2AttackModule(DetectorAttackModule):
         # from detectron2.utils.visualizer import Visualizer
         # from detectron2.data import MetadataCatalog
         # with torch.no_grad():
-        #     idx = 1
+        #     idx = 0
         #     metadata[idx]['height'], metadata[idx]['width'] = adv_img.shape[2:]
         #     outputs = self.core_model(metadata)[idx]
         #     instances = outputs["instances"]
