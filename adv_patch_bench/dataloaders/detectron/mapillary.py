@@ -66,9 +66,10 @@ def get_mapillary_dict(
             class_index, xmin, ymin, xmax, ymax, _, _, obj_id = obj.split(',')
             xmin, ymin, xmax, ymax = [float(x) for x in [xmin, ymin, xmax, ymax]]
             class_index, obj_id = int(class_index), int(obj_id)
-            if only_annotated:
-                if not any(row['object_id'] == obj_id):
-                    class_index = bg_idx
+            if only_annotated and not any(row['object_id'] == obj_id):
+                # If we want results on annotated signs, we set the class of
+                # the unannotated ones to "other" or background class
+                class_index = bg_idx
             # Compute object area if the image were to be resized to have width of 1280 pixels
             obj_width = xmax - xmin
             obj_height = ymax - ymin
@@ -103,20 +104,18 @@ def register_mapillary(
     only_annotated: bool = True,
 ) -> Tuple:
     base_path = PATH_MAPILLARY_BASE
+    dataset = 'mapillary_color' if use_color else 'mapillary_no_color'
+    bg_idx = OTHER_SIGN_CLASS[dataset]
 
-    if use_color:
-        bg_idx = OTHER_SIGN_CLASS['mapillary_color']
-    else:
-        bg_idx = OTHER_SIGN_CLASS['mapillary_no_color']
+    thing_classes = TS_COLOR_LABEL_LIST if use_color else TS_NO_COLOR_LABEL_LIST
+    if ignore_other:
+        thing_classes = thing_classes[:-1]
 
     splits = ['train', 'val', 'combined']
     for split in splits:
         DatasetCatalog.register(f'mapillary_{split}', lambda s=split: get_mapillary_dict(
-            s, base_path, bg_idx, use_color=use_color, 
+            s, base_path, bg_idx, use_color=use_color,
             ignore_other=ignore_other, only_annotated=only_annotated))
-        thing_classes = TS_COLOR_LABEL_LIST if use_color else TS_NO_COLOR_LABEL_LIST
-        if ignore_other:
-            thing_classes = thing_classes[:-1]
         MetadataCatalog.get(f'mapillary_{split}').set(thing_classes=thing_classes)
 
     return base_path, bg_idx, use_color, ignore_other, only_annotated

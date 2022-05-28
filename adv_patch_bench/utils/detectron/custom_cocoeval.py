@@ -483,6 +483,7 @@ class COCOeval:
                             if pr[i] > pr[i-1]:
                                 pr[i-1] = pr[i]
 
+                        # TODO: score
                         inds = np.searchsorted(rc, p.recThrs, side='left')
                         try:
                             for ri, pi in enumerate(inds):
@@ -505,6 +506,8 @@ class COCOeval:
         tp, fp = float(tp_cmb[iou_idx]), float(fp_cmb[iou_idx])
         recall_cmb = tp / num_all_classes
         print(f'[DEBUG] tp: {tp}, all: {num_all_classes}')
+
+        # TODO: find score threshold that maximizes F1 score
 
         self.eval = {
             'params': p,

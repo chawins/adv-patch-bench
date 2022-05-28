@@ -88,8 +88,11 @@ class DAGAttacker:
         self.df = pd.read_csv(args.tgt_csv_filepath)
         self.class_names = class_names
         self.synthetic = args.synthetic
-        self.no_patch_transform = args.no_patch_transform
-        self.no_patch_relight = args.no_patch_relight
+        self.transform_params = {
+            'use_transform': not args.no_patch_transform,
+            'use_relight': not args.no_patch_relight,
+            'interp': args.interp
+        }
 
         # Loading file names from the specified text file
         self.skipped_filename_list = []
@@ -156,7 +159,6 @@ class DAGAttacker:
                     (not in_list and self.args.run_only_img_txt)):
                 continue
 
-            # Peform DAG attack
             self.log(f'[{i}/{len(self.data_loader)}] Attacking {file_name} ...')
             # Have to preprocess image here [0, 255] -> [-123.675, 151.470]
             # i.e., centered with mean [103.530, 116.280, 123.675], no std
@@ -185,7 +187,7 @@ class DAGAttacker:
                     if obj_label != self.class_names[self.adv_sign_class]:
                         continue
 
-                    # Run attack for each sign to get `adv_patch`
+                    # Run attack for each sign to get a new `adv_patch`
                     if self.attack_type == 'per-sign':
                         data = [obj_label, obj, *img_data]
                         attack_images = [[images, data, str(file_name)]]
@@ -193,15 +195,20 @@ class DAGAttacker:
                             adv_patch = self.attack.attack_real(
                                 attack_images, patch_mask, obj_class, metadata=batch)
 
+                    # TODO: Should we put only one adversarial patch per image?
+                    # i.e., attacking only one sign per image.
+
                     # Transform and apply patch on the image. `im` has range [0, 255]
                     perturbed_image = transform_and_apply_patch(
                         perturbed_image, adv_patch.to(self.device),
                         patch_mask, patch_loc, obj_label, obj, img_data,
-                        use_transform=not self.no_patch_transform,
-                        use_relight=not self.no_patch_relight,
-                        interp=self.args.interp) * 255
+                        **self.transform_params) * 255
                     total_num_patches += 1
                     attacked = True
+
+            if not attacked and not self.use_attack:
+                # Skip image without any adversarial patch when attacking
+                continue
 
             # Perform inference on perturbed image
             # perturbed_image = self._post_process_image(perturbed_image)
@@ -261,11 +268,7 @@ class DAGAttacker:
             if self.debug and i >= 50:
                 break
 
-        # Save predictions as COCO results json format
-        # with open(results_save_path, 'w') as f:
-        #     json.dump(coco_instances_results, f)
         self.evaluator.evaluate()
-
         return coco_instances_results
 
     def _create_instance_dicts(

@@ -569,6 +569,9 @@ def _evaluate_predictions_on_coco(
 
     coco_dt = coco_gt.loadRes(coco_results)
 
+    import pdb
+    pdb.set_trace()
+
     # EDIT: set mode
     coco_eval = (COCOeval_opt if use_fast_impl else COCOeval)(
         coco_gt, coco_dt, iou_type, mode=eval_mode, other_catId=other_catId)

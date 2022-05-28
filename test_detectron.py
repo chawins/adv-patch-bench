@@ -116,7 +116,7 @@ def main_attack(cfg, args, dataset_params):
                          class_names=LABEL_LIST[args.dataset])
     adv_patch, patch_mask = pickle.load(open(args.adv_patch_path, 'rb'))
     print('=> Running attack...')
-    out = attack.run(
+    coco_instances_results = attack.run(
         args.obj_class,
         patch_mask,
         results_save_path=os.path.join(save_dir, f'coco_instances_results.json'),
