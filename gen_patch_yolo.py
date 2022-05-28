@@ -24,7 +24,7 @@ from adv_patch_bench.attacks.rp2 import RP2AttackModule
 from adv_patch_bench.utils.argparse import eval_args_parser, parse_dataset_name
 from adv_patch_bench.utils.image import get_obj_width
 from gen_mask import generate_mask
-from hparams import LABEL_LIST
+from hparams import LABEL_LIST, MAPILLARY_IMG_COUNTS_DICT
 from yolov5.models.common import DetectMultiBackend
 from yolov5.utils.datasets import create_dataloader
 from yolov5.utils.general import (LOGGER, check_dataset, check_img_size,
@@ -103,7 +103,9 @@ def generate_adv_patch(
     # FIXME: does this break anything?
     # bg_size = (img_size[0] - 32, img_size[1] - 32)
     bg_size = img_size
+        
     backgrounds = torch.zeros((num_bg, 3) + bg_size, )
+    
     for i, index in enumerate(idx[:num_bg]):
         bg = torchvision.io.read_image(join(bg_dir, all_bgs[index])) / 255
         backgrounds[i] = T.resize(bg, bg_size, antialias=True)
@@ -181,7 +183,9 @@ def generate_adv_patch(
                     data = [predicted_class, row, h0, w0, h_ratio, w_ratio, w_pad, h_pad]
                     attack_images.append([img, data, str(filename)])
                     break   # This prevents duplicating the background
-
+                
+                if len(attack_images) >= num_bg:
+                    break
             if len(attack_images) >= num_bg:
                 break
 
@@ -189,9 +193,9 @@ def generate_adv_patch(
         attack_images = attack_images[:num_bg]
 
         # DEBUG: Save all the background images
-        for img in attack_images:
-            os.makedirs('tmp', exist_ok=True)
-            torchvision.utils.save_image(img[0] / 255, f'tmp/{img[2]}')
+        # for img in attack_images:
+        #     os.makedirs('tmp', exist_ok=True)
+        #     torchvision.utils.save_image(img[0] / 255, f'tmp/{img[2]}')
 
         # Save background filenames in txt file
         print(f'=> Saving used backgrounds in a txt file.')
@@ -255,6 +259,16 @@ def main(
     device = select_device(device, batch_size=batch_size)
     model, data = load_yolov5(weights, device, imgsz, img_size, data, dnn, half)
 
+    num_bg = args.num_bg
+    class_name = list(MAPILLARY_IMG_COUNTS_DICT.keys())[int(obj_class)]
+    if num_bg < 1:
+        assert class_name is not None
+        print(f'num_bg is a fraction ({num_bg}).')
+        num_bg = round(MAPILLARY_IMG_COUNTS_DICT[class_name] * num_bg)
+        print(f'For {class_name}, this is {num_bg} images.')
+    num_bg = int(num_bg)
+    kwargs['num_bg'] = num_bg
+
     # Configure object size
     # NOTE: We assume that the target object fits the tensor in the same way
     # that we generate canonical masks (e.g., largest inscribed circle, octagon,
@@ -262,7 +276,7 @@ def main(
     # object tensor, and they should all have the same width and height.
     obj_numpy = np.array(Image.open(syn_obj_path).convert('RGBA')) / 255
     h_w_ratio = obj_numpy.shape[0] / obj_numpy.shape[1]
-
+    
     if obj_size == -1:
         obj_size = int(min(img_size) * 0.1)
     if isinstance(obj_size, int):

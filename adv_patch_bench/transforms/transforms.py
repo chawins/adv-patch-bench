@@ -11,13 +11,19 @@ from kornia.geometry.transform import (get_perspective_transform, warp_affine,
 
 def gen_rect_mask(size, ratio=None):
     # ratio = height / width
-    mask = np.zeros((size, size))
-    height = ratio * size if ratio < 1 else size
-    width = height / ratio
+    # mask = np.zeros((size, size))
+    
+    height = round(ratio * size) if ratio > 1 else size
+    width = size
+    mask = np.zeros((height, width))
+    # height = ratio * size if ratio < 1 else size
+    # width = height / ratio
     if ratio > 1:
         pad = int((size - width) / 2)
         mask[:, pad:size - pad] = 1
         box = [[pad, 0], [size - pad, 0], [size - pad, size - 1], [pad, size - 1]]
+        box = [[0, 0], [width-1, 0], [width-1, height-1], [0, height - 1]]
+        
     elif ratio < 1:
         pad = int((size - height) / 2)
         mask[pad:size - pad, :] = 1
@@ -113,7 +119,6 @@ def get_sign_canonical(
     sign_size_in_pixel: int = None,
 ) -> Tuple:
     """Generate the canonical mask of a sign with a specific shape.
-
     Args:
         predicted_class (str): Sign class in format 'shape-width-height' or 
             'shape-width'
@@ -123,7 +128,6 @@ def get_sign_canonical(
             Defaults to None (use `sign_size_in_pixel` insteal).
         sign_size_in_pixel (int, optional): Optionally, sign size in pixels can
             be explicitly set. Defaults to None (use size relative to patch).
-
     Returns:
         - sign_canonical (torch.Tensor): sign canonical 
         - sign_mask (torch.Tensor): sign mask
@@ -144,7 +148,10 @@ def get_sign_canonical(
             sign_size_in_mm = float(sign_width_in_mm)
         pixel_mm_ratio = patch_size_in_pixel / patch_size_in_mm
         sign_size_in_pixel = round(sign_size_in_mm * pixel_mm_ratio)
-    sign_canonical = torch.zeros((4, sign_size_in_pixel, sign_size_in_pixel))
+    
+    # sign_canonical = torch.zeros((4, sign_size_in_pixel, sign_size_in_pixel))
+    sign_canonical = torch.zeros((4, round(hw_ratio * sign_size_in_pixel), sign_size_in_pixel))
+
     sign_mask, src = gen_sign_mask(shape, sign_size_in_pixel, ratio=hw_ratio)
     sign_mask = torch.from_numpy(sign_mask).float()[None, :, :]
     return sign_canonical, sign_mask, src
@@ -163,7 +170,6 @@ def get_transform(
     use_transform: bool = True,
 ) -> Tuple:
     """Get transformation matrix and parameters including relighting.
-
     Args:
         sign_size_in_pixel (int): _description_
         predicted_class (str): _description_
@@ -175,7 +181,6 @@ def get_transform(
         w_pad (float): _description_
         h_pad (float): _description_
         use_transform (bool, optional): _description_. Defaults to True.
-
     Returns:
         Tuple: _description_
     """
@@ -192,7 +197,8 @@ def get_transform(
         offset_y = min(tgt[:, 1])
         offset_x = min(tgt[:, 0])
 
-        tgt_shape = (max(tgt[:, 1]) - min(tgt[:, 1]), max(tgt[:, 0]) - min(tgt[:, 0]))
+        # tgt_shape = (max(tgt[:, 1]) - min(tgt[:, 1]), max(tgt[:, 0]) - min(tgt[:, 0]))
+        tgt_shape = (max(tgt[:, 0]) - min(tgt[:, 0]), max(tgt[:, 1]) - min(tgt[:, 1]))
 
         tgt[:, 1] = (tgt[:, 1] * h_ratio) + h_pad
         tgt[:, 0] = (tgt[:, 0] * w_ratio) + w_pad
@@ -217,7 +223,8 @@ def get_transform(
         tgt = row['tgt'] if pd.isna(row['tgt_polygon']) else row['tgt_polygon']
         tgt = np.array(literal_eval(tgt), dtype=np.float32)
 
-        tgt_shape = (max(tgt[:, 1]) - min(tgt[:, 1]), max(tgt[:, 0]) - min(tgt[:, 0]))
+        # tgt_shape = (max(tgt[:, 1]) - min(tgt[:, 1]), max(tgt[:, 0]) - min(tgt[:, 0]))
+        tgt_shape = (max(tgt[:, 0]) - min(tgt[:, 0]), max(tgt[:, 1]) - min(tgt[:, 1]))
 
         offset_x_ratio = row['xmin_ratio']
         offset_y_ratio = row['ymin_ratio']
@@ -274,7 +281,6 @@ def apply_transform(
     Apply patch with transformation specified by `tf_data` and `transform_func`.
     This function is designed to be used with `get_transform` function.
     All Tensor inputs must have batch dimension.
-
     Args:
         image (torch.Tensor): Input image
         adv_patch (torch.Tensor): Patch in canonical size
@@ -282,11 +288,10 @@ def apply_transform(
         patch_loc (Tuple[float]): Patch bounding box w.r.t. canonical sign
         transform_func (Any): Transform function from `get_transform`
         tf_data (Tuple[Any]): Parameters of the transform
-        tf_patch (Any, optional): Additional transformation applied to 
+        tf_patch (Any, optional): Additional transformation applied to
             `adv_patch`. Used for random augmentation. Defaults to None.
-        tf_bg (Any, optional): Additional transformation applied to `image`. 
+        tf_bg (Any, optional): Additional transformation applied to `image`.
             Used for random augmentation.. Defaults to None.
-
     Returns:
         torch.Tensor: Image with transformed patch
     """
@@ -296,8 +301,10 @@ def apply_transform(
         adv_patch.clamp_(0, 1).mul_(alpha).add_(beta).clamp_(0, 1)
     else:
         adv_patch.clamp_(0, 1).mul_(1).add_(0).clamp_(0, 1)
+    sign_canonical = sign_canonical.clone()
     sign_canonical[:, :-1, ymin:ymin + height, xmin:xmin + width] = adv_patch
     sign_canonical[:, -1, ymin:ymin + height, xmin:xmin + width] = 1
+
     sign_canonical = sign_mask * patch_mask * sign_canonical
     # Apply augmentation on the patch
     if tf_patch is not None:

@@ -327,6 +327,11 @@ class RP2AttackModule(DetectorAttackModule):
         device = patch_mask.device
         mode = self.core_model.training
         self.core_model.eval()
+
+        # print(patch_mask.shape)
+        # import pdb
+        # pdb.set_trace()
+
         ymin, xmin, height, width = mask_to_box(patch_mask)
         patch_loc = (ymin, xmin, height, width)
 
@@ -342,6 +347,7 @@ class RP2AttackModule(DetectorAttackModule):
 
         # Process transform data and create batch tensors
         sign_size_in_pixel = patch_mask.size(-1)
+
         # TODO: Assume that every signs use the same transform function
         # i.e., warp_perspetive. Have to fix this for triangles
         tf_function = get_transform(sign_size_in_pixel, *objs[0][1],
@@ -386,6 +392,7 @@ class RP2AttackModule(DetectorAttackModule):
                 bg_idx = all_bg_idx[:self.num_eot]
                 curr_tf_data = [data[bg_idx] for data in tf_data]
                 delta = delta.repeat(self.num_eot, 1, 1, 1)
+
                 adv_img = apply_transform(
                     backgrounds[bg_idx].clone(), delta.clone(), patch_mask,
                     patch_loc, tf_function, curr_tf_data, interp=self.interp,
@@ -394,8 +401,14 @@ class RP2AttackModule(DetectorAttackModule):
 
                 # TODO: Add EoT on the patch?
 
-                # # DEBUG
-                # torchvision.utils.save_image(adv_img, 'temp_img.png')
+                # DEBUG
+                # for xy in [[1286.50000,  621.87500], [1332.00000,  621.00000], [1334.62500,  679.18750], [1285.18750,  679.18750]]:
+                #     for dx in range(-3, 4):
+                #         for dy in range(-3, 4):
+                #             adv_img[:, 0, int(xy[1]+dy), int(xy[0]+dx)] = 1
+                #             adv_img[:, 1, int(xy[1]+dy), int(xy[0]+dx)] = 0
+                #             adv_img[:, 2, int(xy[1]+dy), int(xy[0]+dx)] = 0
+                # torchvision.utils.save_image(adv_img, 'temp_img.png')                
                 # import pdb
                 # pdb.set_trace()
 
