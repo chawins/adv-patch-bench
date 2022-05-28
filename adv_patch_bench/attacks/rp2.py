@@ -7,11 +7,11 @@ import torch.nn.functional as F
 import torch.optim as optim
 import torchvision
 from adv_patch_bench.transforms import apply_transform, get_transform
+from detectron2.structures import Boxes, Instances
 from kornia import augmentation as K
 from kornia.constants import Resample
 from yolov5.utils.general import non_max_suppression
 from yolov5.utils.plots import output_to_target, plot_images
-from detectron2.structures import Boxes, Instances
 
 from ..utils.image import letterbox, mask_to_box
 from .base_detector import DetectorAttackModule
@@ -52,13 +52,14 @@ class RP2AttackModule(DetectorAttackModule):
         # Defind EoT data augmentation when generating adversarial examples
         # bg_size = (self.input_size[0] - 32, self.input_size[1] - 32)
         bg_size = self.input_size
-        self.bg_transforms = K.RandomResizedCrop(bg_size, scale=(0.8, 1), p=1.0,
+        self.bg_transforms = K.RandomResizedCrop(bg_size, scale=(0.8, 1), p=.0,
                                                  resample=self.interp)
-        self.obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0,
+        self.obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=.0,
                                              return_transform=True, resample=self.interp)
-        self.mask_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0,
+        self.mask_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=.0,
                                               resample=Resample.NEAREST)
-        self.jitter_transform = K.ColorJitter(brightness=0.3, contrast=0.3, p=1.0)
+        self.jitter_transform = K.ColorJitter(brightness=0.3, contrast=0.3, p=.0)
+        # TODO: Add EoT on the patch?
         self.real_transform = {}
         if self.augment_real:
             self.real_transform['tf_patch'] = K.RandomAffine(
@@ -119,7 +120,7 @@ class RP2AttackModule(DetectorAttackModule):
         # from detectron2.utils.visualizer import Visualizer
         # from detectron2.data import MetadataCatalog
         # with torch.no_grad():
-        #     idx = 1
+        #     idx = 0
         #     metadata[idx]['height'], metadata[idx]['width'] = adv_img.shape[2:]
         #     outputs = self.core_model(metadata)[idx]
         #     instances = outputs["instances"]
@@ -206,7 +207,7 @@ class RP2AttackModule(DetectorAttackModule):
             # lr_schedule = optim.lr_scheduler.MultiStepLR(opt, [500, 1000, 1500], gamma=0.1)
             lr_schedule = optim.lr_scheduler.ReduceLROnPlateau(
                 opt, factor=0.5, patience=int(self.num_steps / 10),
-                threshold=1e-9, min_lr=self.step_size * 1e-6, verbose=True)
+                threshold=1e-9, min_lr=self.step_size * 1e-6, verbose=self.verbose)
             start_time = time.time()
 
             # Run PGD on inputs for specified number of steps
@@ -219,19 +220,6 @@ class RP2AttackModule(DetectorAttackModule):
                 if not self.is_detectron:
                     # Patch image the same way as YOLO
                     bgs = letterbox(bgs, new_shape=self.input_size, color=114/255)[0]
-
-                if self.is_detectron:
-                    # Update metada with location of transformed synthetic sign
-                    for i in range(self.num_eot):
-                        m = metadata_clone[bg_idx[i]]
-                        instances = m['instances']
-                        new_instances = Instances(instances.image_size)
-                        # Turn o_mask to gt_boxes
-                        ymin, xmin, height, width = mask_to_box(o_mask[i])
-                        box = torch.tensor([[xmin, ymin, xmin + width, ymin + height]])
-                        new_instances.gt_boxes = Boxes(box)
-                        new_instances.gt_classes = [obj_class]
-                        m['instances'] = new_instances
 
                 if self.rescaling:
                     synthetic_sign_size = obj_size[0]
@@ -261,7 +249,20 @@ class RP2AttackModule(DetectorAttackModule):
                         adv_obj = self.jitter_transform(adv_obj)
                     adv_obj, tf_params = self.obj_transforms(adv_obj)
                     o_mask = self.mask_transforms.apply_transform(
-                        obj_mask_dup, None, transform=tf_params)
+                        obj_mask_dup, None, transform=tf_params).detach()
+
+                    if self.is_detectron:
+                        # Update metada with location of transformed synthetic sign
+                        for i in range(self.num_eot):
+                            m = metadata_clone[bg_idx[i]]
+                            instances = m['instances']
+                            new_instances = Instances(instances.image_size)
+                            # Turn o_mask to gt_boxes
+                            o_ymin, o_xmin, o_height, o_width = mask_to_box(o_mask[i])
+                            box = torch.tensor([[o_xmin, o_ymin, o_xmin + o_width, o_ymin + o_height]])
+                            new_instances.gt_boxes = Boxes(box)
+                            new_instances.gt_classes = torch.tensor([[obj_class]])
+                            m['instances'] = new_instances
 
                     # Apply sign on background
                     adv_img = o_mask * adv_obj + (1 - o_mask) * bgs
@@ -286,10 +287,9 @@ class RP2AttackModule(DetectorAttackModule):
                     ema_loss = loss.item()
                 else:
                     ema_loss = ema_const * ema_loss + (1 - ema_const) * loss.item()
-                # lr_schedule.step(ema_loss)
+                lr_schedule.step(ema_loss)
 
-                if step % 100 == 0 and self.verbose:
-                    # print(self.compute_loss(adv_img, obj_class))
+                if step % 10 == 0 and self.verbose:
                     print(f'step: {step}  loss: {ema_loss:.6f}  time: {time.time() - start_time:.2f}s')
                     start_time = time.time()
 
@@ -302,7 +302,7 @@ class RP2AttackModule(DetectorAttackModule):
             #     x_adv_worst = x_adv * up_mask + x_adv_worst * (1 - up_mask)
             #     worst_losses = fin_losses * up_mask + worst_losses * (1 - up_mask)
 
-        # DEBUG
+        # DEBUG: YOLO
         # outt = non_max_suppression(out.detach(), conf_thres=0.25, iou_thres=0.6)
         # plot_images(adv_img.clamp(0, 1).detach(), c)
 
@@ -397,9 +397,6 @@ class RP2AttackModule(DetectorAttackModule):
                     backgrounds[bg_idx].clone(), delta.clone(), patch_mask,
                     patch_loc, tf_function, curr_tf_data, interp=self.interp,
                     **self.real_transform, use_relight=self.use_relight)
-                    
-
-                # TODO: Add EoT on the patch?
 
                 # DEBUG
                 # for xy in [[1286.50000,  621.87500], [1332.00000,  621.00000], [1334.62500,  679.18750], [1285.18750,  679.18750]]:
@@ -409,6 +406,7 @@ class RP2AttackModule(DetectorAttackModule):
                 #             adv_img[:, 1, int(xy[1]+dy), int(xy[0]+dx)] = 0
                 #             adv_img[:, 2, int(xy[1]+dy), int(xy[0]+dx)] = 0
                 # torchvision.utils.save_image(adv_img, 'temp_img.png')                
+                # torchvision.utils.save_image(adv_img, 'temp_img.png')
                 # import pdb
                 # pdb.set_trace()
 
@@ -434,7 +432,8 @@ class RP2AttackModule(DetectorAttackModule):
                 # lr_schedule.step(loss)
 
                 if step % 100 == 0 and self.verbose:
-                    print(f'step: {step:4d}  loss: {ema_loss:.4f}  time: {time.time() - start_time:.2f}s')
+                    print(f'step: {step:4d}  loss: {ema_loss:.4f}  '
+                          f'time: {time.time() - start_time:.2f}s')
                     start_time = time.time()
                     # DEBUG
                     # import os
