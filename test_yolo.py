@@ -329,8 +329,6 @@ def run(args,
     if use_attack:
         # Prepare attack data
         df, adv_patch, patch_mask, patch_loc = prep_attack(args, device)
-        # import pdb
-        # pdb.set_trace()
 
     # Initialize attack
     if attack_type == 'per-sign':
@@ -355,6 +353,10 @@ def run(args,
     if args.img_txt_path != '':
         with open(args.img_txt_path, 'r') as f:
             filename_list = f.read().splitlines()
+
+    # print(filename_list)
+    # import pdb
+    # pdb.set_trace()
 
     if plot_class_examples:
         shape_to_plot_data = {}
@@ -382,7 +384,7 @@ def run(args,
         #     targets = targets[targets[:, 1] != other_class_label]
 
         # DEBUG
-        if args.debug and batch_i == 20:
+        if args.debug and batch_i == 200:
             break
 
         if num_apply_imgs >= len(filename_list) and args.run_only_img_txt:
@@ -592,7 +594,13 @@ def run(args,
                     annotation_row = annotation_df[(annotation_df['filename'] == filename) &
                                                 (annotation_df['object_id'] == int(lbl_[5]))]
                     assert len(annotation_row) <= 1
+                    # if a label is not in our annotation df, we change the label to 'other' so we do not calculate metrics on this particular label
                     if len(annotation_row) == 0:
+                        labels[lbl_index][0] = other_class_label
+                        lbl_ = labels[lbl_index]
+
+                    # if a label is in our annotation df and we used the label to generate an adversarial patch, we change the label to 'other' so we do not calculate metrics on this particular label
+                    if filename in filename_list and not args.run_only_img_txt and len(annotation_row) == 1:
                         labels[lbl_index][0] = other_class_label
                         lbl_ = labels[lbl_index]
 
