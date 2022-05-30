@@ -11,7 +11,7 @@
 #Number of GPUs, this can be in the format of "gpu:[1-4]", or "gpu:K80:[1-4] with the type included
 #SBATCH --gres=gpu:V100:1
 #SBATCH --qos=v100_gpu3_normal
-#SBATCH --time=1:00:00
+#SBATCH --time=72:00:00
 #SBATCH --output slurm-%j-per-sign_10x10_bottom.out
 ## Command(s) to run:
 source /global/home/users/$USER/.bash_profile
@@ -78,7 +78,7 @@ CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
     --tgt-csv-filepath $CSV_PATH --attack-config-path attack_config.yaml \
     --name $EXP_NAME --obj-class $OBJ_CLASS --syn-obj-path $SYN_OBJ_PATH \
     --conf-thres $CONF_THRES --annotated-signs-only --interp bicubic \
-    --attack-type per-sign --verbose --debug \
+    --attack-type per-sign --verbose \
     MODEL.ROI_HEADS.NUM_CLASSES 12 \
     OUTPUT_DIR $OUTPUT_PATH \
     MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
