@@ -50,8 +50,6 @@ class CustomCOCOEvaluator(DatasetEvaluator):
         *,
         use_fast_impl=True,
         kpt_oks_sigmas=(),
-        eval_mode=None,
-        other_catId=None,
     ):
         """
         Args:
@@ -94,6 +92,7 @@ class CustomCOCOEvaluator(DatasetEvaluator):
                 "COCO Evaluator instantiated using config, this is deprecated behavior."
                 " Please pass tasks in directly"
             )
+            cfg = tasks
         else:
             self._tasks = tasks
 
@@ -123,8 +122,12 @@ class CustomCOCOEvaluator(DatasetEvaluator):
         # performed using the COCO evaluation server).
         self._do_evaluation = "annotations" in self._coco_api.dataset
         # EDIT:
-        self.eval_mode = eval_mode
-        self.other_catId = other_catId
+        self.cocoeval_args = {
+            'eval_mode': cfg.eval_mode,
+            'other_catId': cfg.other_catId, 
+            'catId': cfg.obj_class,
+            'conf_thres': cfg.conf_thres,
+        }
 
     def reset(self):
         self._predictions = []
@@ -245,8 +248,7 @@ class CustomCOCOEvaluator(DatasetEvaluator):
                     kpt_oks_sigmas=self._kpt_oks_sigmas,
                     use_fast_impl=self._use_fast_impl,
                     img_ids=img_ids,
-                    eval_mode=self.eval_mode,
-                    other_catId=self.other_catId,
+                    cocoeval_args=self.cocoeval_args,
                 )
                 if len(coco_results) > 0
                 else None  # cocoapi does not handle empty results very well
@@ -371,6 +373,7 @@ class CustomCOCOEvaluator(DatasetEvaluator):
         self._logger.info(f'recall_cmb: {rc:.4f}, fnr_cmb: {100 - rc:.4f}')
 
         results.update({"AP-" + name: ap for name, ap in results_per_category})
+        results['dumped_metrics'] = coco_eval.eval['dumped_metrics']
         return results
 
 
@@ -551,7 +554,7 @@ def _evaluate_box_proposals(dataset_predictions, coco_api, thresholds=None, area
 
 def _evaluate_predictions_on_coco(
     coco_gt, coco_results, iou_type, kpt_oks_sigmas=None, use_fast_impl=True,
-    img_ids=None, eval_mode='drop', other_catId=None,
+    img_ids=None, cocoeval_args=None
 ):
     """
     Evaluate the coco results using COCOEval API.
@@ -569,12 +572,9 @@ def _evaluate_predictions_on_coco(
 
     coco_dt = coco_gt.loadRes(coco_results)
 
-    import pdb
-    pdb.set_trace()
-
-    # EDIT: set mode
+    # EDIT: set additional args to cocoeval
     coco_eval = (COCOeval_opt if use_fast_impl else COCOeval)(
-        coco_gt, coco_dt, iou_type, mode=eval_mode, other_catId=other_catId)
+        coco_gt, coco_dt, iou_type, **cocoeval_args)
     if img_ids is not None:
         coco_eval.params.imgIds = img_ids
 

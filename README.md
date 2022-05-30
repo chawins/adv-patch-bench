@@ -6,6 +6,7 @@ Test with
 
 - `python == 3.8`
 - `cuda >= 11.2`
+- `kornia == 0.6.3`: Using version `>= 0.6.4` will raise an error.
 
 ```bash
 conda install -y pytorch torchvision torchaudio cudatoolkit=11.3 -c pytorch

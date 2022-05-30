@@ -18,8 +18,8 @@ def eval_args_parser(is_detectron, root=None):
     parser.add_argument('--other-class-label', type=int, default=None, help="Class for the 'other' label")
     parser.add_argument('--eval-mode', type=str, default=None)
 
-    parser.add_argument('--interp', type=str, default=None,
-                        help='interpolation method (nearest, bilinear, bicubic)')
+    parser.add_argument('--interp', type=str, default='bicubic',
+                        help='interpolation method: nearest, bilinear, bicubic (default)')
     parser.add_argument('--synthetic', action='store_true',
                         help='evaluate with pasted synthetic signs')
     parser.add_argument('--name', default='exp', help='save to project/name')
@@ -32,7 +32,7 @@ def eval_args_parser(is_detectron, root=None):
 
     # =========================== Attack arguments ========================== #
     parser.add_argument('--attack-type', type=str, default='none',
-                        help='which attack evaluation to run (none, load, per-sign, random, debug)')
+                        help='which attack evaluation to run: none (default), load, per-sign, random, debug')
     parser.add_argument('--adv-patch-path', type=str, default=None,
                         help='path to adv patch and mask to load')
     parser.add_argument('--mask-dir', type=str, default='./masks/',
@@ -57,9 +57,13 @@ def eval_args_parser(is_detectron, root=None):
     parser.add_argument('--min-area', type=float, default=0,
                         help=('Minimum area for labels. if a label has area > min_area,'
                               'predictions correspoing to this target will be discarded'))
+    # TODO: is this stil used?
     parser.add_argument('--min-pred-area', type=float, default=0,
                         help=('Minimum area for predictions. if a predicion has area < min_area and '
                               'that prediction is not matched to any label, it will be discarded'))
+    parser.add_argument('--conf-thres', type=float, default=None, 
+                        help=('Set confidence threshold for detection.'
+                              'Otherwise, threshold is set to max f1 score.'))
 
     # ===================== Patch generation arguments ====================== #
     parser.add_argument('--obj-size', type=int, default=None,
@@ -75,46 +79,75 @@ def eval_args_parser(is_detectron, root=None):
     # parser.add_argument('--detectron', action='store_true', help='Model is detectron else YOLO')
 
     if is_detectron:
+        # TODO: is this still used?
         parser.add_argument('--compute-metrics', action='store_true',
                             help='Compute metrics after running attack')
     else:
         # ========================= YOLO arguments ========================== #
-        parser.add_argument('--data', type=str, default=root / 'data/coco128.yaml', help='dataset.yaml path')
-        parser.add_argument('--weights', nargs='+', type=str, default=root / 'yolov5s.pt', help='model.pt path(s)')
-        parser.add_argument('--batch-size', type=int, default=32, help='batch size')
-        parser.add_argument('--imgsz', '--img', '--img-size', type=int, default=640, help='inference size (pixels)')
-        parser.add_argument('--conf-thres', type=float, default=0.001, help='confidence threshold')
-        parser.add_argument('--iou-thres', type=float, default=0.6, help='NMS IoU threshold')
-        parser.add_argument('--task', default='val', help='train, val, test, speed or study')
-        parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
-        parser.add_argument('--workers', type=int, default=8, help='max dataloader workers (per RANK in DDP mode)')
-        parser.add_argument('--single-cls', action='store_true', help='treat as single-class dataset')
-        parser.add_argument('--augment', action='store_true', help='augmented inference')
-        parser.add_argument('--save-txt', action='store_true', help='save results to *.txt')
-        parser.add_argument('--save-hybrid', action='store_true', help='save label+prediction hybrid results to *.txt')
-        parser.add_argument('--save-conf', action='store_true', help='save confidences in --save-txt labels')
-        parser.add_argument('--save-json', action='store_true', help='save a COCO-JSON results file')
-        parser.add_argument('--project', default=root / 'runs/val', help='save to project/name')
-        parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
-        parser.add_argument('--half', action='store_true', help='use FP16 half-precision inference')
-        parser.add_argument('--dnn', action='store_true', help='use OpenCV DNN for ONNX inference')
-        parser.add_argument('--model-name', default='yolov5', help='yolov5 or yolor')
+        parser.add_argument('--data', type=str, default=root / 'data/coco128.yaml', 
+                            help='dataset.yaml path')
+        parser.add_argument('--weights', nargs='+', type=str, default=root / 'yolov5s.pt', 
+                            help='model.pt path(s)')
+        parser.add_argument('--batch-size', type=int, default=32, 
+                            help='batch size')
+        parser.add_argument('--imgsz', '--img', '--img-size', type=int, default=640, 
+                            help='inference size (pixels)')
+        parser.add_argument('--iou-thres', type=float, default=0.6, 
+                            help='NMS IoU threshold')
+        parser.add_argument('--task', default='val', 
+                            help='train, val, test, speed or study')
+        parser.add_argument('--device', default='', 
+                            help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
+        parser.add_argument('--workers', type=int, default=8, 
+                            help='max dataloader workers (per RANK in DDP mode)')
+        parser.add_argument('--single-cls', action='store_true', 
+                            help='treat as single-class dataset')
+        parser.add_argument('--augment', action='store_true', 
+                            help='augmented inference')
+        parser.add_argument('--save-txt', action='store_true', 
+                            help='save results to *.txt')
+        parser.add_argument('--save-hybrid', action='store_true', 
+                            help='save label+prediction hybrid results to *.txt')
+        parser.add_argument('--save-conf', action='store_true', 
+                            help='save confidences in --save-txt labels')
+        parser.add_argument('--save-json', action='store_true', 
+                            help='save a COCO-JSON results file')
+        parser.add_argument('--project', default=root / 'runs/val', 
+                            help='save to project/name')
+        parser.add_argument('--exist-ok', action='store_true', 
+                            help='existing project/name ok, do not increment')
+        parser.add_argument('--half', action='store_true', 
+                            help='use FP16 half-precision inference')
+        parser.add_argument('--dnn', action='store_true', 
+                            help='use OpenCV DNN for ONNX inference')
+        parser.add_argument('--model-name', default='yolov5', 
+                            help='yolov5 or yolor')
 
     # ============================== Plot / log ============================= #
-    parser.add_argument('--save-exp-metrics', action='store_true', help='save metrics for this experiment to dataframe')
+    parser.add_argument('--save-exp-metrics', action='store_true', 
+                        help='save metrics for this experiment to dataframe')
     parser.add_argument('--plot-single-images', action='store_true',
                         help='save single images in a folder instead of batch images in a single plot')
     parser.add_argument('--plot-class-examples', type=str, default='', nargs='*',
                         help='save single images containing individual classes in different folders.')
-    parser.add_argument('--metrics-confidence-threshold', type=float, default=None, help='confidence threshold')
-    parser.add_argument('--plot-fp', action='store_true', help='save images containing false positives')
+    parser.add_argument('--metrics-confidence-threshold', type=float, default=None, 
+                        help='confidence threshold')
+    parser.add_argument('--plot-fp', action='store_true', 
+                        help='save images containing false positives')
 
     # TODO: remove in the future
     parser.add_argument(
         '--other-class-confidence-threshold', type=float, default=0,
         help='confidence threshold at which other labels are changed if there is a match with a prediction')
 
-    return parser.parse_args()
+    args = parser.parse_args()
+    verify_args(args)
+    return args
+
+
+def verify_args(args):
+    assert args.interp in ('nearest', 'bilinear', 'bicubic')
+    assert args.attack_type in ('none', 'load', 'per-sign', 'random', 'debug')
 
 
 def parse_dataset_name(args):
@@ -145,7 +178,9 @@ def setup_detectron_test_args(args, other_sign_class):
     cfg.SOLVER.IMS_PER_BATCH = 1
     cfg.INPUT.CROP.ENABLED = False
     cfg.eval_mode = args.eval_mode
+    cfg.obj_class = args.obj_class
     cfg.other_catId = other_sign_class[args.dataset]
+    cfg.conf_thres = args.conf_thres
 
     # Set detectron image size from argument
     cfg.INPUT.MIN_SIZE_TEST = max([int(x) for x in args.padded_imgsz.split(',')])

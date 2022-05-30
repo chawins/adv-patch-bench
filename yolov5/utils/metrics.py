@@ -177,6 +177,7 @@ def ap_per_class_custom(tp, conf, pred_cls, target_cls, plot=False, save_dir='.'
         i = int(metrics_conf_thres * 1000)
     else:
         i = f1.mean(0).argmax()  # max F1 index
+    # DEBUG
     print('f1 scores')
     # print(f1.mean(0))
     print('best f1 index', i)

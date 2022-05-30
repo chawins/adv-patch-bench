@@ -6,6 +6,7 @@ import json
 import os
 import random
 from argparse import Namespace
+from copy import deepcopy
 from typing import Any, Dict, List, Tuple, Union
 
 import cv2
@@ -91,7 +92,7 @@ class DAGAttacker:
         self.transform_params = {
             'use_transform': not args.no_patch_transform,
             'use_relight': not args.no_patch_relight,
-            'interp': args.interp
+            'interp': args.interp,
         }
 
         # Loading file names from the specified text file
@@ -106,9 +107,7 @@ class DAGAttacker:
 
     def run(
         self,
-        obj_class: int,
         patch_mask: torch.Tensor,
-        results_save_path: str = 'coco_instances_results.json',
         vis_save_dir: str = None,
         vis_conf_thresh: float = 0.5,
     ) -> List:
@@ -116,8 +115,6 @@ class DAGAttacker:
 
         Parameters
         ----------
-        results_save_path : str, optional
-            Path to save the results JSON file, by default "coco_instances_results.json"
         vis_save_dir : str, optional
             Directory to save the visualized bbox prediction images
         vis_conf_thresh : float, optional
@@ -138,12 +135,16 @@ class DAGAttacker:
                 self.args, self.img_size, self.class_names, device=self.device)
 
         # Prepare attack data
-        _, adv_patch, patch_mask, patch_loc = prep_attack(self.args, self.device)
+        if self.use_attack:
+            _, adv_patch, patch_mask, patch_loc = prep_attack(self.args, self.device)
 
         total_num_patches, num_vis = 0, 0
         self.evaluator.reset()
 
         for i, batch in tqdm(enumerate(self.data_loader)):
+            if self.debug and i >= 50:
+                break
+            
             file_name = batch[0]['file_name']
             filename = file_name.split('/')[-1]
             # basename = os.path.basename(file_name)
@@ -151,8 +152,6 @@ class DAGAttacker:
             h0, w0 = batch[0]['height'], batch[0]['width']
             img_df = self.df[self.df['filename'] == filename]
 
-            if len(img_df) == 0:
-                continue
             # Skip (or only run on) files listed in the txt file
             in_list = filename in self.skipped_filename_list
             if ((in_list and not self.args.run_only_img_txt) or
@@ -174,22 +173,27 @@ class DAGAttacker:
             _, h, w = images.shape
             img_data = (h0, w0, h / h0, w / w0, 0, 0)
 
-            attacked = False
+            is_included = False
             if self.synthetic:
                 # Apply synthetic sign and patch to image
                 perturbed_image = apply_synthetic_sign(
                     images, adv_patch, patch_mask, *syn_data, apply_patch=self.use_attack)
-                attacked = True
-            else:
+                is_included = True
+            elif len(img_df) > 0:
                 # Iterate through objects in the current image
                 for _, obj in img_df.iterrows():
-                    obj_label = obj['final_shape']
-                    if obj_label != self.class_names[self.adv_sign_class]:
+                    obj_classname = obj['final_shape']
+                    obj_class = self.class_names.index(obj_classname)
+                    if obj_class != self.adv_sign_class and self.adv_sign_class != -1:
+                        # Skip if object is not from desired class
+                        continue
+                    is_included = True
+                    if not self.use_attack:
                         continue
 
                     # Run attack for each sign to get a new `adv_patch`
                     if self.attack_type == 'per-sign':
-                        data = [obj_label, obj, *img_data]
+                        data = [obj_class, obj, *img_data]
                         attack_images = [[images, data, str(file_name)]]
                         with torch.enable_grad():
                             adv_patch = self.attack.attack_real(
@@ -201,12 +205,11 @@ class DAGAttacker:
                     # Transform and apply patch on the image. `im` has range [0, 255]
                     perturbed_image = transform_and_apply_patch(
                         perturbed_image, adv_patch.to(self.device),
-                        patch_mask, patch_loc, obj_label, obj, img_data,
+                        patch_mask, patch_loc, obj_class, obj, img_data,
                         **self.transform_params) * 255
                     total_num_patches += 1
-                    attacked = True
 
-            if not attacked and not self.use_attack:
+            if not is_included:
                 # Skip image without any adversarial patch when attacking
                 continue
 
@@ -217,13 +220,21 @@ class DAGAttacker:
                 perturbed_image = perturbed_image[0]
 
             outputs = self(perturbed_image)
-            self.evaluator.process(batch, [outputs])
+            # Scale output to match original input size for evaluator
+            new_outputs = deepcopy(outputs)
+            new_outputs['instances']._image_size = (h0, w0)
+            h_ratio, w_ratio = h / h0, w / w0
+            new_outputs['instances'].pred_boxes.tensor[:, 0] /= h_ratio
+            new_outputs['instances'].pred_boxes.tensor[:, 1] /= w_ratio
+            new_outputs['instances'].pred_boxes.tensor[:, 2] /= h_ratio
+            new_outputs['instances'].pred_boxes.tensor[:, 3] /= w_ratio
+            self.evaluator.process(batch, [new_outputs])
 
             # Convert to coco predictions format
             instance_dicts = self._create_instance_dicts(outputs, image_id)
             coco_instances_results.extend(instance_dicts)
 
-            if vis_save_dir and num_vis < self.num_vis and attacked:
+            if vis_save_dir and num_vis < self.num_vis and is_included:
                 # Visualize ground truth
                 original_image = batch[0]['image'].permute(1, 2, 0).numpy()[:, :, ::-1]
                 visualizer = Visualizer(original_image, self.metadata, scale=0.5)
@@ -236,40 +247,32 @@ class DAGAttacker:
                 instances = outputs['instances']
                 mask = instances.scores > vis_conf_thresh
                 instances = instances[mask]
-
                 perturbed_image = perturbed_image.permute(1, 2, 0)
                 perturbed_image = perturbed_image.cpu().numpy().astype(np.uint8)
                 v = Visualizer(perturbed_image, self.metadata, scale=0.5)
-                vis_adv = v.draw_instance_predictions(instances.to('cpu')).get_image()
+                vis = v.draw_instance_predictions(instances.to('cpu')).get_image()
 
-                # Save original predictions
-                outputs = self(original_image)
-                instances = outputs["instances"]
-                mask = instances.scores > vis_conf_thresh
-                instances = instances[mask]
+                if self.use_attack:
+                    # Save original predictions
+                    outputs = self(original_image)
+                    instances = outputs["instances"]
+                    mask = instances.scores > vis_conf_thresh
+                    instances = instances[mask]
+                    v = Visualizer(original_image, self.metadata, scale=0.5)
+                    vis_og = v.draw_instance_predictions(instances.to('cpu')).get_image()
+                    save_path = os.path.join(vis_save_dir, f'pred_clean_{i}.jpg')
+                    cv2.imwrite(save_path, vis_og[:, :, ::-1])
+                    save_name = f'pred_adv_{i}.jpg'
+                else:
+                    save_name = f'pred_clean_{i}.jpg'
 
-                v = Visualizer(original_image, self.metadata, scale=0.5)
-                vis_og = v.draw_instance_predictions(instances.to('cpu')).get_image()
-
-                # Save side-by-side
-                # concat = np.concatenate((vis_og, vis_adv), axis=1)
-
-                # save_path = os.path.join("saved/adv", basename)
-                # cv2.imwrite(save_path, concat[:, :, ::-1])
-
-                save_path = os.path.join(vis_save_dir, f'pred_clean_{i}.jpg')
-                save_adv_path = os.path.join(vis_save_dir, f'pred_adv_{i}.jpg')
-
-                cv2.imwrite(save_path, vis_og[:, :, ::-1])
-                cv2.imwrite(save_adv_path, vis_adv[:, :, ::-1])
-                self.log(f'Saved visualization to {save_path}')
+                save_adv_path = os.path.join(vis_save_dir, save_name)
+                cv2.imwrite(save_adv_path, vis[:, :, ::-1])
+                self.log(f'Saved visualization to {vis_save_dir}')
                 num_vis += 1
 
-            if self.debug and i >= 50:
-                break
-
-        self.evaluator.evaluate()
-        return coco_instances_results
+        metrics = self.evaluator.evaluate()
+        return coco_instances_results, metrics
 
     def _create_instance_dicts(
         self, outputs: Dict[str, Any], image_id: int

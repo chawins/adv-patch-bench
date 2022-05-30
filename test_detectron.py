@@ -90,8 +90,16 @@ def main_attack(cfg, args, dataset_params):
 
     # Create folder for saving eval results
     class_names = LABEL_LIST[args.dataset]
-    save_dir = os.path.join(SAVE_DIR_DETECTRON, args.name, class_names[args.obj_class])
-    os.makedirs(save_dir, exist_ok=True)
+    if args.obj_class == -1:
+        class_name = 'all'
+    elif 0 <= args.obj_class <= len(class_names) - 1:
+        class_name = class_names[args.obj_class]
+    else:
+        raise ValueError((f'Invalid target object class ({args.obj_class}). '
+                          f'Must be between -1 and {len(class_names) - 1}.'))
+    save_dir = os.path.join(SAVE_DIR_DETECTRON, args.name, class_name)
+    vis_dir = os.path.join(save_dir, 'vis')
+    os.makedirs(vis_dir, exist_ok=True)
     args.adv_patch_path = os.path.join(save_dir, 'adv_patch.pkl')
 
     with open(args.attack_config_path) as file:
@@ -114,15 +122,17 @@ def main_attack(cfg, args, dataset_params):
     # cfg.MODEL.RPN.POST_NMS_TOPK_TEST = 5000
     attack = DAGAttacker(cfg, args, attack_config, model, val_loader,
                          class_names=LABEL_LIST[args.dataset])
-    adv_patch, patch_mask = pickle.load(open(args.adv_patch_path, 'rb'))
+    if args.attack_type != 'none':
+        adv_patch, patch_mask = pickle.load(open(args.adv_patch_path, 'rb'))
+    else:
+        patch_mask = None
     print('=> Running attack...')
-    coco_instances_results = attack.run(
-        args.obj_class,
+    coco_instances_results, metrics = attack.run(
         patch_mask,
-        results_save_path=os.path.join(save_dir, f'coco_instances_results.json'),
-        vis_save_dir=save_dir,
-        vis_conf_thresh=0.5,  # TODO
+        vis_save_dir=vis_dir,
+        vis_conf_thresh=0.5,
     )
+    pickle.dump(metrics, open(os.path.join(save_dir, 'results.pkl'), 'wb'))
 
 
 def compute_metrics(cfg, args):
@@ -208,9 +218,10 @@ if __name__ == "__main__":
 
     if args.compute_metrics:
         compute_metrics(cfg, args)
-    elif args.attack_type != 'none':
-        main_attack(cfg, args, dataset_params)
     elif args.single_image:
         main_single(cfg, dataset_params)
+    elif args.attack_type != 'none':
+        main_attack(cfg, args, dataset_params)
     else:
-        main(cfg, args)
+        # main(cfg, args)
+        main_attack(cfg, args, dataset_params)

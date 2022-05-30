@@ -140,14 +140,15 @@ class RP2AttackModule(DetectorAttackModule):
             # Filter obj_class
             idx = obj_class == tgt_lb
             tgt_lb, tgt_log, obj_log = tgt_lb[idx], tgt_log[idx], obj_log[idx]
-            # TODO: If there's no matched gt/prediction, then attack already
-            # succeeds. This has to be changed for appearing or misclassification attacks.
+            # If there's no matched gt/prediction, then attack already succeeds.
+            # TODO: This has to be changed for appearing or misclassification attacks.
             target_loss, obj_loss = 0, 0
             if len(tgt_log) > 0 and len(tgt_lb) > 0:
                 target_loss = - F.cross_entropy(tgt_log, tgt_lb, reduction='sum')
             if len(obj_logits) > 0:
                 obj_lb = torch.zeros_like(obj_log)
-                obj_loss = F.binary_cross_entropy_with_logits(obj_log, obj_lb, reduction='sum')
+                obj_loss = F.binary_cross_entropy_with_logits(obj_log, obj_lb, 
+                                                              reduction='sum')
 
             # TODO: constant?
             loss += target_loss + obj_loss
@@ -327,10 +328,6 @@ class RP2AttackModule(DetectorAttackModule):
         device = patch_mask.device
         mode = self.core_model.training
         self.core_model.eval()
-
-        # print(patch_mask.shape)
-        # import pdb
-        # pdb.set_trace()
 
         ymin, xmin, height, width = mask_to_box(patch_mask)
         patch_loc = (ymin, xmin, height, width)

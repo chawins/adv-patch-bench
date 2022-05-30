@@ -85,7 +85,9 @@ def write_labels(model, label, panoptic_per_image_id, data_dir,
 
             x_center = (xmin + width / 2) / img_width
             y_center = (ymin + height / 2) / img_height
+            # Relative bbox for YOLO
             bbox.append([x_center, y_center, obj_width, obj_height])
+            # Absolute bbox for Detectron
             abs_bbox.append([xmin, ymin, xmin + width, ymin + height, img_width, img_height])
 
             # Collect traffic signs and resize them to 128x128 (same resolution
@@ -122,7 +124,6 @@ def write_labels(model, label, panoptic_per_image_id, data_dir,
             begin, end = i * batch_size, (i + 1) * batch_size
             img = torch.cat(traffic_signs[begin:end], dim=0).to(device)
             logits = model(img)
-            # logits = model(traffic_signs[begin:end].to(device))
             predicted_scores[begin:end] = F.softmax(logits, dim=1).cpu()
     predicted_labels = predicted_scores.argmax(1)
     # Set output of low-confidence prediction to "other" clss

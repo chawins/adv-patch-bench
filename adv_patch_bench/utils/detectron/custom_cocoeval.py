@@ -59,8 +59,8 @@ class COCOeval:
     # Data, paper, and tutorials available at:  http://mscoco.org/
     # Code written by Piotr Dollar and Tsung-Yi Lin, 2015.
     # Licensed under the Simplified BSD License [see coco/license.txt]
-    def __init__(self, cocoGt=None, cocoDt=None, iouType='segm', mode=None,
-                 other_catId=None):
+    def __init__(self, cocoGt=None, cocoDt=None, iouType='segm', eval_mode=None,
+                 other_catId=None, catId=None, conf_thres=None):
         '''
         Initialize CocoEval using coco APIs for gt and dt
         :param cocoGt: coco object with ground truth annotations
@@ -83,8 +83,10 @@ class COCOeval:
             self.params.imgIds = sorted(cocoGt.getImgIds())
             self.params.catIds = sorted(cocoGt.getCatIds())
         # Set mode (None, 'mtsd', 'drop')
-        self.mode = mode
+        self.eval_mode = eval_mode
         self.other_catId = other_catId
+        self.catId = catId
+        self.conf_thres = conf_thres
 
     def _prepare(self):
         '''
@@ -170,10 +172,10 @@ class COCOeval:
         p = self.params
         # EDIT: for gt with "other" class, we want to match and compute iou for
         # all detections
-        if self.mode is not None and catId == self.other_catId:
+        if self.eval_mode is not None and catId == self.other_catId:
             gt = self._gts[imgId, catId]
             dt = [_ for cId in p.catIds for _ in self._dts[imgId, cId]]
-        elif self.mode == 'mtsd':
+        elif self.eval_mode == 'mtsd':
             # TODO: potential bug (low impact): this way, one "other" gt can be
             # matched to multiple dt's.
             # Match non-other dt to either other or non-other dt
@@ -264,11 +266,11 @@ class COCOeval:
         p = self.params
         # EDIT: ============================================================= #
         catId_is_other = catId == self.other_catId
-        if self.mode is not None and catId_is_other:
+        if self.eval_mode is not None and catId_is_other:
             # For other gt, consider all detections regardless of their catId
             gt = self._gts[imgId, catId]
             dt = [_ for cId in p.catIds for _ in self._dts[imgId, cId]]
-        elif self.mode == 'mtsd':
+        elif self.eval_mode == 'mtsd':
             # In MTSD, for non-other gt, match to either other or non-other dt
             # gt = [*self._gts[imgId, catId], *self._gts[imgId, self.other_catId]]
             # dt = self._dts[imgId, catId]
@@ -337,7 +339,7 @@ class COCOeval:
                     gtm[tind, m] = d['id']  # gtm contains matched dt id
 
         # EDIT: ============================================================= #
-        if self.mode is not None and catId_is_other:
+        if self.eval_mode is not None and catId_is_other:
             # When gt is other, ignore all gt and ignore all dt
             # TODO: don't even need matching in this case
             gtIg[:] = 1
@@ -349,7 +351,7 @@ class COCOeval:
             #     if d['category_id'] == self.other_catId:
             #         dtIg[:, dind] = 1
             dtIg[:, :] = 1
-        elif self.mode == 'mtsd':
+        elif self.eval_mode == 'mtsd':
             # When gt is non-other, ignore all other dt and corresponding gt
             matched_gt = []
             for dind, d in enumerate(dt):
@@ -364,6 +366,9 @@ class COCOeval:
                 if g['id'] in matched_gt:
                     # In MTSD, also ignore matched gt
                     gtIg[gind] = 1
+        if self.catId != -1 and catId != self.catId:
+            gtIg[:] = 1
+            dtIg[:, :] = 1
         # =================================================================== #
 
         # set unmatched detections outside of area range to ignore
@@ -423,9 +428,20 @@ class COCOeval:
         A0 = len(_pe.areaRng)
 
         # EDIT:
-        tp_cmb = np.zeros(T)
-        fp_cmb = np.zeros(T)
-        num_all_classes = 0
+        # tp_full = np.zeros((T, R, K))
+        # fp_full = np.zeros((T, R, K))
+        # recall_full = np.zeros((T, R, K))
+        # precision_full = np.zeros((T, R, K))
+        # tp_cmb = np.zeros((T))
+        # fp_cmb = np.zeros((T))
+        num_gts_per_class = np.zeros(K)
+        scores_full = {}
+        for k in setK:
+            scores_t = []
+            for i in range(T):
+                scores_t.append([[], []])
+            scores_full[k] = scores_t
+        # num_all_classes = 0
 
         # retrieve E at each category, area range, and max number of detections
         for k, k0 in enumerate(k_list):
@@ -456,7 +472,10 @@ class COCOeval:
 
                     # EDIT:
                     if a == 0 and m == M - 1:
-                        num_all_classes += npig
+                        # a = 0 is all area range
+                        # m = M-1 is max number of detection
+                        # num_all_classes += npig
+                        num_gts_per_class[k] += npig
 
                     tp_sum = np.cumsum(tps, axis=1).astype(dtype=np.float)
                     fp_sum = np.cumsum(fps, axis=1).astype(dtype=np.float)
@@ -465,7 +484,7 @@ class COCOeval:
                         fp = np.array(fp)
                         nd = len(tp)
                         rc = tp / npig
-                        pr = tp / (fp+tp+np.spacing(1))
+                        pr = tp / (fp + tp + np.spacing(1))
                         q = np.zeros((R,))
                         ss = np.zeros((R,))
 
@@ -479,12 +498,13 @@ class COCOeval:
                         pr = pr.tolist()
                         q = q.tolist()
 
-                        for i in range(nd-1, 0, -1):
-                            if pr[i] > pr[i-1]:
-                                pr[i-1] = pr[i]
+                        for i in range(nd - 1, 0, -1):
+                            if pr[i] > pr[i - 1]:
+                                pr[i - 1] = pr[i]
 
                         # TODO: score
                         inds = np.searchsorted(rc, p.recThrs, side='left')
+                        # print(rc.max(), np.any(rc == 1), inds[-1], nd)
                         try:
                             for ri, pi in enumerate(inds):
                                 q[ri] = pr[pi]
@@ -497,17 +517,82 @@ class COCOeval:
                         # EDIT: Aggregate tp and fp over all classes at every
                         # IoU threshold
                         if a == 0 and m == M - 1 and nd:
-                            tp_cmb[t] += tp[-1]
-                            fp_cmb[t] += fp[-1]
+                            scores_full[k][t][0].extend(dtScoresSorted[tps[t]].tolist())
+                            scores_full[k][t][1].extend(dtScoresSorted[fps[t]].tolist())
+                            # tp_cmb[t] += tp[-1]
+                            # fp_cmb[t] += fp[-1]
+                            # inds = np.searchsorted(rc, p.recThrs, side='right')
+                            # for ri, pi in enumerate(inds):
+                            #     if pi == 0:
+                            #         continue
+                            #     tp_full[t, ri, k] = tp[pi - 1]
+                            #     fp_full[t, ri, k] = fp[pi - 1]
+                            #     if nd:
+                            #         recall_full[t, ri, k] = rc[pi - 1]
+                            #     else:
+                            #         recall_full[t, ri, k] = 0
+                            #     precision_full[t, ri, k] = pr[pi - 1]
 
-        # EDIT
+        # EDIT ============================================================== #
         iou_thres = 0.5
-        iou_idx = np.where(p.iouThrs == iou_thres)[0]
-        tp, fp = float(tp_cmb[iou_idx]), float(fp_cmb[iou_idx])
-        recall_cmb = tp / num_all_classes
-        print(f'[DEBUG] tp: {tp}, all: {num_all_classes}')
+        iou_idx = np.where(p.iouThrs == iou_thres)[0][0]
+        # rc = recall_full[iou_idx]
+        # pr = precision[iou_idx, :, :, 0, -1]
+        # # pr = tp_full[iou_idx, :, 10] / (tp_full[iou_idx, :, 10] + fp_full[iou_idx, :, 10] + 1e-6)
+        # f1 = 2 * pr * rc / (pr + rc + 1e-6)
+        # f1_mean = f1.mean(1)
+        # f1_mean = f1_mean[f1_mean >= 0]
+        # max_f1_idx = f1_mean.argmax()
+        # max_f1 = f1_mean[max_f1_idx]
+        # tp, fp = tp_full[iou_idx, max_f1_idx], fp_full[iou_idx, max_f1_idx]
+        # print(f'[DEBUG] max_f1_idx: {max_f1_idx}, max_f1: {max_f1:.3f}')
+        # print(f'[DEBUG] all: {num_all_classes}')
+        # print(f'[DEBUG] tp: {tp}')
+        # print(f'[DEBUG] fp: {fp}')
+        # print(tp_full[0, :, 10])
+        # print(fp_full[0, :, 10])
+        # print(recall_full[0, :, 10])
+        # print(precision_full[0, :, 10])
+        # print(pr[:, 10])
+        
+        # Find score threshold that maximizes F1 score
+        num_scores = 1000
+        EPS = np.spacing(1)
+        scores_thres = np.linspace(0, 1, num_scores)
+        tp_full = np.zeros((T, K, num_scores))
+        fp_full = np.zeros_like(tp_full)
+        for t in range(T):
+            for k in setK:
+                for si, s in enumerate(scores_thres):
+                    tps = np.sum(np.array(scores_full[k][t][0]) >= s)
+                    fps = np.sum(np.array(scores_full[k][t][1]) >= s)
+                    tp_full[t, k, si] = tps
+                    fp_full[t, k, si] = fps
+        rc = tp_full / (num_gts_per_class[None, :, None] + EPS)
+        pr = tp_full / (tp_full + fp_full + EPS)
+        f1 = 2 * pr * rc / (pr + rc + EPS)
+        assert np.all(f1 >= 0) and not np.any(np.isnan(f1))
+        # Remove 'other' class from f1 and average over remaining classes
+        f1_mean = np.delete(f1[iou_idx], self.other_catId, axis=0).mean(0)
+        if self.conf_thres is None:
+            max_f1_idx = f1_mean.argmax()
+        else:
+            print('Using specified conf_thres...')
+            # Find f1 index closest to the specified conf_thres
+            max_f1_idx = np.abs(self.conf_thres - scores_thres).argmin()
 
-        # TODO: find score threshold that maximizes F1 score
+        max_f1 = f1_mean[max_f1_idx]
+        tp, fp = tp_full[iou_idx, :, max_f1_idx], fp_full[iou_idx, :, max_f1_idx]
+        print(f'[DEBUG] max_f1_idx: {max_f1_idx}, max_f1: {max_f1:.4f}')
+        print(f'[DEBUG] num_gts_per_class: {num_gts_per_class}')
+        print(f'[DEBUG] tp: {tp}')
+        print(f'[DEBUG] fp: {fp}')
+        print(f'[DEBUG] precision: {pr[iou_idx, :, max_f1_idx]}')
+        print(f'[DEBUG] recall: {rc[iou_idx, :, max_f1_idx]}')
+
+        # Compute combined metrics, ignoring class
+        recall_cmb = tp.sum() / (num_gts_per_class.sum() + EPS)
+        # END_EDIT ========================================================== #
 
         self.eval = {
             'params': p,
@@ -517,6 +602,7 @@ class COCOeval:
             'recall': recall,
             'scores': scores,
             'recall_cmb': recall_cmb,
+            'dumped_metrics': [tp_full, fp_full, num_gts_per_class],
         }
         toc = time.time()
         print('DONE (t={:0.2f}s).'.format(toc-tic))
