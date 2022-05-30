@@ -193,7 +193,7 @@ class DAGAttacker:
 
                     # Run attack for each sign to get a new `adv_patch`
                     if self.attack_type == 'per-sign':
-                        data = [obj_class, obj, *img_data]
+                        data = [obj_classname, obj, *img_data]
                         attack_images = [[images, data, str(file_name)]]
                         with torch.enable_grad():
                             adv_patch = self.attack.attack_real(
@@ -205,7 +205,7 @@ class DAGAttacker:
                     # Transform and apply patch on the image. `im` has range [0, 255]
                     perturbed_image = transform_and_apply_patch(
                         perturbed_image, adv_patch.to(self.device),
-                        patch_mask, patch_loc, obj_class, obj, img_data,
+                        patch_mask, patch_loc, obj_classname, obj, img_data,
                         **self.transform_params) * 255
                     total_num_patches += 1
 

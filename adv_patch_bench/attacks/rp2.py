@@ -34,9 +34,10 @@ class RP2AttackModule(DetectorAttackModule):
         self.lmbda = attack_config['rp2_lambda']
         self.min_conf = attack_config['rp2_min_conf']
         self.input_size = attack_config['input_size']
-        self.attack_mode = attack_config['attack_mode']
+        self.attack_mode = attack_config['attack_mode'].split('-')
         self.use_transform = attack_config['use_patch_transform']
         self.use_relight = attack_config['use_patch_relight']
+        self.detectron_obj_const = 0.
 
         # TODO: We probably don't need this now
         # self.rescaling = rescaling
@@ -138,21 +139,20 @@ class RP2AttackModule(DetectorAttackModule):
         loss = 0
         for tgt_lb, tgt_log, obj_log in zip(target_labels, target_logits, obj_logits):
             # Filter obj_class
-            idx = obj_class == tgt_lb
-            tgt_lb, tgt_log, obj_log = tgt_lb[idx], tgt_log[idx], obj_log[idx]
+            if 'shapeshifter' not in self.attack_mode:
+                idx = obj_class == tgt_lb
+                tgt_lb, tgt_log, obj_log = tgt_lb[idx], tgt_log[idx], obj_log[idx]
             # If there's no matched gt/prediction, then attack already succeeds.
             # TODO: This has to be changed for appearing or misclassification attacks.
             target_loss, obj_loss = 0, 0
             if len(tgt_log) > 0 and len(tgt_lb) > 0:
-                target_loss = - F.cross_entropy(tgt_log, tgt_lb, reduction='sum')
-            if len(obj_logits) > 0:
+                # Ignore the background class on tgt_log
+                target_loss = - F.cross_entropy(tgt_log[:, :-1], tgt_lb, reduction='sum')
+            if len(obj_logits) > 0 and self.detectron_obj_const != 0:
                 obj_lb = torch.zeros_like(obj_log)
                 obj_loss = F.binary_cross_entropy_with_logits(obj_log, obj_lb, 
                                                               reduction='sum')
-
-            # TODO: constant?
-            loss += target_loss + obj_loss
-
+            loss += target_loss + self.detectron_obj_const * obj_loss
         return loss
 
     def attack(
@@ -379,7 +379,7 @@ class RP2AttackModule(DetectorAttackModule):
             for step in range(self.num_steps):
                 z_delta.requires_grad_()
 
-                if self.attack_mode == 'pgd':
+                if 'pgd' in self.attack_mode:
                     delta = z_delta
                 else:
                     delta = self._to_model_space(z_delta, 0, 1)
@@ -414,7 +414,7 @@ class RP2AttackModule(DetectorAttackModule):
                 loss += self.lmbda * tv
                 loss.backward(retain_graph=True)
 
-                if self.attack_mode == 'pgd':
+                if 'pgd' in self.attack_mode:
                     grad = z_delta.grad.detach()
                     grad = torch.sign(grad)
                     z_delta = z_delta.detach() - self.alpha * grad
