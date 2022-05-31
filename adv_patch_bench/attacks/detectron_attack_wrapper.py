@@ -2,12 +2,10 @@
 This code is adapted from
 https://github.com/yizhe-ang/detectron2-1/blob/master/detectron2_1/adv.py
 '''
-import json
 import os
-import random
 from argparse import Namespace
 from copy import deepcopy
-from typing import Any, Dict, List, Tuple, Union
+from typing import Any, Dict, List, Union
 
 import cv2
 import numpy as np
@@ -33,30 +31,9 @@ class DAGAttacker:
         attack_config: Dict,
         model: torch.nn.Module,
         dataloader: Any,
-        # n_iter: int = 150,
-        # gamma: float = 0.5,
-        # nms_thresh: float = 0.9,
-        # mapper: Callable = DatasetMapper,
-        # verbose: bool = False
         class_names: List,
     ) -> None:
-        """Implements the DAG algorithm
-
-        Parameters
-        ----------
-        cfg : CfgNode
-            Config object used to train the model
-        n_iter : int, optional
-            Number of iterations to run the algorithm on each image, by default 150
-        gamma : float, optional
-            Perturbation weight, by default 0.5
-        nms_thresh : float, optional
-            NMS threshold of RPN; higher it is, more dense set of proposals, by default 0.9
-        mapper : Callable, optional
-            Can specify own DatasetMapper logic, by default DatasetMapper
-        """
-        # self.n_iter = n_iter
-        # self.gamma = gamma
+        """Attack wrapper for detectron model"""
         self.args = args
         self.verbose = args.verbose
         self.debug = args.debug
@@ -142,7 +119,7 @@ class DAGAttacker:
         self.evaluator.reset()
 
         for i, batch in tqdm(enumerate(self.data_loader)):
-            if self.debug and i >= 50:
+            if self.debug and i >= 100:
                 break
             
             file_name = batch[0]['file_name']
@@ -299,7 +276,6 @@ class DAGAttacker:
 
         # For each bounding box
         for i, box in enumerate(pred_boxes):
-            # x1, y1, x2, y2 = float(box[0]), float(box[1]), float(box[2]), float(box[3])
             i_dict = {
                 "image_id": image_id,
                 "category_id": int(pred_classes[i]),
@@ -332,7 +308,6 @@ class DAGAttacker:
     def __call__(
         self,
         original_image: Union[np.ndarray, torch.Tensor],
-        # size: Tuple[int, int],
     ) -> Dict:
         """Simple inference on a single image
 

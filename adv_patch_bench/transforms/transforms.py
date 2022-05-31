@@ -297,10 +297,9 @@ def apply_transform(
     """
     ymin, xmin, height, width = patch_loc
     sign_canonical, sign_mask, M, alpha, beta = tf_data
+    adv_patch.clamp_(0, 1)
     if use_relight:
-        adv_patch.clamp_(0, 1).mul_(alpha).add_(beta).clamp_(0, 1)
-    else:
-        adv_patch.clamp_(0, 1).mul_(1).add_(0).clamp_(0, 1)
+        adv_patch.mul_(alpha).add_(beta).clamp_(0, 1)
     sign_canonical = sign_canonical.clone()
     sign_canonical[:, :-1, ymin:ymin + height, xmin:xmin + width] = adv_patch
     sign_canonical[:, -1, ymin:ymin + height, xmin:xmin + width] = 1
