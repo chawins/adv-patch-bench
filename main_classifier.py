@@ -274,6 +274,7 @@ def validate(val_loader, model, criterion, attack, args):
         len(val_loader),
         [batch_time, data_time, losses, top1, mem],
         prefix='Test: ')
+    acc_by_class = {}
 
     # switch to evaluate mode
     model.eval()
@@ -316,10 +317,9 @@ def validate(val_loader, model, criterion, attack, args):
         # classwise accuracy
         pred = outputs.argmax(1)
         is_correct = pred == targets
-        acc_by_class = {}
         for c in range(args.num_classes):
-            num_samples = (targets == c).sum()
-            num_correct = is_correct[targets == c].sum()
+            num_samples = (targets == c).sum().item()
+            num_correct = is_correct[targets == c].sum().item()
             if c in acc_by_class:
                 acc_by_class[c][0] += num_samples
                 acc_by_class[c][1] += num_correct
@@ -338,7 +338,7 @@ def validate(val_loader, model, criterion, attack, args):
     # TODO: this should also be done with the ProgressMeter
     print(' * Acc@1 {top1.avg:.3f}'.format(top1=top1))
     for c in range(args.num_classes):
-        acc = acc_by_class[c][1] / acc_by_class[c][0]
+        acc = acc_by_class[c][1] / (acc_by_class[c][0] + 1e-6)
         print(f'class {c} acc: {acc:.4f}')
 
     progress.synchronize()
