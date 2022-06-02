@@ -101,7 +101,7 @@ def collect_backgrounds(dataloader, img_size, num_bg, device,
             _, h, w = image.shape
             assert (h, w) == img_size
             # NOTE: img_data: h_orig, w_orig, h, w, w_pad, h_pad
-            # It's (w_pad, h_pad) and not (h_pad, w_pad) due to compatibility 
+            # It's (w_pad, h_pad) and not (h_pad, w_pad) due to compatibility
             # with YOLO dataloader/augmentation
             img_data = (h0, w0, h / h0, w / w0, 0, pad_top)
             data = [obj_label, obj, *img_data]

@@ -25,13 +25,13 @@ def build_classifier(args):
     n_model = sum(p.numel() for p in model.parameters()) / 1e6
     print(f'=> total params: {n_model:.2f}M')
 
-    model.cuda(args.gpu)
-
     if args.distributed:
+        model.cuda(args.gpu)
         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu])
     else:
-        model = torch.nn.parallel.DataParallel(model, device_ids=[args.gpu])
+        model.cuda()
+        model = torch.nn.parallel.DataParallel(model)
 
     p_wd, p_non_wd = [], []
     for n, p in model.named_parameters():

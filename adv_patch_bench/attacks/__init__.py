@@ -1,17 +1,15 @@
 import torch.nn as nn
-from adv_patch_bench.utils import KLDLoss, PixelwiseCELoss
+from adv_patch_bench.utils import KLDLoss
 
 from .auto import AutoAttackModule
 from .none import NoAttackModule
+from .patch import PatchAttackModule
 from .pgd import PGDAttackModule
 from .trades import TRADESAttackModule
 
 
 def get_ce_loss(args):
-    if args.experiment == 'seg-only':
-        loss = PixelwiseCELoss()
-    else:
-        loss = nn.CrossEntropyLoss(reduction='none')
+    loss = nn.CrossEntropyLoss(reduction='none')
     return loss.cuda(args.gpu)
 
 
@@ -21,18 +19,27 @@ def setup_eval_attacker(args, model, num_classes=None):
         num_classes = args.num_classes
     eps = float(args.epsilon)
     norm = args.atk_norm
-    attack_config = {
-        'pgd_steps': 10,
-        'pgd_step_size': eps / 4,
-        'num_restarts': 1,
-    }
-
-    loss = get_ce_loss(args)
-    pgd_attack = PGDAttackModule(attack_config, model, loss, norm, eps)
     no_attack = NoAttackModule(None, None, None, norm, eps)
+    loss = get_ce_loss(args)
+
+    if norm == 'patch':
+        attack_config = {
+            'pgd_steps': 300,
+            'pgd_step_size': 0.01,
+            'num_restarts': 3,
+        }
+        eps = int(args.epsilon)
+        pgd_attack = PatchAttackModule(attack_config, model, loss, norm, eps)
+        return no_attack, pgd_attack
+
+    attack_config = {
+        'pgd_steps': 300,
+        'pgd_step_size': 0.001,
+        'num_restarts': 3,
+    }
+    pgd_attack = PGDAttackModule(attack_config, model, loss, norm, eps)
     auto_attack = AutoAttackModule(None, model, None, norm, eps,
                                    verbose=True, num_classes=num_classes)
-
     return no_attack, pgd_attack, auto_attack
 
 

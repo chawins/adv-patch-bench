@@ -11,4 +11,4 @@ class AttackModule(nn.Module):
         self.eps = eps
         self.norm = norm
         self.verbose = verbose
-        assert self.norm in ('L1', 'L2', 'Linf')
+        assert self.norm in ('L1', 'L2', 'Linf', 'patch')
