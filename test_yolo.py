@@ -325,10 +325,13 @@ def run(args,
         # syn_data: syn_obj, obj_mask, obj_transforms, mask_transforms, syn_sign_class
         syn_data = prep_synthetic_eval(args, img_size, names, device=device)
         syn_sign_class = syn_data[-1]
+        nc += 1
+        adv_patch = None
+        patch_mask = None
 
     if use_attack:
         # Prepare attack data
-        df, adv_patch, patch_mask, patch_loc = prep_attack(args, device)
+        df, adv_patch, patch_mask, patch_loc = prep_attack(args, img_size, device)
 
     # Initialize attack
     if attack_type == 'per-sign':
@@ -379,7 +382,6 @@ def run(args,
     for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
         # Originally, targets has shape (#labels, 7)
         # [image_id, class, x1, y1, label_width, label_height, obj_id]
-
         # if model_trained_without_other:
         #     targets = targets[targets[:, 1] != other_class_label]
 
@@ -437,8 +439,8 @@ def run(args,
                 # targets[targets[:, 0] == image_i, 6] = num_patches_applied_to_image
 
             elif synthetic:
-                im[image_i] = apply_synthetic_sign(
-                    im[image_i], adv_patch, patch_mask, *syn_data,
+                im[image_i], targets = apply_synthetic_sign(
+                    im[image_i], targets, image_i, adv_patch, patch_mask, *syn_data,
                     device=device, use_attack=use_attack)
 
         t1 = time_sync()
@@ -590,7 +592,7 @@ def run(args,
             curr_false_positives_preds = []
 
             for lbl_index, lbl_ in enumerate(labels):
-                if annotated_signs_only:
+                if annotated_signs_only and not synthetic:
                     annotation_row = annotation_df[(annotation_df['filename'] == filename) &
                                                 (annotation_df['object_id'] == int(lbl_[5]))]
                     assert len(annotation_row) <= 1
@@ -708,7 +710,7 @@ def run(args,
                     # print(class_index.item())
                     # class_name = names[class_index.item()]
                     class_name = names[int(class_index.item())]
-                    if len(shape_to_plot_data[class_name]) < 10:
+                    if len(shape_to_plot_data[class_name]) < 20:
                         fn = str(path).split('/')[-1]
                         plot_data = [
                             im[si: si + 1],

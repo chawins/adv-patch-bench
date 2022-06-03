@@ -160,14 +160,18 @@ def prepare_obj(obj_path, img_size, obj_size):
 
 def pad_and_center(obj, obj_mask, img_size, obj_size):
     # Resize and put object in the middle of zero background
+    # left, top, right, bottom
     pad_size = [
         (img_size[1] - obj_size[1]) // 2,  # left/right
         (img_size[0] - obj_size[0]) // 2,  # top/bottom
+        (img_size[1] - obj_size[1]) // 2 + obj_size[1] % 2,  # left/right
+        (img_size[0] - obj_size[0]) // 2 + obj_size[0] % 2,  # top/bottom
     ]
     if obj is not None:
         obj = T.resize(obj, obj_size, antialias=True)
         obj = T.pad(obj, pad_size)
-    obj_mask = T.resize(obj_mask, obj_size, interpolation=T.InterpolationMode.NEAREST)
+
+    obj_mask = T.resize(obj_mask.unsqueeze(dim=0), obj_size, interpolation=T.InterpolationMode.NEAREST)
     obj_mask = T.pad(obj_mask, pad_size)
     return obj, obj_mask
 

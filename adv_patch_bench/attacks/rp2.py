@@ -44,7 +44,8 @@ class RP2AttackModule(DetectorAttackModule):
         self.rescaling = False
 
         self.augment_real = attack_config['rp2_augment_real']
-        self.interp = attack_config['interp'] if interp is None else interp
+        # self.interp = attack_config['interp'] if interp is None else interp
+        self.interp = interp
 
         self.num_restarts = 1
         self.verbose = verbose
@@ -53,12 +54,16 @@ class RP2AttackModule(DetectorAttackModule):
         # Defind EoT data augmentation when generating adversarial examples
         # bg_size = (self.input_size[0] - 32, self.input_size[1] - 32)
         bg_size = self.input_size
+
+        # obj_transforms = K.RandomAffine(20, translate=(0.45, 0.45), p=1.0, return_transform=True, scale=(0.25, 0.5))
+        # mask_transforms = K.RandomAffine(20, translate=(0.45, 0.45), p=1.0, resample=Resample.NEAREST, scale=(0.25, 0.5))
+
         self.bg_transforms = K.RandomResizedCrop(bg_size, scale=(0.8, 1), p=.0,
                                                  resample=self.interp)
-        self.obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=.0,
-                                             return_transform=True, resample=self.interp)
-        self.mask_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=.0,
-                                              resample=Resample.NEAREST)
+        self.obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0,
+                                             return_transform=True, resample=self.interp, scale=(0.25, 0.5))
+        self.mask_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0,
+                                              resample=Resample.NEAREST, scale=(0.25, 0.5))
         self.jitter_transform = K.ColorJitter(brightness=0.3, contrast=0.3, p=.0)
         # TODO: Add EoT on the patch?
         self.real_transform = {}
@@ -284,13 +289,17 @@ class RP2AttackModule(DetectorAttackModule):
                     loss.backward(retain_graph=True)
                     opt.step()
 
+                # torchvision.utils.save_image(adv_img, 'temp_img.png')
+                # import pdb
+                # pdb.set_trace()
+
                 if ema_loss is None:
                     ema_loss = loss.item()
                 else:
                     ema_loss = ema_const * ema_loss + (1 - ema_const) * loss.item()
                 lr_schedule.step(ema_loss)
 
-                if step % 10 == 0 and self.verbose:
+                if step % 100 == 0 and self.verbose:
                     print(f'step: {step}  loss: {ema_loss:.6f}  time: {time.time() - start_time:.2f}s')
                     start_time = time.time()
 
@@ -350,7 +359,11 @@ class RP2AttackModule(DetectorAttackModule):
         tf_function = get_transform(sign_size_in_pixel, *objs[0][1],
                                     use_transform=self.use_transform)[0]
         tf_data_temp = [get_transform(sign_size_in_pixel, *obj[1],
-                                      use_transform=self.use_transform)[1:] for obj in objs]
+                                      use_transform=self.use_transform)[1:-1] for obj in objs]
+        
+        all_tgts = [get_transform(sign_size_in_pixel, *obj[1],
+                                      use_transform=self.use_transform)[-1] for obj in objs]
+
         # tf_data contains [sign_canonical, sign_mask, M, alpha, beta]
         tf_data = []
         for i in range(5):
@@ -396,13 +409,17 @@ class RP2AttackModule(DetectorAttackModule):
                     **self.real_transform, use_relight=self.use_relight)
 
                 # DEBUG
-                # for xy in [[1286.50000,  621.87500], [1332.00000,  621.00000], [1334.62500,  679.18750], [1285.18750,  679.18750]]:
-                #     for dx in range(-3, 4):
-                #         for dy in range(-3, 4):
+                # import pdb
+                # pdb.set_trace()
+                # tgt_pts = all_tgts[bg_idx.item()][0] if all_tgts[bg_idx.item()].ndim == 3 else all_tgts[bg_idx.item()]
+                # for xy in tgt_pts:
+                # # for xy in all_tgts[bg_idx.item()][0]:
+                # # for xy in all_tgts[bg_idx.item()]:
+                #     for dx in range(-2, 3):
+                #         for dy in range(-2, 3):
                 #             adv_img[:, 0, int(xy[1]+dy), int(xy[0]+dx)] = 1
                 #             adv_img[:, 1, int(xy[1]+dy), int(xy[0]+dx)] = 0
                 #             adv_img[:, 2, int(xy[1]+dy), int(xy[0]+dx)] = 0
-                # torchvision.utils.save_image(adv_img, 'temp_img.png')                
                 # torchvision.utils.save_image(adv_img, 'temp_img.png')
                 # import pdb
                 # pdb.set_trace()

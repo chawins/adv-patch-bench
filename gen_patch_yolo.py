@@ -120,7 +120,7 @@ def generate_adv_patch(
         attack_config['input_size'] = img_size
 
     # TODO: Allow data parallel?
-    attack = RP2AttackModule(attack_config, model, None, None, None, verbose=True)
+    attack = RP2AttackModule(attack_config, model, None, None, None, verbose=True, interp=args.interp)
 
     # Generate an adversarial patch
     if synthetic:
@@ -134,10 +134,16 @@ def generate_adv_patch(
                     (img_size[0] - obj_size[0]) // 2 + obj_size[0] % 2]  # left, top, right, bottom
         obj = T.resize(obj, obj_size, antialias=True)
         obj = T.pad(obj, pad_size)
+
         obj_mask = T.resize(obj_mask, obj_size, interpolation=T.InterpolationMode.NEAREST)
         obj_mask = T.pad(obj_mask, pad_size)
+
+        
+        patch_mask = patch_mask.unsqueeze(dim=0)
         patch_mask_ = T.resize(patch_mask, obj_size, interpolation=T.InterpolationMode.NEAREST)
+        
         patch_mask_ = T.pad(patch_mask_, pad_size)
+        
 
         print(f'=> Start attacking...')
         with torch.enable_grad():
@@ -145,7 +151,7 @@ def generate_adv_patch(
                                       obj_mask.to(device),
                                       patch_mask_.to(device),
                                       backgrounds.to(device),
-                                      obj_class=obj_class,
+                                      obj_class=12,
                                       obj_size=obj_size)
 
         if save_images:
@@ -164,6 +170,8 @@ def generate_adv_patch(
         for batch_i, (im, targets, paths, shapes) in enumerate(dataloader):
             for image_i, path in enumerate(paths):
                 filename = path.split('/')[-1]
+                # if filename != 'D4J8uMZ4OdmebvfK50aRpA.jpg':
+                #     continue
                 img_df = df[df['filename'] == filename]
 
                 if len(img_df) == 0:
@@ -306,10 +314,11 @@ def main(
         model, obj_numpy, patch_mask, device=device, img_size=img_size,
         obj_size=obj_size, obj_class=obj_class, save_dir=save_dir, synthetic=synthetic,
         dataloader=dataloader, **kwargs)
-
+    
     # Save adv patch
     patch_path = join(save_dir, f'adv_patch.pkl')
     print(f'Saving the generated adv patch to {patch_path}...')
+
     pickle.dump([adv_patch, patch_mask], open(patch_path, 'wb'))
 
     patch_metadata = {

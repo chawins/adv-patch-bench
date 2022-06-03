@@ -1,6 +1,7 @@
 import ast
 import pickle
 from argparse import Namespace
+from re import I
 from typing import Any, List, Tuple, Union
 
 import numpy as np
@@ -25,17 +26,19 @@ def prep_synthetic_eval(
     # Add synthetic label to the label names at the last position
     syn_sign_class = len(label_names)
     label_names[syn_sign_class] = 'synthetic'
-    nc += 1
+    # nc += 1
     # Set up random transforms for synthetic sign
-    obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, return_transform=True)
-    mask_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0, resample=Resample.NEAREST)
+    obj_transforms = K.RandomAffine(20, translate=(0.45, 0.45), p=1.0, return_transform=True, scale=(0.25, 0.5))
+    mask_transforms = K.RandomAffine(20, translate=(0.45, 0.45), p=1.0, resample=Resample.NEAREST, scale=(0.25, 0.5))
+    # obj_transforms = K.RandomAffine(20, translate=(0.45, 0.45), p=1.0, return_transform=True, scale=(0.3, 0.6))
+    # mask_transforms = K.RandomAffine(20, translate=(0.45, 0.45), p=1.0, resample=Resample.NEAREST, scale=(0.3, 0.6))
 
     # Load synthetic object/sign from file
     _, patch_mask = pickle.load(open(args.adv_patch_path, 'rb'))
     obj_size = patch_mask.shape[1]
     obj, obj_mask = prepare_obj(args.syn_obj_path, img_size, (obj_size, obj_size))
     obj = obj.to(device)
-    obj_mask = obj_mask.to(device).unsqueeze(0)
+    obj_mask = obj_mask.to(device) #.unsqueeze(0)
 
     return obj, obj_mask, obj_transforms, mask_transforms, syn_sign_class
 
@@ -47,7 +50,7 @@ def prep_attack(
 ):
     # Load patch from a pickle file if specified
     # TODO: make script to generate dummy patch
-    adv_patch, patch_mask = pickle.load(open(args.adv_patch_path, 'rb'))
+    adv_patch, patch_mask = pickle.load(open(args.adv_patch_path, 'rb'))    
     obj_size = patch_mask.shape[1]
     patch_mask = patch_mask.to(device)
     patch_height, patch_width = adv_patch.shape[1:]
@@ -73,9 +76,16 @@ def prep_attack(
     if args.synthetic:
         # Adv patch and mask have to be made compatible with random
         # transformation for synthetic signs
-        _, patch_mask = pad_and_center(None, patch_mask, img_size, (obj_size, obj_size))
+        
+        h_w_ratio = patch_mask.shape[0]/patch_mask.shape[1]
+        if isinstance(obj_size, int):
+            obj_size_px = (round(obj_size * h_w_ratio), obj_size)
+        _, patch_mask = pad_and_center(None, patch_mask, img_size, obj_size_px)
+        # _, patch_mask = pad_and_center(None, patch_mask, img_size, (obj_size, obj_size))
         patch_loc = mask_to_box(patch_mask)
         # Pad adv patch
+
+        # y_min, x_min, y.max() - y_min, x.max() - x_min 
         pad_size = [
             patch_loc[1],  # left
             patch_loc[0],  # right
@@ -91,6 +101,8 @@ def prep_attack(
 
 def apply_synthetic_sign(
     image: torch.Tensor,
+    targets: torch.Tensor,
+    image_i: int,
     adv_patch: torch.Tensor,
     patch_mask: torch.Tensor,
     syn_obj: torch.Tensor,
@@ -100,7 +112,8 @@ def apply_synthetic_sign(
     syn_sign_class: int,
     device: str = 'cuda',
     use_attack: bool = True,
-):
+    
+):  
     _, h, w = image.shape
     if use_attack:
         adv_obj = patch_mask * adv_patch + (1 - patch_mask) * syn_obj
@@ -119,21 +132,22 @@ def apply_synthetic_sign(
 
     # Since we paste a new synthetic sign on image, we have to add
     # in a new synthetic label/target to compute the metrics
+
     label = [
-        image,
+        image_i,
         syn_sign_class,
         (x_min + x_max) / (2 * w),
         (y_min + y_max) / (2 * h),
         (x_max - x_min) / w,
         (y_max - y_min) / h,
-        1,
         -1
     ]
-    targets = torch.cat((targets, torch.tensor(label).unsqueeze(0)))
 
-    adv_img = o_mask * adv_obj + (1 - o_mask) * perturbed_image.to(device) / 255
+    targets = torch.cat((targets, torch.tensor(label).unsqueeze(0)))
+    
+    adv_img = o_mask * adv_obj + (1 - o_mask) * image.to(device) / 255
     perturbed_image = adv_img.squeeze() * 255
-    return perturbed_image
+    return perturbed_image, targets
 
 
 def get_object_and_mask_from_numpy(

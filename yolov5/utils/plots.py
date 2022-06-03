@@ -221,7 +221,7 @@ def plot_images(images, targets, paths=None, fname='images.jpg', names=None, max
             boxes = xywh2xyxy(ti[:, 2:6]).T
             classes = ti[:, 1].astype('int')
             # EDIT:
-            labels = ti.shape[1] == 6  # labels if no conf column
+            # labels = ti.shape[1] == 6  # labels if no conf column
             conf = None if labels else ti[:, 6]  # check for confidence presence (label vs pred)
             if boxes.shape[1]:
                 if boxes.max() <= 1.01:  # if normalized with tolerance 0.01
@@ -234,9 +234,14 @@ def plot_images(images, targets, paths=None, fname='images.jpg', names=None, max
             boxes[[1, 3]] += y
             for j, box in enumerate(boxes.T.tolist()):
                 cls = classes[j]
+                # if cls == 12:
+                #     import pdb
+                #     pdb.set_trace()
                 color = colors(cls)
                 cls = names[cls] if names else cls
                 if labels or conf[j] > 0.25:  # 0.25 conf thresh
+                    if cls == 12:
+                        qqqqqq
                     label = f'{cls}' if labels else f'{cls} {conf[j]:.1f}'
                     annotator.box_label(box, label, color=color)
 
