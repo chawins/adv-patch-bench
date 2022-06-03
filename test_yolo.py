@@ -440,8 +440,8 @@ def run(args,
 
             elif synthetic:
                 im[image_i], targets = apply_synthetic_sign(
-                    im[image_i], targets, image_i, adv_patch, patch_mask, *syn_data,
-                    device=device, use_attack=use_attack)
+                    im[image_i], targets, image_i, adv_patch, patch_mask, 
+                    *syn_data, device=device, use_attack=use_attack)
 
         t1 = time_sync()
         if pt or jit or engine:

@@ -316,6 +316,7 @@ if __name__ == "__main__":
     # Verify some args
     cfg = setup_detectron_test_args(args, OTHER_SIGN_CLASS)
     assert args.dataset in DATASETS
+    split = cfg.DATASETS.TEST[0].split('_')[1]
 
     # Register dataset
     if 'mtsd' in args.dataset:
@@ -326,7 +327,7 @@ if __name__ == "__main__":
             use_color=args.use_color,
             ignore_other=args.data_no_other,
         )
-        data_list = get_mtsd_dict(args.split, *dataset_params)
+        data_list = get_mtsd_dict(split, *dataset_params)
     else:
         assert 'mapillary' in cfg.DATASETS.TEST[0], \
             'Mapillary is specified as dataset in args but not config file'
@@ -335,7 +336,7 @@ if __name__ == "__main__":
             ignore_other=args.data_no_other,
             only_annotated=args.annotated_signs_only,  # This should be False in this case
         )
-        data_list = get_mapillary_dict(args.split, *dataset_params)
+        data_list = get_mapillary_dict(split, *dataset_params)
     num_samples = len(data_list)
 
     print(args)

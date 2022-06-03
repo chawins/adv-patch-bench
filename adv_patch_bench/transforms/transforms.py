@@ -12,7 +12,7 @@ from kornia.geometry.transform import (get_perspective_transform, warp_affine,
 def gen_rect_mask(size, ratio=None):
     # ratio = height / width
     # mask = np.zeros((size, size))
-    
+
     height = round(ratio * size) if ratio > 1 else size
     width = size
     mask = np.zeros((height, width))
@@ -23,7 +23,7 @@ def gen_rect_mask(size, ratio=None):
         mask[:, pad:size - pad] = 1
         box = [[pad, 0], [size - pad, 0], [size - pad, size - 1], [pad, size - 1]]
         box = [[0, 0], [width-1, 0], [width-1, height-1], [0, height - 1]]
-        
+
     elif ratio < 1:
         pad = int((size - height) / 2)
         mask[pad:size - pad, :] = 1
@@ -111,6 +111,7 @@ SHAPE_TO_MASK = {
     'square': gen_square_mask,
 }
 
+
 def get_sign_canonical(
     predicted_class: str,
     patch_size_in_pixel: int = None,
@@ -147,7 +148,7 @@ def get_sign_canonical(
             sign_size_in_mm = float(sign_width_in_mm)
         pixel_mm_ratio = patch_size_in_pixel / patch_size_in_mm
         sign_size_in_pixel = round(sign_size_in_mm * pixel_mm_ratio)
-    
+
     # sign_canonical = torch.zeros((4, sign_size_in_pixel, sign_size_in_pixel))
     sign_canonical = torch.zeros((4, round(hw_ratio * sign_size_in_pixel), sign_size_in_pixel))
 
@@ -191,7 +192,7 @@ def get_transform(
     shape = predicted_class.split('-')[0]
 
     src = np.array(src, dtype=np.float32)
-    
+
     # TODO: Fix this after unifying csv
     if not pd.isna(row['points']):
         tgt = np.array(literal_eval(row['points']), dtype=np.float32)
@@ -218,7 +219,7 @@ def get_transform(
         if len(src) > 3:
             src = src[:-1]
             tgt = tgt[:-1]
-        
+
         M = torch.from_numpy(getAffineTransform(src, tgt)).unsqueeze(0).float()
         transform_func = warp_affine
 
@@ -263,7 +264,7 @@ def get_transform(
     #     #a2,a3 = 0
     #     M[0][0][1] = 0
     #     M[0][1][0] = 0
-        
+
         # a = M[0][0][0]
         # b = M[0][1][0]
         # c = M[0][0][1]
@@ -274,7 +275,7 @@ def get_transform(
         # M[0][1][0] = 0
         # M[0][0][1] = 0
         # M[0][1][1] = s_y + 1e-15
-        
+
     return transform_func, sign_canonical, sign_mask, M.squeeze(), alpha, beta, tgt
 
 
@@ -321,14 +322,8 @@ def apply_transform(
     # Apply augmentation on the patch
     if tf_patch is not None:
         sign_canonical = tf_patch(sign_canonical)
-
-    try:
-        warped_patch = transform_func(sign_canonical, M, image.shape[2:],
-                                    mode=interp, padding_mode='zeros')
-    except:
-        print()
-        print(M)
-        print()
+    warped_patch = transform_func(sign_canonical, M, image.shape[2:],
+                                  mode=interp, padding_mode='zeros')
     warped_patch.clamp_(0, 1)
     alpha_mask = warped_patch[:, -1].unsqueeze(1)
     final_img = (1 - alpha_mask) * image / 255 + alpha_mask * warped_patch[:, :-1]
@@ -374,5 +369,6 @@ def transform_and_apply_patch(
     tf_data = (sign_canonical, sign_mask, M, alpha.to(device), beta.to(device))
 
     img = apply_transform(image, adv_patch, patch_mask, patch_loc,
-                          transform_func, tf_data, interp=interp, use_relight=use_relight)
+                          transform_func, tf_data, interp=interp,
+                          use_relight=use_relight)
     return img

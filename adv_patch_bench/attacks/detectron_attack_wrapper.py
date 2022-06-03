@@ -121,7 +121,7 @@ class DAGAttacker:
         for i, batch in tqdm(enumerate(self.data_loader)):
             if self.debug and i >= 100:
                 break
-            
+
             file_name = batch[0]['file_name']
             filename = file_name.split('/')[-1]
             # basename = os.path.basename(file_name)
@@ -154,7 +154,15 @@ class DAGAttacker:
             if self.synthetic:
                 # Apply synthetic sign and patch to image
                 perturbed_image = apply_synthetic_sign(
-                    images, adv_patch, patch_mask, *syn_data, apply_patch=self.use_attack)
+                    images,
+                    None,
+                    None,
+                    adv_patch,
+                    patch_mask,
+                    *syn_data,
+                    use_attack=self.use_attack,
+                    return_target=False,
+                )
                 is_included = True
             elif len(img_df) > 0:
                 # Iterate through objects in the current image
