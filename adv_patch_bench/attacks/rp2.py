@@ -38,6 +38,15 @@ class RP2AttackModule(DetectorAttackModule):
         self.use_transform = attack_config['use_patch_transform']
         self.use_relight = attack_config['use_patch_relight']
         self.detectron_obj_const = 0.
+        self.pgd_step_size = 1e-2
+
+        # Use change of variable on delta with alpha and beta
+        self.use_var_change_ab = 'var_change_ab' in self.attack_mode
+        if not self.use_relight:
+            self.use_var_change_ab = False
+        if self.use_var_change_ab:
+            # No need to relight further
+            self.use_relight = False
 
         # TODO: We probably don't need this now
         # self.rescaling = rescaling
@@ -65,12 +74,13 @@ class RP2AttackModule(DetectorAttackModule):
         self.mask_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0,
                                               resample=Resample.NEAREST, scale=(0.25, 0.5))
         self.jitter_transform = K.ColorJitter(brightness=0.3, contrast=0.3, p=.0)
-        # TODO: Add EoT on the patch?
+        # Use random transforms on patch and background when attacking real signs
         self.real_transform = {}
         if self.augment_real:
             self.real_transform['tf_patch'] = K.RandomAffine(
                 15, translate=(0.1, 0.1), scale=(0.9, 1.1), p=1.0, resample=self.interp)
-            self.real_transform['tf_bg'] = self.bg_transforms
+            # Background should move very little because gt annotation is fixed
+            # self.real_transform['tf_bg'] = self.bg_transforms
 
     def _setup_opt(self, z_delta):
         # Set up optimizer
@@ -349,7 +359,6 @@ class RP2AttackModule(DetectorAttackModule):
 
         ema_const = 0.99
         ema_loss = None
-        self.alpha = 1e-2
 
         # Process transform data and create batch tensors
         sign_size_in_pixel = patch_mask.size(-1)
@@ -392,15 +401,19 @@ class RP2AttackModule(DetectorAttackModule):
             for step in range(self.num_steps):
                 z_delta.requires_grad_()
 
-                if 'pgd' in self.attack_mode:
-                    delta = z_delta
-                else:
-                    delta = self._to_model_space(z_delta, 0, 1)
-
                 # Randomly select background and place patch with transforms
                 np.random.shuffle(all_bg_idx)
                 bg_idx = all_bg_idx[:self.num_eot]
                 curr_tf_data = [data[bg_idx] for data in tf_data]
+
+                # Determine how perturbation is projected
+                if 'pgd' in self.attack_mode:
+                    delta = z_delta
+                elif self.use_var_change_ab:
+                    alpha, beta = curr_tf_data[-2:]
+                    delta = self._to_model_space(z_delta, beta, alpha + beta)
+                else:
+                    delta = self._to_model_space(z_delta, 0, 1)
                 delta = delta.repeat(self.num_eot, 1, 1, 1)
 
                 adv_img = apply_transform(
@@ -434,7 +447,7 @@ class RP2AttackModule(DetectorAttackModule):
                 if 'pgd' in self.attack_mode:
                     grad = z_delta.grad.detach()
                     grad = torch.sign(grad)
-                    z_delta = z_delta.detach() - self.alpha * grad
+                    z_delta = z_delta.detach() - self.pgd_step_size * grad
                     z_delta = z_delta.clamp_(0, 1)
                 else:
                     opt.step()

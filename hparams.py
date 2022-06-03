@@ -107,6 +107,9 @@ LABEL_LIST = {
     'mapillary_no_color': TS_NO_COLOR_LABEL_LIST,
 }
 
+# Get list of shape (no size, no color)
+TS_SHAPE_LIST = list(set([l.split('-')[0] for l in TS_NO_COLOR_LABEL_LIST]))
+
 MIN_OBJ_AREA = 0
 NUM_CLASSES = len(TS_COLOR_LABEL_LIST)
 

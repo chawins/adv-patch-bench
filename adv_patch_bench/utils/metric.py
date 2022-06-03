@@ -26,8 +26,9 @@ class AverageMeter(object):
 
     def synchronize(self):
         t = torch.tensor([self.sum, self.count], dtype=torch.float64, device='cuda')
-        dist.barrier()
-        dist.all_reduce(t)
+        if dist.is_initialized():
+            dist.barrier()
+            dist.all_reduce(t)
         t = t.tolist()
         self.sum = int(t[0])
         self.count = t[1]

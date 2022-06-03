@@ -26,6 +26,7 @@ from adv_patch_bench.transforms import (gen_sign_mask, get_box_vertices,
                                         relight_range)
 from adv_patch_bench.utils import (draw_from_contours, img_numpy_to_torch,
                                    pad_image)
+from .hparams import TS_NO_COLOR_LABEL_LIST, TS_SHAPE_LIST
 
 DATASET = 'mapillaryvistas'
 # DATASET = 'bdd100k'
@@ -35,32 +36,8 @@ if DATASET == 'mapillaryvistas':
 elif DATASET == 'bdd100k':
     TRAFFIC_SIGN_LABEL = 'traffic sign'
 
-CLASS_LIST = [
-    'circle-750.0',
-    'triangle-900.0',
-    'triangle_inverted-1220.0',
-    'diamond-600.0',
-    'diamond-915.0',
-    'square-600.0',
-    'rect-458.0-610.0',
-    'rect-762.0-915.0',
-    'rect-915.0-1220.0',
-    'pentagon-915.0',
-    'octagon-915.0',
-    'other-0.0-0.0',
-]
-
-SHAPE_LIST = [
-    'circle',
-    'triangle',
-    'triangle_inverted',
-    'diamond',
-    'square',
-    'rect',
-    'pentagon',
-    'octagon',
-    'other'
-]
+CLASS_LIST = TS_NO_COLOR_LABEL_LIST
+SHAPE_LIST = TS_SHAPE_LIST
 
 # PLOT_FOLDER = 'mapillaryvistas_plots_model_3_updated_optimized'
 split = 'validation'
@@ -259,7 +236,8 @@ def compute_example_transform(traffic_sign, mask, predicted_class, demo_patch,
     # return traffic_sign, shape, group, tgt, alpha, beta
 
 
-def plot_subgroup(adversarial_images, metadata, group, shape, plot_folder=PLOT_FOLDER,
+def plot_subgroup(adversarial_images, metadata, group, shape, 
+                  plot_folder=PLOT_FOLDER,
                   num_imgs_per_plot=NUM_IMGS_PER_PLOT):
     if len(adversarial_images) == 0:
         return
@@ -312,7 +290,8 @@ def plot_subgroup(adversarial_images, metadata, group, shape, plot_folder=PLOT_F
             tgt = tgt[0]
 
         df_data.append([filename, obj_id, shape, predicted_shape,
-                       predicted_class, group, batch_number, row_name, col_name, tgt.tolist(), alpha, beta])
+                       predicted_class, group, batch_number, row_name, 
+                       col_name, tgt.tolist(), alpha, beta])
 
     if fig:
         fig.savefig('{}/{}/{}/batch_{}.png'.format(plot_folder, shape,
@@ -323,16 +302,16 @@ def plot_subgroup(adversarial_images, metadata, group, shape, plot_folder=PLOT_F
 def main(args):
 
     # Arguments
-    min_area = 1600
     max_num_imgs = 200
+    DATA_DIR = '~/data/'
 
     if DATASET == 'mapillaryvistas':
         if split == 'train':
-            data_dir = '/data/shared/mapillary_vistas/training/'
+            data_dir = f'{DATA_DIR}/mapillary_vistas/training/'
         elif split == 'validation':
-            data_dir = '/data/shared/mapillary_vistas/validation/'
+            data_dir = f'{DATA_DIR}/mapillary_vistas/validation/'
     elif DATASET == 'bdd100k':
-        data_dir = '/data/shared/bdd100k/images/10k/train/'
+        data_dir = f'{DATA_DIR}/bdd100k/images/10k/train/'
 
     # data_dir = '/data/shared/mtsd_v2_fully_annotated/'
     # model_path = '/home/nab_126/adv-patch-bench/model_weights/resnet18_cropped_signs_good_resolution_and_not_edge_10_labels.pth'
@@ -356,7 +335,7 @@ def main(args):
                              isfile(join(mask_path, f)) and f.endswith('.png')])
     # TODO: Read in panoptic file
     elif DATASET == 'bdd100k':
-        panoptic_json_path = '/data/shared/bdd100k/labels/pan_seg/polygons/pan_seg_train.json'
+        panoptic_json_path = f'{DATA_DIR}/bdd100k/labels/pan_seg/polygons/pan_seg_train.json'
 
         with open(panoptic_json_path) as panoptic_file:
             panoptic = json.load(panoptic_file)
