@@ -219,13 +219,8 @@ def get_transform(
             src = src[:-1]
             tgt = tgt[:-1]
         
-        try:
-            M = torch.from_numpy(getAffineTransform(src, tgt)).unsqueeze(0).float()
-            M = torch.from_numpy(getAffineTransform(src, tgt[:-1])).unsqueeze(0).float()
-            transform_func = warp_affine
-        except:
-            import pdb
-            pdb.set_trace()
+        M = torch.from_numpy(getAffineTransform(src, tgt)).unsqueeze(0).float()
+        transform_func = warp_affine
 
         a = M[0][0][0]
         b = M[0][0][1]
