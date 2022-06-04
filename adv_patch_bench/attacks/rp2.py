@@ -52,11 +52,9 @@ class RP2AttackModule(DetectorAttackModule):
         # TODO: We probably don't need this now
         # self.rescaling = rescaling
         self.rescaling = False
-
+        
         self.augment_real = attack_config['rp2_augment_real']
-        # self.interp = attack_config['interp'] if interp is None else interp
         self.interp = interp
-
         self.num_restarts = 1
         self.verbose = verbose
         self.is_detectron = is_detectron
@@ -64,17 +62,15 @@ class RP2AttackModule(DetectorAttackModule):
         # Defind EoT data augmentation when generating adversarial examples
         # bg_size = (self.input_size[0] - 32, self.input_size[1] - 32)
         bg_size = self.input_size
-
-        # obj_transforms = K.RandomAffine(20, translate=(0.45, 0.45), p=1.0, return_transform=True, scale=(0.25, 0.5))
-        # mask_transforms = K.RandomAffine(20, translate=(0.45, 0.45), p=1.0, resample=Resample.NEAREST, scale=(0.25, 0.5))
-
-        self.bg_transforms = K.RandomResizedCrop(bg_size, scale=(0.8, 1), p=.0,
-                                                 resample=self.interp)
-        self.obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0,
-                                             return_transform=True, resample=self.interp, scale=(0.25, 0.5))
-        self.mask_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0,
-                                              resample=Resample.NEAREST, scale=(0.25, 0.5))
-        self.jitter_transform = K.ColorJitter(brightness=0.3, contrast=0.3, p=.0)
+        self.bg_transforms = K.RandomResizedCrop(
+            bg_size, scale=(0.8, 1), p=1.0, resample=self.interp)
+        self.obj_transforms = K.RandomAffine(
+            30, translate=(0.45, 0.45), p=1.0, return_transform=True, 
+            resample=self.interp)
+        self.mask_transforms = K.RandomAffine(
+            30, translate=(0.45, 0.45), p=1.0, resample=Resample.NEAREST)
+        self.jitter_transform = K.ColorJitter(
+            brightness=0.3, contrast=0.3, p=1.0)
         # Use random transforms on patch and background when attacking real signs
         self.real_transform = {}
         if self.augment_real:
@@ -166,7 +162,7 @@ class RP2AttackModule(DetectorAttackModule):
                 target_loss = - F.cross_entropy(tgt_log[:, :-1], tgt_lb, reduction='sum')
             if len(obj_logits) > 0 and self.detectron_obj_const != 0:
                 obj_lb = torch.zeros_like(obj_log)
-                obj_loss = F.binary_cross_entropy_with_logits(obj_log, obj_lb, 
+                obj_loss = F.binary_cross_entropy_with_logits(obj_log, obj_lb,
                                                               reduction='sum')
             loss += target_loss + self.detectron_obj_const * obj_loss
         return loss
@@ -239,8 +235,8 @@ class RP2AttackModule(DetectorAttackModule):
                     bgs = letterbox(bgs, new_shape=self.input_size, color=114/255)[0]
 
                 if self.rescaling:
+                    # UNUSED
                     synthetic_sign_size = obj_size[0]
-                    # TODO: clean this and generalize this to other signs?
                     old_ratio = synthetic_sign_size / self.input_size[0]
                     prob_array = [0.38879158, 0.26970227, 0.16462349, 0.07530647, 0.04378284,
                                   0.03327496, 0.01050788, 0.00700525, 0.00350263, 0.00350263]
@@ -391,7 +387,8 @@ class RP2AttackModule(DetectorAttackModule):
 
         for _ in range(self.num_restarts):
             # Initialize adversarial perturbation
-            z_delta = torch.zeros((1, 3, height, width), device=device, dtype=torch.float32)
+            z_delta = torch.zeros((1, 3, height, width),
+                                  device=device, dtype=torch.float32)
             z_delta.uniform_(-10, 10)
 
             # Set up optimizer

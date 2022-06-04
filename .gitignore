@@ -131,7 +131,7 @@ MNIST
 # *.png
 *.pt
 *.out
-results/
+results
 .fuse_hidde*
 mapillaryvistas_plots/
 figures/

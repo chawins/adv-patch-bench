@@ -1,6 +1,5 @@
 import argparse
 import os
-import pickle
 from typing import Tuple, Union
 
 import matplotlib.pyplot as plt
@@ -31,7 +30,8 @@ def generate_mask(
     patch_mask = torch.zeros((1, ) + obj_size_px)
 
     # EDIT: User defines from this point on
-    patch_size_inch = 10
+    # patch_size_inch = 10
+    patch_size_inch = (10, 20)
     if isinstance(patch_size_inch, int):
         patch_size_inch = (patch_size_inch, patch_size_inch)
     patch_h_inch, patch_w_inch = patch_size_inch
@@ -41,6 +41,16 @@ def generate_mask(
     # Define patch location and size
     # Example: 10x10-inch patch in the middle of 36x36-inch sign
     # (1) 1 square (bottom)
+    # mid_height, mid_width = obj_h_px // 2, obj_w_px // 2
+    # patch_x_shift = 0
+    # shift_inch = (obj_h_inch - patch_h_inch) / 2
+    # patch_y_shift = round(shift_inch / obj_h_inch * obj_h_px)
+    # patch_x_pos = mid_width + patch_x_shift
+    # patch_y_pos = mid_height + patch_y_shift
+    # hh, hw = patch_h_px // 2, patch_w_px // 2
+    # patch_mask[:, patch_y_pos - hh:patch_y_pos + hh, patch_x_pos - hw:patch_x_pos + hw] = 1
+
+    # (2) two 10x20 rectangles
     mid_height, mid_width = obj_h_px // 2, obj_w_px // 2
     patch_x_shift = 0
     shift_inch = (obj_h_inch - patch_h_inch) / 2
@@ -48,29 +58,23 @@ def generate_mask(
     patch_x_pos = mid_width + patch_x_shift
     patch_y_pos = mid_height + patch_y_shift
     hh, hw = patch_h_px // 2, patch_w_px // 2
-
-    # # (2) 2 rectangles
-    # patch_width = 20
-    # patch_height = 6
-    # h = round(patch_height / 36 / 2 * obj_size[0])
-    # w = round(patch_width / 36 / 2 * obj_size[1])
-    # offset_h = round(28 / 128 * obj_size[0])
-    # offset_w = obj_size[1] // 2
-    # patch_mask[:, offset_h - h:offset_h + h, offset_w - w:offset_w + w] = 1
-    # patch_mask[:, obj_size[0] - offset_h - h:obj_size[0] - offset_h + h, offset_w - w:offset_w + w] = 1
-
     patch_mask[:, patch_y_pos - hh:patch_y_pos + hh, patch_x_pos - hw:patch_x_pos + hw] = 1
+    patch_y_pos = mid_height - patch_y_shift
+    patch_mask[:, patch_y_pos - hh:patch_y_pos + hh, patch_x_pos - hw:patch_x_pos + hw] = 1
+
     return patch_mask
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Mask Generation', add_help=False)
-    parser.add_argument('--syn-obj-path', type=str, default='', help='path to synthetic image of the object')
+    parser.add_argument('--syn-obj-path', type=str, default='',
+                        help='path to synthetic image of the object')
     parser.add_argument('--obj-size', type=int, required=True)
     # parser.add_argument('--patch-size', type=int, required=True)
     parser.add_argument('--patch-name', type=str, default=None)
     parser.add_argument('--dataset', type=str, required=True)
-    parser.add_argument('--obj-class', type=int, default=-1, help='class of object to attack (-1: all classes)')
+    parser.add_argument('--obj-class', type=int, default=-1,
+                        help='class of object to attack (-1: all classes)')
     parser.add_argument('--save-mask', action='store_true')
     args = parser.parse_args()
     parse_dataset_name(args)
