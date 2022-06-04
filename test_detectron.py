@@ -22,7 +22,8 @@ from adv_patch_bench.dataloaders import (BenignMapper, get_mapillary_dict,
 from adv_patch_bench.utils.argparse import (eval_args_parser,
                                             setup_detectron_test_args)
 from adv_patch_bench.utils.detectron import build_evaluator
-from hparams import DATASETS, LABEL_LIST, OTHER_SIGN_CLASS, SAVE_DIR_DETECTRON
+from hparams import (DATASETS, LABEL_LIST, OTHER_SIGN_CLASS, PATH_SYN_OBJ,
+                     SAVE_DIR_DETECTRON, TS_NO_COLOR_LABEL_LIST)
 
 
 def main(cfg, args):
@@ -111,15 +112,14 @@ def main_attack(cfg, args, dataset_params):
 
     # Build model
     model = DefaultPredictor(cfg).model
+    
     # Build dataloader
     val_loader = build_detection_test_loader(
         cfg, cfg.DATASETS.TEST[0], mapper=BenignMapper(cfg, is_train=False),
         # cfg, cfg.DATASETS.TEST[0],
         batch_size=1, num_workers=cfg.DATALOADER.NUM_WORKERS
     )
-    # TODO: To generate more dense proposals
-    # cfg.MODEL.RPN.NMS_THRESH = nms_thresh
-    # cfg.MODEL.RPN.POST_NMS_TOPK_TEST = 5000
+    
     attack = DAGAttacker(cfg, args, attack_config, model, val_loader,
                          class_names=LABEL_LIST[args.dataset])
     if args.attack_type != 'none':
@@ -189,6 +189,9 @@ if __name__ == "__main__":
     args = eval_args_parser(True)
     print('Command Line Args:', args)
     args.img_size = args.padded_imgsz
+    # Set path to synthetic object used by synthetic attack only
+    args.syn_obj_path = os.path.join(PATH_SYN_OBJ, 
+                                     TS_NO_COLOR_LABEL_LIST[args.obj_class])
 
     # Verify some args
     cfg = setup_detectron_test_args(args, OTHER_SIGN_CLASS)

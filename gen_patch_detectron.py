@@ -34,7 +34,8 @@ from adv_patch_bench.utils.detectron import ShuffleInferenceSampler
 from adv_patch_bench.utils.image import get_obj_width
 from gen_mask import generate_mask
 from hparams import (DATASETS, LABEL_LIST, MAPILLARY_IMG_COUNTS_DICT,
-                     OTHER_SIGN_CLASS, SAVE_DIR_DETECTRON)
+                     OTHER_SIGN_CLASS, PATH_SYN_OBJ, SAVE_DIR_DETECTRON,
+                     TS_NO_COLOR_LABEL_LIST)
 
 
 def collect_backgrounds(dataloader, img_size, num_bg, device,
@@ -130,7 +131,7 @@ def generate_adv_patch(
     obj_class: int = 0,
     obj_size: int = None,
     # bg_dir: str = './',
-    num_bg: int = 16,
+    # num_bg: int = 16,
     save_images: bool = False,
     save_dir: str = './',
     synthetic: bool = False,
@@ -149,6 +150,7 @@ def generate_adv_patch(
     with open(attack_config_path) as file:
         attack_config = yaml.load(file, Loader=yaml.FullLoader)
         attack_config['input_size'] = img_size
+        num_bg = attack_config['num_bg']
 
     # TODO: Allow data parallel?
     attack = RP2AttackModule(attack_config, model, None, None, None,
@@ -312,6 +314,9 @@ if __name__ == "__main__":
     args.device = 'cuda'
     if args.patch_size_inch is not None:
         args.mask_path = None
+    # Set path to synthetic object used by synthetic attack only
+    args.syn_obj_path = os.path.join(PATH_SYN_OBJ, 
+                                     TS_NO_COLOR_LABEL_LIST[args.obj_class])
 
     # Verify some args
     cfg = setup_detectron_test_args(args, OTHER_SIGN_CLASS)

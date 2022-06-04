@@ -43,6 +43,7 @@ def eval_args_parser(is_detectron, root=None):
                         help='path to csv which contains target points for transform')
     parser.add_argument('--attack-config-path',
                         help='path to yaml file with attack configs (used when attack_type is per-sign)')
+    # TODO: deprecate, set automatically given obj class
     parser.add_argument('--syn-obj-path', type=str, default='',
                         help='path to an image of a synthetic sign (used when synthetic_eval is True')
     parser.add_argument('--img-txt-path', type=str, default='',
@@ -68,12 +69,12 @@ def eval_args_parser(is_detectron, root=None):
     # ===================== Patch generation arguments ====================== #
     parser.add_argument('--obj-size', type=int, default=None,
                         help='Object width in pixels (default: 0.1 * img_size)')
-    parser.add_argument('--patch-size-inch', type=int, default=None,
-                        help='Patch size in inches (deprecated)')
+    # parser.add_argument('--patch-size-inch', type=int, default=None,
+    #                     help='Patch size in inches (deprecated)')
     parser.add_argument('--bg-dir', type=str, default='',
                         help='path to background directory')
-    parser.add_argument('--num-bg', type=float, default=1,
-                        help='Number of backgrounds used to generate patch')
+    # parser.add_argument('--num-bg', type=float, default=1,
+    #                     help='Number of backgrounds used to generate patch')
     parser.add_argument('--save-images', action='store_true',
                         help='Save generated patch')
     # parser.add_argument('--detectron', action='store_true', help='Model is detectron else YOLO')

@@ -40,11 +40,15 @@ class RP2AttackModule(DetectorAttackModule):
         self.detectron_obj_const = 0.
         self.pgd_step_size = 1e-2
 
-        # Use change of variable on delta with alpha and beta
+        # Use change of variable on delta with alpha and beta.
+        # Mostly used with per-sign attack.
         self.use_var_change_ab = 'var_change_ab' in self.attack_mode
         if not self.use_relight:
             self.use_var_change_ab = False
         if self.use_var_change_ab:
+            # Does not work when num_eot > 1
+            assert self.num_eot == 1, ('When use_var_change_ab is used, '
+                                       'num_eot can only be set to 1.')
             # No need to relight further
             self.use_relight = False
 
@@ -158,10 +162,11 @@ class RP2AttackModule(DetectorAttackModule):
             target_loss, obj_loss = 0, 0
             if len(tgt_log) > 0 and len(tgt_lb) > 0:
                 # Ignore the background class on tgt_log
-                target_loss = - F.cross_entropy(tgt_log[:, :-1], tgt_lb, reduction='sum')
+                target_loss = - F.cross_entropy(tgt_log[:, :-1], tgt_lb, 
+                                                reduction='sum')
             if len(obj_logits) > 0 and self.detectron_obj_const != 0:
                 obj_lb = torch.zeros_like(obj_log)
-                obj_loss = F.binary_cross_entropy_with_logits(obj_log, obj_lb,
+                obj_loss = F.binary_cross_entropy_with_logits(obj_log, obj_lb, 
                                                               reduction='sum')
             loss += target_loss + self.detectron_obj_const * obj_loss
         return loss
@@ -233,20 +238,20 @@ class RP2AttackModule(DetectorAttackModule):
                     # Patch image the same way as YOLO
                     bgs = letterbox(bgs, new_shape=self.input_size, color=114/255)[0]
 
-                if self.rescaling:
-                    # UNUSED
-                    synthetic_sign_size = obj_size[0]
-                    old_ratio = synthetic_sign_size / self.input_size[0]
-                    prob_array = [0.38879158, 0.26970227, 0.16462349, 0.07530647, 0.04378284,
-                                  0.03327496, 0.01050788, 0.00700525, 0.00350263, 0.00350263]
-                    new_possible_ratios = [0.05340427, 0.11785139, 0.18229851, 0.24674563,
-                                           0.31119275, 0.3756399, 0.440087, 0.5045341, 0.56898123, 0.6334284, 0.6978755]
-                    index_array = np.arange(0, len(new_possible_ratios) - 1)
-                    sampled_index = np.random.choice(index_array, None, p=prob_array)
-                    low_bin_edge, high_bin_edge = new_possible_ratios[sampled_index], new_possible_ratios[sampled_index+1]
-                    self.obj_transforms = K.RandomAffine(
-                        30, translate=(0.45, 0.45),
-                        p=1.0, return_transform=True, scale=(low_bin_edge / old_ratio, high_bin_edge / old_ratio))
+                # UNUSED
+                # if self.rescaling:
+                #     synthetic_sign_size = obj_size[0]
+                #     old_ratio = synthetic_sign_size / self.input_size[0]
+                #     prob_array = [0.38879158, 0.26970227, 0.16462349, 0.07530647, 0.04378284,
+                #                   0.03327496, 0.01050788, 0.00700525, 0.00350263, 0.00350263]
+                #     new_possible_ratios = [0.05340427, 0.11785139, 0.18229851, 0.24674563,
+                #                            0.31119275, 0.3756399, 0.440087, 0.5045341, 0.56898123, 0.6334284, 0.6978755]
+                #     index_array = np.arange(0, len(new_possible_ratios) - 1)
+                #     sampled_index = np.random.choice(index_array, None, p=prob_array)
+                #     low_bin_edge, high_bin_edge = new_possible_ratios[sampled_index], new_possible_ratios[sampled_index+1]
+                #     self.obj_transforms = K.RandomAffine(
+                #         30, translate=(0.45, 0.45),
+                #         p=1.0, return_transform=True, scale=(low_bin_edge / old_ratio, high_bin_edge / old_ratio))
 
                 adv_obj = obj.clone()
                 with torch.enable_grad():
@@ -306,7 +311,8 @@ class RP2AttackModule(DetectorAttackModule):
                 lr_schedule.step(ema_loss)
 
                 if step % 100 == 0 and self.verbose:
-                    print(f'step: {step}  loss: {ema_loss:.6f}  time: {time.time() - start_time:.2f}s')
+                    print(f'step: {step}   loss: {ema_loss:.6f}  '
+                          f'time: {time.time() - start_time:.2f}s')
                     start_time = time.time()
 
             # if self.num_restarts == 1:
@@ -406,6 +412,7 @@ class RP2AttackModule(DetectorAttackModule):
                 if 'pgd' in self.attack_mode:
                     delta = z_delta
                 elif self.use_var_change_ab:
+                    # Does not work when num_eot > 1
                     alpha, beta = curr_tf_data[-2:]
                     delta = self._to_model_space(z_delta, beta, alpha + beta)
                 else:
