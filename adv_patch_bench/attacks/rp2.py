@@ -35,7 +35,8 @@ class RP2AttackModule(DetectorAttackModule):
         self.min_conf = attack_config['rp2_min_conf']
         self.input_size = attack_config['input_size']
         self.attack_mode = attack_config['attack_mode'].split('-')
-        self.use_transform = attack_config['use_patch_transform']
+        self.transform = attack_config['transform']
+        # self.use_transform = attack_config['use_patch_transform']
         self.use_relight = attack_config['use_patch_relight']
         self.detectron_obj_const = 0.
         self.pgd_step_size = 1e-2
@@ -368,11 +369,12 @@ class RP2AttackModule(DetectorAttackModule):
         # TODO: Assume that every signs use the same transform function
         # i.e., warp_perspetive. Have to fix this for triangles
         tf_function = get_transform(sign_size_in_pixel, *objs[0][1],
-                                    use_transform=self.use_transform)[0]
+                                    transform=self.transform)[0]
         tf_data_temp = [get_transform(sign_size_in_pixel, *obj[1],
-                                      use_transform=self.use_transform)[1:-1] for obj in objs]
+                                      transform=self.transform)[1:-1] for obj in objs]
+        
         all_tgts = [get_transform(sign_size_in_pixel, *obj[1],
-                                  use_transform=self.use_transform)[-1] for obj in objs]
+                                      transform=self.transform)[-1] for obj in objs]
 
         # tf_data contains [sign_canonical, sign_mask, M, alpha, beta]
         tf_data = []
