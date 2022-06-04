@@ -33,6 +33,8 @@ def eval_args_parser(is_detectron, root=None):
     # =========================== Attack arguments ========================== #
     parser.add_argument('--attack-type', type=str, default='none',
                         help='which attack evaluation to run: none (default), load, per-sign, random, debug')
+    parser.add_argument('--patch-transform', type=str, default='perspective',
+                        help='which patch transform to use: perspective (default), translate_scale, affine')
     parser.add_argument('--adv-patch-path', type=str, default=None,
                         help='path to adv patch and mask to load')
     parser.add_argument('--mask-dir', type=str, default='./masks/',

@@ -386,7 +386,7 @@ def run(args,
         #     targets = targets[targets[:, 1] != other_class_label]
 
         # DEBUG
-        if args.debug and batch_i == 200:
+        if args.debug and batch_i == 100:
             break
 
         if num_apply_imgs >= len(filename_list) and args.run_only_img_txt:
@@ -430,7 +430,7 @@ def run(args,
                     im[image_i] = transform_and_apply_patch(
                         im[image_i].to(device), adv_patch.to(device),
                         patch_mask, patch_loc, predicted_class, row, img_data,
-                        use_transform=not args.no_patch_transform,
+                        transform=args.patch_transform,
                         use_relight=not args.no_patch_relight, interp=args.interp) * 255
                     # num_patches_applied_to_image += 1
                     total_num_patches += 1

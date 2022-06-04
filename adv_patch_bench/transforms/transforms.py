@@ -166,7 +166,7 @@ def get_transform(
     w_ratio: float,
     w_pad: float,
     h_pad: float,
-    use_transform: bool = True,
+    transform: str,
 ) -> Tuple:
     """Get transformation matrix and parameters including relighting.
     Args:
@@ -179,7 +179,7 @@ def get_transform(
         w_ratio (float): _description_
         w_pad (float): _description_
         h_pad (float): _description_
-        use_transform (bool, optional): _description_. Defaults to True.
+        transform (str, required): _description_. 'transform_scale, affine or perspective'.
     Returns:
         Tuple: _description_
     """
@@ -214,7 +214,7 @@ def get_transform(
 
     # Get transformation matrix and transform function (affine or perspective)
     # from source and target coordinates
-    if not use_transform:
+    if transform == 'translate_scale':
         if len(src) > 3:
             src = src[:-1]
             tgt = tgt[:-1]
@@ -232,8 +232,16 @@ def get_transform(
         M[0][0][1] = 0
         M[0][1][0] = 0
         M[0][1][1] = s_y + 1e-15
+        
+    elif transform == 'affine':
+        if len(src) > 3:
+            src = src[:-1]
+            tgt = tgt[:-1]
+        
+        M = torch.from_numpy(getAffineTransform(src, tgt)).unsqueeze(0).float()
+        transform_func = warp_affine
 
-    else:
+    elif transform == 'perspective':
         if len(src) == 3:
             M = torch.from_numpy(getAffineTransform(src, tgt)).unsqueeze(0).float()
             transform_func = warp_affine
@@ -242,39 +250,9 @@ def get_transform(
             tgt = torch.from_numpy(tgt).unsqueeze(0)
             M = get_perspective_transform(src, tgt)
             transform_func = warp_perspective
+    else:
+        raise Exception('Transform does not exist')
 
-    # if len(src) == 3:
-    #     M = torch.from_numpy(getAffineTransform(src, tgt)).unsqueeze(0).float()
-    #     transform_func = warp_affine
-    # else:
-    #     src = torch.from_numpy(src).unsqueeze(0)
-    #     tgt = torch.from_numpy(tgt).unsqueeze(0)
-    #     M = get_perspective_transform(src, tgt)
-    #     transform_func = warp_perspective
-
-    # if not use_transform:
-    #     #https://theailearner.com/tag/cv2-getperspectivetransform/
-    #     import pdb
-    #     pdb.set_trace()
-    #     #c1,c2 = 0
-    #     M[0][2][0] = 0
-    #     M[0][2][1] = 0
-
-    #     #a2,a3 = 0
-    #     M[0][0][1] = 0
-    #     M[0][1][0] = 0
-        
-        # a = M[0][0][0]
-        # b = M[0][1][0]
-        # c = M[0][0][1]
-        # d = M[0][1][1]
-        # s_x = torch.sign(a) * ((a**2 + b**2) ** 0.5)
-        # s_y = torch.sign(d) * ((c**2 + d**2) ** 0.5)
-        # M[0][0][0] = s_x + 1e-15
-        # M[0][1][0] = 0
-        # M[0][0][1] = 0
-        # M[0][1][1] = s_y + 1e-15
-        
     return transform_func, sign_canonical, sign_mask, M.squeeze(), alpha, beta, tgt
 
 
@@ -353,7 +331,7 @@ def transform_and_apply_patch(
     predicted_class: str,
     row: pd.DataFrame,
     img_data: List,
-    use_transform: bool = True,
+    transform: str,
     use_relight: bool = True,
     interp: str = 'bilinear',
 ) -> torch.Tensor:
@@ -366,7 +344,7 @@ def transform_and_apply_patch(
 
     sign_size_in_pixel = patch_mask.shape[-1]
     transform_func, sign_canonical, sign_mask, M, alpha, beta, _ = get_transform(
-        sign_size_in_pixel, predicted_class, row, *img_data, use_transform=use_transform)
+        sign_size_in_pixel, predicted_class, row, *img_data, transform=transform)
 
     sign_canonical = add_singleton_dim(sign_canonical, 4).to(device)
     sign_mask = add_singleton_dim(sign_mask, 4).to(device)
