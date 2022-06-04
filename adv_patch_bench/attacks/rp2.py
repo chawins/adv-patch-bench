@@ -51,11 +51,9 @@ class RP2AttackModule(DetectorAttackModule):
         # TODO: We probably don't need this now
         # self.rescaling = rescaling
         self.rescaling = False
-
+        
         self.augment_real = attack_config['rp2_augment_real']
-        # self.interp = attack_config['interp'] if interp is None else interp
         self.interp = interp
-
         self.num_restarts = 1
         self.verbose = verbose
         self.is_detectron = is_detectron
@@ -63,16 +61,15 @@ class RP2AttackModule(DetectorAttackModule):
         # Defind EoT data augmentation when generating adversarial examples
         # bg_size = (self.input_size[0] - 32, self.input_size[1] - 32)
         bg_size = self.input_size
-
-        # obj_transforms = K.RandomAffine(20, translate=(0.45, 0.45), p=1.0, return_transform=True, scale=(0.25, 0.5))
-        # mask_transforms = K.RandomAffine(20, translate=(0.45, 0.45), p=1.0, resample=Resample.NEAREST, scale=(0.25, 0.5))
-        self.bg_transforms = K.RandomResizedCrop(bg_size, scale=(0.8, 1), p=.0,
-                                                 resample=self.interp)
-        self.obj_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0,
-                                             return_transform=True, resample=self.interp, scale=(0.25, 0.5))
-        self.mask_transforms = K.RandomAffine(30, translate=(0.45, 0.45), p=1.0,
-                                              resample=Resample.NEAREST, scale=(0.25, 0.5))
-        self.jitter_transform = K.ColorJitter(brightness=0.3, contrast=0.3, p=.0)
+        self.bg_transforms = K.RandomResizedCrop(
+            bg_size, scale=(0.8, 1), p=1.0, resample=self.interp)
+        self.obj_transforms = K.RandomAffine(
+            30, translate=(0.45, 0.45), p=1.0, return_transform=True, 
+            resample=self.interp)
+        self.mask_transforms = K.RandomAffine(
+            30, translate=(0.45, 0.45), p=1.0, resample=Resample.NEAREST)
+        self.jitter_transform = K.ColorJitter(
+            brightness=0.3, contrast=0.3, p=1.0)
         # Use random transforms on patch and background when attacking real signs
         self.real_transform = {}
         if self.augment_real:

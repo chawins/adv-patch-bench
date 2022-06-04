@@ -4,7 +4,7 @@ rp2_num_eot: 1
 rp2_optimizer: 'adam'
 rp2_lambda: 0
 rp2_min_conf: 0
-rp2_augment_real: True   # Augment when attacking real signs
+rp2_augment_real: False   # Augment when attacking real signs
 use_patch_transform: True
 use_patch_relight: True
 # shapeshifter: Use ShapeShifter loss to attack Faster R-CNN
