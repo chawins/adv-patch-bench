@@ -128,7 +128,7 @@ def generate_adv_patch(
     patch_mask: torch.Tensor,
     device: str = 'cuda',
     img_size: Tuple[int, int] = (992, 1312),
-    obj_class: int = 0,
+    obj_class: int = None,
     obj_size: int = None,
     # bg_dir: str = './',
     # num_bg: int = 16,
@@ -194,7 +194,7 @@ def generate_adv_patch(
                                       obj_mask.to(device),
                                       patch_mask_.to(device),
                                       backgrounds.to(device),
-                                      obj_size=obj_size,
+                                      obj_class=obj_class,
                                       metadata=metadata)
 
         if save_images:
@@ -238,7 +238,7 @@ def main(
     padded_imgsz: str = '992,1312',
     save_dir=Path(''),
     name: str = 'exp',  # save to project/name
-    obj_class: int = 0,
+    obj_class: int = None,
     obj_size: int = None,
     syn_obj_path: str = '',
     seed: int = 0,

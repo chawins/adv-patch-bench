@@ -148,7 +148,8 @@ def get_sign_canonical(
         sign_size_in_pixel = round(sign_size_in_mm * pixel_mm_ratio)
 
     # sign_canonical = torch.zeros((4, sign_size_in_pixel, sign_size_in_pixel))
-    sign_canonical = torch.zeros((4, round(hw_ratio * sign_size_in_pixel), sign_size_in_pixel))
+    sign_canonical = torch.zeros(
+        (4, round(hw_ratio * sign_size_in_pixel), sign_size_in_pixel))
 
     sign_mask, src = gen_sign_mask(shape, sign_size_in_pixel, ratio=hw_ratio)
     sign_mask = torch.from_numpy(sign_mask).float()[None, :, :]
@@ -191,9 +192,11 @@ def get_transform(
         tgt = np.array(literal_eval(row['points']), dtype=np.float32)
         tgt[:, 1] = (tgt[:, 1] * h_ratio) + h_pad
         tgt[:, 0] = (tgt[:, 0] * w_ratio) + w_pad
+        # print('not polygon')
     else:
         tgt = row['tgt'] if pd.isna(row['tgt_polygon']) else row['tgt_polygon']
         tgt = np.array(literal_eval(tgt), dtype=np.float32)
+        # print('polygon')
 
         offset_x_ratio = row['xmin_ratio']
         offset_y_ratio = row['ymin_ratio']
@@ -210,6 +213,13 @@ def get_transform(
     shape = predicted_class.split('-')[0]
     if shape != 'octagon':
         tgt = sort_polygon_vertices(tgt)
+
+    # if row['use_polygon'] == 1:
+    #     # nR-M2zUbIWJzatAuy2egrQ.jpg
+    # if row['use_polygon'] == 1:
+    #     print(tgt)
+    #     import pdb
+    #     pdb.set_trace()
 
     if shape == 'diamond':
         # Verify target points of diamonds. If they are very close to corners

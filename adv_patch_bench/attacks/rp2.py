@@ -307,6 +307,7 @@ class RP2AttackModule(DetectorAttackModule):
                     ema_loss = loss.item()
                 else:
                     ema_loss = ema_const * ema_loss + (1 - ema_const) * loss.item()
+                print(ema_loss)
                 lr_schedule.step(ema_loss)
 
                 if step % 100 == 0 and self.verbose:

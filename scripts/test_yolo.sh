@@ -36,7 +36,7 @@ EXP_NAME=debug
 #     --device $GPU --dataset $DATASET --padded-imgsz $IMG_SIZE --name $EXP_NAME \
 #     --weights $MODEL_PATH --workers 6 --plot-class-examples $OBJ_CLASS \
 #     --tgt-csv-filepath $CSV_PATH --attack-config-path $ATTACK_CONFIG_PATH \
-#     --obj-class $OBJ_CLASS --bg-dir $BG_PATH --interp $INTERP --verbose
+#     --obj-class $OBJ_CLASS --bg-dir $BG_PATH --transform-mode perspective --interp $INTERP --verbose
 # --imgsz $YOLO_IMG_SIZE
 
 # Test the generated patch

@@ -10,6 +10,6 @@ num_bg: 1  # Number of the attacker uses to generate patch
 transform_mode: 'perspective'
 # shapeshifter: Use ShapeShifter loss to attack Faster R-CNN
 # var_change_ab: Use variable change on alpha, beta 
-attack_mode: 'shapeshifter-var_change_ab'
-# attack_mode: 'shapeshifter'
+# attack_mode: 'shapeshifter-var_change_ab'
+attack_mode: 'shapeshifter'
 # attack_mode: ''
