@@ -19,7 +19,7 @@ IMG_SIZE=1536,2048 # sizes: (1536,2048), (3040,4032)
 INTERP=bilinear
 OBJ_CLASS=10
 # EXP_NAME=none
-EXP_NAME=per-sign_10x10_bottom
+EXP_NAME=real-10x10_bottom
 # EXP_NAME=per_sign-2_10x20
 # EXP_NAME=debug
 
@@ -35,7 +35,7 @@ EXP_NAME=per-sign_10x10_bottom
 #     MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
 #     OUTPUT_DIR $OUTPUT_PATH \
 #     MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
-#     DATALOADER.NUM_WORKERS 8
+#     DATALOADER.NUM_WORKERS 6
 # SOLVER.IMS_PER_BATCH 5 \
 # --debug --resume --annotated-signs-only
 # --dataset mtsd-val-no_color, mapillary-combined-no_color
@@ -49,6 +49,32 @@ CUDA_VISIBLE_DEVICES=$GPU python -u gen_patch_detectron.py \
     --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
     --dataset $DATASET --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH \
     --attack-config-path $ATTACK_CONFIG_PATH --obj-class $OBJ_CLASS \
+    --name $EXP_NAME --bg-dir $BG_PATH --transform-mode perspective --verbose \
+    MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
+    OUTPUT_DIR $OUTPUT_PATH \
+    MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
+    DATALOADER.NUM_WORKERS 6
+
+# Test the generated patch
+CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
+    --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
+    --dataset $DATASET --padded-imgsz $IMG_SIZE --eval-mode drop \
+    --tgt-csv-filepath $CSV_PATH --attack-config-path $ATTACK_CONFIG_PATH \
+    --name $EXP_NAME --obj-class $OBJ_CLASS --conf-thres $CONF_THRES \
+    --annotated-signs-only --transform-mode perspective \
+    --attack-type load --verbose \
+    MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
+    OUTPUT_DIR $OUTPUT_PATH \
+    MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
+    DATALOADER.NUM_WORKERS 6
+
+EXP_NAME=synthetic-10x10_bottom
+
+# Generate adversarial patch (add --synthetic for synthetic attack)
+CUDA_VISIBLE_DEVICES=$GPU python -u gen_patch_detectron.py \
+    --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
+    --dataset $DATASET --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH \
+    --attack-config-path $ATTACK_CONFIG_PATH --obj-class $OBJ_CLASS \
     --name $EXP_NAME --bg-dir $BG_PATH --transform-mode perspective --verbose --synthetic \
     MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
     OUTPUT_DIR $OUTPUT_PATH \
@@ -56,14 +82,14 @@ CUDA_VISIBLE_DEVICES=$GPU python -u gen_patch_detectron.py \
     DATALOADER.NUM_WORKERS 6
 
 # Test the generated patch
-# CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
-#     --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
-#     --dataset $DATASET --padded-imgsz $IMG_SIZE --eval-mode drop \
-#     --tgt-csv-filepath $CSV_PATH --attack-config-path $ATTACK_CONFIG_PATH \
-#     --name $EXP_NAME --obj-class $OBJ_CLASS --conf-thres $CONF_THRES \
-#     --annotated-signs-only \
-#     --attack-type debug --transform-mode perspective --verbose \
-#     MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
-#     OUTPUT_DIR $OUTPUT_PATH \
-#     MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
-#     DATALOADER.NUM_WORKERS 6
+CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
+    --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
+    --dataset $DATASET --padded-imgsz $IMG_SIZE --eval-mode drop \
+    --tgt-csv-filepath $CSV_PATH --attack-config-path $ATTACK_CONFIG_PATH \
+    --name $EXP_NAME --obj-class $OBJ_CLASS --conf-thres $CONF_THRES \
+    --annotated-signs-only --transform-mode perspective \
+    --attack-type load --verbose \
+    MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
+    OUTPUT_DIR $OUTPUT_PATH \
+    MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
+    DATALOADER.NUM_WORKERS 6

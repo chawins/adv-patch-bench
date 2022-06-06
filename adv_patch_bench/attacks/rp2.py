@@ -30,6 +30,7 @@ class RP2AttackModule(DetectorAttackModule):
         self.num_steps = attack_config['rp2_num_steps']
         self.step_size = attack_config['rp2_step_size']
         self.optimizer = attack_config['rp2_optimizer']
+        self.use_lr_schedule = attack_config['use_lr_schedule']
         self.num_eot = attack_config['rp2_num_eot']
         self.lmbda = attack_config['rp2_lambda']
         self.min_conf = attack_config['rp2_min_conf']
@@ -92,7 +93,15 @@ class RP2AttackModule(DetectorAttackModule):
             opt = optim.RMSprop([z_delta], lr=self.step_size)
         else:
             raise NotImplementedError('Given optimizer not implemented.')
-        return opt
+
+        lr_schedule = None
+        if self.use_lr_schedule:
+            # lr_schedule = optim.lr_scheduler.MultiStepLR(opt, [500, 1000, 1500], gamma=0.1)
+            lr_schedule = optim.lr_scheduler.ReduceLROnPlateau(
+                opt, factor=0.5, patience=int(self.num_steps / 10),
+                threshold=1e-9, min_lr=self.step_size * 1e-6, verbose=self.verbose)
+                
+        return opt, lr_schedule
 
     def compute_loss(self, adv_img, obj_class, metadata):
         if self.is_detectron:
@@ -219,11 +228,7 @@ class RP2AttackModule(DetectorAttackModule):
             z_delta = torch.zeros((1, 3, height, width), device=device, dtype=dtype)
             z_delta.uniform_(-10, 10)
 
-            opt = self._setup_opt(z_delta)
-            # lr_schedule = optim.lr_scheduler.MultiStepLR(opt, [500, 1000, 1500], gamma=0.1)
-            lr_schedule = optim.lr_scheduler.ReduceLROnPlateau(
-                opt, factor=0.5, patience=int(self.num_steps / 10),
-                threshold=1e-9, min_lr=self.step_size * 1e-6, verbose=self.verbose)
+            opt, lr_schedule = self._setup_opt(z_delta)
             start_time = time.time()
 
             # Run PGD on inputs for specified number of steps
@@ -307,11 +312,11 @@ class RP2AttackModule(DetectorAttackModule):
                     ema_loss = loss.item()
                 else:
                     ema_loss = ema_const * ema_loss + (1 - ema_const) * loss.item()
-                print(ema_loss)
-                lr_schedule.step(ema_loss)
+                if lr_schedule is not None:
+                    lr_schedule.step(ema_loss)
 
                 if step % 100 == 0 and self.verbose:
-                    print(f'step: {step}   loss: {ema_loss:.6f}  '
+                    print(f'step: {step:4d}   loss: {ema_loss:.6f}  '
                           f'time: {time.time() - start_time:.2f}s')
                     start_time = time.time()
 
@@ -396,7 +401,7 @@ class RP2AttackModule(DetectorAttackModule):
             z_delta.uniform_(-10, 10)
 
             # Set up optimizer
-            opt = self._setup_opt(z_delta)
+            opt, lr_schedule = self._setup_opt(z_delta)
             start_time = time.time()
 
             # Run PGD on inputs for specified number of steps
@@ -459,7 +464,8 @@ class RP2AttackModule(DetectorAttackModule):
                     ema_loss = loss.item()
                 else:
                     ema_loss = ema_const * ema_loss + (1 - ema_const) * loss.item()
-                # lr_schedule.step(loss)
+                if lr_schedule is not None:
+                    lr_schedule.step(loss)
 
                 if step % 100 == 0 and self.verbose:
                     print(f'step: {step:4d}  loss: {ema_loss:.4f}  '

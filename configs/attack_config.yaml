@@ -14,6 +14,7 @@ rp2_num_steps: 1000
 rp2_step_size: 0.1
 rp2_num_eot: 1
 rp2_optimizer: 'adam'
+use_lr_schedule: False
 rp2_lambda: 0
 rp2_min_conf: 0
 rp2_augment_real: False   # Augment when attacking real signs

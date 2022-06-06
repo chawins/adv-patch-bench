@@ -41,14 +41,14 @@ def generate_mask(
     # Define patch location and size
     # Example: 10x10-inch patch in the middle of 36x36-inch sign
     # (1) 1 square (bottom)
-    # mid_height, mid_width = obj_h_px // 2, obj_w_px // 2
-    # patch_x_shift = 0
-    # shift_inch = (obj_h_inch - patch_h_inch) / 2
-    # patch_y_shift = round(shift_inch / obj_h_inch * obj_h_px)
-    # patch_x_pos = mid_width + patch_x_shift
-    # patch_y_pos = mid_height + patch_y_shift
-    # hh, hw = patch_h_px // 2, patch_w_px // 2
-    # patch_mask[:, patch_y_pos - hh:patch_y_pos + hh, patch_x_pos - hw:patch_x_pos + hw] = 1
+    mid_height, mid_width = obj_h_px // 2, obj_w_px // 2
+    patch_x_shift = 0
+    shift_inch = (obj_h_inch - patch_h_inch) / 2
+    patch_y_shift = round(shift_inch / obj_h_inch * obj_h_px)
+    patch_x_pos = mid_width + patch_x_shift
+    patch_y_pos = mid_height + patch_y_shift
+    hh, hw = patch_h_px // 2, patch_w_px // 2
+    patch_mask[:, patch_y_pos - hh:patch_y_pos + hh, patch_x_pos - hw:patch_x_pos + hw] = 1
 
     # (2) two 10x20 rectangles
     # mid_height, mid_width = obj_h_px // 2, obj_w_px // 2
@@ -63,7 +63,7 @@ def generate_mask(
     # patch_mask[:, patch_y_pos - hh:patch_y_pos + hh, patch_x_pos - hw:patch_x_pos + hw] = 1
 
     # (3) cover the whole sign
-    patch_mask = torch.ones_like(patch_mask)
+    # patch_mask = torch.ones_like(patch_mask)
 
     return patch_mask
 
