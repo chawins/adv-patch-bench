@@ -36,10 +36,9 @@ from yolov5.utils.callbacks import Callbacks
 from yolov5.utils.datasets import create_dataloader
 from yolov5.utils.general import (LOGGER, box_iou, check_dataset,
                                   check_img_size, check_requirements,
-                                  check_yaml, coco80_to_coco91_class, colorstr,
-                                  increment_path, non_max_suppression,
-                                  print_args, scale_coords, xywh2xyxy,
-                                  xyxy2xywh)
+                                  check_yaml, colorstr, increment_path,
+                                  non_max_suppression, print_args,
+                                  scale_coords, xywh2xyxy, xyxy2xywh)
 from yolov5.utils.metrics import ConfusionMatrix, ap_per_class_custom
 from yolov5.utils.plots import (output_to_target, plot_false_positives,
                                 plot_images, plot_val_study)
@@ -160,7 +159,6 @@ def run(args,
         exist_ok=False,  # existing project/name ok, do not increment
         half=True,  # use FP16 half-precision inference
         dnn=False,  # use OpenCV DNN for ONNX inference
-        model=None,
         dataloader=None,
         save_dir=Path(''),
         plots=True,
@@ -205,7 +203,8 @@ def run(args,
         metrics_df = metrics_df.replace({'apply_patch': 'False', 'random_patch': 'False'}, 0)
         metrics_df['apply_patch'] = metrics_df['apply_patch'].astype(float).astype(bool)
         metrics_df['random_patch'] = metrics_df['random_patch'].astype(float).astype(bool)
-        metrics_df_grouped = metrics_df.groupby(by=['dataset', 'apply_patch', 'random_patch']).count().reset_index()
+        metrics_df_grouped = metrics_df.groupby(
+            by=['dataset', 'apply_patch', 'random_patch']).count().reset_index()
         metrics_df_grouped = metrics_df_grouped[
             (metrics_df_grouped['dataset'] == dataset_name) &
             (metrics_df_grouped['apply_patch'] == use_attack) &
@@ -220,76 +219,65 @@ def run(args,
     print(f'=> Experiment name: {name}')
 
     # Initialize/load model and set device
-    print('[INFO] Loading Model')
-    training = model is not None
-    if training:  # called by train.py
-        device, pt, jit, engine = next(model.parameters()).device, True, False, False  # get model device, PyTorch model
+    LOGGER.info('Loading Model...')
+    device = select_device(device, batch_size=batch_size)
 
-        half &= device.type != 'cpu'  # half precision only supported on CUDA
-        model.half() if half else model.float()
-    else:  # called directly
-        device = select_device(device, batch_size=batch_size)
+    # Directories
+    save_dir = increment_path(Path(project) / name, exist_ok=exist_ok)  # increment run
+    (save_dir / 'labels' if save_txt else save_dir).mkdir(parents=True, exist_ok=True)  # make dir
 
-        # Directories
-        save_dir = increment_path(Path(project) / name, exist_ok=exist_ok)  # increment run
-        (save_dir / 'labels' if save_txt else save_dir).mkdir(parents=True, exist_ok=True)  # make dir
+    if model_name == 'yolov5':
+        # Load model
+        model = DetectMultiBackend(weights, device=device, dnn=dnn)
+        stride, pt, jit, engine = model.stride, model.pt, model.jit, model.engine
+        # check image size
+        imgsz = check_img_size(imgsz, s=stride)  
+        # half precision only supported by PyTorch on CUDA
+        half &= (pt or jit or engine) and device.type != 'cpu'  
+        if pt or jit:
+            model.model.half() if half else model.model.float()
+        elif engine:
+            batch_size = model.batch_size
+        else:
+            half = False
+            batch_size = 1  # export.py models default to batch-size 1
+            device = torch.device('cpu')
+            LOGGER.info(f'Forcing --batch-size 1 square inference shape'
+                        f'(1,3,{imgsz},{imgsz}) for non-PyTorch backends')
+    elif model_name == 'yolor':
+        # Load model
+        cfg = 'yolor/cfg/yolor_p6.cfg'
+        model = Darknet(cfg, imgsz).cuda()
+        model.load_state_dict(
+            torch.load(weights[0], map_location=device)['model'])
+        model.to(device).eval()
+        stride, pt = 64, True
+        if half:
+            model.half()  # to FP16
 
-        if model_name == 'yolov5':
-            # Load model
-            model = DetectMultiBackend(weights, device=device, dnn=dnn)
-            stride, pt, jit, engine = model.stride, model.pt, model.jit, model.engine
-            imgsz = check_img_size(imgsz, s=stride)  # check image size
-            half &= (pt or jit or engine) and device.type != 'cpu'  # half precision only supported by PyTorch on CUDA
-            if pt or jit:
-                model.model.half() if half else model.model.float()
-            elif engine:
-                batch_size = model.batch_size
-            else:
-                half = False
-                batch_size = 1  # export.py models default to batch-size 1
-                device = torch.device('cpu')
-                LOGGER.info(
-                    f'Forcing --batch-size 1 square inference shape(1,3,{imgsz},{imgsz}) for non-PyTorch backends')
-        elif model_name == 'yolor':
-            # Load model
-            cfg = 'yolor/cfg/yolor_p6.cfg'
-            model = Darknet(cfg, imgsz).cuda()
-            model.load_state_dict(torch.load(weights[0], map_location=device)['model'])
-            model.to(device).eval()
-            stride, pt = 64, True
-            if half:
-                model.half()  # to FP16
-
-        # Data
-        data = check_dataset(data)  # check
+    # Data
+    data = check_dataset(data)  # check
 
     print(data['train'])
 
     # Configure
     model.eval()
-    is_coco = isinstance(data.get('val'), str) and data['val'].endswith('coco/val2017.txt')  # COCO dataset
-
     iouv = torch.linspace(0.5, 0.95, 10).to(device)  # iou vector for mAP@0.5:0.95
     niou = iouv.numel()
 
     # Dataloader
-    if not training:
-        pad = 0.0 if task == 'speed' else 0.5
-        task = task if task in ('train', 'val', 'test') else 'val'  # path to train/val/test images
-        if model_name == 'yolov5':
-            model.warmup(imgsz=(1, 3, imgsz, imgsz), half=half)  # warmup
-        elif model_name == 'yolor':
-            img = torch.zeros((1, 3, imgsz, imgsz), device=device)  # init img
-            _ = model(img.half() if half else img) if device.type != 'cpu' else None  # run once
+    pad = 0.5
+    if model_name == 'yolov5':
+        model.warmup(imgsz=(1, 3, imgsz, imgsz), half=half)  # warmup
+    elif model_name == 'yolor':
+        img = torch.zeros((1, 3, imgsz, imgsz), device=device)  # init img
+        # run once to warmup
+        _ = model(img.half() if half else img) if device.type != 'cpu' else None  
 
-        dataloader = create_dataloader(data[task], imgsz, batch_size, stride,
-                                       single_cls, pad=pad, rect=pt,
-                                       workers=workers,
-                                       prefix=colorstr(f'{task}: '))[0]
-
-        # path = data['test'] if opt.task == 'test' else data['val']  # path to val/test images
-        # dataloader = create_dataloader(path, imgsz, batch_size, 64, opt, pad=0.5, rect=True)[0]
-
+    dataloader = create_dataloader(data[task], imgsz, batch_size, stride,
+                                   single_cls, pad=pad, rect=pt,
+                                   workers=workers,
+                                   prefix=colorstr(f'{task}: '))[0]
     seen = 0
 
     try:
@@ -303,7 +291,7 @@ def run(args,
 
     confusion_matrix = ConfusionMatrix(nc=nc)
 
-    class_map = coco80_to_coco91_class() if is_coco else list(range(1000))
+    class_map = list(range(1000))
     s = ('%20s' + '%11s' * 6) % ('Class', 'Images', 'Labels', 'P', 'R', 'mAP@.5', 'mAP@.5:.95')
     dt, p, r, f1, mp, mr, map50, map = [0.0, 0.0, 0.0], 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
     loss = torch.zeros(3, device=device)
@@ -460,9 +448,11 @@ def run(args,
 
         # Inference
         if model_name == 'yolov5':
-            out, train_out = model(im) if training else model(im, augment=augment, val=True)  # inference, loss outputs
+            # inference, loss outputs
+            out, train_out = model(im, augment=augment, val=True)  
         elif model_name == 'yolor':
-            out, train_out = model(im, augment=augment)  # inference and training outputs
+            # inference and training outputs
+            out, train_out = model(im, augment=augment)  
 
         dt[1] += time_sync() - t2
 
@@ -474,6 +464,7 @@ def run(args,
         targets[:, 2:6] *= torch.Tensor([width, height, width, height]).to(device)  # to pixels
         lb = [targets[targets[:, 0] == i, 1:] for i in range(nb)] if save_hybrid else []  # for autolabelling
         t3 = time_sync()
+        # FIXME: need this line?
         from yolor.utils.general import non_max_suppression
         out = non_max_suppression(out, conf_thres=conf_thres, iou_thres=iou_thres)
         # out = non_max_suppression(out, conf_thres, iou_thres, labels=lb,
@@ -538,19 +529,18 @@ def run(args,
             # TODO: comment
             if synthetic:
                 for lbl in tbox:
-                    if lbl[0] == syn_sign_class:
-                        for pi, prd in enumerate(predn):
-                            # [x1, y1, x2, y2] where xy1=top-left, xy2=bottom-right
-                            x1 = 0.9 * lbl[1] if 0.9 * lbl[1] > 5 else -20
-                            y1 = 0.9 * lbl[2] if 0.9 * lbl[2] > 5 else -20
-
-                            if prd[0] >= x1 and prd[1] >= y1 and prd[2] <= 1.1 * lbl[3] and prd[3] <= 1.1 * lbl[4]:
-                                if prd[5] == adv_sign_class:
-                                    predn[pi, 5] = syn_sign_class
-                                    pred[pi, 5] = syn_sign_class
-
-                                    # if prd[4] > 0.25:
-                                    num_labels_changed += 1
+                    if lbl[0] != syn_sign_class:
+                        continue
+                    for pi, prd in enumerate(predn):
+                        # [x1, y1, x2, y2] where xy1=top-left, xy2=bottom-right
+                        x1 = 0.9 * lbl[1] if 0.9 * lbl[1] > 5 else -20
+                        y1 = 0.9 * lbl[2] if 0.9 * lbl[2] > 5 else -20
+                        if (prd[0] >= x1 and prd[1] >= y1 and 
+                            prd[2] <= 1.1 * lbl[3] and prd[3] <= 1.1 * lbl[4]):
+                            if prd[5] == adv_sign_class:
+                                predn[pi, 5] = syn_sign_class
+                                pred[pi, 5] = syn_sign_class
+                                num_labels_changed += 1
 
             scale_coords(im[si].shape[1:], predn[:, :4], shape, shapes[si][1])  # native-space pred
 
@@ -565,7 +555,8 @@ def run(args,
                 # `label_idx`: idx of object in `labels`
                 # `pred_idx`: idx of object in `predn`
 
-                _, iou_matches, _ = process_batch(predn, labelsn, iouv, match_on_iou_only=True)
+                _, iou_matches, _ = process_batch(predn, labelsn, iouv, 
+                                                  match_on_iou_only=True)
                 iou_matches = []
                 correct, matches, iou = process_batch(
                     predn, labelsn, iouv, other_class_label=other_class_label,
@@ -601,13 +592,14 @@ def run(args,
                     annotation_row = annotation_df[(annotation_df['filename'] == filename) &
                                                    (annotation_df['object_id'] == int(lbl_[5]))]
                     assert len(annotation_row) <= 1
-                    # if a label is not in our annotation df, we change the label to 'other' so we do not calculate metrics on this particular label
-                    if len(annotation_row) == 0:
-                        labels[lbl_index][0] = other_class_label
-                        lbl_ = labels[lbl_index]
-
-                    # if a label is in our annotation df and we used the label to generate an adversarial patch, we change the label to 'other' so we do not calculate metrics on this particular label
-                    if filename in filename_list and not args.run_only_img_txt and len(annotation_row) == 1:
+                    # Ignore label if either (1) not annotated or (2) was used
+                    # to generate patch attack.
+                    is_annotated = len(annotation_row) > 0
+                    used_to_gen_path = (filename in filename_list and 
+                                        not args.run_only_img_txt)
+                    if not is_annotated or used_to_gen_path:
+                        # Ignore by setting label to 'other' class which is
+                        # excluded from metric calculation
                         labels[lbl_index][0] = other_class_label
                         lbl_ = labels[lbl_index]
 
@@ -632,7 +624,6 @@ def run(args,
                     try:
                         iou_match = iou_matches[iou_matches[:, 0] == lbl_index]
                     except:
-                        import pdb
                         pdb.set_trace()
                     assert len(iou_match) <= 1  # There can only be one match per object
                     if len(iou_match) == 1:
@@ -789,8 +780,9 @@ def run(args,
             *stats, plot=plots, save_dir=save_dir, names=names,
             metrics_conf_thres=metrics_conf_thres,
             other_class_label=other_class_label)
-        # metrics = ap_per_class_custom(*stats, plot=plots, save_dir=save_dir, names=names,
-        #                               metrics_conf_thres=None, other_class_label=other_class_label)
+        # metrics = ap_per_class_custom(
+        #     *stats, plot=plots, save_dir=save_dir, names=names,
+        #     metrics_conf_thres=None, other_class_label=other_class_label)
         tp, p, r, ap, ap_class, fnr, fn, max_f1_index, precision_cmb, fnr_cmb, fp = metrics
         ap50, ap = ap[:, 0], ap.mean(1)  # AP@0.5, AP@0.5:0.95
         mp, mr, map50, map = p.mean(), r.mean(), ap50.mean(), ap.mean()
@@ -892,11 +884,10 @@ def run(args,
             metrics_df_column_names.append('rescaling')
             metrics_df_column_names.append('relighting')
             if adv_patch_path:
-                patch_metadata_folder = '/'.join(adv_patch_path.split('/')[:-1])
-                patch_metadata_path = os.path.join(patch_metadata_folder, 'patch_metadata.pkl')
-                print(patch_metadata_path)
-                with open(patch_metadata_path, 'rb') as f:
-                    patch_metadata = pickle.load(f)
+                patch_config_dir = '/'.join(adv_patch_path.split('/')[:-1])
+                patch_config_path = os.path.join(patch_config_dir, 'config.yaml')
+                with open(patch_config_path) as file:
+                    patch_metadata = yaml.load(file, Loader=yaml.FullLoader)
                 current_exp_metrics['generate_patch'] = patch_metadata['generate_patch']
                 current_exp_metrics['rescaling'] = patch_metadata['rescaling']
                 current_exp_metrics['relighting'] = patch_metadata['relighting']
@@ -908,9 +899,8 @@ def run(args,
 
     # Print speeds
     t = tuple(x / seen * 1E3 for x in dt)  # speeds per image
-    if not training:
-        shape = (batch_size, 3, imgsz, imgsz)
-        LOGGER.info(f'Speed: %.1fms pre-process, %.1fms inference, %.1fms NMS per image at shape {shape}' % t)
+    shape = (batch_size, 3, imgsz, imgsz)
+    LOGGER.info(f'Speed: %.1fms pre-process, %.1fms inference, %.1fms NMS per image at shape {shape}' % t)
 
     # Plots
     if plots:
@@ -934,8 +924,6 @@ def run(args,
             anno = COCO(anno_json)  # init annotations api
             pred = anno.loadRes(pred_json)  # init predictions api
             eval = COCOeval(anno, pred, 'bbox')
-            if is_coco:
-                eval.params.imgIds = [int(Path(x).stem) for x in dataloader.dataset.img_files]  # image IDs to evaluate
             eval.evaluate()
             eval.accumulate()
             eval.summarize()
@@ -944,10 +932,8 @@ def run(args,
             LOGGER.info(f'pycocotools unable to run: {e}')
 
     # Return results
-    model.float()  # for training
-    if not training:
-        s = f"\n{len(list(save_dir.glob('labels/*.txt')))} labels saved to {save_dir / 'labels'}" if save_txt else ''
-        LOGGER.info(f"Results saved to {colorstr('bold', save_dir)}{s}")
+    s = f"\n{len(list(save_dir.glob('labels/*.txt')))} labels saved to {save_dir / 'labels'}" if save_txt else ''
+    LOGGER.info(f"Results saved to {colorstr('bold', save_dir)}{s}")
     maps = np.zeros(nc) + map
 
     for i, c in enumerate(ap_class):
@@ -964,41 +950,15 @@ def parse_opt():
     opt.save_txt |= opt.save_hybrid
     print_args(FILE.stem, opt)
 
-    if opt.synthetic and opt.attack_type == 'per-sign':
-        raise NotImplementedError('Synthetic evaluation with per-sign attack is not implemented.')
+    assert not (opt.synthetic and opt.attack_type == 'per-sign'), \
+        'Synthetic evaluation with per-sign attack is not implemented.'
 
     return opt
 
 
 def main(opt):
     check_requirements(requirements=ROOT / 'requirements.txt', exclude=('tensorboard', 'thop'))
-
-    if opt.task in ('train', 'val', 'test'):  # run normally
-        if opt.conf_thres > 0.001:  # https://github.com/ultralytics/yolov5/issues/1466
-            LOGGER.info(f'WARNING: confidence threshold {opt.conf_thres} >> 0.001 will produce invalid mAP values.')
-        run(opt, **vars(opt))
-
-    else:
-        weights = opt.weights if isinstance(opt.weights, list) else [opt.weights]
-        opt.half = True  # FP16 for fastest results
-        if opt.task == 'speed':  # speed benchmarks
-            # python val.py --task speed --data coco.yaml --batch 1 --weights yolov5n.pt yolov5s.pt...
-            opt.conf_thres, opt.iou_thres, opt.save_json = 0.25, 0.45, False
-            for opt.weights in weights:
-                run(opt, **vars(opt), plots=False)
-
-        elif opt.task == 'study':  # speed vs mAP benchmarks
-            # python val.py --task study --data coco.yaml --iou 0.7 --weights yolov5n.pt yolov5s.pt...
-            for opt.weights in weights:
-                f = f'study_{Path(opt.data).stem}_{Path(opt.weights).stem}.txt'  # filename to save to
-                x, y = list(range(256, 1536 + 128, 128)), []  # x axis (image sizes), y axis
-                for opt.imgsz in x:  # img-size
-                    LOGGER.info(f'\nRunning {f} --imgsz {opt.imgsz}...')
-                    r, _, t = run(opt, **vars(opt), plots=False)
-                    y.append(r + t)  # results and times
-                np.savetxt(f, y, fmt='%10.4g')  # save
-            os.system('zip -r study.zip study_*.txt')
-            plot_val_study(x=x)  # plot
+    run(opt, **vars(opt))
 
 
 if __name__ == "__main__":

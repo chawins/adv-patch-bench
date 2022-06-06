@@ -152,13 +152,15 @@ def eval_args_parser(is_detectron, root=None):
         help='confidence threshold at which other labels are changed if there is a match with a prediction')
 
     args = parser.parse_args()
-    verify_args(args)
+    verify_args(args, is_detectron)
     return args
 
 
-def verify_args(args):
+def verify_args(args, is_detectron):
     assert args.interp in ('nearest', 'bilinear', 'bicubic')
     assert args.attack_type in ('none', 'load', 'per-sign', 'random', 'debug')
+    if not is_detectron:
+        assert args.model_name in ('yolov5', 'yolor')
 
 
 def parse_dataset_name(args):
