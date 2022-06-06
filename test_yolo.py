@@ -27,8 +27,9 @@ from adv_patch_bench.attacks.rp2 import RP2AttackModule
 from adv_patch_bench.attacks.utils import (apply_synthetic_sign, prep_attack,
                                            prep_synthetic_eval)
 from adv_patch_bench.transforms import transform_and_apply_patch
-from adv_patch_bench.utils.argparse import eval_args_parser, parse_dataset_name
-from hparams import OTHER_SIGN_CLASS
+from adv_patch_bench.utils.argparse import (eval_args_parser,
+                                            setup_yolo_test_args)
+from hparams import OTHER_SIGN_CLASS, SAVE_DIR_YOLO
 from yolor.models.models import Darknet
 from yolov5.models.common import DetectMultiBackend
 from yolov5.utils.callbacks import Callbacks
@@ -77,8 +78,7 @@ def save_one_json(predn, jdict, path, class_map):
 
 
 def process_batch(detections, labels, iouv, other_class_label=None,
-                  other_class_confidence_threshold=0,
-                  match_on_iou_only=False):
+                  other_class_confidence_threshold=0, match_on_iou_only=False):
     """
     Return correct predictions matrix. Both sets of boxes are in (x1, y1, x2, y2) format.
     Arguments:
@@ -176,13 +176,11 @@ def run(args,
     save_exp_metrics = args.save_exp_metrics
     plot_single_images = args.plot_single_images
     plot_class_examples = [int(x) for x in args.plot_class_examples]
-    adv_patch_path = args.adv_patch_path
     attack_config_path = args.attack_config_path
     adv_sign_class = args.obj_class
     min_area = args.min_area
     model_name = args.model_name
     annotated_signs_only = args.annotated_signs_only
-    # other_class_label = args.other_class_label
     other_class_label = OTHER_SIGN_CLASS[args.dataset]
     # model_trained_without_other = args.model_trained_without_other
     other_class_confidence_threshold = args.other_class_confidence_threshold
@@ -200,7 +198,7 @@ def run(args,
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
 
-    DATASET_NAME = 'mapillary' if 'mapillary' in data else 'mtsd'
+    dataset_name = 'mapillary' if 'mapillary' in data else 'mtsd'
     try:
         metrics_df = pd.read_csv('runs/results.csv')
         metrics_df = metrics_df.replace({'apply_patch': 'True', 'random_patch': 'True'}, 1)
@@ -209,7 +207,7 @@ def run(args,
         metrics_df['random_patch'] = metrics_df['random_patch'].astype(float).astype(bool)
         metrics_df_grouped = metrics_df.groupby(by=['dataset', 'apply_patch', 'random_patch']).count().reset_index()
         metrics_df_grouped = metrics_df_grouped[
-            (metrics_df_grouped['dataset'] == DATASET_NAME) &
+            (metrics_df_grouped['dataset'] == dataset_name) &
             (metrics_df_grouped['apply_patch'] == use_attack) &
             (metrics_df_grouped['random_patch'] == (attack_type == 'random'))]['name']
         exp_number = 0 if not len(metrics_df_grouped) else metrics_df_grouped.item()
@@ -217,7 +215,7 @@ def run(args,
         exp_number = 0
 
     # Set folder and experiment name
-    name += f'_{DATASET_NAME}_{attack_type}_{exp_number}'
+    name += f'_{dataset_name}_{attack_type}_{exp_number}'
     # name += f'_{DATASET_NAME}_{split}_{attack_type}_{exp_number}'
     print(f'=> Experiment name: {name}')
 
@@ -331,19 +329,21 @@ def run(args,
 
     if use_attack:
         # Prepare attack data
-        df, adv_patch, patch_mask, patch_loc = prep_attack(args, img_size, device)
+        adv_patch_dir = os.path.join(
+            SAVE_DIR_YOLO, args.name, names[adv_sign_class])
+        adv_patch_path = os.path.join(adv_patch_dir, 'adv_patch.pkl')
+        args.adv_patch_path = adv_patch_path
+        df, adv_patch, patch_mask, patch_loc = prep_attack(
+            args, img_size, device)
 
     # Initialize attack
     if attack_type == 'per-sign':
-        try:
-            with open(attack_config_path) as file:
-                attack_config = yaml.load(file, Loader=yaml.FullLoader)
-                attack_config['input_size'] = img_size
-
-            attack = RP2AttackModule(attack_config, model, None, None, None,
-                                     rescaling=False, interp=args.interp, verbose=verbose)
-        except:
-            raise Exception('Config file not provided for targeted attacks')
+        with open(attack_config_path) as file:
+            attack_config = yaml.load(file, Loader=yaml.FullLoader)
+        attack_config['input_size'] = img_size
+        attack = RP2AttackModule(attack_config, model, None, None, None,
+                                 rescaling=False, interp=args.interp,
+                                 verbose=verbose)
 
     # ======================================================================= #
     #                          BEGIN: Main eval loop                          #
@@ -356,10 +356,6 @@ def run(args,
     if args.img_txt_path != '':
         with open(args.img_txt_path, 'r') as f:
             filename_list = f.read().splitlines()
-
-    # print(filename_list)
-    # import pdb
-    # pdb.set_trace()
 
     if plot_class_examples:
         shape_to_plot_data = {}
@@ -410,7 +406,7 @@ def run(args,
                     (h0, w0), ((h_ratio, w_ratio), (w_pad, h_pad)) = shapes[image_i]
                     img_data = (h0, w0, h_ratio, w_ratio, w_pad, h_pad)
                     predicted_class = row['final_shape']
-                    
+
                     # shape = predicted_class.split('-')[0]
                     # print(shape)
                     # print(names[adv_sign_class])
@@ -428,10 +424,17 @@ def run(args,
 
                     # # Transform and apply patch on the image. `im` has range [0, 255]
                     im[image_i] = transform_and_apply_patch(
-                        im[image_i].to(device), adv_patch.to(device),
-                        patch_mask, patch_loc, predicted_class, row, img_data,
-                        transform=args.patch_transform,
-                        use_relight=not args.no_patch_relight, interp=args.interp) * 255
+                        im[image_i].to(device),
+                        adv_patch.to(device),
+                        patch_mask,
+                        patch_loc,
+                        predicted_class,
+                        row,
+                        img_data,
+                        transform_mode=args.transform_mode,
+                        use_relight=not args.no_patch_relight,
+                        interp=args.interp,
+                    ) * 255
                     # num_patches_applied_to_image += 1
                     total_num_patches += 1
 
@@ -440,7 +443,7 @@ def run(args,
 
             elif synthetic:
                 im[image_i], targets = apply_synthetic_sign(
-                    im[image_i], targets, image_i, adv_patch, patch_mask, 
+                    im[image_i], targets, image_i, adv_patch, patch_mask,
                     *syn_data, device=device, use_attack=use_attack)
 
         t1 = time_sync()
@@ -494,7 +497,8 @@ def run(args,
 
             current_image_metrics = {}
             current_image_metrics['filename'] = filename
-            current_image_metrics['num_targeted_sign_class'] = sum([1 for x in labels[:, 0] if x == adv_sign_class])
+            num_tg = sum([1 for x in labels[:, 0] if x == adv_sign_class])
+            current_image_metrics['num_targeted_sign_class'] = num_tg
 
             # If the target object is too small, we drop both the target and
             # the corresponding prediction.
@@ -504,7 +508,8 @@ def run(args,
             # If there's no prediction at all, we can collect the targets and continue to the next image.
             if len(pred) == 0:
                 for lbl_index, lbl_ in enumerate(labels):
-                    current_label_metric = populate_default_metric(lbl_, min_area, filename, other_class_label)
+                    current_label_metric = populate_default_metric(
+                        lbl_, min_area, filename, other_class_label)
                     lbl_index_to_keep[lbl_index] = ~current_label_metric['too_small']
                     metrics_per_label_df = metrics_per_label_df.append(
                         current_label_metric, ignore_index=True)
@@ -594,7 +599,7 @@ def run(args,
             for lbl_index, lbl_ in enumerate(labels):
                 if annotated_signs_only and not synthetic:
                     annotation_row = annotation_df[(annotation_df['filename'] == filename) &
-                                                (annotation_df['object_id'] == int(lbl_[5]))]
+                                                   (annotation_df['object_id'] == int(lbl_[5]))]
                     assert len(annotation_row) <= 1
                     # if a label is not in our annotation df, we change the label to 'other' so we do not calculate metrics on this particular label
                     if len(annotation_row) == 0:
@@ -610,20 +615,20 @@ def run(args,
                 match = matches[matches[:, 0] == lbl_index]
                 assert len(match) <= 1  # There can only be one match per object
 
-                current_label_metric = populate_default_metric(lbl_, min_area, filename, other_class_label)
-
+                current_label_metric = populate_default_metric(
+                    lbl_, min_area, filename, other_class_label)
                 lbl_index_to_keep[lbl_index] = ~current_label_metric['too_small']
-
                 class_label = lbl_[0]
 
                 # If there's no match, just save current metric and continue to
                 # the next label.
                 if len(match) == 0:
-                    # this can be deleted since we do not count include others when computing metrics all signs
-                    # # if ground truth is 'other' and there is NO prediction, we drop the label so it's not counted as a false negative
+                    # This can be deleted since we do not count include others
+                    # when computing metrics all signs
+                    # if ground truth is 'other' and there is NO prediction,
+                    # we drop the label so it's not counted as a false negative
                     if class_label == other_class_label:
                         lbl_index_to_keep[lbl_index] = 0
-
                     try:
                         iou_match = iou_matches[iou_matches[:, 0] == lbl_index]
                     except:
@@ -657,7 +662,8 @@ def run(args,
 
                 # if class_label == other_class_label and pred_label != other_class_label:
                 if class_label == other_class_label:
-                    # as in the mtsd paper, we drop both label and prediction if the label is 'other' and the prediction is 'non-other'
+                    # as in the mtsd paper, we drop both label and prediction
+                    # if the label is 'other' and the prediction is 'non-other'
                     lbl_index_to_keep[lbl_index] = 0
                     pred_index_to_keep[det_idx] = 0
                     correct[det_idx] = torch.BoolTensor([False] * len(iouv))
@@ -665,7 +671,8 @@ def run(args,
                 # Get detection boolean at iou_thres
                 iou_idx = torch.where(iouv >= iou_thres)[0][0]
                 is_detected = correct[det_idx, iou_idx]
-                if (use_attack and pred_label == adv_sign_class and pred_conf > metrics_conf_thres and is_detected):
+                if (use_attack and pred_label == adv_sign_class and
+                        pred_conf > metrics_conf_thres and is_detected):
                     current_label_metric['correct_prediction'] = 1
 
                 metrics_per_label_df = metrics_per_label_df.append(
@@ -707,8 +714,6 @@ def run(args,
 
             for class_index in labels[:, 0]:
                 if class_index in plot_class_examples:
-                    # print(class_index.item())
-                    # class_name = names[class_index.item()]
                     class_name = names[int(class_index.item())]
                     if len(shape_to_plot_data[class_name]) < 20:
                         fn = str(path).split('/')[-1]
@@ -740,7 +745,11 @@ def run(args,
                     ti[:, 0] = 0
                     plot_images(im[i:i+1], ti, paths[i:i+1], f, names, labels=False)
             f = save_dir / f'val_batch{batch_i}_labels.jpg'  # labels
-            Thread(target=plot_images, args=(im, targets, paths, f, names, 1920, 16, True), daemon=True).start()
+            Thread(
+                target=plot_images,
+                args=(im, targets, paths, f, names, 1920, 16, True),
+                daemon=True,
+            ).start()
             f = save_dir / f'val_batch{batch_i}_pred.jpg'  # predictions
             Thread(target=plot_images, args=(im, output_to_target(out),
                    paths, f, names, 1920, 16, False), daemon=True).start()
@@ -755,7 +764,9 @@ def run(args,
     if plot_class_examples:
         for class_index in plot_class_examples:
             class_name = names[class_index]
-            save_dir_class = increment_path(save_dir / class_name, exist_ok=exist_ok, mkdir=True)  # increment run
+            # increment run
+            save_dir_class = increment_path(save_dir / class_name,
+                                            exist_ok=exist_ok, mkdir=True)
             for i in range(len(shape_to_plot_data[class_name])):
                 im, targets, path, out = shape_to_plot_data[class_name][i]
                 # labels
@@ -774,8 +785,10 @@ def run(args,
     current_exp_metrics = {}
 
     if len(stats) and stats[0].any():
-        metrics = ap_per_class_custom(*stats, plot=plots, save_dir=save_dir, names=names,
-                                      metrics_conf_thres=metrics_conf_thres, other_class_label=other_class_label)
+        metrics = ap_per_class_custom(
+            *stats, plot=plots, save_dir=save_dir, names=names,
+            metrics_conf_thres=metrics_conf_thres,
+            other_class_label=other_class_label)
         # metrics = ap_per_class_custom(*stats, plot=plots, save_dir=save_dir, names=names,
         #                               metrics_conf_thres=None, other_class_label=other_class_label)
         tp, p, r, ap, ap_class, fnr, fn, max_f1_index, precision_cmb, fnr_cmb, fp = metrics
@@ -786,8 +799,10 @@ def run(args,
         nt = torch.zeros(1)
 
     if plot_fp:
-        plot_false_positives(false_positive_images, false_positives_preds, false_positives_filenames,
-                             max_f1_index/1000, names, plot_folder=f'{project}/{name}/plots_false_positives/')
+        plot_false_positives(
+            false_positive_images, false_positives_preds,
+            false_positives_filenames, max_f1_index/1000, names,
+            plot_folder=f'{project}/{name}/plots_false_positives/')
 
     # Print results
     pf = '%20s' + '%11i' * 2 + '%11.3g' * 4  # print format
@@ -850,7 +865,7 @@ def run(args,
 
         LOGGER.info(pf % (names[c], seen, nt[c], p[i], r[i], ap50[i], ap[i]))
     metrics_df_column_names.append('dataset')
-    current_exp_metrics['dataset'] = DATASET_NAME
+    current_exp_metrics['dataset'] = dataset_name
 
     metrics_df_column_names.append('total_num_patches')
     current_exp_metrics['total_num_patches'] = total_num_patches
@@ -942,7 +957,7 @@ def run(args,
 
 def parse_opt():
     opt = eval_args_parser(False, root=ROOT)
-    parse_dataset_name(opt)
+    setup_yolo_test_args(opt, OTHER_SIGN_CLASS)
     opt.data = check_yaml(opt.data)  # check YAML
 
     opt.save_json |= opt.data.endswith('coco.yaml')

@@ -8,7 +8,7 @@ import random
 from ast import literal_eval
 from os.path import join
 from pathlib import Path
-from typing import Any, Tuple
+from typing import Any, Dict, Tuple
 
 import numpy as np
 import pandas as pd
@@ -138,19 +138,16 @@ def generate_adv_patch(
     # rescaling: bool = False,
     tgt_csv_filepath: str = None,
     dataloader: Any = None,
-    attack_config_path: str = None,
     interp: str = 'bilinear',
     verbose: bool = False,
     debug: bool = False,
     dataset: str = None,
+    attack_config: Dict = {},
     **kwargs,
 ):
     """Generate adversarial patch"""
     print(f'=> Initializing attack...')
-    with open(attack_config_path) as file:
-        attack_config = yaml.load(file, Loader=yaml.FullLoader)
-        attack_config['input_size'] = img_size
-        num_bg = attack_config['num_bg']
+    num_bg = attack_config['num_bg']
 
     # TODO: Allow data parallel?
     attack = RP2AttackModule(attack_config, model, None, None, None,
@@ -197,7 +194,6 @@ def generate_adv_patch(
                                       obj_mask.to(device),
                                       patch_mask_.to(device),
                                       backgrounds.to(device),
-                                      obj_class=obj_class,
                                       obj_size=obj_size,
                                       metadata=metadata)
 
@@ -239,15 +235,16 @@ def generate_adv_patch(
 
 
 def main(
-    padded_imgsz='992,1312',
+    padded_imgsz: str = '992,1312',
     save_dir=Path(''),
-    name='exp',  # save to project/name
-    obj_class=0,
-    obj_size=None,
-    syn_obj_path='',
-    seed=0,
-    synthetic=False,
-    num_samples=0,
+    name: str = 'exp',  # save to project/name
+    obj_class: int = 0,
+    obj_size: int = None,
+    syn_obj_path: str = '',
+    seed: int = 0,
+    synthetic: bool = False,
+    attack_config_path: str = None,
+    num_samples: int = 0,
     **kwargs,
 ):
     cudnn.benchmark = True
@@ -288,35 +285,32 @@ def main(
         sampler=ShuffleInferenceSampler(num_samples)
     )
 
+    with open(attack_config_path) as file:
+        attack_config = yaml.load(file, Loader=yaml.FullLoader)
+    attack_config['input_size'] = img_size
+
     adv_patch = generate_adv_patch(
         model, obj_numpy, patch_mask, img_size=img_size, obj_size=obj_size,
         save_dir=save_dir, synthetic=synthetic, dataloader=dataloader,
-        obj_class=obj_class, name=name, **kwargs)
+        obj_class=obj_class, name=name, attack_config=attack_config, **kwargs)
 
     # Save adv patch
     patch_path = join(save_dir, 'adv_patch.pkl')
     print(f'Saving the generated adv patch to {patch_path}...')
     pickle.dump([adv_patch, patch_mask], open(patch_path, 'wb'))
 
-    patch_metadata = {
-        'synthetic': synthetic,
-        # 'attack_type': attack_type,
-        # 'rescaling': rescaling,
-    }
-    patch_metadata_path = join(save_dir, 'patch_metadata.pkl')
+    # Save attack config
+    patch_metadata_path = join(save_dir, 'config.yaml')
     print(f'Saving the generated adv patch metadata to {patch_metadata_path}...')
-    pickle.dump(patch_metadata, open(patch_metadata_path, 'wb'))
+    patch_metadata = {'synthetic': synthetic, **attack_config}
+    with open(patch_metadata_path, 'w') as outfile:
+        yaml.dump(patch_metadata, outfile)
 
 
 if __name__ == "__main__":
     args = eval_args_parser(True)
     print('Command Line Args:', args)
     args.device = 'cuda'
-    if args.patch_size_inch is not None:
-        args.mask_path = None
-    # Set path to synthetic object used by synthetic attack only
-    args.syn_obj_path = os.path.join(PATH_SYN_OBJ, 
-                                     TS_NO_COLOR_LABEL_LIST[args.obj_class])
 
     # Verify some args
     cfg = setup_detectron_test_args(args, OTHER_SIGN_CLASS)

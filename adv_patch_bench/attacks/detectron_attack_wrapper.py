@@ -38,7 +38,7 @@ class DAGAttacker:
         self.verbose = args.verbose
         self.debug = args.debug
         self.model = model
-        self.num_vis = 30
+        self.num_vis = 100
         self.img_size = args.img_size
 
         # Modify config
@@ -67,7 +67,7 @@ class DAGAttacker:
         self.class_names = class_names
         self.synthetic = args.synthetic
         self.transform_params = {
-            'use_transform': not args.no_patch_transform,
+            'transform_mode': args.transform_mode,
             'use_relight': not args.no_patch_relight,
             'interp': args.interp,
         }
@@ -135,7 +135,6 @@ class DAGAttacker:
                     (not in_list and self.args.run_only_img_txt)):
                 continue
 
-            self.log(f'[{i}/{len(self.data_loader)}] Attacking {file_name} ...')
             # Have to preprocess image here [0, 255] -> [-123.675, 151.470]
             # i.e., centered with mean [103.530, 116.280, 123.675], no std
             # normalization so scale is still 255
@@ -152,6 +151,7 @@ class DAGAttacker:
 
             is_included = False
             if self.synthetic:
+                self.log(f'Attacking {file_name} ...')
                 # Apply synthetic sign and patch to image
                 perturbed_image = apply_synthetic_sign(
                     images,
@@ -186,6 +186,7 @@ class DAGAttacker:
 
                     # TODO: Should we put only one adversarial patch per image?
                     # i.e., attacking only one sign per image.
+                    self.log(f'Attacking {file_name} ...')
 
                     # Transform and apply patch on the image. `im` has range [0, 255]
                     perturbed_image = transform_and_apply_patch(

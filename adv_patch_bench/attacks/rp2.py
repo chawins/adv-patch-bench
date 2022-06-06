@@ -35,8 +35,7 @@ class RP2AttackModule(DetectorAttackModule):
         self.min_conf = attack_config['rp2_min_conf']
         self.input_size = attack_config['input_size']
         self.attack_mode = attack_config['attack_mode'].split('-')
-        self.transform = attack_config['transform']
-        # self.use_transform = attack_config['use_patch_transform']
+        self.transform_mode = attack_config['transform_mode']
         self.use_relight = attack_config['use_patch_relight']
         self.detectron_obj_const = 0.
         self.pgd_step_size = 1e-2
@@ -56,7 +55,7 @@ class RP2AttackModule(DetectorAttackModule):
         # TODO: We probably don't need this now
         # self.rescaling = rescaling
         self.rescaling = False
-        
+
         self.augment_real = attack_config['rp2_augment_real']
         self.interp = interp
         self.num_restarts = 1
@@ -69,7 +68,7 @@ class RP2AttackModule(DetectorAttackModule):
         self.bg_transforms = K.RandomResizedCrop(
             bg_size, scale=(0.8, 1), p=1.0, resample=self.interp)
         self.obj_transforms = K.RandomAffine(
-            30, translate=(0.45, 0.45), p=1.0, return_transform=True, 
+            30, translate=(0.45, 0.45), p=1.0, return_transform=True,
             resample=self.interp)
         self.mask_transforms = K.RandomAffine(
             30, translate=(0.45, 0.45), p=1.0, resample=Resample.NEAREST)
@@ -163,11 +162,11 @@ class RP2AttackModule(DetectorAttackModule):
             target_loss, obj_loss = 0, 0
             if len(tgt_log) > 0 and len(tgt_lb) > 0:
                 # Ignore the background class on tgt_log
-                target_loss = - F.cross_entropy(tgt_log[:, :-1], tgt_lb, 
+                target_loss = - F.cross_entropy(tgt_log[:, :-1], tgt_lb,
                                                 reduction='sum')
             if len(obj_logits) > 0 and self.detectron_obj_const != 0:
                 obj_lb = torch.zeros_like(obj_log)
-                obj_loss = F.binary_cross_entropy_with_logits(obj_log, obj_lb, 
+                obj_loss = F.binary_cross_entropy_with_logits(obj_log, obj_lb,
                                                               reduction='sum')
             loss += target_loss + self.detectron_obj_const * obj_loss
         return loss
@@ -179,7 +178,6 @@ class RP2AttackModule(DetectorAttackModule):
         patch_mask: torch.Tensor,
         backgrounds: torch.Tensor,
         obj_class: int = None,
-        obj_size: tuple = None,
         metadata: Optional[List] = None,
     ) -> torch.Tensor:
         """Run RP2 Attack.
@@ -368,13 +366,12 @@ class RP2AttackModule(DetectorAttackModule):
 
         # TODO: Assume that every signs use the same transform function
         # i.e., warp_perspetive. Have to fix this for triangles
-        tf_function = get_transform(sign_size_in_pixel, *objs[0][1],
-                                    transform=self.transform)[0]
+        tf_function = get_transform(
+            sign_size_in_pixel, *objs[0][1], self.transform_mode)[0]
         tf_data_temp = [get_transform(sign_size_in_pixel, *obj[1],
-                                      transform=self.transform)[1:-1] for obj in objs]
-        
-        all_tgts = [get_transform(sign_size_in_pixel, *obj[1],
-                                      transform=self.transform)[-1] for obj in objs]
+                                      self.transform_mode)[1:-1] for obj in objs]
+        # all_tgts = [get_transform(sign_size_in_pixel, *obj[1],
+        #                           transform_mode=self.transform_mode)[-1] for obj in objs]
 
         # tf_data contains [sign_canonical, sign_mask, M, alpha, beta]
         tf_data = []

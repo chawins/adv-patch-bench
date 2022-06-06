@@ -1,0 +1,25 @@
+# rp2_num_steps: 1000
+# rp2_step_size: 0.01
+# rp2_num_eot: 1
+# rp2_optimizer: 'adam'
+# rp2_lambda: 0
+# rp2_min_conf: 0
+# rp2_augment_real: False
+# attack_mode: ''
+# no_transform: False
+# relighting: False
+# interp: 'bilinear'
+
+rp2_num_steps: 1000
+rp2_step_size: 0.1
+rp2_num_eot: 1
+rp2_optimizer: 'adam'
+rp2_lambda: 0
+rp2_min_conf: 0
+rp2_augment_real: False   # Augment when attacking real signs
+use_patch_relight: True
+transform_mode: 'perspective'
+# shapeshifter: Use ShapeShifter loss to attack Faster R-CNN
+# var_change_ab: Use variable change on alpha, beta 
+attack_mode: 'shapeshifter-var_change_ab'
+# interp: 'bilinear'  # This is only used when args.interp is None

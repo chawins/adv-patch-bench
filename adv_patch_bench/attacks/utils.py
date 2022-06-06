@@ -1,7 +1,7 @@
 import ast
+import os
 import pickle
 from argparse import Namespace
-from re import I
 from typing import Any, List, Tuple, Union
 
 import numpy as np
@@ -11,6 +11,7 @@ import torchvision
 import torchvision.transforms.functional as T
 from adv_patch_bench.utils.image import (mask_to_box, pad_and_center,
                                          prepare_obj)
+from hparams import PATH_SYN_OBJ
 from kornia import augmentation as K
 from kornia.constants import Resample
 from kornia.geometry.transform import resize
@@ -63,7 +64,8 @@ def prep_attack(
 
     if args.attack_type == 'debug':
         # Load 'arrow on checkboard' patch if specified (for debug)
-        adv_patch = torchvision.io.read_image('demo.png').float()[:3, :, :] / 255
+        adv_patch = torchvision.io.read_image(
+            os.path.join(PATH_SYN_OBJ, 'debug.png')).float()[:3, :, :] / 255
         adv_patch = resize(adv_patch, (patch_height, patch_width))
     elif args.attack_type == 'random':
         # Patch with uniformly random pixels

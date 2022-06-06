@@ -13,7 +13,8 @@ PATH_SIMILAR_FILES = './similar_files_df.csv'
 PATH_SYN_OBJ = './attack_assets/'
 
 # TODO: move to args in the future
-SAVE_DIR_DETECTRON = './detectron_output'
+SAVE_DIR_DETECTRON = './detectron_output/'
+SAVE_DIR_YOLO = './runs/val/'
 
 MTSD_VAL_LABEL_COUNTS_DICT = {
     'circle-750.0': 2999,
