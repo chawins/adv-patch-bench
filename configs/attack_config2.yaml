@@ -6,7 +6,7 @@ rp2_lambda: 0
 rp2_min_conf: 0
 rp2_augment_real: False   # Augment when attacking real signs
 use_patch_relight: True
-num_bg: 1  # Number of the attacker uses to generate patch
+num_bg: 50  # Number of backgrounds attacker uses to generate patch
 use_lr_schedule: False
 transform_mode: 'perspective'
 # shapeshifter: Use ShapeShifter loss to attack Faster R-CNN

@@ -37,11 +37,14 @@ def main(cfg, args):
     else:
         sampler = None
     print(f'=> Building {dataset_name} dataloader...')
-    val_loader = build_detection_test_loader(cfg, dataset_name,
-                                             # batch_size=cfg.SOLVER.IMS_PER_BATCH,
-                                             batch_size=1,
-                                             num_workers=cfg.DATALOADER.NUM_WORKERS,
-                                             sampler=sampler)
+    val_loader = build_detection_test_loader(
+        cfg,
+        dataset_name,
+        # batch_size=cfg.SOLVER.IMS_PER_BATCH,
+        batch_size=1,
+        num_workers=cfg.DATALOADER.NUM_WORKERS,
+        sampler=sampler,
+    )
     # val_iter = iter(val_loader)
     # print(max([next(val_iter)[0]['image'].shape[0] for _ in range(5000)]))
     # import pdb
@@ -112,14 +115,14 @@ def main_attack(cfg, args, dataset_params):
 
     # Build model
     model = DefaultPredictor(cfg).model
-    
+
     # Build dataloader
     val_loader = build_detection_test_loader(
         cfg, cfg.DATASETS.TEST[0], mapper=BenignMapper(cfg, is_train=False),
         # cfg, cfg.DATASETS.TEST[0],
         batch_size=1, num_workers=cfg.DATALOADER.NUM_WORKERS
     )
-    
+
     attack = DAGAttacker(cfg, args, attack_config, model, val_loader,
                          class_names=LABEL_LIST[args.dataset])
     if args.attack_type != 'none':
@@ -190,7 +193,7 @@ if __name__ == "__main__":
     print('Command Line Args:', args)
     args.img_size = args.padded_imgsz
     # Set path to synthetic object used by synthetic attack only
-    args.syn_obj_path = os.path.join(PATH_SYN_OBJ, 
+    args.syn_obj_path = os.path.join(PATH_SYN_OBJ,
                                      TS_NO_COLOR_LABEL_LIST[args.obj_class])
 
     # Verify some args
