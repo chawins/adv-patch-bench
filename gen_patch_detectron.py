@@ -34,8 +34,7 @@ from adv_patch_bench.utils.detectron import ShuffleInferenceSampler
 from adv_patch_bench.utils.image import get_obj_width
 from gen_mask import generate_mask
 from hparams import (DATASETS, LABEL_LIST, MAPILLARY_IMG_COUNTS_DICT,
-                     OTHER_SIGN_CLASS, PATH_SYN_OBJ, SAVE_DIR_DETECTRON,
-                     TS_NO_COLOR_LABEL_LIST)
+                     OTHER_SIGN_CLASS, SAVE_DIR_DETECTRON)
 
 
 def collect_backgrounds(dataloader, img_size, num_bg, device,
@@ -180,27 +179,31 @@ def generate_adv_patch(
     if synthetic:
         print('=> Generating adversarial patch on synthetic signs...')
         # Resize object to the specify size and pad obj and masks to image size
+        # left, top, right, bottom
         pad_size = [(img_size[1] - obj_size[1]) // 2,
                     (img_size[0] - obj_size[0]) // 2,
                     (img_size[1] - obj_size[1]) // 2 + obj_size[1] % 2,
-                    (img_size[0] - obj_size[0]) // 2 + obj_size[0] % 2]  # left, top, right, bottom
-        obj, obj_mask = get_object_and_mask_from_numpy(obj_numpy, obj_size, pad_size=pad_size)
-        patch_mask_ = T.resize(patch_mask, obj_size, interpolation=T.InterpolationMode.NEAREST)
+                    (img_size[0] - obj_size[0]) // 2 + obj_size[0] % 2]  
+        obj, obj_mask = get_object_and_mask_from_numpy(obj_numpy, obj_size, 
+                                                       pad_size=pad_size)
+        patch_mask_ = T.resize(patch_mask, obj_size, 
+                               interpolation=T.InterpolationMode.NEAREST)
         patch_mask_ = T.pad(patch_mask_, pad_size)
 
         print(f'=> Start attacking...')
-        with torch.enable_grad():
-            adv_patch = attack.attack(obj.to(device),
-                                      obj_mask.to(device),
-                                      patch_mask_.to(device),
-                                      backgrounds.to(device),
-                                      obj_class=obj_class,
-                                      metadata=metadata)
+        adv_patch = attack.attack(obj.to(device),
+                                  obj_mask.to(device),
+                                  patch_mask_.to(device),
+                                  backgrounds.to(device),
+                                  obj_class=obj_class,
+                                  metadata=metadata)
 
         if save_images:
             torchvision.utils.save_image(obj, join(save_dir, 'obj.png'))
-            torchvision.utils.save_image(obj_mask, join(save_dir, 'obj_mask.png'))
-            torchvision.utils.save_image(backgrounds, join(save_dir, 'backgrounds.png'))
+            torchvision.utils.save_image(obj_mask, 
+                                         join(save_dir, 'obj_mask.png'))
+            torchvision.utils.save_image(backgrounds, 
+                                         join(save_dir, 'backgrounds.png'))
 
     else:
         print('=> Generating adversarial patch on real signs...')
@@ -228,8 +231,10 @@ def generate_adv_patch(
     adv_patch = adv_patch[0].detach().cpu().float()
 
     if save_images:
-        torchvision.utils.save_image(patch_mask, join(save_dir, 'patch_mask.png'))
-        torchvision.utils.save_image(adv_patch, join(save_dir, 'adversarial_patch.png'))
+        torchvision.utils.save_image(patch_mask, 
+                                     join(save_dir, 'patch_mask.png'))
+        torchvision.utils.save_image(adv_patch, 
+                                     join(save_dir, 'adversarial_patch.png'))
 
     return adv_patch
 
@@ -301,7 +306,7 @@ def main(
 
     # Save attack config
     patch_metadata_path = join(save_dir, 'config.yaml')
-    print(f'Saving the generated adv patch metadata to {patch_metadata_path}...')
+    print(f'Saving the adv patch metadata to {patch_metadata_path}...')
     patch_metadata = {'synthetic': synthetic, **attack_config}
     with open(patch_metadata_path, 'w') as outfile:
         yaml.dump(patch_metadata, outfile)
@@ -333,7 +338,7 @@ if __name__ == "__main__":
         dataset_params = register_mapillary(
             use_color=args.use_color,
             ignore_other=args.data_no_other,
-            only_annotated=args.annotated_signs_only,  # This should be False in this case
+            only_annotated=args.annotated_signs_only,
         )
         data_list = get_mapillary_dict(split, *dataset_params)
     num_samples = len(data_list)
