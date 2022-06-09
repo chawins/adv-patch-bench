@@ -101,7 +101,7 @@ class RP2AttackModule(DetectorAttackModule):
             lr_schedule = optim.lr_scheduler.ReduceLROnPlateau(
                 opt, factor=0.5, patience=int(self.num_steps / 10),
                 threshold=1e-9, min_lr=self.step_size * 1e-6, verbose=self.verbose)
-                
+
         return opt, lr_schedule
 
     def compute_loss(self, delta, adv_img, obj_class, metadata):
@@ -110,7 +110,7 @@ class RP2AttackModule(DetectorAttackModule):
         else:
             loss = self._compute_loss_yolo(adv_img, obj_class, metadata)
         tv = ((delta[:, :, :-1, :] - delta[:, :, 1:, :]).abs().mean() +
-                (delta[:, :, :, :-1] - delta[:, :, :, 1:]).abs().mean())
+              (delta[:, :, :, :-1] - delta[:, :, :, 1:]).abs().mean())
         loss += self.lmbda * tv
         return loss
 
@@ -188,12 +188,12 @@ class RP2AttackModule(DetectorAttackModule):
         if self.ema_loss is None:
             self.ema_loss = loss.item()
         else:
-            self.ema_loss = (self.ema_const * self.ema_loss + 
-                        (1 - self.ema_const) * loss.item())
-        
+            self.ema_loss = (self.ema_const * self.ema_loss +
+                             (1 - self.ema_const) * loss.item())
+
         if step % 100 == 0 and self.verbose:
             print(f'step: {step:4d}  loss: {self.ema_loss:.4f}  '
-                    f'time: {time.time() - self.start_time:.2f}s')
+                  f'time: {time.time() - self.start_time:.2f}s')
             self.start_time = time.time()
 
     @torch.no_grad()
@@ -401,7 +401,7 @@ class RP2AttackModule(DetectorAttackModule):
             z_delta = torch.zeros((1, 3, height, width),
                                   device=device, dtype=torch.float32)
             z_delta.uniform_(-10, 10)
-            
+
             # Set up optimizer
             opt, lr_schedule = self._setup_opt(z_delta)
             self.ema_loss = None

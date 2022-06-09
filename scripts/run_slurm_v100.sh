@@ -19,4 +19,4 @@ module purge
 module load python
 source activate /global/scratch/users/$USER/apb
 
-bash scripts/test_detectron.sh
+sh scripts/test_detectron.sh
