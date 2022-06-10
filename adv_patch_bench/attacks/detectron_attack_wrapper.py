@@ -188,10 +188,11 @@ class DAGAttacker:
                     # i.e., attacking only one sign per image.
 
                     # Transform and apply patch on the image. `im` has range [0, 255]
-                    perturbed_image = transform_and_apply_patch(
+                    img_normalized, warped_patch_num_pixels = transform_and_apply_patch(
                         perturbed_image, adv_patch.to(self.device),
                         patch_mask, patch_loc, obj_classname, obj, img_data,
-                        **self.transform_params) * 255
+                        **self.transform_params)
+                    perturbed_image = img_normalized * 255
                     total_num_patches += 1
 
             if not is_included:

@@ -379,6 +379,10 @@ def run(args,
     labels_removed = 0
     predictions_removed = 0
 
+    patch_size_df_filenames = []
+    patch_size_df_object_ids = []
+    patch_size_df_num_pixels = []
+
     for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
         # Originally, targets has shape (#labels, 7)
         # [image_id, class, x1, y1, label_width, label_height, obj_id]
@@ -393,6 +397,7 @@ def run(args,
             break
         # ======================= BEGIN: apply patch ======================== #
         for image_i, path in enumerate(paths):
+            # print()
             if use_attack and not synthetic:
                 filename = path.split('/')[-1]
                 img_df = df[df['filename'] == filename]
@@ -405,6 +410,8 @@ def run(args,
                     continue
                 num_apply_imgs += 1
 
+                # import pdb
+                # pdb.set_trace()
                 # Loop over signs on this image and apply patch if applicable
                 for _, row in img_df.iterrows():
                     (h0, w0), ((h_ratio, w_ratio), (w_pad, h_pad)) = shapes[image_i]
@@ -427,14 +434,22 @@ def run(args,
                                 obj_class=adv_sign_class)[0]
 
                     # # Transform and apply patch on the image. `im` has range [0, 255]
-                    im[image_i] = transform_and_apply_patch(
+                    # print(im[image_i].max())
+                    img_normalized, warped_patch_num_pixels = transform_and_apply_patch(
                         im[image_i].to(device), adv_patch.to(device),
                         patch_mask, patch_loc, predicted_class, row, img_data,
                         transform=args.patch_transform,
-                        use_relight=not args.no_patch_relight, interp=args.interp) * 255
+                        use_relight=not args.no_patch_relight, interp=args.interp)
+                    # img_normalized = img_normalized * 255
+                    im[image_i] = img_normalized * 255
+                    # print(im[image_i].max())
                     # num_patches_applied_to_image += 1
                     total_num_patches += 1
+                    patch_size_df_filenames.append(row['filename'])
+                    patch_size_df_object_ids.append(row['object_id'])
+                    patch_size_df_num_pixels.append(warped_patch_num_pixels)
 
+                
                 # set targets[6] to #patches_applied_to_image
                 # targets[targets[:, 0] == image_i, 6] = num_patches_applied_to_image
 
@@ -595,6 +610,9 @@ def run(args,
                 if annotated_signs_only and not synthetic:
                     annotation_row = annotation_df[(annotation_df['filename'] == filename) &
                                                 (annotation_df['object_id'] == int(lbl_[5]))]
+                    # if len(annotation_row) > 1:
+                    #     import pdb
+                    #     pdb.set_trace()
                     assert len(annotation_row) <= 1
                     # if a label is not in our annotation df, we change the label to 'other' so we do not calculate metrics on this particular label
                     if len(annotation_row) == 0:
@@ -748,6 +766,10 @@ def run(args,
     # ======================================================================= #
     #                            END: Main eval loop                          #
     # ======================================================================= #
+
+    patch_size_df_data = {'filename': patch_size_df_filenames, 'object_id': patch_size_df_object_ids, 'patch_num_pixels': patch_size_df_num_pixels}
+    patch_size_df = pd.DataFrame.from_dict(patch_size_df_data)
+    metrics_per_label_df = metrics_per_label_df.merge(right=patch_size_df, on=['filename', 'object_id'], how='left')
 
     metrics_per_image_df.to_csv(f'{project}/{name}/results_per_image.csv', index=False)
     metrics_per_label_df.to_csv(f'{project}/{name}/results_per_label.csv', index=False)

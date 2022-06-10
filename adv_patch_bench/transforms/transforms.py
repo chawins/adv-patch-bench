@@ -215,44 +215,67 @@ def get_transform(
 
     # Get transformation matrix and transform function (affine or perspective)
     # from source and target coordinates
+    # if transform == 'translate_scale':
+    #     if len(src) > 3:
+    #         src = src[:-1]
+    #         tgt = tgt[:-1]
+
+    #     M = torch.from_numpy(getAffineTransform(src, tgt)).unsqueeze(0).float()
+    #     transform_func = warp_affine
+
+    #     a = M[0][0][0]
+    #     b = M[0][0][1]
+    #     c = M[0][1][0]
+    #     d = M[0][1][1]
+    #     s_x = torch.sign(a) * ((a**2 + b**2) ** 0.5)
+    #     s_y = torch.sign(d) * ((c**2 + d**2) ** 0.5)
+    #     M[0][0][0] = s_x + 1e-15
+    #     M[0][0][1] = 0
+    #     M[0][1][0] = 0
+    #     M[0][1][1] = s_y + 1e-15
+        
+    # elif transform == 'affine':
+    #     if len(src) > 3:
+    #         src = src[:-1]
+    #         tgt = tgt[:-1]
+        
+    #     M = torch.from_numpy(getAffineTransform(src, tgt)).unsqueeze(0).float()
+    #     transform_func = warp_affine
+
+    # elif transform == 'perspective':
+    #     if len(src) == 3:
+    #         M = torch.from_numpy(getAffineTransform(src, tgt)).unsqueeze(0).float()
+    #         transform_func = warp_affine
+    #     else:
+    #         src = torch.from_numpy(src).unsqueeze(0)
+    #         tgt = torch.from_numpy(tgt).unsqueeze(0)
+    #         M = get_perspective_transform(src, tgt)
+    #         transform_func = warp_perspective
+    # else:
+    #     raise Exception('Transform does not exist')
+
     if transform == 'translate_scale':
-        if len(src) > 3:
-            src = src[:-1]
-            tgt = tgt[:-1]
-
+        min_tgt_x = min(tgt[:, 0])
+        max_tgt_x = max(tgt[:, 0])
+        min_tgt_y = min(tgt[:, 1])
+        max_tgt_y = max(tgt[:, 1])
+        tgt = np.array([[min_tgt_x, min_tgt_y], [max_tgt_x, min_tgt_y], [max_tgt_x, max_tgt_y], [min_tgt_x, max_tgt_y]])
+        
+        min_src_x = min(src[:, 0])
+        max_src_x = max(src[:, 0])
+        min_src_y = min(src[:, 1])
+        max_src_y = max(src[:, 1])
+        src = np.array([[min_src_x, min_src_y], [max_src_x, min_src_y], [max_src_x, max_src_y], [min_src_x, max_src_y]])
+    
+    if len(src) == 3:
         M = torch.from_numpy(getAffineTransform(src, tgt)).unsqueeze(0).float()
         transform_func = warp_affine
-
-        a = M[0][0][0]
-        b = M[0][0][1]
-        c = M[0][1][0]
-        d = M[0][1][1]
-        s_x = torch.sign(a) * ((a**2 + b**2) ** 0.5)
-        s_y = torch.sign(d) * ((c**2 + d**2) ** 0.5)
-        M[0][0][0] = s_x + 1e-15
-        M[0][0][1] = 0
-        M[0][1][0] = 0
-        M[0][1][1] = s_y + 1e-15
-        
-    elif transform == 'affine':
-        if len(src) > 3:
-            src = src[:-1]
-            tgt = tgt[:-1]
-        
-        M = torch.from_numpy(getAffineTransform(src, tgt)).unsqueeze(0).float()
-        transform_func = warp_affine
-
-    elif transform == 'perspective':
-        if len(src) == 3:
-            M = torch.from_numpy(getAffineTransform(src, tgt)).unsqueeze(0).float()
-            transform_func = warp_affine
-        else:
-            src = torch.from_numpy(src).unsqueeze(0)
-            tgt = torch.from_numpy(tgt).unsqueeze(0)
-            M = get_perspective_transform(src, tgt)
-            transform_func = warp_perspective
     else:
-        raise Exception('Transform does not exist')
+        src = torch.from_numpy(src).unsqueeze(0)
+        tgt = torch.from_numpy(tgt).unsqueeze(0)
+        M = get_perspective_transform(src, tgt)
+        transform_func = warp_perspective
+
 
     return transform_func, sign_canonical, sign_mask, M.squeeze(), alpha, beta, tgt
 
@@ -292,6 +315,7 @@ def apply_transform(
     adv_patch.clamp_(0, 1)
     if use_relight:
         adv_patch.mul_(alpha).add_(beta).clamp_(0, 1)
+
     sign_canonical = sign_canonical.clone()
     sign_canonical[:, :-1, ymin:ymin + height, xmin:xmin + width] = adv_patch
     sign_canonical[:, -1, ymin:ymin + height, xmin:xmin + width] = 1
@@ -305,10 +329,16 @@ def apply_transform(
     warped_patch.clamp_(0, 1)
     alpha_mask = warped_patch[:, -1].unsqueeze(1)
     final_img = (1 - alpha_mask) * image / 255 + alpha_mask * warped_patch[:, :-1]
+    
+    warped_patch_num_pixels = torch.count_nonzero(alpha_mask).item()
+
     # Apply augmentation on the entire image
     if tf_bg is not None:
         final_img = tf_bg(final_img)
-    return final_img
+
+    # print('warped_patch_num_pixels', warped_patch_num_pixels)
+
+    return final_img, warped_patch_num_pixels
 
 
 def add_singleton_dim(x, total_dim):
@@ -346,7 +376,7 @@ def transform_and_apply_patch(
     M = add_singleton_dim(M, 3).to(device)
     tf_data = (sign_canonical, sign_mask, M, alpha.to(device), beta.to(device))
 
-    img = apply_transform(image, adv_patch, patch_mask, patch_loc,
+    img, warped_patch_num_pixels = apply_transform(image, adv_patch, patch_mask, patch_loc,
                           transform_func, tf_data, interp=interp,
                           use_relight=use_relight)
-    return img
+    return img, warped_patch_num_pixels

@@ -414,24 +414,25 @@ class RP2AttackModule(DetectorAttackModule):
                     delta = self._to_model_space(z_delta, 0, 1)
                 delta = delta.repeat(self.num_eot, 1, 1, 1)
 
-                adv_img = apply_transform(
+                adv_img, _ = apply_transform(
                     backgrounds[bg_idx].clone(), delta.clone(), patch_mask,
                     patch_loc, tf_function, curr_tf_data, interp=self.interp,
                     **self.real_transform, use_relight=self.use_relight)
 
-                # DEBUG
-                # import pdb
-                # pdb.set_trace()
+                # # DEBUG
+                # # import pdb
+                # # pdb.set_trace()
                 # tgt_pts = all_tgts[bg_idx.item()][0] if all_tgts[bg_idx.item()].ndim == 3 else all_tgts[bg_idx.item()]
                 # for xy in tgt_pts:
-                # # for xy in all_tgts[bg_idx.item()][0]:
-                # # for xy in all_tgts[bg_idx.item()]:
                 #     for dx in range(-2, 3):
                 #         for dy in range(-2, 3):
                 #             adv_img[:, 0, int(xy[1]+dy), int(xy[0]+dx)] = 1
-                #             adv_img[:, 1, int(xy[1]+dy), int(xy[0]+dx)] = 0
-                #             adv_img[:, 2, int(xy[1]+dy), int(xy[0]+dx)] = 0
-                # torchvision.utils.save_image(adv_img, 'temp_img.png')
+                #             # adv_img[:, 1, int(xy[1]+dy), int(xy[0]+dx)] = 0
+                #             # adv_img[:, 2, int(xy[1]+dy), int(xy[0]+dx)] = 0
+                # # torchvision.utils.save_image(adv_img, 'temp_img.png')
+                # torchvision.utils.save_image(adv_img, f"tmp/{objs[bg_idx.item()][-1].split('.')[0]}_pespective.png")
+                # # torchvision.utils.save_image(adv_img, f"tmp/{objs[bg_idx.item()][-1].split('.')[0]}_translate_scale.png")
+                # continue
                 # import pdb
                 # pdb.set_trace()
 
