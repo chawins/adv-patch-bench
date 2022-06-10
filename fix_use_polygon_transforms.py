@@ -421,8 +421,9 @@ def main(args):
         np.random.seed(1111)
         np.random.shuffle(filenames)
 
-    demo_patch = torchvision.io.read_image('demo.png').float()[:3, :, :] / 255
-    demo_patch = resize(demo_patch, (32, 32))
+    # demo_patch = torchvision.io.read_image('demo.png').float()[:3, :, :] / 255
+    # demo_patch = resize(demo_patch, (32, 32))
+    demo_patch = torch.rand(3, 32, 32)
 
     print('[INFO] constructing a dataloader for cropped traffic signs...')
     bs = args.batch_size

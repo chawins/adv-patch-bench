@@ -33,34 +33,24 @@ def main(args):
     manual_inst_seg_anno_df = pd.DataFrame()
     json_files = []
 
-    for edit_path in ['traffic_signs_wrong_transform', 'traffic_signs_todo', 'traffic_signs_final_check', 'traffic_signs_use_polygon', 'traffic_signs_wrong_octagons']:
+    # for edit_path in ['traffic_signs_wrong_transform', 'traffic_signs_todo', 'traffic_signs_final_check', 'traffic_signs_use_polygon', 'traffic_signs_wrong_octagons']:
+    for edit_path in ['traffic_signs_wrong_transform', 'traffic_signs_todo', 'traffic_signs_final_check', 'traffic_signs_use_polygon', 'traffic_signs_wrong_octagons', 'traffic_signs_patch_errors']:
         for group in ['1', '2', '3']:
             try:
                 path_to_json = f'/data/shared/mapillary_vistas/{split}/hand_annotated_signs/{edit_path}/{group}/'
                 curr_json_files = [path_to_json + p for p in os.listdir(path_to_json) if p.endswith('.json')]
                 json_files.extend(curr_json_files)
+                print(path_to_json)
             except:
                 pass
-    
-    # 04_G_l3AleUQWBSJ4_R8Hw_56.png
-    # print(curr_json_files)
-    # print('04_G_l3AleUQWBSJ4_R8Hw_56.json' in curr_json_files)
-    # qqq
     df_filenames = []
     df_points = []
     for json_path in json_files:
         filename = json_path.split('/')[-1].split('.json')[0] + '.png'
         df_filenames.append(filename)
-        # try:
         with open(json_path) as f:
             json_data = json.load(f)
-        # except:
-        #     print(json_path)
-        #     print(edit_path)
-        #     qqq
 
-        # if len(json_data['shapes']) != 1:
-        #     print(json_path)
         assert len(json_data['shapes']) == 1
         for annotation in json_data['shapes']:
             df_points.append(annotation['points'])
@@ -73,9 +63,7 @@ def main(args):
         manual_annotated_df = pd.read_csv('/data/shared/mtsd_v2_fully_annotated/traffic_sign_annotation_train.csv')
     elif split == 'validation':
         manual_annotated_df = pd.read_csv('/data/shared/mtsd_v2_fully_annotated/traffic_sign_annotation_validation.csv')
-
-    # print(manual_annotated_df.shape)
-
+    
     # merging with instance labeling df
     manual_annotated_df = manual_annotated_df.merge(
         manual_inst_seg_anno_df, left_on='filename', right_on='filename', how='left')
@@ -100,7 +88,8 @@ def main(args):
         # if shape is NOT rect and use_rect flag is 1 then we
 
     manual_annotated_df['final_shape'] = final_shapes
-
+    # if len(manual_annotated_df) != 28404:
+    #     qqq
     # read df with tgt, alpha, beta and merge
     df = pd.read_csv(f'mapillaryvistas_{split}_data.csv')
     # manual_annotated_df['filename_x'] = manual_annotated_df['filename'].apply(
@@ -108,7 +97,9 @@ def main(args):
     # manual_annotated_df = manual_annotated_df.merge(df, on=['filename_x', 'object_id'], how='left')
     manual_annotated_df['filename'] = manual_annotated_df['filename'].apply(lambda x: '_'.join(x.split('_')[:-1]) + '.jpg')
     manual_annotated_df = manual_annotated_df.merge(df, on=['filename', 'object_id'], how='left')
-        
+    
+    # if len(manual_annotated_df) != 28404:
+    #     qqq
     final_df = manual_annotated_df[[
         'filename', 'object_id', 'shape_x', 'predicted_shape_x', 'predicted_class_x',
         'group_x', 'batch_number_x', 'row_x', 'column_x', 'new_class', 'todo',
@@ -117,14 +108,6 @@ def main(args):
         'xmin_ratio', 'ymin_ratio'
     ]]
 
-    # final_df['tgt_final'] = final_df.apply(lambda x: x['points'] if (x['points'].any() or not np.isnan(x['points'])) else x['tgt'], axis=1)
-    # final_df['tgt_final'] = final_df.apply(
-        # lambda x: x['points'] if not isinstance(x['points'], float) else x['tgt'], axis=1)
-
-    # shape_df = pd.read_csv('shape_df.csv')
-
-    # manual_annotated_df = manual_annotated_df.merge(shape_df, left_on=['filename_png', 'object_id'], right_on=['filename_png', 'object_id'], how='left')
-    # final_df = final_df.merge(shape_df, on=['filename_png', 'object_id'], how='left')
     final_df = final_df[final_df['occlusion'].isna()]
     tgt_final_values = []
 
@@ -178,12 +161,6 @@ def main(args):
 
     error_df['final_check'] = 1
     error_df['group'] = 1
-    # error_df['filename'] = error_df['filename_x']
-    # print(error_df.columns)
-    # if split == 'validation':
-    #     error_df['filename'] = error_df.apply(lambda x: x['filename'].split('.jpg')[0] + '_' + str(x['object_id']) + '.png', axis=1)
-    # error_df.to_csv(f'error_df_{split}.csv', index=False)
-
     final_df['tgt_final'] = tgt_final_values
 
     final_df = final_df.rename(columns={
@@ -195,13 +172,8 @@ def main(args):
     alpha_list = []
     beta_list = []
     for index, row in tqdm(final_df.iterrows()):
-        # if split == 'validation':
-            # filename_and_obj_id = row['filename'] + '_' + row['obj_id']
-            # filename_and_obj_id = row['filename'].split('.jpg')[0] + '_' + str(row['object_id']) + '.png'
-            # print(filename_and_obj_id)
         filename_and_obj_id = row['filename'].split('.jpg')[0] + '_' + str(row['object_id']) + '.png'
         if filename_and_obj_id in missed_alpha_beta_df['filename'].values:
-            # print(filename_and_obj_id in missed_alpha_beta_df['filename'].values)
             idx = missed_alpha_beta_df['filename'] == filename_and_obj_id
             alpha_list.append(missed_alpha_beta_df[idx]['alpha'].item())
             beta_list.append(missed_alpha_beta_df[idx]['beta'].item())
