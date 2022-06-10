@@ -40,6 +40,7 @@ class RP2AttackModule(DetectorAttackModule):
         self.use_relight = attack_config['use_patch_relight']
         self.detectron_obj_const = 0.
         self.pgd_step_size = 1e-2
+        self.ema_const = 0.99  # Constant for moving average of the loss
 
         # Use change of variable on delta with alpha and beta.
         # Mostly used with per-sign attack.
@@ -100,14 +101,17 @@ class RP2AttackModule(DetectorAttackModule):
             lr_schedule = optim.lr_scheduler.ReduceLROnPlateau(
                 opt, factor=0.5, patience=int(self.num_steps / 10),
                 threshold=1e-9, min_lr=self.step_size * 1e-6, verbose=self.verbose)
-                
+
         return opt, lr_schedule
 
-    def compute_loss(self, adv_img, obj_class, metadata):
+    def compute_loss(self, delta, adv_img, obj_class, metadata):
         if self.is_detectron:
             loss = self._compute_loss_rcnn(adv_img, obj_class, metadata)
         else:
             loss = self._compute_loss_yolo(adv_img, obj_class, metadata)
+        tv = ((delta[:, :, :-1, :] - delta[:, :, 1:, :]).abs().mean() +
+              (delta[:, :, :, :-1] - delta[:, :, :, 1:]).abs().mean())
+        loss += self.lmbda * tv
         return loss
 
     def _compute_loss_yolo(self, adv_img, obj_class, metadata):
@@ -180,6 +184,19 @@ class RP2AttackModule(DetectorAttackModule):
             loss += target_loss + self.detectron_obj_const * obj_loss
         return loss
 
+    def _print_loss(self, loss, step):
+        if self.ema_loss is None:
+            self.ema_loss = loss.item()
+        else:
+            self.ema_loss = (self.ema_const * self.ema_loss +
+                             (1 - self.ema_const) * loss.item())
+
+        if step % 100 == 0 and self.verbose:
+            print(f'step: {step:4d}  loss: {self.ema_loss:.4f}  '
+                  f'time: {time.time() - self.start_time:.2f}s')
+            self.start_time = time.time()
+
+    @torch.no_grad()
     def attack(
         self,
         obj: torch.Tensor,
@@ -218,10 +235,8 @@ class RP2AttackModule(DetectorAttackModule):
         ymin, xmin, height, width = mask_to_box(patch_mask)
         all_bg_idx = np.arange(len(backgrounds))
 
-        # TODO: Initialize worst-case inputs, use moving average
+        # TODO: Initialize worst-case inputs
         # x_adv_worst = x.clone().detach()
-        ema_const = 0.99
-        ema_loss = None
 
         for _ in range(self.num_restarts):
             # Initialize adversarial perturbation
@@ -229,7 +244,8 @@ class RP2AttackModule(DetectorAttackModule):
             z_delta.uniform_(-10, 10)
 
             opt, lr_schedule = self._setup_opt(z_delta)
-            start_time = time.time()
+            self.start_time = time.time()
+            self.ema_loss = None
 
             # Run PGD on inputs for specified number of steps
             for step in range(self.num_steps):
@@ -295,30 +311,18 @@ class RP2AttackModule(DetectorAttackModule):
                     #     import pdb
                     #     pdb.set_trace()
 
-                    tv = ((delta[:, :, :-1, :] - delta[:, :, 1:, :]).abs().mean() +
-                          (delta[:, :, :, :-1] - delta[:, :, :, 1:]).abs().mean())
-                    loss = self.compute_loss(adv_img, obj_class, metadata_clone[bg_idx])
-                    loss += self.lmbda * tv
-                    # out, _ = self.core_model(adv_img, val=True)
-                    # loss = out[:, :, 4].mean() + self.lmbda * tv
-                    loss.backward(retain_graph=True)
+                    loss = self.compute_loss(
+                        delta, adv_img, obj_class, metadata_clone[bg_idx])
+                    loss.backward()
                     opt.step()
 
                 # torchvision.utils.save_image(adv_img, 'temp_img.png')
                 # import pdb
                 # pdb.set_trace()
 
-                if ema_loss is None:
-                    ema_loss = loss.item()
-                else:
-                    ema_loss = ema_const * ema_loss + (1 - ema_const) * loss.item()
                 if lr_schedule is not None:
-                    lr_schedule.step(ema_loss)
-
-                if step % 100 == 0 and self.verbose:
-                    print(f'step: {step:4d}   loss: {ema_loss:.6f}  '
-                          f'time: {time.time() - start_time:.2f}s')
-                    start_time = time.time()
+                    lr_schedule.step(self.ema_loss)
+                self._print_loss(loss, step)
 
             # if self.num_restarts == 1:
             #     x_adv_worst = x_adv
@@ -337,6 +341,7 @@ class RP2AttackModule(DetectorAttackModule):
         self.core_model.train(mode)
         return delta.detach()
 
+    @torch.no_grad()
     def attack_real(
         self,
         objs: List,
@@ -363,9 +368,6 @@ class RP2AttackModule(DetectorAttackModule):
             assert metadata is not None, 'metadata is needed for detectron'
             metadata_clone = self._clone_detectron_metadata(
                 [obj[0] for obj in objs], metadata)
-
-        ema_const = 0.99
-        ema_loss = None
 
         # Process transform data and create batch tensors
         sign_size_in_pixel = patch_mask.size(-1)
@@ -402,81 +404,73 @@ class RP2AttackModule(DetectorAttackModule):
 
             # Set up optimizer
             opt, lr_schedule = self._setup_opt(z_delta)
-            start_time = time.time()
+            self.ema_loss = None
+            self.start_time = time.time()
 
             # Run PGD on inputs for specified number of steps
             for step in range(self.num_steps):
-                z_delta.requires_grad_()
 
                 # Randomly select background and place patch with transforms
                 np.random.shuffle(all_bg_idx)
                 bg_idx = all_bg_idx[:self.num_eot]
                 curr_tf_data = [data[bg_idx] for data in tf_data]
 
-                # Determine how perturbation is projected
-                if 'pgd' in self.attack_mode:
-                    delta = z_delta
-                elif self.use_var_change_ab:
-                    # Does not work when num_eot > 1
-                    alpha, beta = curr_tf_data[-2:]
-                    delta = self._to_model_space(z_delta, beta, alpha + beta)
-                else:
-                    delta = self._to_model_space(z_delta, 0, 1)
-                delta = delta.repeat(self.num_eot, 1, 1, 1)
+                with torch.enable_grad():
+                    z_delta.requires_grad_()
+                    # Determine how perturbation is projected
+                    if 'pgd' in self.attack_mode:
+                        delta = z_delta
+                    elif self.use_var_change_ab:
+                        # Does not work when num_eot > 1
+                        alpha, beta = curr_tf_data[-2:]
+                        delta = self._to_model_space(z_delta, beta, alpha + beta)
+                    else:
+                        delta = self._to_model_space(z_delta, 0, 1)
+                    delta = delta.repeat(self.num_eot, 1, 1, 1)
 
-                adv_img = apply_transform(
-                    backgrounds[bg_idx].clone(), delta.clone(), patch_mask,
-                    patch_loc, tf_function, curr_tf_data, interp=self.interp,
-                    **self.real_transform, use_relight=self.use_relight)
+                    adv_img = apply_transform(
+                        backgrounds[bg_idx].clone(), delta.clone(), patch_mask,
+                        patch_loc, tf_function, curr_tf_data, interp=self.interp,
+                        **self.real_transform, use_relight=self.use_relight)
 
-                # DEBUG
-                # import pdb
-                # pdb.set_trace()
-                # tgt_pts = all_tgts[bg_idx.item()][0] if all_tgts[bg_idx.item()].ndim == 3 else all_tgts[bg_idx.item()]
-                # for xy in tgt_pts:
-                # # for xy in all_tgts[bg_idx.item()][0]:
-                # # for xy in all_tgts[bg_idx.item()]:
-                #     for dx in range(-2, 3):
-                #         for dy in range(-2, 3):
-                #             adv_img[:, 0, int(xy[1]+dy), int(xy[0]+dx)] = 1
-                #             adv_img[:, 1, int(xy[1]+dy), int(xy[0]+dx)] = 0
-                #             adv_img[:, 2, int(xy[1]+dy), int(xy[0]+dx)] = 0
-                # torchvision.utils.save_image(adv_img, 'temp_img.png')
-                # import pdb
-                # pdb.set_trace()
+                    # DEBUG
+                    # import pdb
+                    # pdb.set_trace()
+                    # tgt_pts = all_tgts[bg_idx.item()][0] if all_tgts[bg_idx.item()].ndim == 3 else all_tgts[bg_idx.item()]
+                    # for xy in tgt_pts:
+                    # # for xy in all_tgts[bg_idx.item()][0]:
+                    # # for xy in all_tgts[bg_idx.item()]:
+                    #     for dx in range(-2, 3):
+                    #         for dy in range(-2, 3):
+                    #             adv_img[:, 0, int(xy[1]+dy), int(xy[0]+dx)] = 1
+                    #             adv_img[:, 1, int(xy[1]+dy), int(xy[0]+dx)] = 0
+                    #             adv_img[:, 2, int(xy[1]+dy), int(xy[0]+dx)] = 0
+                    # torchvision.utils.save_image(adv_img, 'temp_img.png')
+                    # import pdb
+                    # pdb.set_trace()
 
-                loss = self.compute_loss(adv_img, obj_class, metadata_clone[bg_idx])
-                tv = ((delta[:, :, :-1, :] - delta[:, :, 1:, :]).abs().mean() +
-                      (delta[:, :, :, :-1] - delta[:, :, :, 1:]).abs().mean())
-                # loss = out[:, :, 4].mean() + self.lmbda * tv
-                loss += self.lmbda * tv
-                loss.backward(retain_graph=True)
+                    loss = self.compute_loss(
+                        delta, adv_img, obj_class, metadata_clone[bg_idx])
+                    loss.backward()
 
-                if 'pgd' in self.attack_mode:
-                    grad = z_delta.grad.detach()
-                    grad = torch.sign(grad)
-                    z_delta = z_delta.detach() - self.pgd_step_size * grad
-                    z_delta = z_delta.clamp_(0, 1)
-                else:
-                    opt.step()
+                    if 'pgd' in self.attack_mode:
+                        grad = z_delta.grad.detach()
+                        grad = torch.sign(grad)
+                        z_delta = z_delta.detach() - self.pgd_step_size * grad
+                        z_delta = z_delta.clamp_(0, 1)
+                    else:
+                        opt.step()
 
-                if ema_loss is None:
-                    ema_loss = loss.item()
-                else:
-                    ema_loss = ema_const * ema_loss + (1 - ema_const) * loss.item()
                 if lr_schedule is not None:
                     lr_schedule.step(loss)
+                self._print_loss(loss, step)
 
-                if step % 100 == 0 and self.verbose:
-                    print(f'step: {step:4d}  loss: {ema_loss:.4f}  '
-                          f'time: {time.time() - start_time:.2f}s')
-                    start_time = time.time()
-                    # DEBUG
-                    # import os
-                    # for idx in range(self.num_eot):
-                    #     if not os.path.exists(f'tmp/{idx}/test_adv_img_{step}.png'):
-                    #         os.makedirs(f'tmp/{idx}/', exist_ok=True)
-                    #     torchvision.utils.save_image(adv_img[idx], f'tmp/{idx}/test_adv_img_{step}.png')
+                # DEBUG
+                # import os
+                # for idx in range(self.num_eot):
+                #     if not os.path.exists(f'tmp/{idx}/test_adv_img_{step}.png'):
+                #         os.makedirs(f'tmp/{idx}/', exist_ok=True)
+                #     torchvision.utils.save_image(adv_img[idx], f'tmp/{idx}/test_adv_img_{step}.png')
 
         # DEBUG
         # outt = non_max_suppression(out.detach(), conf_thres=0.25, iou_thres=0.45)

@@ -5,7 +5,6 @@ import torch.nn.functional as F
 from detectron2.structures import Boxes, pairwise_iou
 
 
-# @torch.no_grad()
 def get_targets(
     model: torch.nn.Module,
     inputs: List[Dict[Any, Any]],
