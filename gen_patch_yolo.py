@@ -293,6 +293,7 @@ def main(
         num_bg = round(MAPILLARY_IMG_COUNTS_DICT[class_name] * num_bg)
         print(f'For {class_name}, this is {num_bg} images.')
     num_bg = int(num_bg)
+    num_bg = min(num_bg, 200)
     kwargs['num_bg'] = num_bg
 
     # Configure object size
