@@ -8,7 +8,7 @@ import random
 from ast import literal_eval
 from os.path import join
 from pathlib import Path
-from typing import Any, Tuple
+from typing import Any, Dict, Tuple
 
 import numpy as np
 import pandas as pd
@@ -127,28 +127,26 @@ def generate_adv_patch(
     patch_mask: torch.Tensor,
     device: str = 'cuda',
     img_size: Tuple[int, int] = (992, 1312),
-    obj_class: int = 0,
+    obj_class: int = None,
     obj_size: int = None,
     # bg_dir: str = './',
-    num_bg: int = 16,
+    # num_bg: int = 16,
     save_images: bool = False,
     save_dir: str = './',
     synthetic: bool = False,
     # rescaling: bool = False,
     tgt_csv_filepath: str = None,
     dataloader: Any = None,
-    attack_config_path: str = None,
     interp: str = 'bilinear',
     verbose: bool = False,
     debug: bool = False,
     dataset: str = None,
+    attack_config: Dict = {},
     **kwargs,
 ):
     """Generate adversarial patch"""
     print(f'=> Initializing attack...')
-    with open(attack_config_path) as file:
-        attack_config = yaml.load(file, Loader=yaml.FullLoader)
-        attack_config['input_size'] = img_size
+    num_bg = attack_config['num_bg']
 
     # TODO: Allow data parallel?
     attack = RP2AttackModule(attack_config, model, None, None, None,
@@ -177,75 +175,72 @@ def generate_adv_patch(
     attack_images, metadata, backgrounds = collect_backgrounds(
         dataloader, img_size, num_bg, device, df=df, class_name=class_name)
 
+    # Save background filenames in txt file
+    print(f'=> Saving used backgrounds in a txt file.')
+    with open(join(save_dir, 'bg_filenames.txt'), 'w') as f:
+        for img in attack_images:
+            f.write(f'{img[2]}\n')
+    # DEBUG: Save all the background images
+    if debug:
+        for img in attack_images:
+            os.makedirs(join(save_dir, 'backgrounds'), exist_ok=True)
+            torchvision.utils.save_image(
+                img[0] / 255, join(save_dir, 'backgrounds', img[2]))
+
     # Generate an adversarial patch
     if synthetic:
         print('=> Generating adversarial patch on synthetic signs...')
         # Resize object to the specify size and pad obj and masks to image size
+        # left, top, right, bottom
         pad_size = [(img_size[1] - obj_size[1]) // 2,
                     (img_size[0] - obj_size[0]) // 2,
                     (img_size[1] - obj_size[1]) // 2 + obj_size[1] % 2,
-                    (img_size[0] - obj_size[0]) // 2 + obj_size[0] % 2]  # left, top, right, bottom
-        obj, obj_mask = get_object_and_mask_from_numpy(obj_numpy, obj_size, pad_size=pad_size)
-        patch_mask_ = T.resize(patch_mask, obj_size, interpolation=T.InterpolationMode.NEAREST)
+                    (img_size[0] - obj_size[0]) // 2 + obj_size[0] % 2]
+        obj, obj_mask = get_object_and_mask_from_numpy(obj_numpy, obj_size,
+                                                       pad_size=pad_size)
+        patch_mask_ = T.resize(patch_mask, obj_size,
+                               interpolation=T.InterpolationMode.NEAREST)
         patch_mask_ = T.pad(patch_mask_, pad_size)
 
-        print(f'=> Start attacking...')
-        with torch.enable_grad():
-            adv_patch = attack.attack(obj.to(device),
-                                      obj_mask.to(device),
-                                      patch_mask_.to(device),
-                                      backgrounds.to(device),
-                                      obj_class=obj_class,
-                                      obj_size=obj_size,
-                                      metadata=metadata)
+        adv_patch = attack.attack(obj.to(device),
+                                  obj_mask.to(device),
+                                  patch_mask_.to(device),
+                                  backgrounds.to(device),
+                                  obj_class=obj_class,
+                                  metadata=metadata)
 
         if save_images:
             torchvision.utils.save_image(obj, join(save_dir, 'obj.png'))
-            torchvision.utils.save_image(obj_mask, join(save_dir, 'obj_mask.png'))
-            torchvision.utils.save_image(backgrounds, join(save_dir, 'backgrounds.png'))
-
+            torchvision.utils.save_image(obj_mask,
+                                         join(save_dir, 'obj_mask.png'))
     else:
         print('=> Generating adversarial patch on real signs...')
-
-        # DEBUG: Save all the background images
-        if debug:
-            for img in attack_images:
-                os.makedirs(join(save_dir, 'backgrounds'), exist_ok=True)
-                torchvision.utils.save_image(
-                    img[0] / 255, join(save_dir, 'backgrounds', img[2]))
-
-        # Save background filenames in txt file
-        print(f'=> Saving used backgrounds in a txt file.')
-        with open(join(save_dir, 'bg_filenames.txt'), 'w') as f:
-            for img in attack_images:
-                f.write(f'{img[2]}\n')
-
-        print(f'=> Start attacking...')
-        # with torch.enable_grad():
         adv_patch = attack.attack_real(attack_images,
                                        patch_mask=patch_mask.to(device),
                                        obj_class=obj_class,
                                        metadata=metadata)
 
     adv_patch = adv_patch[0].detach().cpu().float()
-
     if save_images:
-        torchvision.utils.save_image(patch_mask, join(save_dir, 'patch_mask.png'))
-        torchvision.utils.save_image(adv_patch, join(save_dir, 'adversarial_patch.png'))
+        torchvision.utils.save_image(patch_mask,
+                                     join(save_dir, 'patch_mask.png'))
+        torchvision.utils.save_image(adv_patch,
+                                     join(save_dir, 'adversarial_patch.png'))
 
     return adv_patch
 
 
 def main(
-    padded_imgsz='992,1312',
+    padded_imgsz: str = '992,1312',
     save_dir=Path(''),
-    name='exp',  # save to project/name
-    obj_class=0,
-    obj_size=None,
-    syn_obj_path='',
-    seed=0,
-    synthetic=False,
-    num_samples=0,
+    name: str = 'exp',  # save to project/name
+    obj_class: int = None,
+    obj_size: int = None,
+    syn_obj_path: str = '',
+    seed: int = 0,
+    synthetic: bool = False,
+    attack_config_path: str = None,
+    num_samples: int = 0,
     **kwargs,
 ):
     cudnn.benchmark = True
@@ -286,32 +281,32 @@ def main(
         sampler=ShuffleInferenceSampler(num_samples)
     )
 
+    with open(attack_config_path) as file:
+        attack_config = yaml.load(file, Loader=yaml.FullLoader)
+    attack_config['input_size'] = img_size
+
     adv_patch = generate_adv_patch(
         model, obj_numpy, patch_mask, img_size=img_size, obj_size=obj_size,
         save_dir=save_dir, synthetic=synthetic, dataloader=dataloader,
-        obj_class=obj_class, name=name, **kwargs)
+        obj_class=obj_class, name=name, attack_config=attack_config, **kwargs)
 
     # Save adv patch
     patch_path = join(save_dir, 'adv_patch.pkl')
     print(f'Saving the generated adv patch to {patch_path}...')
     pickle.dump([adv_patch, patch_mask], open(patch_path, 'wb'))
 
-    patch_metadata = {
-        'synthetic': synthetic,
-        # 'attack_type': attack_type,
-        # 'rescaling': rescaling,
-    }
-    patch_metadata_path = join(save_dir, 'patch_metadata.pkl')
-    print(f'Saving the generated adv patch metadata to {patch_metadata_path}...')
-    pickle.dump(patch_metadata, open(patch_metadata_path, 'wb'))
+    # Save attack config
+    patch_metadata_path = join(save_dir, 'config.yaml')
+    print(f'Saving the adv patch metadata to {patch_metadata_path}...')
+    patch_metadata = {'synthetic': synthetic, **attack_config}
+    with open(patch_metadata_path, 'w') as outfile:
+        yaml.dump(patch_metadata, outfile)
 
 
 if __name__ == "__main__":
     args = eval_args_parser(True)
     print('Command Line Args:', args)
     args.device = 'cuda'
-    if args.patch_size_inch is not None:
-        args.mask_path = None
 
     # Verify some args
     cfg = setup_detectron_test_args(args, OTHER_SIGN_CLASS)
@@ -334,7 +329,7 @@ if __name__ == "__main__":
         dataset_params = register_mapillary(
             use_color=args.use_color,
             ignore_other=args.data_no_other,
-            only_annotated=args.annotated_signs_only,  # This should be False in this case
+            only_annotated=args.annotated_signs_only,
         )
         data_list = get_mapillary_dict(split, *dataset_params)
     num_samples = len(data_list)

@@ -8,7 +8,7 @@ import sys
 from ast import literal_eval
 from os.path import join
 from pathlib import Path
-from typing import Any, Tuple
+from typing import Any, Dict, Tuple
 
 import numpy as np
 import pandas as pd
@@ -21,10 +21,11 @@ from PIL import Image
 from torch.nn import DataParallel
 
 from adv_patch_bench.attacks.rp2 import RP2AttackModule
-from adv_patch_bench.utils.argparse import eval_args_parser, parse_dataset_name
+from adv_patch_bench.utils.argparse import (eval_args_parser,
+                                            setup_yolo_test_args)
 from adv_patch_bench.utils.image import get_obj_width
 from gen_mask import generate_mask
-from hparams import LABEL_LIST, MAPILLARY_IMG_COUNTS_DICT
+from hparams import LABEL_LIST, MAPILLARY_IMG_COUNTS_DICT, OTHER_SIGN_CLASS
 from yolov5.models.common import DetectMultiBackend
 from yolov5.utils.datasets import create_dataloader
 from yolov5.utils.general import (LOGGER, check_dataset, check_img_size,
@@ -73,7 +74,7 @@ def generate_adv_patch(
     # rescaling: bool = False,
     tgt_csv_filepath: str = 'mapillary.csv',
     dataloader: Any = None,
-    attack_config_path: str = None,
+    attack_config: Dict = {},
     **kwargs,
 ):
     """Generate adversarial patch
@@ -103,9 +104,9 @@ def generate_adv_patch(
     # FIXME: does this break anything?
     # bg_size = (img_size[0] - 32, img_size[1] - 32)
     bg_size = img_size
-        
+
     backgrounds = torch.zeros((num_bg, 3) + bg_size, )
-    
+
     for i, index in enumerate(idx[:num_bg]):
         bg = torchvision.io.read_image(join(bg_dir, all_bgs[index])) / 255
         backgrounds[i] = T.resize(bg, bg_size, antialias=True)
@@ -115,12 +116,10 @@ def generate_adv_patch(
     class_names = LABEL_LIST[args.dataset]
 
     print(f'=> Initializing attack...')
-    with open(attack_config_path) as file:
-        attack_config = yaml.load(file, Loader=yaml.FullLoader)
-        attack_config['input_size'] = img_size
 
     # TODO: Allow data parallel?
-    attack = RP2AttackModule(attack_config, model, None, None, None, verbose=True, interp=args.interp)
+    attack = RP2AttackModule(attack_config, model, None, None, None,
+                             verbose=True, interp=args.interp)
 
     # Generate an adversarial patch
     if synthetic:
@@ -138,12 +137,10 @@ def generate_adv_patch(
         obj_mask = T.resize(obj_mask, obj_size, interpolation=T.InterpolationMode.NEAREST)
         obj_mask = T.pad(obj_mask, pad_size)
 
-        
         patch_mask = patch_mask.unsqueeze(dim=0)
         patch_mask_ = T.resize(patch_mask, obj_size, interpolation=T.InterpolationMode.NEAREST)
-        
+
         patch_mask_ = T.pad(patch_mask_, pad_size)
-        
 
         print(f'=> Start attacking...')
         with torch.enable_grad():
@@ -151,7 +148,6 @@ def generate_adv_patch(
                                       obj_mask.to(device),
                                       patch_mask_.to(device),
                                       backgrounds.to(device),
-                                      obj_class=12,
                                       obj_size=obj_size)
 
         if save_images:
@@ -209,7 +205,7 @@ def generate_adv_patch(
                     data = [predicted_class, row, h0, w0, h_ratio, w_ratio, w_pad, h_pad]
                     attack_images.append([img, data, str(filename)])
                     break   # This prevents duplicating the background
-                
+
                 if len(attack_images) >= num_bg:
                     break
             if len(attack_images) >= num_bg:
@@ -258,7 +254,7 @@ def main(
     name='exp',  # save to project/name
     # save_txt=False,  # save results to *.txt
     obj_class=0,
-    obj_size=-1,
+    obj_size=None,
     syn_obj_path='',
     seed=0,
     synthetic: bool = False,
@@ -266,6 +262,7 @@ def main(
     data=None,
     task='test',
     mask_dir=None,
+    attack_config_path: str = None,
     **kwargs,
 ):
     cudnn.benchmark = True
@@ -285,14 +282,17 @@ def main(
     device = select_device(device, batch_size=batch_size)
     model, data = load_yolov5(weights, device, imgsz, img_size, data, dnn, half)
 
-    num_bg = args.num_bg
+    with open(attack_config_path) as file:
+        attack_config = yaml.load(file, Loader=yaml.FullLoader)
+    attack_config['input_size'] = img_size
+
+    num_bg = attack_config['num_bg']
     class_name = list(MAPILLARY_IMG_COUNTS_DICT.keys())[int(obj_class)]
     if num_bg < 1:
         assert class_name is not None
         print(f'num_bg is a fraction ({num_bg}).')
         num_bg = round(MAPILLARY_IMG_COUNTS_DICT[class_name] * num_bg)
         print(f'For {class_name}, this is {num_bg} images.')
-    num_bg = int(num_bg)
     num_bg = min(num_bg, 200)
     kwargs['num_bg'] = num_bg
 
@@ -303,8 +303,8 @@ def main(
     # object tensor, and they should all have the same width and height.
     obj_numpy = np.array(Image.open(syn_obj_path).convert('RGBA')) / 255
     h_w_ratio = obj_numpy.shape[0] / obj_numpy.shape[1]
-    
-    if obj_size == -1:
+
+    if obj_size is None:
         obj_size = int(min(img_size) * 0.1)
     if isinstance(obj_size, int):
         obj_size = (round(obj_size * h_w_ratio), obj_size)
@@ -313,9 +313,8 @@ def main(
         # Load path mask from file if specified (gen_mask.py)
         mask_path = join(mask_dir, f'{name}.png')
         patch_mask = torchvision.io.read_image(mask_path)
-        patch_mask = patch_mask.float() / 255   
-
-        patch_mask = patch_mask[0]     
+        patch_mask = patch_mask.float() / 255
+        patch_mask = patch_mask[0]
     else:
         # Otherwise, generate a new mask here
         # Get size in inch from sign class
@@ -326,34 +325,31 @@ def main(
     if not synthetic:
         stride, pt = model.stride, model.pt
         dataloader = create_dataloader(data[task], imgsz, batch_size, stride,
-                                       single_cls=False, pad=0.5, rect=pt, shuffle=True,
-                                       workers=8, prefix=colorstr(f'{task}: '))[0]
+                                       single_cls=False, pad=0.5, rect=pt,
+                                       shuffle=True, workers=8,
+                                       prefix=colorstr(f'{task}: '))[0]
 
     adv_patch = generate_adv_patch(
         model, obj_numpy, patch_mask, device=device, img_size=img_size,
-        obj_size=obj_size, obj_class=obj_class, save_dir=save_dir, synthetic=synthetic,
-        dataloader=dataloader, **kwargs)
-    
-    # Save adv patch
-    patch_path = join(save_dir, f'adv_patch.pkl')
-    print(f'Saving the generated adv patch to {patch_path}...')
+        obj_size=obj_size, obj_class=obj_class, save_dir=save_dir,
+        synthetic=synthetic, dataloader=dataloader, num_bg=num_bg,
+        attack_config=attack_config, **kwargs)
 
+    # Save adv patch
+    patch_path = join(save_dir, 'adv_patch.pkl')
+    print(f'Saving the generated adv patch to {patch_path}...')
     pickle.dump([adv_patch, patch_mask], open(patch_path, 'wb'))
 
-    patch_metadata = {
-        'synthetic': synthetic,
-        # 'attack_type': attack_type,
-        # 'rescaling': rescaling,
-    }
-    patch_metadata_path = join(save_dir, 'patch_metadata.pkl')
+    # Save attack config
+    patch_metadata_path = join(save_dir, 'config.yaml')
     print(f'Saving the generated adv patch metadata to {patch_metadata_path}...')
-    pickle.dump(patch_metadata, open(patch_metadata_path, 'wb'))
+    patch_metadata = {'synthetic': synthetic, **attack_config}
+    with open(patch_metadata_path, 'w') as outfile:
+        yaml.dump(patch_metadata, outfile)
 
 
 if __name__ == "__main__":
     args = eval_args_parser(False, root=ROOT)
-    parse_dataset_name(args)
+    setup_yolo_test_args(args, OTHER_SIGN_CLASS)
     print(args)
-    if args.patch_size_inch is not None:
-        args.mask_path = None
     main(**vars(args))

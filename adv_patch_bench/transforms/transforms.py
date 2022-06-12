@@ -8,22 +8,18 @@ from cv2 import getAffineTransform
 from kornia.geometry.transform import (get_perspective_transform, warp_affine,
                                        warp_perspective)
 
+from adv_patch_bench.transforms.verifier import sort_polygon_vertices
+
 
 def gen_rect_mask(size, ratio=None):
-    # ratio = height / width
-    # mask = np.zeros((size, size))
-
     height = round(ratio * size) if ratio > 1 else size
     width = size
     mask = np.zeros((height, width))
-    # height = ratio * size if ratio < 1 else size
-    # width = height / ratio
     if ratio > 1:
         pad = int((size - width) / 2)
         mask[:, pad:size - pad] = 1
         box = [[pad, 0], [size - pad, 0], [size - pad, size - 1], [pad, size - 1]]
         box = [[0, 0], [width-1, 0], [width-1, height-1], [0, height - 1]]
-
     elif ratio < 1:
         pad = int((size - height) / 2)
         mask[pad:size - pad, :] = 1
@@ -36,6 +32,7 @@ def gen_rect_mask(size, ratio=None):
 
 def gen_square_mask(size, ratio=None):
     # ratio = height / width
+    assert ratio == 1
     mask = np.zeros((size, size))
     height = ratio * size if ratio < 1 else size
     width = height / ratio
@@ -92,7 +89,8 @@ def gen_pentagon_mask(size, ratio=None):
 def gen_octagon_mask(size, ratio=None):
     edge = round((2 - np.sqrt(2)) / 2 * size)
     Y, X = np.ogrid[:size, :size]
-    mask = (Y + X >= edge) * (Y - X >= -(size - edge)) * (Y + X <= 2 * size - edge) * (Y - X <= (size - edge))
+    mask = ((Y + X >= edge) * (Y - X >= -(size - edge)) *
+            (Y + X <= 2 * size - edge) * (Y - X <= (size - edge)))
     return mask, [[edge, 0], [size - 1, edge], [size - edge, size - 1], [0, size - edge]]
 
 
@@ -129,9 +127,9 @@ def get_sign_canonical(
         sign_size_in_pixel (int, optional): Optionally, sign size in pixels can
             be explicitly set. Defaults to None (use size relative to patch).
     Returns:
-        - sign_canonical (torch.Tensor): sign canonical 
-        - sign_mask (torch.Tensor): sign mask
-        - src (list): List that specifies 4 key points of the canonical sign
+        sign_canonical (torch.Tensor): sign canonical 
+        sign_mask (torch.Tensor): sign mask
+        src (list): List that specifies 4 key points of the canonical sign
     """
     assert sign_size_in_pixel is not None or patch_size_in_pixel is not None
     shape = predicted_class.split('-')[0]
@@ -150,7 +148,8 @@ def get_sign_canonical(
         sign_size_in_pixel = round(sign_size_in_mm * pixel_mm_ratio)
 
     # sign_canonical = torch.zeros((4, sign_size_in_pixel, sign_size_in_pixel))
-    sign_canonical = torch.zeros((4, round(hw_ratio * sign_size_in_pixel), sign_size_in_pixel))
+    sign_canonical = torch.zeros(
+        (4, round(hw_ratio * sign_size_in_pixel), sign_size_in_pixel))
 
     sign_mask, src = gen_sign_mask(shape, sign_size_in_pixel, ratio=hw_ratio)
     sign_mask = torch.from_numpy(sign_mask).float()[None, :, :]
@@ -167,7 +166,7 @@ def get_transform(
     w_ratio: float,
     w_pad: float,
     h_pad: float,
-    transform: str,
+    transform_mode: str,
 ) -> Tuple:
     """Get transformation matrix and parameters including relighting.
     Args:
@@ -184,23 +183,20 @@ def get_transform(
     Returns:
         Tuple: _description_
     """
-    sign_canonical, sign_mask, src = get_sign_canonical(
-        predicted_class, sign_size_in_pixel=sign_size_in_pixel)
     alpha = torch.tensor(row['alpha'])
     beta = torch.tensor(row['beta'])
 
-    shape = predicted_class.split('-')[0]
-
-    src = np.array(src, dtype=np.float32)
-
+    # Get target points from dataframe
     # TODO: Fix this after unifying csv
     if not pd.isna(row['points']):
         tgt = np.array(literal_eval(row['points']), dtype=np.float32)
         tgt[:, 1] = (tgt[:, 1] * h_ratio) + h_pad
         tgt[:, 0] = (tgt[:, 0] * w_ratio) + w_pad
+        # print('not polygon')
     else:
         tgt = row['tgt'] if pd.isna(row['tgt_polygon']) else row['tgt_polygon']
         tgt = np.array(literal_eval(tgt), dtype=np.float32)
+        # print('polygon')
 
         offset_x_ratio = row['xmin_ratio']
         offset_y_ratio = row['ymin_ratio']
@@ -213,48 +209,50 @@ def get_transform(
         tgt[:, 1] = (tgt[:, 1] + y_min) * h_ratio + h_pad
         tgt[:, 0] = (tgt[:, 0] + x_min) * w_ratio + w_pad
 
+    # FIXME: Correct in the csv file directly
+    shape = predicted_class.split('-')[0]
+    if shape != 'octagon':
+        tgt = sort_polygon_vertices(tgt)
+
+    # if row['use_polygon'] == 1:
+    #     # nR-M2zUbIWJzatAuy2egrQ.jpg
+    # if row['use_polygon'] == 1:
+    #     print(tgt)
+    #     import pdb
+    #     pdb.set_trace()
+
+    if shape == 'diamond':
+        # Verify target points of diamonds. If they are very close to corners
+        # of a square, the sign likely lies on another square surface. In this
+        # case, use the square src points instead.
+        x, y = np.abs(tgt[1] - tgt[0])
+        angle10 = np.arctan2(y, x)
+        x, y = np.abs(tgt[3] - tgt[2])
+        angle32 = np.arctan2(y, x)
+        mean_angle = (angle10 + angle32) / 2
+        if mean_angle < np.pi / 180 * 15:
+            predicted_class = f'square-{predicted_class.split("-")[1]}'
+
+    sign_canonical, sign_mask, src = get_sign_canonical(
+        predicted_class, sign_size_in_pixel=sign_size_in_pixel)
+    src = np.array(src, dtype=np.float32)
+
+    if shape == 'pentagon':
+        # Verify that target points of pentagons align like rectangle (almost
+        # parallel sides). If not, then there's an annotation error which is
+        # then fixed by changing src points.
+        angle10 = np.arctan2(*(tgt[1] - tgt[0]))
+        angle21 = np.arctan2(*(tgt[2] - tgt[1]))
+        angle23 = np.arctan2(*(tgt[2] - tgt[3]))
+        angle30 = np.arctan2(*(tgt[3] - tgt[0]))
+        mean_diff = (np.abs(angle10 - angle23) + np.abs(angle21 - angle30)) / 2
+        if mean_diff > np.pi / 180 * 15:
+            src[1, 0] = float(src[1, 1])
+            src[1, 1] = 0
+
     # Get transformation matrix and transform function (affine or perspective)
     # from source and target coordinates
-    # if transform == 'translate_scale':
-    #     if len(src) > 3:
-    #         src = src[:-1]
-    #         tgt = tgt[:-1]
-
-    #     M = torch.from_numpy(getAffineTransform(src, tgt)).unsqueeze(0).float()
-    #     transform_func = warp_affine
-
-    #     a = M[0][0][0]
-    #     b = M[0][0][1]
-    #     c = M[0][1][0]
-    #     d = M[0][1][1]
-    #     s_x = torch.sign(a) * ((a**2 + b**2) ** 0.5)
-    #     s_y = torch.sign(d) * ((c**2 + d**2) ** 0.5)
-    #     M[0][0][0] = s_x + 1e-15
-    #     M[0][0][1] = 0
-    #     M[0][1][0] = 0
-    #     M[0][1][1] = s_y + 1e-15
-        
-    # elif transform == 'affine':
-    #     if len(src) > 3:
-    #         src = src[:-1]
-    #         tgt = tgt[:-1]
-        
-    #     M = torch.from_numpy(getAffineTransform(src, tgt)).unsqueeze(0).float()
-    #     transform_func = warp_affine
-
-    # elif transform == 'perspective':
-    #     if len(src) == 3:
-    #         M = torch.from_numpy(getAffineTransform(src, tgt)).unsqueeze(0).float()
-    #         transform_func = warp_affine
-    #     else:
-    #         src = torch.from_numpy(src).unsqueeze(0)
-    #         tgt = torch.from_numpy(tgt).unsqueeze(0)
-    #         M = get_perspective_transform(src, tgt)
-    #         transform_func = warp_perspective
-    # else:
-    #     raise Exception('Transform does not exist')
-
-    if transform == 'translate_scale':
+    if transform_mode == 'translate_scale':
         min_tgt_x = min(tgt[:, 0])
         max_tgt_x = max(tgt[:, 0])
         min_tgt_y = min(tgt[:, 1])
@@ -277,13 +275,44 @@ def get_transform(
         transform_func = warp_perspective
 
 
+    # if transform_mode in ('affine', 'translate_scale'):
+    #     if len(src) > 3:
+    #         src = src[:-1]
+    #         tgt = tgt[:-1]
+    #     M = torch.from_numpy(getAffineTransform(src, tgt)).unsqueeze(0).float()
+    #     transform_func = warp_affine
+
+    #     if transform_mode == 'translate_scale':
+    #         a = M[0][0][0]
+    #         b = M[0][0][1]
+    #         c = M[0][1][0]
+    #         d = M[0][1][1]
+    #         s_x = torch.sign(a) * ((a ** 2 + b ** 2) ** 0.5)
+    #         s_y = torch.sign(d) * ((c ** 2 + d ** 2) ** 0.5)
+    #         M[0][0][0] = s_x + 1e-15
+    #         M[0][0][1] = 0
+    #         M[0][1][0] = 0
+    #         M[0][1][1] = s_y + 1e-15
+
+    # elif transform_mode == 'perspective':
+    #     if len(src) == 3:
+    #         M = torch.from_numpy(getAffineTransform(src, tgt)).unsqueeze(0).float()
+    #         transform_func = warp_affine
+    #     else:
+    #         src = torch.from_numpy(src).unsqueeze(0)
+    #         tgt = torch.from_numpy(tgt).unsqueeze(0)
+    #         M = get_perspective_transform(src, tgt)
+    #         transform_func = warp_perspective
+    # else:
+    #     raise NotImplementedError(f'transform_mode {transform_mode} does not exist.')
+
     return transform_func, sign_canonical, sign_mask, M.squeeze(), alpha, beta, tgt
 
 
 def apply_transform(
-    image: torch.Tensor,
-    adv_patch: torch.Tensor,
-    patch_mask: torch.Tensor,
+    image: torch.FloatTensor,
+    adv_patch: torch.FloatTensor,
+    patch_mask: torch.FloatTensor,
     patch_loc: Tuple[float],
     transform_func: Any,
     tf_data: Tuple[Any],
@@ -297,7 +326,7 @@ def apply_transform(
     This function is designed to be used with `get_transform` function.
     All Tensor inputs must have batch dimension.
     Args:
-        image (torch.Tensor): Input image
+        image (torch.Tensor): Input image (0-255)
         adv_patch (torch.Tensor): Patch in canonical size
         patch_mask (torch.Tensor): Mask for patch w.r.t. canonical sign
         patch_loc (Tuple[float]): Patch bounding box w.r.t. canonical sign
@@ -356,7 +385,7 @@ def transform_and_apply_patch(
     predicted_class: str,
     row: pd.DataFrame,
     img_data: List,
-    transform: str,
+    transform_mode: str,
     use_relight: bool = True,
     interp: str = 'bilinear',
 ) -> torch.Tensor:
@@ -369,7 +398,7 @@ def transform_and_apply_patch(
 
     sign_size_in_pixel = patch_mask.shape[-1]
     transform_func, sign_canonical, sign_mask, M, alpha, beta, _ = get_transform(
-        sign_size_in_pixel, predicted_class, row, *img_data, transform=transform)
+        sign_size_in_pixel, predicted_class, row, *img_data, transform_mode)
 
     sign_canonical = add_singleton_dim(sign_canonical, 4).to(device)
     sign_mask = add_singleton_dim(sign_mask, 4).to(device)

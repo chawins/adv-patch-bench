@@ -30,29 +30,34 @@ class RP2AttackModule(DetectorAttackModule):
         self.num_steps = attack_config['rp2_num_steps']
         self.step_size = attack_config['rp2_step_size']
         self.optimizer = attack_config['rp2_optimizer']
+        self.use_lr_schedule = attack_config['use_lr_schedule']
         self.num_eot = attack_config['rp2_num_eot']
         self.lmbda = attack_config['rp2_lambda']
         self.min_conf = attack_config['rp2_min_conf']
         self.input_size = attack_config['input_size']
         self.attack_mode = attack_config['attack_mode'].split('-')
-        self.transform = attack_config['transform']
-        # self.use_transform = attack_config['use_patch_transform']
+        self.transform_mode = attack_config['transform_mode']
         self.use_relight = attack_config['use_patch_relight']
         self.detectron_obj_const = 0.
         self.pgd_step_size = 1e-2
+        self.ema_const = 0.99  # Constant for moving average of the loss
 
-        # Use change of variable on delta with alpha and beta
+        # Use change of variable on delta with alpha and beta.
+        # Mostly used with per-sign attack.
         self.use_var_change_ab = 'var_change_ab' in self.attack_mode
         if not self.use_relight:
             self.use_var_change_ab = False
         if self.use_var_change_ab:
+            # Does not work when num_eot > 1
+            assert self.num_eot == 1, ('When use_var_change_ab is used, '
+                                       'num_eot can only be set to 1.')
             # No need to relight further
             self.use_relight = False
 
         # TODO: We probably don't need this now
         # self.rescaling = rescaling
         self.rescaling = False
-        
+
         self.augment_real = attack_config['rp2_augment_real']
         self.interp = interp
         self.num_restarts = 1
@@ -65,7 +70,7 @@ class RP2AttackModule(DetectorAttackModule):
         self.bg_transforms = K.RandomResizedCrop(
             bg_size, scale=(0.8, 1), p=1.0, resample=self.interp)
         self.obj_transforms = K.RandomAffine(
-            30, translate=(0.45, 0.45), p=1.0, return_transform=True, 
+            30, translate=(0.45, 0.45), p=1.0, return_transform=True,
             resample=self.interp)
         self.mask_transforms = K.RandomAffine(
             30, translate=(0.45, 0.45), p=1.0, resample=Resample.NEAREST)
@@ -89,13 +94,24 @@ class RP2AttackModule(DetectorAttackModule):
             opt = optim.RMSprop([z_delta], lr=self.step_size)
         else:
             raise NotImplementedError('Given optimizer not implemented.')
-        return opt
 
-    def compute_loss(self, adv_img, obj_class, metadata):
+        lr_schedule = None
+        if self.use_lr_schedule:
+            # lr_schedule = optim.lr_scheduler.MultiStepLR(opt, [500, 1000, 1500], gamma=0.1)
+            lr_schedule = optim.lr_scheduler.ReduceLROnPlateau(
+                opt, factor=0.5, patience=int(self.num_steps / 10),
+                threshold=1e-9, min_lr=self.step_size * 1e-6, verbose=self.verbose)
+
+        return opt, lr_schedule
+
+    def compute_loss(self, delta, adv_img, obj_class, metadata):
         if self.is_detectron:
             loss = self._compute_loss_rcnn(adv_img, obj_class, metadata)
         else:
             loss = self._compute_loss_yolo(adv_img, obj_class, metadata)
+        tv = ((delta[:, :, :-1, :] - delta[:, :, 1:, :]).abs().mean() +
+              (delta[:, :, :, :-1] - delta[:, :, :, 1:]).abs().mean())
+        loss += self.lmbda * tv
         return loss
 
     def _compute_loss_yolo(self, adv_img, obj_class, metadata):
@@ -159,7 +175,8 @@ class RP2AttackModule(DetectorAttackModule):
             target_loss, obj_loss = 0, 0
             if len(tgt_log) > 0 and len(tgt_lb) > 0:
                 # Ignore the background class on tgt_log
-                target_loss = - F.cross_entropy(tgt_log[:, :-1], tgt_lb, reduction='sum')
+                target_loss = - F.cross_entropy(tgt_log[:, :-1], tgt_lb,
+                                                reduction='sum')
             if len(obj_logits) > 0 and self.detectron_obj_const != 0:
                 obj_lb = torch.zeros_like(obj_log)
                 obj_loss = F.binary_cross_entropy_with_logits(obj_log, obj_lb,
@@ -167,6 +184,19 @@ class RP2AttackModule(DetectorAttackModule):
             loss += target_loss + self.detectron_obj_const * obj_loss
         return loss
 
+    def _print_loss(self, loss, step):
+        if self.ema_loss is None:
+            self.ema_loss = loss.item()
+        else:
+            self.ema_loss = (self.ema_const * self.ema_loss +
+                             (1 - self.ema_const) * loss.item())
+
+        if step % 100 == 0 and self.verbose:
+            print(f'step: {step:4d}  loss: {self.ema_loss:.4f}  '
+                  f'time: {time.time() - self.start_time:.2f}s')
+            self.start_time = time.time()
+
+    @torch.no_grad()
     def attack(
         self,
         obj: torch.Tensor,
@@ -174,7 +204,6 @@ class RP2AttackModule(DetectorAttackModule):
         patch_mask: torch.Tensor,
         backgrounds: torch.Tensor,
         obj_class: int = None,
-        obj_size: tuple = None,
         metadata: Optional[List] = None,
     ) -> torch.Tensor:
         """Run RP2 Attack.
@@ -206,22 +235,17 @@ class RP2AttackModule(DetectorAttackModule):
         ymin, xmin, height, width = mask_to_box(patch_mask)
         all_bg_idx = np.arange(len(backgrounds))
 
-        # TODO: Initialize worst-case inputs, use moving average
+        # TODO: Initialize worst-case inputs
         # x_adv_worst = x.clone().detach()
-        ema_const = 0.99
-        ema_loss = None
 
         for _ in range(self.num_restarts):
             # Initialize adversarial perturbation
             z_delta = torch.zeros((1, 3, height, width), device=device, dtype=dtype)
             z_delta.uniform_(-10, 10)
 
-            opt = self._setup_opt(z_delta)
-            # lr_schedule = optim.lr_scheduler.MultiStepLR(opt, [500, 1000, 1500], gamma=0.1)
-            lr_schedule = optim.lr_scheduler.ReduceLROnPlateau(
-                opt, factor=0.5, patience=int(self.num_steps / 10),
-                threshold=1e-9, min_lr=self.step_size * 1e-6, verbose=self.verbose)
-            start_time = time.time()
+            opt, lr_schedule = self._setup_opt(z_delta)
+            self.start_time = time.time()
+            self.ema_loss = None
 
             # Run PGD on inputs for specified number of steps
             for step in range(self.num_steps):
@@ -234,20 +258,20 @@ class RP2AttackModule(DetectorAttackModule):
                     # Patch image the same way as YOLO
                     bgs = letterbox(bgs, new_shape=self.input_size, color=114/255)[0]
 
-                if self.rescaling:
-                    # UNUSED
-                    synthetic_sign_size = obj_size[0]
-                    old_ratio = synthetic_sign_size / self.input_size[0]
-                    prob_array = [0.38879158, 0.26970227, 0.16462349, 0.07530647, 0.04378284,
-                                  0.03327496, 0.01050788, 0.00700525, 0.00350263, 0.00350263]
-                    new_possible_ratios = [0.05340427, 0.11785139, 0.18229851, 0.24674563,
-                                           0.31119275, 0.3756399, 0.440087, 0.5045341, 0.56898123, 0.6334284, 0.6978755]
-                    index_array = np.arange(0, len(new_possible_ratios) - 1)
-                    sampled_index = np.random.choice(index_array, None, p=prob_array)
-                    low_bin_edge, high_bin_edge = new_possible_ratios[sampled_index], new_possible_ratios[sampled_index+1]
-                    self.obj_transforms = K.RandomAffine(
-                        30, translate=(0.45, 0.45),
-                        p=1.0, return_transform=True, scale=(low_bin_edge / old_ratio, high_bin_edge / old_ratio))
+                # UNUSED
+                # if self.rescaling:
+                #     synthetic_sign_size = obj_size[0]
+                #     old_ratio = synthetic_sign_size / self.input_size[0]
+                #     prob_array = [0.38879158, 0.26970227, 0.16462349, 0.07530647, 0.04378284,
+                #                   0.03327496, 0.01050788, 0.00700525, 0.00350263, 0.00350263]
+                #     new_possible_ratios = [0.05340427, 0.11785139, 0.18229851, 0.24674563,
+                #                            0.31119275, 0.3756399, 0.440087, 0.5045341, 0.56898123, 0.6334284, 0.6978755]
+                #     index_array = np.arange(0, len(new_possible_ratios) - 1)
+                #     sampled_index = np.random.choice(index_array, None, p=prob_array)
+                #     low_bin_edge, high_bin_edge = new_possible_ratios[sampled_index], new_possible_ratios[sampled_index+1]
+                #     self.obj_transforms = K.RandomAffine(
+                #         30, translate=(0.45, 0.45),
+                #         p=1.0, return_transform=True, scale=(low_bin_edge / old_ratio, high_bin_edge / old_ratio))
 
                 adv_obj = obj.clone()
                 with torch.enable_grad():
@@ -282,33 +306,22 @@ class RP2AttackModule(DetectorAttackModule):
                     adv_img = adv_img.clamp(0, 1)
 
                     # DEBUG
-                    # if step % 100 == 0:
-                    #     torchvision.utils.save_image(adv_img[0], f'gen_synthetic_adv_{step}.png')
-                    #     import pdb
-                    #     pdb.set_trace()
+                    if step % 100 == 0:
+                        torchvision.utils.save_image(
+                            adv_img[0], f'gen_synthetic_adv_{step}.png')
 
-                    tv = ((delta[:, :, :-1, :] - delta[:, :, 1:, :]).abs().mean() +
-                          (delta[:, :, :, :-1] - delta[:, :, :, 1:]).abs().mean())
-                    loss = self.compute_loss(adv_img, obj_class, metadata_clone[bg_idx])
-                    loss += self.lmbda * tv
-                    # out, _ = self.core_model(adv_img, val=True)
-                    # loss = out[:, :, 4].mean() + self.lmbda * tv
-                    loss.backward(retain_graph=True)
+                    loss = self.compute_loss(
+                        delta, adv_img, obj_class, metadata_clone[bg_idx])
+                    loss.backward()
                     opt.step()
 
                 # torchvision.utils.save_image(adv_img, 'temp_img.png')
                 # import pdb
                 # pdb.set_trace()
 
-                if ema_loss is None:
-                    ema_loss = loss.item()
-                else:
-                    ema_loss = ema_const * ema_loss + (1 - ema_const) * loss.item()
-                lr_schedule.step(ema_loss)
-
-                if step % 100 == 0 and self.verbose:
-                    print(f'step: {step}  loss: {ema_loss:.6f}  time: {time.time() - start_time:.2f}s')
-                    start_time = time.time()
+                if lr_schedule is not None:
+                    lr_schedule.step(self.ema_loss)
+                self._print_loss(loss, step)
 
             # if self.num_restarts == 1:
             #     x_adv_worst = x_adv
@@ -327,6 +340,7 @@ class RP2AttackModule(DetectorAttackModule):
         self.core_model.train(mode)
         return delta.detach()
 
+    @torch.no_grad()
     def attack_real(
         self,
         objs: List,
@@ -354,21 +368,17 @@ class RP2AttackModule(DetectorAttackModule):
             metadata_clone = self._clone_detectron_metadata(
                 [obj[0] for obj in objs], metadata)
 
-        ema_const = 0.99
-        ema_loss = None
-
         # Process transform data and create batch tensors
         sign_size_in_pixel = patch_mask.size(-1)
 
         # TODO: Assume that every signs use the same transform function
         # i.e., warp_perspetive. Have to fix this for triangles
-        tf_function = get_transform(sign_size_in_pixel, *objs[0][1],
-                                    transform=self.transform)[0]
+        tf_function = get_transform(
+            sign_size_in_pixel, *objs[0][1], self.transform_mode)[0]
         tf_data_temp = [get_transform(sign_size_in_pixel, *obj[1],
-                                      transform=self.transform)[1:-1] for obj in objs]
-        
-        all_tgts = [get_transform(sign_size_in_pixel, *obj[1],
-                                      transform=self.transform)[-1] for obj in objs]
+                                      self.transform_mode)[1:-1] for obj in objs]
+        # all_tgts = [get_transform(sign_size_in_pixel, *obj[1],
+        #                           transform_mode=self.transform_mode)[-1] for obj in objs]
 
         # tf_data contains [sign_canonical, sign_mask, M, alpha, beta]
         tf_data = []
@@ -392,81 +402,74 @@ class RP2AttackModule(DetectorAttackModule):
             z_delta.uniform_(-10, 10)
 
             # Set up optimizer
-            opt = self._setup_opt(z_delta)
-            start_time = time.time()
+            opt, lr_schedule = self._setup_opt(z_delta)
+            self.ema_loss = None
+            self.start_time = time.time()
 
             # Run PGD on inputs for specified number of steps
             for step in range(self.num_steps):
-                z_delta.requires_grad_()
 
                 # Randomly select background and place patch with transforms
                 np.random.shuffle(all_bg_idx)
                 bg_idx = all_bg_idx[:self.num_eot]
                 curr_tf_data = [data[bg_idx] for data in tf_data]
 
-                # Determine how perturbation is projected
-                if 'pgd' in self.attack_mode:
-                    delta = z_delta
-                elif self.use_var_change_ab:
-                    alpha, beta = curr_tf_data[-2:]
-                    delta = self._to_model_space(z_delta, beta, alpha + beta)
-                else:
-                    delta = self._to_model_space(z_delta, 0, 1)
-                delta = delta.repeat(self.num_eot, 1, 1, 1)
+                with torch.enable_grad():
+                    z_delta.requires_grad_()
+                    # Determine how perturbation is projected
+                    if 'pgd' in self.attack_mode:
+                        delta = z_delta
+                    elif self.use_var_change_ab:
+                        # Does not work when num_eot > 1
+                        alpha, beta = curr_tf_data[-2:]
+                        delta = self._to_model_space(z_delta, beta, alpha + beta)
+                    else:
+                        delta = self._to_model_space(z_delta, 0, 1)
+                    delta = delta.repeat(self.num_eot, 1, 1, 1)
 
-                adv_img, _ = apply_transform(
-                    backgrounds[bg_idx].clone(), delta.clone(), patch_mask,
-                    patch_loc, tf_function, curr_tf_data, interp=self.interp,
-                    **self.real_transform, use_relight=self.use_relight)
+                    adv_img, _ = apply_transform(
+                        backgrounds[bg_idx].clone(), delta.clone(), patch_mask,
+                        patch_loc, tf_function, curr_tf_data, interp=self.interp,
+                        **self.real_transform, use_relight=self.use_relight)
 
-                # # DEBUG
-                # # import pdb
-                # # pdb.set_trace()
-                # tgt_pts = all_tgts[bg_idx.item()][0] if all_tgts[bg_idx.item()].ndim == 3 else all_tgts[bg_idx.item()]
-                # for xy in tgt_pts:
-                #     for dx in range(-2, 3):
-                #         for dy in range(-2, 3):
-                #             adv_img[:, 0, int(xy[1]+dy), int(xy[0]+dx)] = 1
-                #             # adv_img[:, 1, int(xy[1]+dy), int(xy[0]+dx)] = 0
-                #             # adv_img[:, 2, int(xy[1]+dy), int(xy[0]+dx)] = 0
-                # # torchvision.utils.save_image(adv_img, 'temp_img.png')
-                # torchvision.utils.save_image(adv_img, f"tmp/{objs[bg_idx.item()][-1].split('.')[0]}_pespective.png")
-                # # torchvision.utils.save_image(adv_img, f"tmp/{objs[bg_idx.item()][-1].split('.')[0]}_translate_scale.png")
-                # continue
-                # import pdb
-                # pdb.set_trace()
-
-                loss = self.compute_loss(adv_img, obj_class, metadata_clone[bg_idx])
-                tv = ((delta[:, :, :-1, :] - delta[:, :, 1:, :]).abs().mean() +
-                      (delta[:, :, :, :-1] - delta[:, :, :, 1:]).abs().mean())
-                # loss = out[:, :, 4].mean() + self.lmbda * tv
-                loss += self.lmbda * tv
-                loss.backward(retain_graph=True)
-
-                if 'pgd' in self.attack_mode:
-                    grad = z_delta.grad.detach()
-                    grad = torch.sign(grad)
-                    z_delta = z_delta.detach() - self.pgd_step_size * grad
-                    z_delta = z_delta.clamp_(0, 1)
-                else:
-                    opt.step()
-
-                if ema_loss is None:
-                    ema_loss = loss.item()
-                else:
-                    ema_loss = ema_const * ema_loss + (1 - ema_const) * loss.item()
-                # lr_schedule.step(loss)
-
-                if step % 100 == 0 and self.verbose:
-                    print(f'step: {step:4d}  loss: {ema_loss:.4f}  '
-                          f'time: {time.time() - start_time:.2f}s')
-                    start_time = time.time()
                     # DEBUG
-                    # import os
-                    # for idx in range(self.num_eot):
-                    #     if not os.path.exists(f'tmp/{idx}/test_adv_img_{step}.png'):
-                    #         os.makedirs(f'tmp/{idx}/', exist_ok=True)
-                    #     torchvision.utils.save_image(adv_img[idx], f'tmp/{idx}/test_adv_img_{step}.png')
+                    # import pdb
+                    # pdb.set_trace()
+                    # tgt_pts = all_tgts[bg_idx.item()][0] if all_tgts[bg_idx.item()].ndim == 3 else all_tgts[bg_idx.item()]
+                    # for xy in tgt_pts:
+                    # # for xy in all_tgts[bg_idx.item()][0]:
+                    # # for xy in all_tgts[bg_idx.item()]:
+                    #     for dx in range(-2, 3):
+                    #         for dy in range(-2, 3):
+                    #             adv_img[:, 0, int(xy[1]+dy), int(xy[0]+dx)] = 1
+                    #             adv_img[:, 1, int(xy[1]+dy), int(xy[0]+dx)] = 0
+                    #             adv_img[:, 2, int(xy[1]+dy), int(xy[0]+dx)] = 0
+                    # torchvision.utils.save_image(adv_img, 'temp_img.png')
+                    # import pdb
+                    # pdb.set_trace()
+
+                    loss = self.compute_loss(
+                        delta, adv_img, obj_class, metadata_clone[bg_idx])
+                    loss.backward()
+
+                    if 'pgd' in self.attack_mode:
+                        grad = z_delta.grad.detach()
+                        grad = torch.sign(grad)
+                        z_delta = z_delta.detach() - self.pgd_step_size * grad
+                        z_delta = z_delta.clamp_(0, 1)
+                    else:
+                        opt.step()
+
+                if lr_schedule is not None:
+                    lr_schedule.step(loss)
+                self._print_loss(loss, step)
+
+                # DEBUG
+                # import os
+                # for idx in range(self.num_eot):
+                #     if not os.path.exists(f'tmp/{idx}/test_adv_img_{step}.png'):
+                #         os.makedirs(f'tmp/{idx}/', exist_ok=True)
+                #     torchvision.utils.save_image(adv_img[idx], f'tmp/{idx}/test_adv_img_{step}.png')
 
         # DEBUG
         # outt = non_max_suppression(out.detach(), conf_thres=0.25, iou_thres=0.45)

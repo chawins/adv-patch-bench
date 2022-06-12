@@ -1,7 +1,9 @@
 import argparse
+import os
 
 from detectron2.config import get_cfg
 from detectron2.engine import default_argument_parser, default_setup
+from hparams import LABEL_LIST, PATH_SYN_OBJ
 
 
 def eval_args_parser(is_detectron, root=None):
@@ -15,9 +17,9 @@ def eval_args_parser(is_detectron, root=None):
     parser.add_argument('--dataset', type=str, required=False)
     parser.add_argument('--data-no-other', action='store_true',
                         help='If True, do not load "other" or "background" class to the dataset.')
-    parser.add_argument('--other-class-label', type=int, default=None, help="Class for the 'other' label")
+    parser.add_argument('--other-class-label', type=int, default=None,
+                        help="Class for the 'other' label")
     parser.add_argument('--eval-mode', type=str, default=None)
-
     parser.add_argument('--interp', type=str, default='bicubic',
                         help='interpolation method: nearest, bilinear, bicubic (default)')
     parser.add_argument('--synthetic', action='store_true',
@@ -32,28 +34,32 @@ def eval_args_parser(is_detectron, root=None):
 
     # =========================== Attack arguments ========================== #
     parser.add_argument('--attack-type', type=str, default='none',
-                        help='which attack evaluation to run: none (default), load, per-sign, random, debug')
-    parser.add_argument('--patch-transform', type=str, default='perspective',
-                        help='which patch transform to use: perspective (default), translate_scale, affine')
+                        help=('attack evaluation to run: none (default), load,'
+                              ' per-sign, random, debug'))
     parser.add_argument('--adv-patch-path', type=str, default=None,
                         help='path to adv patch and mask to load')
-    parser.add_argument('--mask-dir', type=str, default='./masks/',
-                        help='Path to dir with predefined masks')
+    parser.add_argument('--mask-dir', type=str, default=None,
+                        help=('Path to dir with predefined masks '
+                              '(default: generate a new mask)'))
     parser.add_argument('--obj-class', type=int, default=-1,
                         help='class of object to attack (-1: all classes)')
     parser.add_argument('--tgt-csv-filepath', required=True,
                         help='path to csv which contains target points for transform')
     parser.add_argument('--attack-config-path',
                         help='path to yaml file with attack configs (used when attack_type is per-sign)')
-    parser.add_argument('--syn-obj-path', type=str, default='',
-                        help='path to an image of a synthetic sign (used when synthetic_eval is True')
     parser.add_argument('--img-txt-path', type=str, default='',
                         help='path to a text file containing image filenames')
     parser.add_argument('--run-only-img-txt', action='store_true',
-                        help='run evaluation on images listed in img-txt-path. Otherwise, exclude these images.')
-    parser.add_argument('--no-patch-transform', action='store_true',
-                        help=('If True, do not apply patch to signs using '
-                              '3D-transform. Patch will directly face camera.'))
+                        help=('run evaluation on images listed in img-txt-path. '
+                              'Otherwise, images in img-txt-path are excluded instead.'))
+    # parser.add_argument('--no-patch-transform', action='store_true',
+    #                     help=('If True, do not apply patch to signs using '
+    #                           '3D-transform. Patch will directly face camera.'))
+    parser.add_argument('--transform-mode', type=str, default='perspective',
+                        help=('transform type to use on patch during evaluation'
+                              ': perspective (default), affine, translate_scale.'
+                              ' This can be different from patch generation'
+                              ' specified in attack config'))
     parser.add_argument('--no-patch-relight', action='store_true',
                         help=('If True, do not apply relighting transform to patch'))
     parser.add_argument('--min-area', type=float, default=0,
@@ -63,24 +69,27 @@ def eval_args_parser(is_detectron, root=None):
     parser.add_argument('--min-pred-area', type=float, default=0,
                         help=('Minimum area for predictions. if a predicion has area < min_area and '
                               'that prediction is not matched to any label, it will be discarded'))
-    parser.add_argument('--conf-thres', type=float, default=None,
-                        help=('Set confidence threshold for detection.'
-                              'Otherwise, threshold is set to max f1 score.'))
+    # TODO: deprecate, set automatically given obj class
+    parser.add_argument('--syn-obj-path', type=str, default='',
+                        help='path to an image of a synthetic sign (used when synthetic_eval is True')
 
     # ===================== Patch generation arguments ====================== #
     parser.add_argument('--obj-size', type=int, default=None,
                         help='Object width in pixels (default: 0.1 * img_size)')
-    parser.add_argument('--patch-size-inch', type=int, default=None,
-                        help='Patch size in inches (deprecated)')
+    # parser.add_argument('--patch-size-inch', type=int, default=None,
+    #                     help='Patch size in inches (deprecated)')
     parser.add_argument('--bg-dir', type=str, default='',
                         help='path to background directory')
-    parser.add_argument('--num-bg', type=float, default=1,
-                        help='Number of backgrounds used to generate patch')
+    # parser.add_argument('--num-bg', type=float, default=1,
+    #                     help='Number of backgrounds used to generate patch')
     parser.add_argument('--save-images', action='store_true',
                         help='Save generated patch')
     # parser.add_argument('--detectron', action='store_true', help='Model is detectron else YOLO')
 
     if is_detectron:
+        parser.add_argument('--conf-thres', type=float, default=None,
+                            help=('Set confidence threshold for detection.'
+                                  'Otherwise, threshold is set to max f1 score.'))
         # TODO: is this still used?
         parser.add_argument('--compute-metrics', action='store_true',
                             help='Compute metrics after running attack')
@@ -143,13 +152,15 @@ def eval_args_parser(is_detectron, root=None):
         help='confidence threshold at which other labels are changed if there is a match with a prediction')
 
     args = parser.parse_args()
-    verify_args(args)
+    verify_args(args, is_detectron)
     return args
 
 
-def verify_args(args):
+def verify_args(args, is_detectron):
     assert args.interp in ('nearest', 'bilinear', 'bicubic')
     assert args.attack_type in ('none', 'load', 'per-sign', 'random', 'debug')
+    if not is_detectron:
+        assert args.model_name in ('yolov5', 'yolor')
 
 
 def parse_dataset_name(args):
@@ -159,6 +170,9 @@ def parse_dataset_name(args):
     args.use_color = 'no_color' not in tokens
     # Set YOLO data yaml file
     args.data = f'{args.dataset}.yaml'
+    # Set path to synthetic object used by synthetic attack only
+    args.syn_obj_path = os.path.join(
+        PATH_SYN_OBJ, LABEL_LIST[args.dataset][args.obj_class] + '.png')
     return tokens
 
 
@@ -190,4 +204,14 @@ def setup_detectron_test_args(args, other_sign_class):
 
     cfg.freeze()
     default_setup(cfg, args)
+
+    # Set path to synthetic object used by synthetic attack only
+    args.syn_obj_path = os.path.join(
+        PATH_SYN_OBJ, LABEL_LIST[args.dataset][args.obj_class] + '.png')
     return cfg
+
+
+def setup_yolo_test_args(args, other_sign_class):
+    parse_dataset_name(args)
+    # Set to default value. This is different from conf_thres in detectron
+    args.conf_thres = 0.001

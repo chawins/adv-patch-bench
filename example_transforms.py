@@ -17,13 +17,13 @@ from kornia.geometry.transform import (get_perspective_transform, resize,
 from PIL import Image
 from torchvision.utils import save_image
 from tqdm.auto import tqdm
-from adv_patch_bench.transforms.transforms import get_sign_canonical
 
 from adv_patch_bench.dataloaders import ImageOnlyFolder
 from adv_patch_bench.models import build_classifier
 from adv_patch_bench.transforms import (gen_sign_mask, get_box_vertices,
                                         get_corners, get_shape_from_vertices,
                                         relight_range)
+from adv_patch_bench.transforms.transforms import get_sign_canonical
 from adv_patch_bench.utils import (draw_from_contours, img_numpy_to_torch,
                                    pad_image)
 
@@ -107,6 +107,7 @@ def get_args_parser():
     parser.add_argument('--resume', default='', type=str, help='path to latest checkpoint')
     parser.add_argument('--split', default='training', type=str)
     return parser
+
 
 def draw_vertices(traffic_sign, points, color=[0, 255, 0]):
     size = traffic_sign.size(-1)
@@ -448,7 +449,7 @@ def main(args):
             traffic_sign = img_numpy_to_torch(image)
             old_patch = torch.masked_select(traffic_sign, torch.from_numpy(bool_mask).bool())
             alpha, beta = relight_range(old_patch.numpy().reshape(-1, 1))
-            
+
             df_filenames.append(filename)
             df_alphas.append(alpha)
             df_betas.append(beta)
@@ -502,6 +503,7 @@ def main(args):
     offset_df['obj_id'] = offset_df['obj_id'].astype('int64')
     df = df.merge(right=offset_df, left_on=['filename', 'object_id'], right_on=['filename', 'obj_id'])
     df.to_csv(csv_filename, index=False)
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('Example Transform', parents=[get_args_parser()])

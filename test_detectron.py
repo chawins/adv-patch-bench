@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import pickle
 import random
@@ -22,25 +23,32 @@ from adv_patch_bench.dataloaders import (BenignMapper, get_mapillary_dict,
 from adv_patch_bench.utils.argparse import (eval_args_parser,
                                             setup_detectron_test_args)
 from adv_patch_bench.utils.detectron import build_evaluator
-from hparams import DATASETS, LABEL_LIST, OTHER_SIGN_CLASS, SAVE_DIR_DETECTRON
+from hparams import (DATASETS, LABEL_LIST, NUM_CLASSES, OTHER_SIGN_CLASS, PATH_SYN_OBJ,
+                     SAVE_DIR_DETECTRON, TS_NO_COLOR_LABEL_LIST)
+
+log = logging.getLogger(__name__)
+formatter = logging.Formatter('[%(levelname)s] %(asctime)s: %(message)s')
 
 
 def main(cfg, args):
     # NOTE: distributed is set to False
     dataset_name = cfg.DATASETS.TEST[0]
-    print(f'=> Creating a custom evaluator on {dataset_name}...')
+    log.info(f'=> Creating a custom evaluator on {dataset_name}...')
     evaluator = build_evaluator(cfg, dataset_name)
     if args.debug:
-        print(f'=> Running debug mode...')
+        log.info(f'=> Running debug mode...')
         sampler = list(range(20))
     else:
         sampler = None
-    print(f'=> Building {dataset_name} dataloader...')
-    val_loader = build_detection_test_loader(cfg, dataset_name,
-                                             # batch_size=cfg.SOLVER.IMS_PER_BATCH,
-                                             batch_size=1,
-                                             num_workers=cfg.DATALOADER.NUM_WORKERS,
-                                             sampler=sampler)
+    log.info(f'=> Building {dataset_name} dataloader...')
+    val_loader = build_detection_test_loader(
+        cfg,
+        dataset_name,
+        # batch_size=cfg.SOLVER.IMS_PER_BATCH,
+        batch_size=1,
+        num_workers=cfg.DATALOADER.NUM_WORKERS,
+        sampler=sampler,
+    )
     # val_iter = iter(val_loader)
     # print(max([next(val_iter)[0]['image'].shape[0] for _ in range(5000)]))
     # import pdb
@@ -88,16 +96,7 @@ def main_single(cfg, dataset_params):
 
 def main_attack(cfg, args, dataset_params):
 
-    # Create folder for saving eval results
-    class_names = LABEL_LIST[args.dataset]
-    if args.obj_class == -1:
-        class_name = 'all'
-    elif 0 <= args.obj_class <= len(class_names) - 1:
-        class_name = class_names[args.obj_class]
-    else:
-        raise ValueError((f'Invalid target object class ({args.obj_class}). '
-                          f'Must be between -1 and {len(class_names) - 1}.'))
-    save_dir = os.path.join(SAVE_DIR_DETECTRON, args.name, class_name)
+    save_dir = get_save_dir(args)
     vis_dir = os.path.join(save_dir, 'vis')
     os.makedirs(vis_dir, exist_ok=True)
     args.adv_patch_path = os.path.join(save_dir, 'adv_patch.pkl')
@@ -111,28 +110,39 @@ def main_attack(cfg, args, dataset_params):
 
     # Build model
     model = DefaultPredictor(cfg).model
+
     # Build dataloader
     val_loader = build_detection_test_loader(
         cfg, cfg.DATASETS.TEST[0], mapper=BenignMapper(cfg, is_train=False),
         # cfg, cfg.DATASETS.TEST[0],
         batch_size=1, num_workers=cfg.DATALOADER.NUM_WORKERS
     )
-    # TODO: To generate more dense proposals
-    # cfg.MODEL.RPN.NMS_THRESH = nms_thresh
-    # cfg.MODEL.RPN.POST_NMS_TOPK_TEST = 5000
+
     attack = DAGAttacker(cfg, args, attack_config, model, val_loader,
                          class_names=LABEL_LIST[args.dataset])
     if args.attack_type != 'none':
         adv_patch, patch_mask = pickle.load(open(args.adv_patch_path, 'rb'))
     else:
         patch_mask = None
-    print('=> Running attack...')
+    log.info('=> Running attack...')
     coco_instances_results, metrics = attack.run(
         patch_mask,
         vis_save_dir=vis_dir,
         vis_conf_thresh=0.5,
     )
     pickle.dump(metrics, open(os.path.join(save_dir, 'results.pkl'), 'wb'))
+
+    # Logging results
+    metrics = metrics['bbox']
+    max_f1_idx, tp_full, fp_full, num_gts_per_class = metrics['dumped_metrics']
+    metrics['dumped_metrics'] = None
+    for k, v in metrics.items():
+        log.info(f'{k}: {v}')
+    iou_idx = 0
+    tp, fp = tp_full[iou_idx, :, max_f1_idx], fp_full[iou_idx, :, max_f1_idx]
+    log.info('          tp   fp   num_gt')
+    for i, (t, f, n) in enumerate(zip(tp, fp, num_gts_per_class)):
+        log.info(f'Class {i:2d}: {int(t):4d} {int(f):4d} {int(n):4d}')
 
 
 def compute_metrics(cfg, args):
@@ -185,15 +195,37 @@ def compute_metrics(cfg, args):
     return
 
 
+def get_save_dir(args):
+    # Create folder for saving eval results
+    class_names = LABEL_LIST[args.dataset]
+    if args.obj_class == -1:
+        class_name = 'all'
+    elif 0 <= args.obj_class <= len(class_names) - 1:
+        class_name = class_names[args.obj_class]
+    else:
+        raise ValueError((f'Invalid target object class ({args.obj_class}). '
+                          f'Must be between -1 and {len(class_names) - 1}.'))
+    save_dir = os.path.join(SAVE_DIR_DETECTRON, args.name, class_name)
+    os.makedirs(save_dir, exist_ok=True)
+    return save_dir
+
+
 if __name__ == "__main__":
     args = eval_args_parser(True)
-    print('Command Line Args:', args)
-    args.img_size = args.padded_imgsz
-
     # Verify some args
     cfg = setup_detectron_test_args(args, OTHER_SIGN_CLASS)
     assert args.dataset in DATASETS
 
+    # Set up logger
+    save_dir = get_save_dir(args)
+    log.setLevel(logging.DEBUG if args.debug else logging.INFO)
+    file_handler = logging.FileHandler(os.path.join(save_dir, 'results.log'),
+                                       mode='a')
+    file_handler.setFormatter(formatter)
+    log.addHandler(file_handler)
+
+    log.info(args)
+    args.img_size = args.padded_imgsz
     torch.random.manual_seed(cfg.SEED)
     np.random.seed(cfg.SEED)
     random.seed(cfg.SEED)

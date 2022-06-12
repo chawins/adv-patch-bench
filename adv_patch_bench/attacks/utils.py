@@ -1,7 +1,7 @@
 import ast
+import os
 import pickle
 from argparse import Namespace
-from re import I
 from typing import Any, List, Tuple, Union
 
 import numpy as np
@@ -11,6 +11,7 @@ import torchvision
 import torchvision.transforms.functional as T
 from adv_patch_bench.utils.image import (mask_to_box, pad_and_center,
                                          prepare_obj)
+from hparams import PATH_SYN_OBJ
 from kornia import augmentation as K
 from kornia.constants import Resample
 from kornia.geometry.transform import resize
@@ -24,8 +25,9 @@ def prep_synthetic_eval(
 ):
     # Testing with synthetic signs
     # Add synthetic label to the label names at the last position
+    # FIXME
     syn_sign_class = len(label_names)
-    label_names[syn_sign_class] = 'synthetic'
+    # label_names[syn_sign_class] = 'synthetic'
     # Set up random transforms for synthetic sign
     # obj_transforms = K.RandomAffine(20, translate=(0.45, 0.45), p=1.0,
     #                                 return_transform=True, scale=(0.25, 0.5))
@@ -44,7 +46,6 @@ def prep_synthetic_eval(
     obj, obj_mask = prepare_obj(args.syn_obj_path, img_size, (obj_size, obj_size))
     obj = obj.to(device)
     obj_mask = obj_mask.to(device)  # .unsqueeze(0)
-
     return obj, obj_mask, obj_transforms, mask_transforms, syn_sign_class
 
 
@@ -63,7 +64,8 @@ def prep_attack(
 
     if args.attack_type == 'debug':
         # Load 'arrow on checkboard' patch if specified (for debug)
-        adv_patch = torchvision.io.read_image('demo.png').float()[:3, :, :] / 255
+        adv_patch = torchvision.io.read_image(
+            os.path.join(PATH_SYN_OBJ, 'debug.png')).float()[:3, :, :] / 255
         adv_patch = resize(adv_patch, (patch_height, patch_width))
     elif args.attack_type == 'random':
         # Patch with uniformly random pixels
@@ -81,10 +83,11 @@ def prep_attack(
     if args.synthetic:
         # Adv patch and mask have to be made compatible with random
         # transformation for synthetic signs
-        h_w_ratio = patch_mask.shape[0]/patch_mask.shape[1]
+        h_w_ratio = patch_mask.shape[-2] / patch_mask.shape[-1]
         if isinstance(obj_size, int):
             obj_size_px = (round(obj_size * h_w_ratio), obj_size)
         _, patch_mask = pad_and_center(None, patch_mask, img_size, obj_size_px)
+        patch_mask.squeeze_()
         patch_loc = mask_to_box(patch_mask)
         # Pad adv patch
         pad_size = [
@@ -124,7 +127,8 @@ def apply_synthetic_sign(
     adv_obj.clamp_(0, 1)
     o_mask = mask_transforms.apply_transform(
         syn_obj_mask, None, transform=tf_params.to(device))
-    adv_img = o_mask * adv_obj + (1 - o_mask) * image.to(device) / 255
+    image = image.to(device).view_as(adv_obj) / 255
+    adv_img = o_mask * adv_obj + (1 - o_mask) * image
     perturbed_image = adv_img.squeeze() * 255
 
     if not return_target:

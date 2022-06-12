@@ -554,7 +554,7 @@ class COCOeval:
         # print(recall_full[0, :, 10])
         # print(precision_full[0, :, 10])
         # print(pr[:, 10])
-        
+
         # Find score threshold that maximizes F1 score
         num_scores = 1000
         EPS = np.spacing(1)
@@ -602,7 +602,7 @@ class COCOeval:
             'recall': recall,
             'scores': scores,
             'recall_cmb': recall_cmb,
-            'dumped_metrics': [tp_full, fp_full, num_gts_per_class],
+            'dumped_metrics': [max_f1_idx, tp_full, fp_full, num_gts_per_class],
         }
         toc = time.time()
         print('DONE (t={:0.2f}s).'.format(toc-tic))

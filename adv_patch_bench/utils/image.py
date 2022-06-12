@@ -1,6 +1,7 @@
 import json
 import os
 from os.path import join
+from typing import Tuple
 
 import numpy as np
 import torch
@@ -22,15 +23,26 @@ def get_image_files(path):
     return image_keys
 
 
+def pad_to_size(img: torch.Tensor, size: Tuple[int, int]):
+    img_size = img.shape[-2:]
+    pad_size = [
+        (size[1] - img_size[1]) // 2,  # left
+        (size[0] - img_size[0]) // 2,  # top
+        size[1] - img_size[1] - (size[1] - img_size[1]) // 2,  # right
+        size[0] - img_size[0] - (size[0] - img_size[0]) // 2,  # bottom
+    ]
+    bbox = [pad_size[0], pad_size[1], size[1] - pad_size[2], size[0] - pad_size[3]]
+    return pad_image(img, pad_size), bbox
+
+
 def pad_image(img, pad_size=0.1, pad_mode='constant', return_pad_size=False):
+    pad_size = int(max(height, width) * pad_size) if isinstance(pad_size, float) else pad_size
     if isinstance(img, np.ndarray):
         height, width = img.shape[0], img.shape[1]
-        pad_size = int(max(height, width) * pad_size) if isinstance(pad_size, float) else pad_size
         pad_size_tuple = ((pad_size, pad_size), (pad_size, pad_size)) + ((0, 0), ) * (img.ndim - 2)
         img_padded = np.pad(img, pad_size_tuple, mode=pad_mode)
     else:
         height, width = img.shape[img.ndim - 2], img.shape[img.ndim - 1]
-        pad_size = int(max(height, width) * pad_size) if isinstance(pad_size, float) else pad_size
         img_padded = T.pad(img, pad_size, padding_mode=pad_mode)
     if return_pad_size:
         return img_padded, pad_size
@@ -171,7 +183,8 @@ def pad_and_center(obj, obj_mask, img_size, obj_size):
         obj = T.resize(obj, obj_size, antialias=True)
         obj = T.pad(obj, pad_size)
 
-    obj_mask = T.resize(obj_mask.unsqueeze(dim=0), obj_size, interpolation=T.InterpolationMode.NEAREST)
+    obj_mask = T.resize(obj_mask.unsqueeze(dim=0), obj_size,
+                        interpolation=T.InterpolationMode.NEAREST)
     obj_mask = T.pad(obj_mask, pad_size)
     return obj, obj_mask
 

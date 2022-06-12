@@ -27,18 +27,18 @@ from adv_patch_bench.attacks.rp2 import RP2AttackModule
 from adv_patch_bench.attacks.utils import (apply_synthetic_sign, prep_attack,
                                            prep_synthetic_eval)
 from adv_patch_bench.transforms import transform_and_apply_patch
-from adv_patch_bench.utils.argparse import eval_args_parser, parse_dataset_name
-from hparams import OTHER_SIGN_CLASS
+from adv_patch_bench.utils.argparse import (eval_args_parser,
+                                            setup_yolo_test_args)
+from hparams import OTHER_SIGN_CLASS, SAVE_DIR_YOLO
 from yolor.models.models import Darknet
 from yolov5.models.common import DetectMultiBackend
 from yolov5.utils.callbacks import Callbacks
 from yolov5.utils.datasets import create_dataloader
 from yolov5.utils.general import (LOGGER, box_iou, check_dataset,
                                   check_img_size, check_requirements,
-                                  check_yaml, coco80_to_coco91_class, colorstr,
-                                  increment_path, non_max_suppression,
-                                  print_args, scale_coords, xywh2xyxy,
-                                  xyxy2xywh)
+                                  check_yaml, colorstr, increment_path,
+                                  non_max_suppression, print_args,
+                                  scale_coords, xywh2xyxy, xyxy2xywh)
 from yolov5.utils.metrics import ConfusionMatrix, ap_per_class_custom
 from yolov5.utils.plots import (output_to_target, plot_false_positives,
                                 plot_images, plot_val_study)
@@ -77,8 +77,7 @@ def save_one_json(predn, jdict, path, class_map):
 
 
 def process_batch(detections, labels, iouv, other_class_label=None,
-                  other_class_confidence_threshold=0,
-                  match_on_iou_only=False):
+                  other_class_confidence_threshold=0, match_on_iou_only=False):
     """
     Return correct predictions matrix. Both sets of boxes are in (x1, y1, x2, y2) format.
     Arguments:
@@ -160,7 +159,6 @@ def run(args,
         exist_ok=False,  # existing project/name ok, do not increment
         half=True,  # use FP16 half-precision inference
         dnn=False,  # use OpenCV DNN for ONNX inference
-        model=None,
         dataloader=None,
         save_dir=Path(''),
         plots=True,
@@ -176,13 +174,11 @@ def run(args,
     save_exp_metrics = args.save_exp_metrics
     plot_single_images = args.plot_single_images
     plot_class_examples = [int(x) for x in args.plot_class_examples]
-    adv_patch_path = args.adv_patch_path
     attack_config_path = args.attack_config_path
     adv_sign_class = args.obj_class
     min_area = args.min_area
     model_name = args.model_name
     annotated_signs_only = args.annotated_signs_only
-    # other_class_label = args.other_class_label
     other_class_label = OTHER_SIGN_CLASS[args.dataset]
     # model_trained_without_other = args.model_trained_without_other
     other_class_confidence_threshold = args.other_class_confidence_threshold
@@ -200,16 +196,17 @@ def run(args,
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
 
-    DATASET_NAME = 'mapillary' if 'mapillary' in data else 'mtsd'
+    dataset_name = 'mapillary' if 'mapillary' in data else 'mtsd'
     try:
         metrics_df = pd.read_csv('runs/results.csv')
         metrics_df = metrics_df.replace({'apply_patch': 'True', 'random_patch': 'True'}, 1)
         metrics_df = metrics_df.replace({'apply_patch': 'False', 'random_patch': 'False'}, 0)
         metrics_df['apply_patch'] = metrics_df['apply_patch'].astype(float).astype(bool)
         metrics_df['random_patch'] = metrics_df['random_patch'].astype(float).astype(bool)
-        metrics_df_grouped = metrics_df.groupby(by=['dataset', 'apply_patch', 'random_patch']).count().reset_index()
+        metrics_df_grouped = metrics_df.groupby(
+            by=['dataset', 'apply_patch', 'random_patch']).count().reset_index()
         metrics_df_grouped = metrics_df_grouped[
-            (metrics_df_grouped['dataset'] == DATASET_NAME) &
+            (metrics_df_grouped['dataset'] == dataset_name) &
             (metrics_df_grouped['apply_patch'] == use_attack) &
             (metrics_df_grouped['random_patch'] == (attack_type == 'random'))]['name']
         exp_number = 0 if not len(metrics_df_grouped) else metrics_df_grouped.item()
@@ -217,81 +214,70 @@ def run(args,
         exp_number = 0
 
     # Set folder and experiment name
-    name += f'_{DATASET_NAME}_{attack_type}_{exp_number}'
+    name += f'_{dataset_name}_{attack_type}_{exp_number}'
     # name += f'_{DATASET_NAME}_{split}_{attack_type}_{exp_number}'
     print(f'=> Experiment name: {name}')
 
     # Initialize/load model and set device
-    print('[INFO] Loading Model')
-    training = model is not None
-    if training:  # called by train.py
-        device, pt, jit, engine = next(model.parameters()).device, True, False, False  # get model device, PyTorch model
+    LOGGER.info('Loading Model...')
+    device = select_device(device, batch_size=batch_size)
 
-        half &= device.type != 'cpu'  # half precision only supported on CUDA
-        model.half() if half else model.float()
-    else:  # called directly
-        device = select_device(device, batch_size=batch_size)
+    # Directories
+    save_dir = increment_path(Path(project) / name, exist_ok=exist_ok)  # increment run
+    (save_dir / 'labels' if save_txt else save_dir).mkdir(parents=True, exist_ok=True)  # make dir
 
-        # Directories
-        save_dir = increment_path(Path(project) / name, exist_ok=exist_ok)  # increment run
-        (save_dir / 'labels' if save_txt else save_dir).mkdir(parents=True, exist_ok=True)  # make dir
+    if model_name == 'yolov5':
+        # Load model
+        model = DetectMultiBackend(weights, device=device, dnn=dnn)
+        stride, pt, jit, engine = model.stride, model.pt, model.jit, model.engine
+        # check image size
+        imgsz = check_img_size(imgsz, s=stride)  
+        # half precision only supported by PyTorch on CUDA
+        half &= (pt or jit or engine) and device.type != 'cpu'  
+        if pt or jit:
+            model.model.half() if half else model.model.float()
+        elif engine:
+            batch_size = model.batch_size
+        else:
+            half = False
+            batch_size = 1  # export.py models default to batch-size 1
+            device = torch.device('cpu')
+            LOGGER.info(f'Forcing --batch-size 1 square inference shape'
+                        f'(1,3,{imgsz},{imgsz}) for non-PyTorch backends')
+    elif model_name == 'yolor':
+        # Load model
+        cfg = 'yolor/cfg/yolor_p6.cfg'
+        model = Darknet(cfg, imgsz).cuda()
+        model.load_state_dict(
+            torch.load(weights[0], map_location=device)['model'])
+        model.to(device).eval()
+        stride, pt = 64, True
+        if half:
+            model.half()  # to FP16
 
-        if model_name == 'yolov5':
-            # Load model
-            model = DetectMultiBackend(weights, device=device, dnn=dnn)
-            stride, pt, jit, engine = model.stride, model.pt, model.jit, model.engine
-            imgsz = check_img_size(imgsz, s=stride)  # check image size
-            half &= (pt or jit or engine) and device.type != 'cpu'  # half precision only supported by PyTorch on CUDA
-            if pt or jit:
-                model.model.half() if half else model.model.float()
-            elif engine:
-                batch_size = model.batch_size
-            else:
-                half = False
-                batch_size = 1  # export.py models default to batch-size 1
-                device = torch.device('cpu')
-                LOGGER.info(
-                    f'Forcing --batch-size 1 square inference shape(1,3,{imgsz},{imgsz}) for non-PyTorch backends')
-        elif model_name == 'yolor':
-            # Load model
-            cfg = 'yolor/cfg/yolor_p6.cfg'
-            model = Darknet(cfg, imgsz).cuda()
-            model.load_state_dict(torch.load(weights[0], map_location=device)['model'])
-            model.to(device).eval()
-            stride, pt = 64, True
-            if half:
-                model.half()  # to FP16
-
-        # Data
-        data = check_dataset(data)  # check
+    # Data
+    data = check_dataset(data)  # check
 
     print(data['train'])
 
     # Configure
     model.eval()
-    is_coco = isinstance(data.get('val'), str) and data['val'].endswith('coco/val2017.txt')  # COCO dataset
-
     iouv = torch.linspace(0.5, 0.95, 10).to(device)  # iou vector for mAP@0.5:0.95
     niou = iouv.numel()
 
     # Dataloader
-    if not training:
-        pad = 0.0 if task == 'speed' else 0.5
-        task = task if task in ('train', 'val', 'test') else 'val'  # path to train/val/test images
-        if model_name == 'yolov5':
-            model.warmup(imgsz=(1, 3, imgsz, imgsz), half=half)  # warmup
-        elif model_name == 'yolor':
-            img = torch.zeros((1, 3, imgsz, imgsz), device=device)  # init img
-            _ = model(img.half() if half else img) if device.type != 'cpu' else None  # run once
+    pad = 0.5
+    if model_name == 'yolov5':
+        model.warmup(imgsz=(1, 3, imgsz, imgsz), half=half)  # warmup
+    elif model_name == 'yolor':
+        img = torch.zeros((1, 3, imgsz, imgsz), device=device)  # init img
+        # run once to warmup
+        _ = model(img.half() if half else img) if device.type != 'cpu' else None  
 
-        dataloader = create_dataloader(data[task], imgsz, batch_size, stride,
-                                       single_cls, pad=pad, rect=pt,
-                                       workers=workers,
-                                       prefix=colorstr(f'{task}: '))[0]
-
-        # path = data['test'] if opt.task == 'test' else data['val']  # path to val/test images
-        # dataloader = create_dataloader(path, imgsz, batch_size, 64, opt, pad=0.5, rect=True)[0]
-
+    dataloader = create_dataloader(data[task], imgsz, batch_size, stride,
+                                   single_cls, pad=pad, rect=pt,
+                                   workers=workers,
+                                   prefix=colorstr(f'{task}: '))[0]
     seen = 0
 
     try:
@@ -305,7 +291,7 @@ def run(args,
 
     confusion_matrix = ConfusionMatrix(nc=nc)
 
-    class_map = coco80_to_coco91_class() if is_coco else list(range(1000))
+    class_map = list(range(1000))
     s = ('%20s' + '%11s' * 6) % ('Class', 'Images', 'Labels', 'P', 'R', 'mAP@.5', 'mAP@.5:.95')
     dt, p, r, f1, mp, mr, map50, map = [0.0, 0.0, 0.0], 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
     loss = torch.zeros(3, device=device)
@@ -331,19 +317,21 @@ def run(args,
 
     if use_attack:
         # Prepare attack data
-        df, adv_patch, patch_mask, patch_loc = prep_attack(args, img_size, device)
+        adv_patch_dir = os.path.join(
+            SAVE_DIR_YOLO, args.name, names[adv_sign_class])
+        adv_patch_path = os.path.join(adv_patch_dir, 'adv_patch.pkl')
+        args.adv_patch_path = adv_patch_path
+        df, adv_patch, patch_mask, patch_loc = prep_attack(
+            args, img_size, device)
 
     # Initialize attack
     if attack_type == 'per-sign':
-        try:
-            with open(attack_config_path) as file:
-                attack_config = yaml.load(file, Loader=yaml.FullLoader)
-                attack_config['input_size'] = img_size
-
-            attack = RP2AttackModule(attack_config, model, None, None, None,
-                                     rescaling=False, interp=args.interp, verbose=verbose)
-        except:
-            raise Exception('Config file not provided for targeted attacks')
+        with open(attack_config_path) as file:
+            attack_config = yaml.load(file, Loader=yaml.FullLoader)
+        attack_config['input_size'] = img_size
+        attack = RP2AttackModule(attack_config, model, None, None, None,
+                                 rescaling=False, interp=args.interp,
+                                 verbose=verbose)
 
     # ======================================================================= #
     #                          BEGIN: Main eval loop                          #
@@ -356,10 +344,6 @@ def run(args,
     if args.img_txt_path != '':
         with open(args.img_txt_path, 'r') as f:
             filename_list = f.read().splitlines()
-
-    # print(filename_list)
-    # import pdb
-    # pdb.set_trace()
 
     if plot_class_examples:
         shape_to_plot_data = {}
@@ -417,7 +401,7 @@ def run(args,
                     (h0, w0), ((h_ratio, w_ratio), (w_pad, h_pad)) = shapes[image_i]
                     img_data = (h0, w0, h_ratio, w_ratio, w_pad, h_pad)
                     predicted_class = row['final_shape']
-                    
+
                     # shape = predicted_class.split('-')[0]
                     # print(shape)
                     # print(names[adv_sign_class])
@@ -455,7 +439,7 @@ def run(args,
 
             elif synthetic:
                 im[image_i], targets = apply_synthetic_sign(
-                    im[image_i], targets, image_i, adv_patch, patch_mask, 
+                    im[image_i], targets, image_i, adv_patch, patch_mask,
                     *syn_data, device=device, use_attack=use_attack)
 
         t1 = time_sync()
@@ -472,9 +456,11 @@ def run(args,
 
         # Inference
         if model_name == 'yolov5':
-            out, train_out = model(im) if training else model(im, augment=augment, val=True)  # inference, loss outputs
+            # inference, loss outputs
+            out, train_out = model(im, augment=augment, val=True)  
         elif model_name == 'yolor':
-            out, train_out = model(im, augment=augment)  # inference and training outputs
+            # inference and training outputs
+            out, train_out = model(im, augment=augment)  
 
         dt[1] += time_sync() - t2
 
@@ -486,6 +472,7 @@ def run(args,
         targets[:, 2:6] *= torch.Tensor([width, height, width, height]).to(device)  # to pixels
         lb = [targets[targets[:, 0] == i, 1:] for i in range(nb)] if save_hybrid else []  # for autolabelling
         t3 = time_sync()
+        # FIXME: need this line?
         from yolor.utils.general import non_max_suppression
         out = non_max_suppression(out, conf_thres=conf_thres, iou_thres=iou_thres)
         # out = non_max_suppression(out, conf_thres, iou_thres, labels=lb,
@@ -509,7 +496,8 @@ def run(args,
 
             current_image_metrics = {}
             current_image_metrics['filename'] = filename
-            current_image_metrics['num_targeted_sign_class'] = sum([1 for x in labels[:, 0] if x == adv_sign_class])
+            num_tg = sum([1 for x in labels[:, 0] if x == adv_sign_class])
+            current_image_metrics['num_targeted_sign_class'] = num_tg
 
             # If the target object is too small, we drop both the target and
             # the corresponding prediction.
@@ -519,7 +507,8 @@ def run(args,
             # If there's no prediction at all, we can collect the targets and continue to the next image.
             if len(pred) == 0:
                 for lbl_index, lbl_ in enumerate(labels):
-                    current_label_metric = populate_default_metric(lbl_, min_area, filename, other_class_label)
+                    current_label_metric = populate_default_metric(
+                        lbl_, min_area, filename, other_class_label)
                     lbl_index_to_keep[lbl_index] = ~current_label_metric['too_small']
                     metrics_per_label_df = metrics_per_label_df.append(
                         current_label_metric, ignore_index=True)
@@ -548,19 +537,18 @@ def run(args,
             # TODO: comment
             if synthetic:
                 for lbl in tbox:
-                    if lbl[0] == syn_sign_class:
-                        for pi, prd in enumerate(predn):
-                            # [x1, y1, x2, y2] where xy1=top-left, xy2=bottom-right
-                            x1 = 0.9 * lbl[1] if 0.9 * lbl[1] > 5 else -20
-                            y1 = 0.9 * lbl[2] if 0.9 * lbl[2] > 5 else -20
-
-                            if prd[0] >= x1 and prd[1] >= y1 and prd[2] <= 1.1 * lbl[3] and prd[3] <= 1.1 * lbl[4]:
-                                if prd[5] == adv_sign_class:
-                                    predn[pi, 5] = syn_sign_class
-                                    pred[pi, 5] = syn_sign_class
-
-                                    # if prd[4] > 0.25:
-                                    num_labels_changed += 1
+                    if lbl[0] != syn_sign_class:
+                        continue
+                    for pi, prd in enumerate(predn):
+                        # [x1, y1, x2, y2] where xy1=top-left, xy2=bottom-right
+                        x1 = 0.9 * lbl[1] if 0.9 * lbl[1] > 5 else -20
+                        y1 = 0.9 * lbl[2] if 0.9 * lbl[2] > 5 else -20
+                        if (prd[0] >= x1 and prd[1] >= y1 and 
+                            prd[2] <= 1.1 * lbl[3] and prd[3] <= 1.1 * lbl[4]):
+                            if prd[5] == adv_sign_class:
+                                predn[pi, 5] = syn_sign_class
+                                pred[pi, 5] = syn_sign_class
+                                num_labels_changed += 1
 
             scale_coords(im[si].shape[1:], predn[:, :4], shape, shapes[si][1])  # native-space pred
 
@@ -575,7 +563,8 @@ def run(args,
                 # `label_idx`: idx of object in `labels`
                 # `pred_idx`: idx of object in `predn`
 
-                _, iou_matches, _ = process_batch(predn, labelsn, iouv, match_on_iou_only=True)
+                _, iou_matches, _ = process_batch(predn, labelsn, iouv, 
+                                                  match_on_iou_only=True)
                 iou_matches = []
                 correct, matches, iou = process_batch(
                     predn, labelsn, iouv, other_class_label=other_class_label,
@@ -609,18 +598,16 @@ def run(args,
             for lbl_index, lbl_ in enumerate(labels):
                 if annotated_signs_only and not synthetic:
                     annotation_row = annotation_df[(annotation_df['filename'] == filename) &
-                                                (annotation_df['object_id'] == int(lbl_[5]))]
-                    # if len(annotation_row) > 1:
-                    #     import pdb
-                    #     pdb.set_trace()
+                                                   (annotation_df['object_id'] == int(lbl_[5]))]
                     assert len(annotation_row) <= 1
-                    # if a label is not in our annotation df, we change the label to 'other' so we do not calculate metrics on this particular label
-                    if len(annotation_row) == 0:
-                        labels[lbl_index][0] = other_class_label
-                        lbl_ = labels[lbl_index]
-
-                    # if a label is in our annotation df and we used the label to generate an adversarial patch, we change the label to 'other' so we do not calculate metrics on this particular label
-                    if filename in filename_list and not args.run_only_img_txt and len(annotation_row) == 1:
+                    # Ignore label if either (1) not annotated or (2) was used
+                    # to generate patch attack.
+                    is_annotated = len(annotation_row) > 0
+                    used_to_gen_path = (filename in filename_list and 
+                                        not args.run_only_img_txt)
+                    if not is_annotated or used_to_gen_path:
+                        # Ignore by setting label to 'other' class which is
+                        # excluded from metric calculation
                         labels[lbl_index][0] = other_class_label
                         lbl_ = labels[lbl_index]
 
@@ -628,24 +615,23 @@ def run(args,
                 match = matches[matches[:, 0] == lbl_index]
                 assert len(match) <= 1  # There can only be one match per object
 
-                current_label_metric = populate_default_metric(lbl_, min_area, filename, other_class_label)
-
+                current_label_metric = populate_default_metric(
+                    lbl_, min_area, filename, other_class_label)
                 lbl_index_to_keep[lbl_index] = ~current_label_metric['too_small']
-
                 class_label = lbl_[0]
 
                 # If there's no match, just save current metric and continue to
                 # the next label.
                 if len(match) == 0:
-                    # this can be deleted since we do not count include others when computing metrics all signs
-                    # # if ground truth is 'other' and there is NO prediction, we drop the label so it's not counted as a false negative
+                    # This can be deleted since we do not count include others
+                    # when computing metrics all signs
+                    # if ground truth is 'other' and there is NO prediction,
+                    # we drop the label so it's not counted as a false negative
                     if class_label == other_class_label:
                         lbl_index_to_keep[lbl_index] = 0
-
                     try:
                         iou_match = iou_matches[iou_matches[:, 0] == lbl_index]
                     except:
-                        import pdb
                         pdb.set_trace()
                     assert len(iou_match) <= 1  # There can only be one match per object
                     if len(iou_match) == 1:
@@ -675,7 +661,8 @@ def run(args,
 
                 # if class_label == other_class_label and pred_label != other_class_label:
                 if class_label == other_class_label:
-                    # as in the mtsd paper, we drop both label and prediction if the label is 'other' and the prediction is 'non-other'
+                    # as in the mtsd paper, we drop both label and prediction
+                    # if the label is 'other' and the prediction is 'non-other'
                     lbl_index_to_keep[lbl_index] = 0
                     pred_index_to_keep[det_idx] = 0
                     correct[det_idx] = torch.BoolTensor([False] * len(iouv))
@@ -683,7 +670,8 @@ def run(args,
                 # Get detection boolean at iou_thres
                 iou_idx = torch.where(iouv >= iou_thres)[0][0]
                 is_detected = correct[det_idx, iou_idx]
-                if (use_attack and pred_label == adv_sign_class and pred_conf > metrics_conf_thres and is_detected):
+                if (use_attack and pred_label == adv_sign_class and
+                        pred_conf > metrics_conf_thres and is_detected):
                     current_label_metric['correct_prediction'] = 1
 
                 metrics_per_label_df = metrics_per_label_df.append(
@@ -725,8 +713,6 @@ def run(args,
 
             for class_index in labels[:, 0]:
                 if class_index in plot_class_examples:
-                    # print(class_index.item())
-                    # class_name = names[class_index.item()]
                     class_name = names[int(class_index.item())]
                     if len(shape_to_plot_data[class_name]) < 20:
                         fn = str(path).split('/')[-1]
@@ -758,7 +744,11 @@ def run(args,
                     ti[:, 0] = 0
                     plot_images(im[i:i+1], ti, paths[i:i+1], f, names, labels=False)
             f = save_dir / f'val_batch{batch_i}_labels.jpg'  # labels
-            Thread(target=plot_images, args=(im, targets, paths, f, names, 1920, 16, True), daemon=True).start()
+            Thread(
+                target=plot_images,
+                args=(im, targets, paths, f, names, 1920, 16, True),
+                daemon=True,
+            ).start()
             f = save_dir / f'val_batch{batch_i}_pred.jpg'  # predictions
             Thread(target=plot_images, args=(im, output_to_target(out),
                    paths, f, names, 1920, 16, False), daemon=True).start()
@@ -777,7 +767,9 @@ def run(args,
     if plot_class_examples:
         for class_index in plot_class_examples:
             class_name = names[class_index]
-            save_dir_class = increment_path(save_dir / class_name, exist_ok=exist_ok, mkdir=True)  # increment run
+            # increment run
+            save_dir_class = increment_path(save_dir / class_name,
+                                            exist_ok=exist_ok, mkdir=True)
             for i in range(len(shape_to_plot_data[class_name])):
                 im, targets, path, out = shape_to_plot_data[class_name][i]
                 # labels
@@ -796,10 +788,13 @@ def run(args,
     current_exp_metrics = {}
 
     if len(stats) and stats[0].any():
-        metrics = ap_per_class_custom(*stats, plot=plots, save_dir=save_dir, names=names,
-                                      metrics_conf_thres=metrics_conf_thres, other_class_label=other_class_label)
-        # metrics = ap_per_class_custom(*stats, plot=plots, save_dir=save_dir, names=names,
-        #                               metrics_conf_thres=None, other_class_label=other_class_label)
+        metrics = ap_per_class_custom(
+            *stats, plot=plots, save_dir=save_dir, names=names,
+            metrics_conf_thres=metrics_conf_thres,
+            other_class_label=other_class_label)
+        # metrics = ap_per_class_custom(
+        #     *stats, plot=plots, save_dir=save_dir, names=names,
+        #     metrics_conf_thres=None, other_class_label=other_class_label)
         tp, p, r, ap, ap_class, fnr, fn, max_f1_index, precision_cmb, fnr_cmb, fp = metrics
         ap50, ap = ap[:, 0], ap.mean(1)  # AP@0.5, AP@0.5:0.95
         mp, mr, map50, map = p.mean(), r.mean(), ap50.mean(), ap.mean()
@@ -808,8 +803,10 @@ def run(args,
         nt = torch.zeros(1)
 
     if plot_fp:
-        plot_false_positives(false_positive_images, false_positives_preds, false_positives_filenames,
-                             max_f1_index/1000, names, plot_folder=f'{project}/{name}/plots_false_positives/')
+        plot_false_positives(
+            false_positive_images, false_positives_preds,
+            false_positives_filenames, max_f1_index/1000, names,
+            plot_folder=f'{project}/{name}/plots_false_positives/')
 
     # Print results
     pf = '%20s' + '%11i' * 2 + '%11.3g' * 4  # print format
@@ -872,7 +869,7 @@ def run(args,
 
         LOGGER.info(pf % (names[c], seen, nt[c], p[i], r[i], ap50[i], ap[i]))
     metrics_df_column_names.append('dataset')
-    current_exp_metrics['dataset'] = DATASET_NAME
+    current_exp_metrics['dataset'] = dataset_name
 
     metrics_df_column_names.append('total_num_patches')
     current_exp_metrics['total_num_patches'] = total_num_patches
@@ -899,11 +896,10 @@ def run(args,
             metrics_df_column_names.append('rescaling')
             metrics_df_column_names.append('relighting')
             if adv_patch_path:
-                patch_metadata_folder = '/'.join(adv_patch_path.split('/')[:-1])
-                patch_metadata_path = os.path.join(patch_metadata_folder, 'patch_metadata.pkl')
-                print(patch_metadata_path)
-                with open(patch_metadata_path, 'rb') as f:
-                    patch_metadata = pickle.load(f)
+                patch_config_dir = '/'.join(adv_patch_path.split('/')[:-1])
+                patch_config_path = os.path.join(patch_config_dir, 'config.yaml')
+                with open(patch_config_path) as file:
+                    patch_metadata = yaml.load(file, Loader=yaml.FullLoader)
                 current_exp_metrics['generate_patch'] = patch_metadata['generate_patch']
                 current_exp_metrics['rescaling'] = patch_metadata['rescaling']
                 current_exp_metrics['relighting'] = patch_metadata['relighting']
@@ -915,9 +911,8 @@ def run(args,
 
     # Print speeds
     t = tuple(x / seen * 1E3 for x in dt)  # speeds per image
-    if not training:
-        shape = (batch_size, 3, imgsz, imgsz)
-        LOGGER.info(f'Speed: %.1fms pre-process, %.1fms inference, %.1fms NMS per image at shape {shape}' % t)
+    shape = (batch_size, 3, imgsz, imgsz)
+    LOGGER.info(f'Speed: %.1fms pre-process, %.1fms inference, %.1fms NMS per image at shape {shape}' % t)
 
     # Plots
     if plots:
@@ -941,8 +936,6 @@ def run(args,
             anno = COCO(anno_json)  # init annotations api
             pred = anno.loadRes(pred_json)  # init predictions api
             eval = COCOeval(anno, pred, 'bbox')
-            if is_coco:
-                eval.params.imgIds = [int(Path(x).stem) for x in dataloader.dataset.img_files]  # image IDs to evaluate
             eval.evaluate()
             eval.accumulate()
             eval.summarize()
@@ -951,10 +944,8 @@ def run(args,
             LOGGER.info(f'pycocotools unable to run: {e}')
 
     # Return results
-    model.float()  # for training
-    if not training:
-        s = f"\n{len(list(save_dir.glob('labels/*.txt')))} labels saved to {save_dir / 'labels'}" if save_txt else ''
-        LOGGER.info(f"Results saved to {colorstr('bold', save_dir)}{s}")
+    s = f"\n{len(list(save_dir.glob('labels/*.txt')))} labels saved to {save_dir / 'labels'}" if save_txt else ''
+    LOGGER.info(f"Results saved to {colorstr('bold', save_dir)}{s}")
     maps = np.zeros(nc) + map
 
     for i, c in enumerate(ap_class):
@@ -964,48 +955,22 @@ def run(args,
 
 def parse_opt():
     opt = eval_args_parser(False, root=ROOT)
-    parse_dataset_name(opt)
+    setup_yolo_test_args(opt, OTHER_SIGN_CLASS)
     opt.data = check_yaml(opt.data)  # check YAML
 
     opt.save_json |= opt.data.endswith('coco.yaml')
     opt.save_txt |= opt.save_hybrid
     print_args(FILE.stem, opt)
 
-    if opt.synthetic and opt.attack_type == 'per-sign':
-        raise NotImplementedError('Synthetic evaluation with per-sign attack is not implemented.')
+    assert not (opt.synthetic and opt.attack_type == 'per-sign'), \
+        'Synthetic evaluation with per-sign attack is not implemented.'
 
     return opt
 
 
 def main(opt):
     check_requirements(requirements=ROOT / 'requirements.txt', exclude=('tensorboard', 'thop'))
-
-    if opt.task in ('train', 'val', 'test'):  # run normally
-        if opt.conf_thres > 0.001:  # https://github.com/ultralytics/yolov5/issues/1466
-            LOGGER.info(f'WARNING: confidence threshold {opt.conf_thres} >> 0.001 will produce invalid mAP values.')
-        run(opt, **vars(opt))
-
-    else:
-        weights = opt.weights if isinstance(opt.weights, list) else [opt.weights]
-        opt.half = True  # FP16 for fastest results
-        if opt.task == 'speed':  # speed benchmarks
-            # python val.py --task speed --data coco.yaml --batch 1 --weights yolov5n.pt yolov5s.pt...
-            opt.conf_thres, opt.iou_thres, opt.save_json = 0.25, 0.45, False
-            for opt.weights in weights:
-                run(opt, **vars(opt), plots=False)
-
-        elif opt.task == 'study':  # speed vs mAP benchmarks
-            # python val.py --task study --data coco.yaml --iou 0.7 --weights yolov5n.pt yolov5s.pt...
-            for opt.weights in weights:
-                f = f'study_{Path(opt.data).stem}_{Path(opt.weights).stem}.txt'  # filename to save to
-                x, y = list(range(256, 1536 + 128, 128)), []  # x axis (image sizes), y axis
-                for opt.imgsz in x:  # img-size
-                    LOGGER.info(f'\nRunning {f} --imgsz {opt.imgsz}...')
-                    r, _, t = run(opt, **vars(opt), plots=False)
-                    y.append(r + t)  # results and times
-                np.savetxt(f, y, fmt='%10.4g')  # save
-            os.system('zip -r study.zip study_*.txt')
-            plot_val_study(x=x)  # plot
+    run(opt, **vars(opt))
 
 
 if __name__ == "__main__":

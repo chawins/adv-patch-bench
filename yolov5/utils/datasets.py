@@ -120,15 +120,18 @@ def create_dataloader(
     # EDIT: Use RepeatFactorTrainingSampler similar to detectron2 to deal with
     # the class imbalance problem
     if not repeat_sampler:
-        sampler = None if rank == -1 else distributed.DistributedSampler(dataset, shuffle=shuffle)
-        loader = DataLoader if image_weights else InfiniteDataLoader  # only DataLoader allows for attribute updates
+        sampler = None if rank == -1 else distributed.DistributedSampler(
+            dataset, shuffle=shuffle)
+        # only DataLoader allows for attribute updates
+        loader = DataLoader if image_weights else InfiniteDataLoader  
     else:
         sampler = None
         if repeat_sampler:
             repeat_threshold = 1
             repeat_factors = RepeatFactorTrainingSampler.repeat_factors_from_category_frequency(
                 dataset.img_to_labels, repeat_threshold)
-            sampler = RepeatFactorTrainingSampler(repeat_factors, shuffle=shuffle)
+            sampler = RepeatFactorTrainingSampler(repeat_factors, 
+                                                  shuffle=shuffle)
         loader = DataLoader if sampler else InfiniteDataLoader
 
     # DEBUG
