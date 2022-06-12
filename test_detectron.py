@@ -140,9 +140,9 @@ def main_attack(cfg, args, dataset_params):
         log.info(f'{k}: {v}')
     iou_idx = 0
     tp, fp = tp_full[iou_idx, :, max_f1_idx], fp_full[iou_idx, :, max_f1_idx]
-    log.info('          tp     fp     num_gt')
+    log.info('          tp   fp   num_gt')
     for i, (t, f, n) in enumerate(zip(tp, fp, num_gts_per_class)):
-        log.info(f'Class {i:2d}: {t:4d} {f:4d} {n:4d}')
+        log.info(f'Class {i:2d}: {int(t):4d} {int(f):4d} {int(n):4d}')
 
 
 def compute_metrics(cfg, args):
