@@ -2,10 +2,11 @@
 This code is adapted from
 https://github.com/yizhe-ang/detectron2-1/blob/master/detectron2_1/adv.py
 '''
+from email.mime import image
 import os
 from argparse import Namespace
 from copy import deepcopy
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Tuple, Union
 
 import cv2
 import numpy as np
@@ -13,6 +14,7 @@ import pandas as pd
 import torch
 from adv_patch_bench.attacks.utils import (apply_synthetic_sign, prep_attack,
                                            prep_synthetic_eval)
+from adv_patch_bench.utils.image import pad_image, pad_to_size
 from adv_patch_bench.transforms import transform_and_apply_patch
 from adv_patch_bench.utils.detectron import build_evaluator
 from detectron2.config import CfgNode
@@ -39,7 +41,11 @@ class DAGAttacker:
         self.debug = args.debug
         self.model = model
         self.num_vis = 100
-        self.img_size = args.img_size
+        if isinstance(args.img_size, str):
+            self.img_size = tuple([int(size) for size in args.img_size.split(',')])
+        else:
+            self.img_size = args.img_size
+        assert isinstance(self.img_size, Tuple) and len(self.img_size) == 2
 
         # Modify config
         self.cfg = cfg.clone()  # cfg can be modified by model
@@ -113,7 +119,8 @@ class DAGAttacker:
 
         # Prepare attack data
         if self.use_attack:
-            _, adv_patch, patch_mask, patch_loc = prep_attack(self.args, self.device)
+            _, adv_patch, patch_mask, patch_loc = prep_attack(
+                self.args, self.img_size, self.device)
 
         total_num_patches, num_vis = 0, 0
         self.evaluator.reset()
@@ -153,6 +160,8 @@ class DAGAttacker:
             if self.synthetic:
                 self.log(f'Attacking {file_name} ...')
                 # Apply synthetic sign and patch to image
+                images, bbox = pad_to_size(images, self.img_size)
+                assert images.shape[-2:] == self.img_size
                 perturbed_image = apply_synthetic_sign(
                     images,
                     None,
@@ -163,6 +172,8 @@ class DAGAttacker:
                     use_attack=self.use_attack,
                     return_target=False,
                 )
+                left, top, right, bot = bbox
+                perturbed_image = perturbed_image[:, top:bot, left:right]
                 is_included = True
             elif len(img_df) > 0:
                 # Iterate through objects in the current image

@@ -226,10 +226,6 @@ if __name__ == "__main__":
 
     log.info(args)
     args.img_size = args.padded_imgsz
-    # Set path to synthetic object used by synthetic attack only
-    args.syn_obj_path = os.path.join(PATH_SYN_OBJ,
-                                     TS_NO_COLOR_LABEL_LIST[args.obj_class])
-
     torch.random.manual_seed(cfg.SEED)
     np.random.seed(cfg.SEED)
     random.seed(cfg.SEED)
