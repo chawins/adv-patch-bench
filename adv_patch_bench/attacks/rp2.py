@@ -306,10 +306,9 @@ class RP2AttackModule(DetectorAttackModule):
                     adv_img = adv_img.clamp(0, 1)
 
                     # DEBUG
-                    # if step % 100 == 0:
-                    #     torchvision.utils.save_image(adv_img[0], f'gen_synthetic_adv_{step}.png')
-                    #     import pdb
-                    #     pdb.set_trace()
+                    if step % 100 == 0:
+                        torchvision.utils.save_image(
+                            adv_img[0], f'gen_synthetic_adv_{step}.png')
 
                     loss = self.compute_loss(
                         delta, adv_img, obj_class, metadata_clone[bg_idx])

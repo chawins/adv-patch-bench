@@ -175,6 +175,18 @@ def generate_adv_patch(
     attack_images, metadata, backgrounds = collect_backgrounds(
         dataloader, img_size, num_bg, device, df=df, class_name=class_name)
 
+    # Save background filenames in txt file
+    print(f'=> Saving used backgrounds in a txt file.')
+    with open(join(save_dir, 'bg_filenames.txt'), 'w') as f:
+        for img in attack_images:
+            f.write(f'{img[2]}\n')
+    # DEBUG: Save all the background images
+    if debug:
+        for img in attack_images:
+            os.makedirs(join(save_dir, 'backgrounds'), exist_ok=True)
+            torchvision.utils.save_image(
+                img[0] / 255, join(save_dir, 'backgrounds', img[2]))
+
     # Generate an adversarial patch
     if synthetic:
         print('=> Generating adversarial patch on synthetic signs...')
@@ -183,14 +195,13 @@ def generate_adv_patch(
         pad_size = [(img_size[1] - obj_size[1]) // 2,
                     (img_size[0] - obj_size[0]) // 2,
                     (img_size[1] - obj_size[1]) // 2 + obj_size[1] % 2,
-                    (img_size[0] - obj_size[0]) // 2 + obj_size[0] % 2]  
-        obj, obj_mask = get_object_and_mask_from_numpy(obj_numpy, obj_size, 
+                    (img_size[0] - obj_size[0]) // 2 + obj_size[0] % 2]
+        obj, obj_mask = get_object_and_mask_from_numpy(obj_numpy, obj_size,
                                                        pad_size=pad_size)
-        patch_mask_ = T.resize(patch_mask, obj_size, 
+        patch_mask_ = T.resize(patch_mask, obj_size,
                                interpolation=T.InterpolationMode.NEAREST)
         patch_mask_ = T.pad(patch_mask_, pad_size)
 
-        print(f'=> Start attacking...')
         adv_patch = attack.attack(obj.to(device),
                                   obj_mask.to(device),
                                   patch_mask_.to(device),
@@ -200,40 +211,20 @@ def generate_adv_patch(
 
         if save_images:
             torchvision.utils.save_image(obj, join(save_dir, 'obj.png'))
-            torchvision.utils.save_image(obj_mask, 
+            torchvision.utils.save_image(obj_mask,
                                          join(save_dir, 'obj_mask.png'))
-            torchvision.utils.save_image(backgrounds, 
-                                         join(save_dir, 'backgrounds.png'))
-
     else:
         print('=> Generating adversarial patch on real signs...')
-
-        # DEBUG: Save all the background images
-        if debug:
-            for img in attack_images:
-                os.makedirs(join(save_dir, 'backgrounds'), exist_ok=True)
-                torchvision.utils.save_image(
-                    img[0] / 255, join(save_dir, 'backgrounds', img[2]))
-
-        # Save background filenames in txt file
-        print(f'=> Saving used backgrounds in a txt file.')
-        with open(join(save_dir, 'bg_filenames.txt'), 'w') as f:
-            for img in attack_images:
-                f.write(f'{img[2]}\n')
-
-        print(f'=> Start attacking...')
-        # with torch.enable_grad():
         adv_patch = attack.attack_real(attack_images,
                                        patch_mask=patch_mask.to(device),
                                        obj_class=obj_class,
                                        metadata=metadata)
 
     adv_patch = adv_patch[0].detach().cpu().float()
-
     if save_images:
-        torchvision.utils.save_image(patch_mask, 
+        torchvision.utils.save_image(patch_mask,
                                      join(save_dir, 'patch_mask.png'))
-        torchvision.utils.save_image(adv_patch, 
+        torchvision.utils.save_image(adv_patch,
                                      join(save_dir, 'adversarial_patch.png'))
 
     return adv_patch
