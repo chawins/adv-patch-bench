@@ -23,8 +23,7 @@ from adv_patch_bench.dataloaders import (BenignMapper, get_mapillary_dict,
 from adv_patch_bench.utils.argparse import (eval_args_parser,
                                             setup_detectron_test_args)
 from adv_patch_bench.utils.detectron import build_evaluator
-from hparams import (DATASETS, LABEL_LIST, NUM_CLASSES, OTHER_SIGN_CLASS, PATH_SYN_OBJ,
-                     SAVE_DIR_DETECTRON, TS_NO_COLOR_LABEL_LIST)
+from hparams import DATASETS, LABEL_LIST, OTHER_SIGN_CLASS, SAVE_DIR_DETECTRON
 
 log = logging.getLogger(__name__)
 formatter = logging.Formatter('[%(levelname)s] %(asctime)s: %(message)s')
@@ -96,10 +95,9 @@ def main_single(cfg, dataset_params):
 
 def main_attack(cfg, args, dataset_params):
 
-    save_dir = get_save_dir(args)
-    vis_dir = os.path.join(save_dir, 'vis')
+    vis_dir = os.path.join(args.save_dir, 'vis')
     os.makedirs(vis_dir, exist_ok=True)
-    args.adv_patch_path = os.path.join(save_dir, 'adv_patch.pkl')
+    args.adv_patch_path = os.path.join(args.save_dir, 'adv_patch.pkl')
 
     with open(args.attack_config_path) as file:
         attack_config = yaml.load(file, Loader=yaml.FullLoader)
@@ -130,7 +128,7 @@ def main_attack(cfg, args, dataset_params):
         vis_save_dir=vis_dir,
         vis_conf_thresh=0.5,
     )
-    pickle.dump(metrics, open(os.path.join(save_dir, 'results.pkl'), 'wb'))
+    pickle.dump(metrics, open(os.path.join(args.save_dir, 'results.pkl'), 'wb'))
 
     # Logging results
     metrics = metrics['bbox']
@@ -143,6 +141,8 @@ def main_attack(cfg, args, dataset_params):
     log.info('          tp   fp   num_gt')
     for i, (t, f, n) in enumerate(zip(tp, fp, num_gts_per_class)):
         log.info(f'Class {i:2d}: {int(t):4d} {int(f):4d} {int(n):4d}')
+    if args.synthetic:
+        log.info(f'Synthetic: {metrics["syn_tp"]:4d} / {metrics["syn_total"]:4d}')
 
 
 def compute_metrics(cfg, args):
@@ -195,21 +195,6 @@ def compute_metrics(cfg, args):
     return
 
 
-def get_save_dir(args):
-    # Create folder for saving eval results
-    class_names = LABEL_LIST[args.dataset]
-    if args.obj_class == -1:
-        class_name = 'all'
-    elif 0 <= args.obj_class <= len(class_names) - 1:
-        class_name = class_names[args.obj_class]
-    else:
-        raise ValueError((f'Invalid target object class ({args.obj_class}). '
-                          f'Must be between -1 and {len(class_names) - 1}.'))
-    save_dir = os.path.join(SAVE_DIR_DETECTRON, args.name, class_name)
-    os.makedirs(save_dir, exist_ok=True)
-    return save_dir
-
-
 if __name__ == "__main__":
     args = eval_args_parser(True)
     # Verify some args
@@ -217,10 +202,9 @@ if __name__ == "__main__":
     assert args.dataset in DATASETS
 
     # Set up logger
-    save_dir = get_save_dir(args)
     log.setLevel(logging.DEBUG if args.debug else logging.INFO)
-    file_handler = logging.FileHandler(os.path.join(save_dir, 'results.log'),
-                                       mode='a')
+    file_handler = logging.FileHandler(
+        os.path.join(args.save_dir, 'results.log'), mode='a')
     file_handler.setFormatter(formatter)
     log.addHandler(file_handler)
 

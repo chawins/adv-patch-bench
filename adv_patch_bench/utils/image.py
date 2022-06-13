@@ -141,6 +141,7 @@ def letterbox(im, new_shape=(640, 640), color=114, scaleup=True, stride=32):
 
 
 def mask_to_box(mask):
+    """Get a binary mask and returns a bounding box: y0, x0, h, w"""
     if mask.ndim == 3:
         mask = mask.squeeze(0)
     assert mask.ndim == 2

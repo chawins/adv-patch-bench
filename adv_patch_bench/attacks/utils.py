@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import ast
+from copy import deepcopy
 import os
 import pickle
 from argparse import Namespace
@@ -11,6 +14,8 @@ import torchvision
 import torchvision.transforms.functional as T
 from adv_patch_bench.utils.image import (mask_to_box, pad_and_center,
                                          prepare_obj)
+from detectron2.structures.boxes import Boxes
+from detectron2.structures.instances import Instances
 from hparams import PATH_SYN_OBJ
 from kornia import augmentation as K
 from kornia.constants import Resample
@@ -77,8 +82,8 @@ def prep_attack(
     df['tgt_final'] = df['tgt_final'].apply(ast.literal_eval)
     # exclude shapes to which we do not apply the transform to
     df = df[df['final_shape'] != 'other-0.0-0.0']
-    print(df.shape)
-    print(df.groupby(by=['final_shape']).count())
+    # print(df.shape)
+    # print(df.groupby(by=['final_shape']).count())
 
     if args.synthetic:
         # Adv patch and mask have to be made compatible with random
@@ -105,7 +110,7 @@ def prep_attack(
 
 def apply_synthetic_sign(
     image: torch.FloatTensor,
-    targets: torch.FloatTensor,
+    targets: Any,
     image_id: int,
     adv_patch: torch.FloatTensor,
     patch_mask: torch.FloatTensor,
@@ -117,6 +122,8 @@ def apply_synthetic_sign(
     device: str = 'cuda',
     use_attack: bool = True,
     return_target: bool = True,
+    is_detectron: bool = False,
+    other_sign_class: int = None
 ):
     _, h, w = image.shape
     if use_attack:
@@ -136,18 +143,49 @@ def apply_synthetic_sign(
 
     # get top left and bottom right points
     # TODO: can we use mask_to_box here?
-    indices = np.where(o_mask.cpu()[0][0] == 1)
-    x_min, x_max = min(indices[1]), max(indices[1])
-    y_min, y_max = min(indices[0]), max(indices[0])
+    # indices = np.where(o_mask.cpu()[0][0] == 1)
+    # x_min, x_max = min(indices[1]), max(indices[1])
+    # y_min, y_max = min(indices[0]), max(indices[0])
+    bbox = mask_to_box(o_mask.cpu()[0][0] == 1)
+    y_min, x_min, h_obj, w_obj = [b.item() for b in bbox]
+
     # Since we paste a new synthetic sign on image, we have to add
     # in a new synthetic label/target to compute the metrics
+    if is_detectron:
+        assert isinstance(targets, dict) and isinstance(other_sign_class, int)
+        targets = deepcopy(targets)
+        annotations = targets['annotations']
+        instances = targets['instances']
+        for anno in annotations:
+            anno['category_id'] = other_sign_class
+        new_bbox = [x_min, y_min, x_min + w_obj, y_min + h_obj]
+        new_anno = {
+            'bbox': new_bbox,
+            'category_id': syn_sign_class,
+            'bbox_mode': annotations[0]['bbox_mode'],
+        }
+        annotations.append(new_anno)
+        # Create new gt instances
+        new_instances = Instances(instances.image_size)
+        new_gt_classes = torch.zeros(len(instances) + 1, dtype=torch.int64)
+        new_gt_classes[:-1] = other_sign_class
+        new_gt_classes[-1] = syn_sign_class
+        new_bbox = torch.tensor(new_bbox, dtype=torch.float32)
+        new_instances.gt_boxes = Boxes.cat([instances.gt_boxes,
+                                            Boxes(new_bbox[None, :])])
+        new_instances.gt_classes = new_gt_classes
+        targets['instances'] = new_instances
+        return perturbed_image, targets
+
+    # Add new target for YOLO
+    assert isinstance(targets, torch.Tensor)
     label = [
         image_id,
         syn_sign_class,
-        (x_min + x_max) / (2 * w),
-        (y_min + y_max) / (2 * h),
-        (x_max - x_min) / w,
-        (y_max - y_min) / h,
+        (x_min + w_obj / 2) / w,  # relative center x
+        (y_min + h_obj / 2) / h,  # relative center y
+        w_obj / w,  # relative width
+        h_obj / h,  # relative height
         -1
     ]
     targets = torch.cat((targets, torch.tensor(label).unsqueeze(0)))

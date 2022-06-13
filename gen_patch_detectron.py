@@ -38,7 +38,7 @@ from hparams import (DATASETS, LABEL_LIST, MAPILLARY_IMG_COUNTS_DICT,
 
 
 def collect_backgrounds(dataloader, img_size, num_bg, device,
-                        df=None, class_name=None):
+                        df=None, class_name=None, img_txt_path=None):
     if num_bg < 1:
         assert class_name is not None
         print(f'num_bg is a fraction ({num_bg}).')
@@ -49,6 +49,13 @@ def collect_backgrounds(dataloader, img_size, num_bg, device,
     attack_images, metadata = [], []
     backgrounds = torch.zeros((num_bg, 3) + img_size, )
     num_collected = 0
+
+    filename_list = None
+    if img_txt_path != '':
+        img_txt_path = os.path.join(SAVE_DIR_DETECTRON, img_txt_path)
+        with open(img_txt_path, 'r') as f:
+            filename_list = set(f.read().splitlines())
+
     print('=> Collecting background images...')
 
     # DEBUG: count images
@@ -58,6 +65,10 @@ def collect_backgrounds(dataloader, img_size, num_bg, device,
     for i, batch in tqdm(enumerate(dataloader)):
         file_name = batch[0]['file_name']
         filename = file_name.split('/')[-1]
+
+        if filename_list is not None:
+            if filename not in filename_list:
+                continue
 
         if df is not None:
             img_df = df[df['filename'] == filename]
@@ -118,6 +129,8 @@ def collect_backgrounds(dataloader, img_size, num_bg, device,
     # print('======> ', counts, num_collected)
 
     print(f'=> {len(attack_images)} backgrounds collected.')
+    if filename_list is not None:
+        assert len(filename_list) == len(attack_images)
     return attack_images[:num_bg], metadata[:num_bg], backgrounds / 255
 
 
@@ -173,11 +186,12 @@ def generate_adv_patch(
         df = df[df['final_shape'] != 'other-0.0-0.0']
 
     attack_images, metadata, backgrounds = collect_backgrounds(
-        dataloader, img_size, num_bg, device, df=df, class_name=class_name)
+        dataloader, img_size, num_bg, device, df=df, class_name=class_name,
+        img_txt_path=args.img_txt_path)
 
     # Save background filenames in txt file
     print(f'=> Saving used backgrounds in a txt file.')
-    with open(join(save_dir, 'bg_filenames.txt'), 'w') as f:
+    with open(join(save_dir, f'bg_filenames-{num_bg}.txt'), 'w') as f:
         for img in attack_images:
             f.write(f'{img[2]}\n')
     # DEBUG: Save all the background images
@@ -249,11 +263,9 @@ def main(
     random.seed(seed)
     img_size = tuple([int(i) for i in padded_imgsz.split(',')])
     assert len(img_size) == 2
-
-    # Set up directories
     class_names = LABEL_LIST[args.dataset]
-    save_dir = os.path.join(SAVE_DIR_DETECTRON, name, class_names[obj_class])
-    os.makedirs(save_dir, exist_ok=True)
+
+    # Set up model from config
     model = DefaultPredictor(cfg).model
 
     # Configure object size

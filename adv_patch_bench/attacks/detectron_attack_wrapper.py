@@ -2,7 +2,6 @@
 This code is adapted from
 https://github.com/yizhe-ang/detectron2-1/blob/master/detectron2_1/adv.py
 '''
-from email.mime import image
 import os
 from argparse import Namespace
 from copy import deepcopy
@@ -14,12 +13,14 @@ import pandas as pd
 import torch
 from adv_patch_bench.attacks.utils import (apply_synthetic_sign, prep_attack,
                                            prep_synthetic_eval)
-from adv_patch_bench.utils.image import pad_image, pad_to_size
 from adv_patch_bench.transforms import transform_and_apply_patch
 from adv_patch_bench.utils.detectron import build_evaluator
+from adv_patch_bench.utils.image import pad_image, pad_to_size
 from detectron2.config import CfgNode
 from detectron2.data import MetadataCatalog
+from detectron2.structures.boxes import pairwise_iou
 from detectron2.utils.visualizer import Visualizer
+from hparams import SAVE_DIR_DETECTRON
 from tqdm import tqdm
 
 from .rp2 import RP2AttackModule
@@ -58,9 +59,7 @@ class DAGAttacker:
 
         self.data_loader = dataloader
         self.device = self.model.device
-        self.n_classes = self.cfg.MODEL.ROI_HEADS.NUM_CLASSES
         self.metadata = MetadataCatalog.get(self.cfg.DATASETS.TEST[0])
-        self.evaluator = build_evaluator(cfg, cfg.DATASETS.TEST[0])
 
         # Attack params
         self.attack = RP2AttackModule(attack_config, model, None, None, None,
@@ -71,17 +70,26 @@ class DAGAttacker:
         self.adv_sign_class = args.obj_class
         self.df = pd.read_csv(args.tgt_csv_filepath)
         self.class_names = class_names
+        self.other_sign_class = len(self.class_names) - 1
         self.synthetic = args.synthetic
         self.transform_params = {
             'transform_mode': args.transform_mode,
             'use_relight': not args.no_patch_relight,
             'interp': args.interp,
         }
+        self.evaluator = build_evaluator(cfg, cfg.DATASETS.TEST[0],
+                                         synthetic=self.synthetic)
+        if self.synthetic:
+            # TODO: self.syn_sign_class is not really used now.
+            # self.syn_sign_class = self.other_sign_class + 1
+            # self.metadata.thing_classes.append('synthetic')
+            self.syn_sign_class = self.other_sign_class
 
         # Loading file names from the specified text file
         self.skipped_filename_list = []
         if args.img_txt_path != '':
-            with open(args.img_txt_path, 'r') as f:
+            img_txt_path = os.path.join(SAVE_DIR_DETECTRON, args.img_txt_path)
+            with open(img_txt_path, 'r') as f:
                 self.skipped_filename_list = f.read().splitlines()
 
     def log(self, *args, **kwargs):
@@ -111,22 +119,16 @@ class DAGAttacker:
         # Save predictions in coco format
         coco_instances_results = []
 
-        if self.synthetic:
-            # Prepare evaluation with synthetic signs
-            # syn_data: (syn_obj, syn_obj_mask, obj_transforms, mask_transforms, syn_sign_class)
-            syn_data = prep_synthetic_eval(
-                self.args, self.img_size, self.class_names, device=self.device)
-
         # Prepare attack data
         if self.use_attack:
             _, adv_patch, patch_mask, patch_loc = prep_attack(
                 self.args, self.img_size, self.device)
 
-        total_num_patches, num_vis = 0, 0
+        total_num_patches, num_vis, syn_tp, syn_total = 0, 0, 0, 0
         self.evaluator.reset()
 
         for i, batch in tqdm(enumerate(self.data_loader)):
-            if self.debug and i >= 100:
+            if self.debug and i >= 20:
                 break
 
             file_name = batch[0]['file_name']
@@ -159,28 +161,37 @@ class DAGAttacker:
             is_included = False
             if self.synthetic:
                 self.log(f'Attacking {file_name} ...')
+                _, adv_patch, patch_mask, patch_loc = prep_attack(
+                    self.args, (h, w), self.device)
+                # Prepare evaluation with synthetic signs, syn_data: (syn_obj,
+                # syn_obj_mask, obj_transforms, mask_transforms, syn_sign_class)
+                syn_data = list(prep_synthetic_eval(self.args,
+                                                    (h, w),
+                                                    self.class_names,
+                                                    device=self.device))
+                syn_data[-1] = self.adv_sign_class  # TODO(clean)
                 # Apply synthetic sign and patch to image
-                images, bbox = pad_to_size(images, self.img_size)
-                assert images.shape[-2:] == self.img_size
-                perturbed_image = apply_synthetic_sign(
+                perturbed_image, new_gt = apply_synthetic_sign(
                     images,
-                    None,
+                    batch[0],
                     None,
                     adv_patch,
                     patch_mask,
                     *syn_data,
                     use_attack=self.use_attack,
-                    return_target=False,
+                    return_target=True,
+                    is_detectron=True,
+                    other_sign_class=self.other_sign_class,
                 )
-                left, top, right, bot = bbox
-                perturbed_image = perturbed_image[:, top:bot, left:right]
                 is_included = True
             elif len(img_df) > 0:
+                new_gt = batch[0]
                 # Iterate through objects in the current image
                 for _, obj in img_df.iterrows():
                     obj_classname = obj['final_shape']
                     obj_class = self.class_names.index(obj_classname)
-                    if obj_class != self.adv_sign_class and self.adv_sign_class != -1:
+                    if (obj_class != self.adv_sign_class and
+                            self.adv_sign_class != -1):
                         # Skip if object is not from desired class
                         continue
                     is_included = True
@@ -217,15 +228,28 @@ class DAGAttacker:
                 perturbed_image = perturbed_image[0]
 
             outputs = self(perturbed_image)
-            # Scale output to match original input size for evaluator
             new_outputs = deepcopy(outputs)
-            new_outputs['instances']._image_size = (h0, w0)
+            new_instances = new_outputs['instances']
+            new_instances._image_size = (h0, w0)
+            # Set predicted class of any object that overlaps with the gt bbox
+            # of the synthetic sign to a new syn_sign_class
+            if self.synthetic:
+                ious = pairwise_iou(new_instances.pred_boxes.to('cpu'),
+                                    new_gt['instances'].gt_boxes[-1])[:, 0]
+                idx = ((ious >= 0.5) &
+                       (new_instances.scores.to('cpu') >= self.args.conf_thres) &
+                       (new_instances.pred_classes.to('cpu') == self.adv_sign_class))
+                syn_tp += idx.any().item()
+                syn_total += 1
+                new_instances.pred_classes[idx] = self.syn_sign_class
+            # Scale output to match original input size for evaluator
             h_ratio, w_ratio = h / h0, w / w0
-            new_outputs['instances'].pred_boxes.tensor[:, 0] /= h_ratio
-            new_outputs['instances'].pred_boxes.tensor[:, 1] /= w_ratio
-            new_outputs['instances'].pred_boxes.tensor[:, 2] /= h_ratio
-            new_outputs['instances'].pred_boxes.tensor[:, 3] /= w_ratio
-            self.evaluator.process(batch, [new_outputs])
+            new_instances.pred_boxes.tensor[:, 0] /= h_ratio
+            new_instances.pred_boxes.tensor[:, 1] /= w_ratio
+            new_instances.pred_boxes.tensor[:, 2] /= h_ratio
+            new_instances.pred_boxes.tensor[:, 3] /= w_ratio
+
+            self.evaluator.process([new_gt], [new_outputs])
 
             # Convert to coco predictions format
             instance_dicts = self._create_instance_dicts(outputs, image_id)
@@ -265,10 +289,13 @@ class DAGAttacker:
 
                 save_adv_path = os.path.join(vis_save_dir, save_name)
                 cv2.imwrite(save_adv_path, vis[:, :, ::-1])
-                self.log(f'Saved visualization to {vis_save_dir}')
+                self.log(f'Saved visualization to {save_adv_path}')
                 num_vis += 1
 
         metrics = self.evaluator.evaluate()
+        if self.synthetic:
+            metrics['bbox']['syn_tp'] = syn_tp
+            metrics['bbox']['syn_total'] = syn_total
         return coco_instances_results, metrics
 
     def _create_instance_dicts(

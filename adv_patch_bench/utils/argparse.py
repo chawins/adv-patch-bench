@@ -3,7 +3,7 @@ import os
 
 from detectron2.config import get_cfg
 from detectron2.engine import default_argument_parser, default_setup
-from hparams import LABEL_LIST, PATH_SYN_OBJ
+from hparams import LABEL_LIST, PATH_SYN_OBJ, SAVE_DIR_DETECTRON
 
 
 def eval_args_parser(is_detectron, root=None):
@@ -176,6 +176,21 @@ def parse_dataset_name(args):
     return tokens
 
 
+def get_save_dir(args):
+    # Create folder for saving eval results
+    class_names = LABEL_LIST[args.dataset]
+    if args.obj_class == -1:
+        class_name = 'all'
+    elif 0 <= args.obj_class <= len(class_names) - 1:
+        class_name = class_names[args.obj_class]
+    else:
+        raise ValueError((f'Invalid target object class ({args.obj_class}). '
+                          f'Must be between -1 and {len(class_names) - 1}.'))
+    save_dir = os.path.join(SAVE_DIR_DETECTRON, args.name, class_name)
+    os.makedirs(save_dir, exist_ok=True)
+    return save_dir
+
+
 def setup_detectron_test_args(args, other_sign_class):
     """
     Create configs and perform basic setups.
@@ -208,6 +223,7 @@ def setup_detectron_test_args(args, other_sign_class):
     # Set path to synthetic object used by synthetic attack only
     args.syn_obj_path = os.path.join(
         PATH_SYN_OBJ, LABEL_LIST[args.dataset][args.obj_class] + '.png')
+    args.save_dir = get_save_dir(args)
     return cfg
 
 
