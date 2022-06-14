@@ -129,8 +129,6 @@ def collect_backgrounds(dataloader, img_size, num_bg, device,
     # print('======> ', counts, num_collected)
 
     print(f'=> {len(attack_images)} backgrounds collected.')
-    if filename_list is not None:
-        assert len(filename_list) == len(attack_images)
     return attack_images[:num_bg], metadata[:num_bg], backgrounds / 255
 
 
