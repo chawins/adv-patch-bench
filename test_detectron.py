@@ -141,6 +141,7 @@ def main_attack(cfg, args, dataset_params):
     log.info('          tp   fp   num_gt')
     for i, (t, f, n) in enumerate(zip(tp, fp, num_gts_per_class)):
         log.info(f'Class {i:2d}: {int(t):4d} {int(f):4d} {int(n):4d}')
+    log.info(f'Total num patches: {metrics["total_num_patches"]}')
     if args.synthetic:
         log.info(f'Synthetic: {metrics["syn_tp"]:4d} / {metrics["syn_total"]:4d}')
 

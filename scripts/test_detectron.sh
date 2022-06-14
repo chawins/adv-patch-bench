@@ -121,7 +121,7 @@ EXP_NAME=real-10x10_bottom
 #     DATALOADER.NUM_WORKERS 6
 
 EXP_NAME=synthetic-10x10_bottom-bg1
-cp -r ./detectron_output/synthetic-10x10_bottom ./detectron_output/$EXP_NAME
+cp -r ./detectron_output/synthetic-10x10_bottom/* ./detectron_output/$EXP_NAME
 
 CUDA_VISIBLE_DEVICES=$GPU python -u gen_patch_detectron.py \
     --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
@@ -140,7 +140,7 @@ CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
     --tgt-csv-filepath $CSV_PATH --attack-config-path $ATTACK_CONFIG_PATH \
     --name $EXP_NAME --obj-class $OBJ_CLASS --conf-thres $CONF_THRES \
     --annotated-signs-only --transform-mode perspective --attack-type load \
-    --img-txt-path $BG_FILES --synthetic \
+    --img-txt-path $BG_FILES --synthetic --debug \
     MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
     OUTPUT_DIR $OUTPUT_PATH \
     MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
@@ -159,7 +159,7 @@ CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
     DATALOADER.NUM_WORKERS 6
 
 EXP_NAME=synthetic-10x10_bottom-bg5
-cp -r ./detectron_output/synthetic-10x10_bottom ./detectron_output/$EXP_NAME
+# cp -r ./detectron_output/synthetic-10x10_bottom ./detectron_output/$EXP_NAME
 ATTACK_CONFIG_PATH=./configs/attack_config3.yaml
 
 CUDA_VISIBLE_DEVICES=$GPU python -u gen_patch_detectron.py \
@@ -200,7 +200,7 @@ CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
 # =========================================================================== #
 
 EXP_NAME=synthetic-10x10_bottom-bg10
-cp -r ./detectron_output/synthetic-10x10_bottom ./detectron_output/$EXP_NAME
+# cp -r ./detectron_output/synthetic-10x10_bottom ./detectron_output/$EXP_NAME
 ATTACK_CONFIG_PATH=./configs/attack_config4.yaml
 # EXP_NAME=real-10x10_bottom
 
@@ -265,7 +265,7 @@ CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
 # # =========================================================================== #
 
 EXP_NAME=synthetic-10x10_bottom-bg50
-cp -r ./detectron_output/synthetic-10x10_bottom ./detectron_output/$EXP_NAME
+# cp -r ./detectron_output/synthetic-10x10_bottom ./detectron_output/$EXP_NAME
 ATTACK_CONFIG_PATH=./configs/attack_config5.yaml
 # EXP_NAME=real-10x10_bottom
 

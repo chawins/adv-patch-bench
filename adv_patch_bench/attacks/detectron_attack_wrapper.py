@@ -293,6 +293,7 @@ class DAGAttacker:
                 num_vis += 1
 
         metrics = self.evaluator.evaluate()
+        metrics['bbox']['total_num_patches'] = total_num_patches
         if self.synthetic:
             metrics['bbox']['syn_tp'] = syn_tp
             metrics['bbox']['syn_total'] = syn_total

@@ -536,25 +536,7 @@ class COCOeval:
         # EDIT ============================================================== #
         iou_thres = 0.5
         iou_idx = np.where(p.iouThrs == iou_thres)[0][0]
-        # rc = recall_full[iou_idx]
-        # pr = precision[iou_idx, :, :, 0, -1]
-        # # pr = tp_full[iou_idx, :, 10] / (tp_full[iou_idx, :, 10] + fp_full[iou_idx, :, 10] + 1e-6)
-        # f1 = 2 * pr * rc / (pr + rc + 1e-6)
-        # f1_mean = f1.mean(1)
-        # f1_mean = f1_mean[f1_mean >= 0]
-        # max_f1_idx = f1_mean.argmax()
-        # max_f1 = f1_mean[max_f1_idx]
-        # tp, fp = tp_full[iou_idx, max_f1_idx], fp_full[iou_idx, max_f1_idx]
-        # print(f'[DEBUG] max_f1_idx: {max_f1_idx}, max_f1: {max_f1:.3f}')
-        # print(f'[DEBUG] all: {num_all_classes}')
-        # print(f'[DEBUG] tp: {tp}')
-        # print(f'[DEBUG] fp: {fp}')
-        # print(tp_full[0, :, 10])
-        # print(fp_full[0, :, 10])
-        # print(recall_full[0, :, 10])
-        # print(precision_full[0, :, 10])
-        # print(pr[:, 10])
-
+        
         # Find score threshold that maximizes F1 score
         num_scores = 1000
         EPS = np.spacing(1)
