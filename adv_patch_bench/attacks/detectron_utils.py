@@ -36,10 +36,10 @@ def get_targets(
 
     # Get proposal boxes' classification scores
     predictions = get_roi_heads_predictions(model, features, proposal_boxes)
+    # predictions = get_roi_heads_predictions(model, features, proposals)
+    
     # Scores (softmaxed) for a single image, [n_proposals, n_classes + 1]
-    # scores = model.roi_heads.box_predictor.predict_probs(
-    #     predictions, proposals
-    # )[0]
+    # scores = model.roi_heads.box_predictor.predict_probs(predictions, proposals)[0]
     # Instead, we want to get logit scores without softmax. For API, see
     # https://github.com/facebookresearch/detectron2/blob/main/detectron2/modeling/roi_heads/fast_rcnn.py#L547
     class_logits, _ = predictions
@@ -61,6 +61,7 @@ def get_roi_heads_predictions(
     model,
     features: Dict[str, torch.Tensor],
     proposal_boxes: List[Boxes],
+    # proposals,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     roi_heads = model.roi_heads
     features = [features[f] for f in roi_heads.box_in_features]
@@ -70,7 +71,12 @@ def get_roi_heads_predictions(
     box_features = roi_heads.box_head(box_features)
     logits, proposal_deltas = roi_heads.box_predictor(box_features)
     del box_features
-
+    # proposal_boxes = [x.proposal_boxes for x in proposals]
+    # predictions = roi_heads.box_predictor(box_features)
+    # pred_instances, temp = roi_heads.box_predictor.inference(predictions, proposals)
+    # print('get_roi_heads_predictions')
+    # import pdb
+    # pdb.set_trace()
     return logits, proposal_deltas
 
 

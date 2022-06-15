@@ -75,9 +75,10 @@ def eval_args_parser(is_detectron, root=None):
 
     # ===================== Patch generation arguments ====================== #
     parser.add_argument('--obj-size', type=int, default=None,
-                        help='Object width in pixels (default: 0.1 * img_size)')
-    # parser.add_argument('--patch-size-inch', type=int, default=None,
-    #                     help='Patch size in inches (deprecated)')
+                        help=('Object width in pixels (default: 0.1 * img_size).'
+                              'Only used by gen_patch in for synthetic signs.'))
+    # parser.add_argument('--patch-size-px', type=int, default=None,
+    #                     help='Patch size in pixels (default: 0.2 * obj_size_px)')
     parser.add_argument('--bg-dir', type=str, default='',
                         help='path to background directory')
     # parser.add_argument('--num-bg', type=float, default=1,

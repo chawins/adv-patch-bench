@@ -1,4 +1,5 @@
 import time
+from copy import deepcopy
 from typing import Any, List, Optional
 
 import numpy as np
@@ -38,10 +39,17 @@ class RP2AttackModule(DetectorAttackModule):
         self.attack_mode = attack_config['attack_mode'].split('-')
         self.transform_mode = attack_config['transform_mode']
         self.use_relight = attack_config['use_patch_relight']
-        self.detectron_obj_const = 0.
-        self.pgd_step_size = 1e-2
-        self.ema_const = 0.99  # Constant for moving average of the loss
+        self.detectron_obj_const = attack_config['detectron_obj_const']
+        self.pgd_step_size = attack_config['pgd_step_size']
+        self.ema_const = 0.9  # Constant for moving average of the loss
 
+        # self.cfg.MODEL.RPN.NMS_THRESH = nms_thresh
+        # self.cfg.MODEL.RPN.POST_NMS_TOPK_TEST = 5000
+        self.nms_thresh = 0.9
+        self.post_nms_topk = {True: 5000, False: 5000}
+        self.nms_thresh_orig = deepcopy(core_model.proposal_generator.nms_thresh)
+        self.post_nms_topk_orig = deepcopy(core_model.proposal_generator.post_nms_topk)
+        
         # Use change of variable on delta with alpha and beta.
         # Mostly used with per-sign attack.
         self.use_var_change_ab = 'var_change_ab' in self.attack_mode
@@ -71,7 +79,7 @@ class RP2AttackModule(DetectorAttackModule):
             bg_size, scale=(0.8, 1), p=1.0, resample=self.interp)
         self.obj_transforms = K.RandomAffine(
             30, translate=(0.45, 0.45), p=1.0, return_transform=True,
-            resample=self.interp)
+            resample=self.interp)  # DEBUG
         self.mask_transforms = K.RandomAffine(
             30, translate=(0.45, 0.45), p=1.0, resample=Resample.NEAREST)
         self.jitter_transform = K.ColorJitter(
@@ -83,6 +91,16 @@ class RP2AttackModule(DetectorAttackModule):
                 15, translate=(0.1, 0.1), scale=(0.9, 1.1), p=1.0, resample=self.interp)
             # Background should move very little because gt annotation is fixed
             # self.real_transform['tf_bg'] = self.bg_transforms
+
+    def _set_nms(self):
+        if self.is_detectron:
+            self.core_model.proposal_generator.nms_thresh = self.nms_thresh
+            self.core_model.proposal_generator.post_nms_topk = self.post_nms_topk
+
+    def _reset_nms(self):
+        if self.is_detectron:
+            self.core_model.proposal_generator.nms_thresh = self.nms_thresh_orig
+            self.core_model.proposal_generator.post_nms_topk = self.post_nms_topk_orig
 
     def _setup_opt(self, z_delta):
         # Set up optimizer
@@ -142,7 +160,7 @@ class RP2AttackModule(DetectorAttackModule):
         # smaller of the two, 0.5
         _, target_labels, target_logits, obj_logits = get_targets(
             self.core_model, metadata, device=self.core_model.device,
-            iou_thres=0.5, score_thres=self.min_conf)
+            iou_thres=0.1, score_thres=self.min_conf)
 
         # DEBUG
         # import cv2
@@ -175,14 +193,15 @@ class RP2AttackModule(DetectorAttackModule):
             target_loss, obj_loss = 0, 0
             if len(tgt_log) > 0 and len(tgt_lb) > 0:
                 # Ignore the background class on tgt_log
-                target_loss = - F.cross_entropy(tgt_log[:, :-1], tgt_lb,
-                                                reduction='sum')
+                # target_loss = F.cross_entropy(tgt_log[:, :-1], tgt_lb,
+                #                               reduction='sum')
+                target_loss = F.cross_entropy(tgt_log, tgt_lb, reduction='sum')
             if len(obj_logits) > 0 and self.detectron_obj_const != 0:
-                obj_lb = torch.zeros_like(obj_log)
+                obj_lb = torch.ones_like(obj_log)
                 obj_loss = F.binary_cross_entropy_with_logits(obj_log, obj_lb,
                                                               reduction='sum')
             loss += target_loss + self.detectron_obj_const * obj_loss
-        return loss
+        return -loss
 
     def _print_loss(self, loss, step):
         if self.ema_loss is None:
@@ -221,6 +240,7 @@ class RP2AttackModule(DetectorAttackModule):
         self.core_model.eval()
         device = obj.device
         dtype = obj.dtype
+        self._set_nms()
 
         metadata_clone = np.empty(len(backgrounds))
         if self.is_detectron:
@@ -241,11 +261,12 @@ class RP2AttackModule(DetectorAttackModule):
         for _ in range(self.num_restarts):
             # Initialize adversarial perturbation
             z_delta = torch.zeros((1, 3, height, width), device=device, dtype=dtype)
-            z_delta.uniform_(-10, 10)
+            z_delta.uniform_(0, 1)
 
             opt, lr_schedule = self._setup_opt(z_delta)
             self.start_time = time.time()
             self.ema_loss = None
+            counter = 0
 
             # Run PGD on inputs for specified number of steps
             for step in range(self.num_steps):
@@ -315,13 +336,18 @@ class RP2AttackModule(DetectorAttackModule):
 
                     loss = self.compute_loss(
                         delta, adv_img, obj_class, metadata_clone[bg_idx])
+                    # loss *= -1
                     loss.backward()
+
+                    # counter += 1
+                    # if counter < 5:
+                    #     continue
 
                     if 'pgd' in self.attack_mode:
                         grad = z_delta.grad.detach()
                         grad = torch.sign(grad)
                         z_delta = z_delta.detach() - self.pgd_step_size * grad
-                        z_delta = z_delta.clamp_(0, 1)
+                        z_delta.clamp_(0, 1)
                     else:
                         opt.step()
 
@@ -348,6 +374,7 @@ class RP2AttackModule(DetectorAttackModule):
 
         # Return worst-case perturbed input logits
         self.core_model.train(mode)
+        self._reset_nms()
         return delta.detach()
 
     @torch.no_grad()
@@ -409,7 +436,7 @@ class RP2AttackModule(DetectorAttackModule):
             # Initialize adversarial perturbation
             z_delta = torch.zeros((1, 3, height, width),
                                   device=device, dtype=torch.float32)
-            z_delta.uniform_(-10, 10)
+            z_delta.uniform_(0, 1)
 
             # Set up optimizer
             opt, lr_schedule = self._setup_opt(z_delta)
