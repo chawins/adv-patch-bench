@@ -129,11 +129,12 @@ CUDA_VISIBLE_DEVICES=$GPU python -u gen_patch_detectron.py \
     --dataset $DATASET --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH \
     --attack-config-path $ATTACK_CONFIG_PATH --obj-class $OBJ_CLASS \
     --name $EXP_NAME --bg-dir $BG_PATH --transform-mode perspective --verbose \
-    --img-txt-path $BG_FILES --synthetic --obj-size 64 \
+    --synthetic --obj-size 64 \
     MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
     OUTPUT_DIR $OUTPUT_PATH \
     MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
     DATALOADER.NUM_WORKERS 6
+# --img-txt-path $BG_FILES --synthetic --obj-size 64 \
 
 CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
     --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \

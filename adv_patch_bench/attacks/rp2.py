@@ -276,7 +276,10 @@ class RP2AttackModule(DetectorAttackModule):
                 adv_obj = obj.clone()
                 with torch.enable_grad():
                     z_delta.requires_grad_()
-                    delta = self._to_model_space(z_delta, 0, 1)
+                    if 'pgd' in self.attack_mode:
+                        delta = z_delta
+                    else:
+                        delta = self._to_model_space(z_delta, 0, 1)
                     # Copy patch to synthetic sign
                     adv_obj[:, ymin:ymin + height, xmin:xmin + width] = delta
 
@@ -313,7 +316,14 @@ class RP2AttackModule(DetectorAttackModule):
                     loss = self.compute_loss(
                         delta, adv_img, obj_class, metadata_clone[bg_idx])
                     loss.backward()
-                    opt.step()
+
+                    if 'pgd' in self.attack_mode:
+                        grad = z_delta.grad.detach()
+                        grad = torch.sign(grad)
+                        z_delta = z_delta.detach() - self.pgd_step_size * grad
+                        z_delta = z_delta.clamp_(0, 1)
+                    else:
+                        opt.step()
 
                 # torchvision.utils.save_image(adv_img, 'temp_img.png')
                 # import pdb
