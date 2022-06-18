@@ -464,7 +464,7 @@ class RP2AttackModule(DetectorAttackModule):
                         delta = self._to_model_space(z_delta, 0, 1)
                     delta = delta.repeat(self.num_eot, 1, 1, 1)
 
-                    adv_img = apply_transform(
+                    adv_img, _ = apply_transform(
                         backgrounds[bg_idx].clone(), delta.clone(), patch_mask,
                         patch_loc, tf_function, curr_tf_data, interp=self.interp,
                         **self.real_transform, use_relight=self.use_relight)

@@ -163,11 +163,30 @@ def generate_adv_patch(
 
         attack_images = []
         print('=> Collecting background images...')
-        for batch_i, (im, targets, paths, shapes) in enumerate(dataloader):
+        
+        # filename_debug = '6obAf9CRQh_dBFHPAIiRFQ.jpg'
+        filename_debug = 'HwBonTfmkfIOANA1O7B2OQ.jpg'
+
+        from tqdm import tqdm
+        for batch_i, (im, targets, paths, shapes) in tqdm(enumerate(dataloader)):
+            # import pdb
+            # pdb.set_trace()
+
+            # DEBUG
+            # if f'/datadrive/nab_126/data/mapillary_vistas/no_color/combined/images/{filename_debug}' not in paths:
+                # continue
+
             for image_i, path in enumerate(paths):
                 filename = path.split('/')[-1]
-                # if filename != 'D4J8uMZ4OdmebvfK50aRpA.jpg':
+
+                # DEBUG
+                # if filename != filename_debug:
                 #     continue
+                # tmp_df = pd.read_csv('results_per_label_errors.csv')
+                # if filename not in tmp_df['filename'].values:
+                #     continue
+                # print('attack_images', len(attack_images))
+                
                 img_df = df[df['filename'] == filename]
 
                 if len(img_df) == 0:
@@ -176,7 +195,6 @@ def generate_adv_patch(
                 for _, row in img_df.iterrows():
                     (h0, w0), ((h_ratio, w_ratio), (w_pad, h_pad)) = shapes[image_i]
                     predicted_class = row['final_shape']
-                    # shape = predicted_class.split('-')[0]
 
                     # Filter out images that do not have the obj_class
                     if predicted_class != class_names[obj_class]:
@@ -275,7 +293,8 @@ def main(
         print(f'num_bg is a fraction ({num_bg}).')
         num_bg = round(MAPILLARY_IMG_COUNTS_DICT[class_name] * num_bg)
         print(f'For {class_name}, this is {num_bg} images.')
-    num_bg = int(num_bg)
+    num_bg = min(num_bg, 200)
+    kwargs['num_bg'] = num_bg
 
     # Configure object size
     # NOTE: We assume that the target object fits the tensor in the same way

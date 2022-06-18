@@ -86,11 +86,12 @@ def eval_args_parser(is_detectron, root=None):
     parser.add_argument('--save-images', action='store_true',
                         help='Save generated patch')
     # parser.add_argument('--detectron', action='store_true', help='Model is detectron else YOLO')
-
-    if is_detectron:
-        parser.add_argument('--conf-thres', type=float, default=None,
+    parser.add_argument('--conf-thres', type=float, default=None,
                             help=('Set confidence threshold for detection.'
                                   'Otherwise, threshold is set to max f1 score.'))
+                                  
+    if is_detectron:
+        
         # TODO: is this still used?
         parser.add_argument('--compute-metrics', action='store_true',
                             help='Compute metrics after running attack')
