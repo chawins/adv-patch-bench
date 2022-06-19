@@ -23,7 +23,7 @@ from torch.nn import DataParallel
 from adv_patch_bench.attacks.rp2 import RP2AttackModule
 from adv_patch_bench.utils.argparse import (eval_args_parser,
                                             setup_yolo_test_args)
-from adv_patch_bench.utils.image import get_obj_width
+from adv_patch_bench.utils.image import get_obj_width, resize_and_center
 from gen_mask import generate_mask
 from hparams import LABEL_LIST, MAPILLARY_IMG_COUNTS_DICT, OTHER_SIGN_CLASS
 from yolov5.models.common import DetectMultiBackend
@@ -127,28 +127,20 @@ def generate_adv_patch(
         obj_mask = torch.from_numpy(obj_numpy[:, :, -1] == 1).float().unsqueeze(0)
         obj = torch.from_numpy(obj_numpy[:, :, :-1]).float().permute(2, 0, 1)
         # Resize object to the specify size and pad obj and masks to image size
-        pad_size = [(img_size[1] - obj_size[1]) // 2,
-                    (img_size[0] - obj_size[0]) // 2,
-                    (img_size[1] - obj_size[1]) // 2 + obj_size[1] % 2,
-                    (img_size[0] - obj_size[0]) // 2 + obj_size[0] % 2]  # left, top, right, bottom
-        obj = T.resize(obj, obj_size, antialias=True)
-        obj = T.pad(obj, pad_size)
-
-        obj_mask = T.resize(obj_mask, obj_size, interpolation=T.InterpolationMode.NEAREST)
-        obj_mask = T.pad(obj_mask, pad_size)
-
+        obj = resize_and_center(obj, img_size, obj_size, is_binary=False)
+        obj_mask = resize_and_center(
+            obj_mask, img_size, obj_size, is_binary=True)
         patch_mask = patch_mask.unsqueeze(dim=0)
-        patch_mask_ = T.resize(patch_mask, obj_size, interpolation=T.InterpolationMode.NEAREST)
-
-        patch_mask_ = T.pad(patch_mask_, pad_size)
+        patch_mask_padded = resize_and_center(
+            patch_mask, img_size, obj_size, is_binary=True)
 
         print(f'=> Start attacking...')
         with torch.enable_grad():
             adv_patch = attack.attack(obj.to(device),
                                       obj_mask.to(device),
-                                      patch_mask_.to(device),
+                                      patch_mask_padded.to(device),
                                       backgrounds.to(device),
-                                      obj_size=obj_size)
+                                      obj_class=obj_class)
 
         if save_images:
             torchvision.utils.save_image(obj, join(save_dir, 'obj.png'))
@@ -163,30 +155,22 @@ def generate_adv_patch(
 
         attack_images = []
         print('=> Collecting background images...')
-        
-        # filename_debug = '6obAf9CRQh_dBFHPAIiRFQ.jpg'
-        filename_debug = 'HwBonTfmkfIOANA1O7B2OQ.jpg'
 
         from tqdm import tqdm
         for batch_i, (im, targets, paths, shapes) in tqdm(enumerate(dataloader)):
-            # import pdb
-            # pdb.set_trace()
-
-            # DEBUG
-            # if f'/datadrive/nab_126/data/mapillary_vistas/no_color/combined/images/{filename_debug}' not in paths:
-                # continue
 
             for image_i, path in enumerate(paths):
                 filename = path.split('/')[-1]
 
                 # DEBUG
+                # filename_debug = 'HwBonTfmkfIOANA1O7B2OQ.jpg'
                 # if filename != filename_debug:
                 #     continue
                 # tmp_df = pd.read_csv('results_per_label_errors.csv')
                 # if filename not in tmp_df['filename'].values:
                 #     continue
                 # print('attack_images', len(attack_images))
-                
+
                 img_df = df[df['filename'] == filename]
                 if len(img_df) == 0:
                     continue
@@ -233,8 +217,10 @@ def generate_adv_patch(
     adv_patch = adv_patch[0].detach().cpu().float()
 
     if save_images:
-        torchvision.utils.save_image(patch_mask, join(save_dir, 'patch_mask.png'))
-        torchvision.utils.save_image(adv_patch, join(save_dir, 'adversarial_patch.png'))
+        torchvision.utils.save_image(patch_mask,
+                                     join(save_dir, 'patch_mask.png'))
+        torchvision.utils.save_image(adv_patch,
+                                     join(save_dir, 'adversarial_patch.png'))
 
     return adv_patch
 
@@ -272,9 +258,9 @@ def main(
     class_names = LABEL_LIST[args.dataset]
 
     # Set up directories
-    save_dir = increment_path(Path(project) / name, exist_ok=exist_ok)  # increment run
+    # save_dir = increment_path(Path(project) / name, exist_ok=exist_ok)  # increment run
     # (save_dir / 'labels' if save_txt else save_dir).mkdir(parents=True, exist_ok=True)  # make dir
-    save_dir = save_dir / class_names[obj_class]
+    save_dir = Path(project) / name / class_names[obj_class]
     os.makedirs(save_dir, exist_ok=True)
 
     # Load model (YOLO)

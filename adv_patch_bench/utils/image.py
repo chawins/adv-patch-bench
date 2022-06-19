@@ -192,8 +192,10 @@ def resize_and_center(obj:torch.Tensor,
 
     if img_size is not None:
         # left, top, right, bottom
-        left = (img_size[1] - obj_size[1]) // 2
-        top = (img_size[0] - obj_size[0]) // 2
+        # left = (img_size[1] - obj_size[1]) // 2
+        # top = (img_size[0] - obj_size[0]) // 2
+        left = torch.div(img_size[1] - obj_size[1], 2, rounding_mode='trunc')
+        top = torch.div(img_size[0] - obj_size[0], 2, rounding_mode='trunc')
         pad_size = [
             left,  # left
             top,  # top

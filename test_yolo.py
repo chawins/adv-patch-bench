@@ -137,36 +137,36 @@ def populate_default_metric(lbl_, min_area, filename, other_class_label):
 
 
 @torch.no_grad()
-def run(args,
-        data,
-        weights=None,  # model.pt path(s)
-        batch_size=32,  # batch size
-        imgsz=640,  # inference size (pixels)
-        conf_thres=0.001,  # confidence threshold
-        iou_thres=0.6,  # NMS IoU threshold
-        task='val',  # train, val, test, speed or study
-        device='',  # cuda device, i.e. 0 or 0,1,2,3 or cpu
-        workers=8,  # max dataloader workers (per RANK in DDP mode)
-        single_cls=False,  # treat as single-class dataset
-        augment=False,  # augmented inference
-        verbose=False,  # verbose output
-        save_txt=False,  # save results to *.txt
-        save_hybrid=False,  # save label+prediction hybrid results to *.txt
-        save_conf=False,  # save confidences in --save-txt labels
-        save_json=False,  # save a COCO-JSON results file
-        project=ROOT / 'runs/val',  # save to project/name
-        name='exp',  # save to project/name
-        exist_ok=False,  # existing project/name ok, do not increment
-        half=True,  # use FP16 half-precision inference
-        dnn=False,  # use OpenCV DNN for ONNX inference
-        dataloader=None,
-        save_dir=Path(''),
-        plots=True,
-        callbacks=Callbacks(),
-        compute_loss=None,
-        **kwargs,
-        ):
-
+def run(
+    args,
+    data,
+    weights=None,  # model.pt path(s)
+    batch_size=32,  # batch size
+    imgsz=640,  # inference size (pixels)
+    conf_thres=0.001,  # confidence threshold
+    iou_thres=0.6,  # NMS IoU threshold
+    task='val',  # train, val, test, speed or study
+    device='',  # cuda device, i.e. 0 or 0,1,2,3 or cpu
+    workers=8,  # max dataloader workers (per RANK in DDP mode)
+    single_cls=False,  # treat as single-class dataset
+    augment=False,  # augmented inference
+    verbose=False,  # verbose output
+    save_txt=False,  # save results to *.txt
+    save_hybrid=False,  # save label+prediction hybrid results to *.txt
+    save_conf=False,  # save confidences in --save-txt labels
+    save_json=False,  # save a COCO-JSON results file
+    project=ROOT / 'runs/val',  # save to project/name
+    name='exp',  # save to project/name
+    exist_ok=False,  # existing project/name ok, do not increment
+    half=True,  # use FP16 half-precision inference
+    dnn=False,  # use OpenCV DNN for ONNX inference
+    dataloader=None,
+    save_dir=Path(''),
+    plots=True,
+    callbacks=Callbacks(),
+    compute_loss=None,
+    **kwargs,
+):
     # Load our new args
     attack_type = args.attack_type
     use_attack = args.attack_type != 'none'
@@ -231,9 +231,9 @@ def run(args,
         model = DetectMultiBackend(weights, device=device, dnn=dnn)
         stride, pt, jit, engine = model.stride, model.pt, model.jit, model.engine
         # check image size
-        imgsz = check_img_size(imgsz, s=stride)  
+        imgsz = check_img_size(imgsz, s=stride)
         # half precision only supported by PyTorch on CUDA
-        half &= (pt or jit or engine) and device.type != 'cpu'  
+        half &= (pt or jit or engine) and device.type != 'cpu'
         if pt or jit:
             model.model.half() if half else model.model.float()
         elif engine:
@@ -272,7 +272,7 @@ def run(args,
     elif model_name == 'yolor':
         img = torch.zeros((1, 3, imgsz, imgsz), device=device)  # init img
         # run once to warmup
-        _ = model(img.half() if half else img) if device.type != 'cpu' else None  
+        _ = model(img.half() if half else img) if device.type != 'cpu' else None
 
     dataloader = create_dataloader(data[task], imgsz, batch_size, stride,
                                    single_cls, pad=pad, rect=pt,
@@ -306,15 +306,6 @@ def run(args,
     #     f = os.path.join(save_dir, 'adversarial_patch.png')
     #     torchvision.utils.save_image(demo_patch, f)
 
-    if synthetic:
-        # Prepare evaluation with synthetic signs
-        # syn_data: syn_obj, obj_mask, obj_transforms, mask_transforms, syn_sign_class
-        syn_data = prep_synthetic_eval(args, img_size, names, device=device)
-        syn_sign_class = syn_data[-1]
-        nc += 1
-        adv_patch = None
-        patch_mask = None
-
     if use_attack:
         # Prepare attack data
         adv_patch_dir = os.path.join(
@@ -323,6 +314,16 @@ def run(args,
         args.adv_patch_path = adv_patch_path
         df, adv_patch, patch_mask, patch_loc = prep_attack(
             args, img_size, device)
+
+    if synthetic:
+        # Prepare evaluation with synthetic signs
+        # syn_data: syn_obj, obj_mask, obj_transforms, mask_transforms, syn_sign_class
+        syn_data = prep_synthetic_eval(args, img_size, names, device=device)
+        names[nc] = 'synthetic'
+        syn_sign_class = syn_data[-1]
+        nc += 1
+        # adv_patch = None
+        # patch_mask = None
 
     # Initialize attack
     if attack_type == 'per-sign':
@@ -381,7 +382,6 @@ def run(args,
             break
         # ======================= BEGIN: apply patch ======================== #
         for image_i, path in enumerate(paths):
-            # print()
             if use_attack and not synthetic:
                 filename = path.split('/')[-1]
                 img_df = df[df['filename'] == filename]
@@ -418,21 +418,17 @@ def run(args,
                                 obj_class=adv_sign_class)[0]
 
                     # # Transform and apply patch on the image. `im` has range [0, 255]
-                    # print(im[image_i].max())
-                    img_normalized, warped_patch_num_pixels = transform_and_apply_patch(
+                    img, warped_patch_num_pixels = transform_and_apply_patch(
                         im[image_i].to(device), adv_patch.to(device),
                         patch_mask, patch_loc, predicted_class, row, img_data,
-                        transform=args.patch_transform,
-                        use_relight=not args.no_patch_relight, interp=args.interp)
-                    im[image_i] = img_normalized
-                    # print(im[image_i].max())
-                    # num_patches_applied_to_image += 1
+                        args.transform_mode, interp=args.interp,
+                        use_relight=not args.no_patch_relight)
+                    im[image_i] = img
                     total_num_patches += 1
                     patch_size_df_filenames.append(row['filename'])
                     patch_size_df_object_ids.append(row['object_id'])
                     patch_size_df_num_pixels.append(warped_patch_num_pixels)
 
-                
                 # set targets[6] to #patches_applied_to_image
                 # targets[targets[:, 0] == image_i, 6] = num_patches_applied_to_image
 
@@ -456,10 +452,10 @@ def run(args,
         # Inference
         if model_name == 'yolov5':
             # inference, loss outputs
-            out, train_out = model(im, augment=augment, val=True)  
+            out, train_out = model(im, augment=augment, val=True)
         elif model_name == 'yolor':
             # inference and training outputs
-            out, train_out = model(im, augment=augment)  
+            out, train_out = model(im, augment=augment)
 
         dt[1] += time_sync() - t2
 
@@ -542,8 +538,8 @@ def run(args,
                         # [x1, y1, x2, y2] where xy1=top-left, xy2=bottom-right
                         x1 = 0.9 * lbl[1] if 0.9 * lbl[1] > 5 else -20
                         y1 = 0.9 * lbl[2] if 0.9 * lbl[2] > 5 else -20
-                        if (prd[0] >= x1 and prd[1] >= y1 and 
-                            prd[2] <= 1.1 * lbl[3] and prd[3] <= 1.1 * lbl[4]):
+                        if (prd[0] >= x1 and prd[1] >= y1 and
+                                prd[2] <= 1.1 * lbl[3] and prd[3] <= 1.1 * lbl[4]):
                             if prd[5] == adv_sign_class:
                                 predn[pi, 5] = syn_sign_class
                                 pred[pi, 5] = syn_sign_class
@@ -562,7 +558,7 @@ def run(args,
                 # `label_idx`: idx of object in `labels`
                 # `pred_idx`: idx of object in `predn`
 
-                _, iou_matches, _ = process_batch(predn, labelsn, iouv, 
+                _, iou_matches, _ = process_batch(predn, labelsn, iouv,
                                                   match_on_iou_only=True)
                 iou_matches = []
                 correct, matches, iou = process_batch(
@@ -596,13 +592,15 @@ def run(args,
 
             for lbl_index, lbl_ in enumerate(labels):
                 if annotated_signs_only and not synthetic:
-                    annotation_row = annotation_df[(annotation_df['filename'] == filename) &
-                                                   (annotation_df['object_id'] == int(lbl_[5]))]
+                    annotation_row = annotation_df[
+                        (annotation_df['filename'] == filename) &
+                        (annotation_df['object_id'] == int(lbl_[5]))
+                    ]
                     assert len(annotation_row) <= 1
                     # Ignore label if either (1) not annotated or (2) was used
                     # to generate patch attack.
                     is_annotated = len(annotation_row) > 0
-                    used_to_gen_path = (filename in filename_list and 
+                    used_to_gen_path = (filename in filename_list and
                                         not args.run_only_img_txt)
                     if not is_annotated or used_to_gen_path:
                         # Ignore by setting label to 'other' class which is
@@ -686,8 +684,9 @@ def run(args,
                 false_positives_filenames.append(filename)
 
             # if unmatched and small, the prediction should be removed
-            pred_index_to_keep = np.logical_and(pred_index_to_keep, ~np.logical_and(
-                unmatched_preds_index, small_preds_index))
+            pred_index_to_keep = np.logical_and(
+                pred_index_to_keep, ~np.logical_and(
+                    unmatched_preds_index, small_preds_index))
 
             correct = correct[pred_index_to_keep]
             pred = pred[pred_index_to_keep]
@@ -756,7 +755,9 @@ def run(args,
     #                            END: Main eval loop                          #
     # ======================================================================= #
 
-    patch_size_df_data = {'filename': patch_size_df_filenames, 'object_id': patch_size_df_object_ids, 'patch_num_pixels': patch_size_df_num_pixels}
+    patch_size_df_data = {
+        'filename': patch_size_df_filenames, 'object_id': patch_size_df_object_ids,
+        'patch_num_pixels': patch_size_df_num_pixels}
     patch_size_df = pd.DataFrame.from_dict(patch_size_df_data)
     metrics_per_label_df = metrics_per_label_df.merge(right=patch_size_df, on=['filename', 'object_id'], how='left')
 
@@ -774,12 +775,14 @@ def run(args,
                 # labels
                 f = save_dir_class / f'image{i}_labels.jpg'  # labels
                 targets[:, 0] = 0
-                plot_images(im, targets, [path], f, names, labels=True)
+                plot_images(im, targets, [path], f, names,
+                            max_size=1920, labels=True)
 
                 # predictions
                 f = save_dir_class / f'image{i}_pred.jpg'  # labels
                 out[:, 0] = 0
-                plot_images(im, out, [path], f, names, labels=False)
+                plot_images(im, out, [path], f, names,
+                            max_size=1920, labels=False)
 
     # Compute metrics
     stats = [np.concatenate(x, 0) for x in zip(*stats)]  # to numpy

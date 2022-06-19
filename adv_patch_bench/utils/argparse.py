@@ -31,6 +31,9 @@ def eval_args_parser(is_detectron, root=None):
                         help='final image size including padding (height,width). Default: 3000,4000')
     parser.add_argument('--annotated-signs-only', action='store_true',
                         help='if True, only calculate metrics on annotated signs')
+    parser.add_argument('--conf-thres', type=float, default=None,
+                        help=('Set confidence threshold for detection.'
+                              'Otherwise, threshold is set to max f1 score.'))
 
     # =========================== Attack arguments ========================== #
     parser.add_argument('--attack-type', type=str, default='none',
@@ -77,21 +80,13 @@ def eval_args_parser(is_detectron, root=None):
     parser.add_argument('--obj-size', type=int, default=None,
                         help=('Object width in pixels (default: 0.1 * img_size).'
                               'Only used by gen_patch in for synthetic signs.'))
-    # parser.add_argument('--patch-size-px', type=int, default=None,
-    #                     help='Patch size in pixels (default: 0.2 * obj_size_px)')
     parser.add_argument('--bg-dir', type=str, default='',
                         help='path to background directory')
-    # parser.add_argument('--num-bg', type=float, default=1,
-    #                     help='Number of backgrounds used to generate patch')
     parser.add_argument('--save-images', action='store_true',
                         help='Save generated patch')
-    # parser.add_argument('--detectron', action='store_true', help='Model is detectron else YOLO')
-    parser.add_argument('--conf-thres', type=float, default=None,
-                            help=('Set confidence threshold for detection.'
-                                  'Otherwise, threshold is set to max f1 score.'))
-                                  
+
     if is_detectron:
-        
+
         # TODO: is this still used?
         parser.add_argument('--compute-metrics', action='store_true',
                             help='Compute metrics after running attack')
