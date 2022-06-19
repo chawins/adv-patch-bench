@@ -14,7 +14,7 @@ from kornia.constants import Resample
 from yolov5.utils.general import non_max_suppression
 from yolov5.utils.plots import output_to_target, plot_images
 
-from ..utils.image import letterbox, mask_to_box
+from ..utils.image import letterbox, mask_to_box, resize_and_center
 from .base_detector import DetectorAttackModule
 from .detectron_utils import get_targets
 
@@ -36,19 +36,22 @@ class RP2AttackModule(DetectorAttackModule):
         self.lmbda = attack_config['rp2_lambda']
         self.min_conf = attack_config['rp2_min_conf']
         self.input_size = attack_config['input_size']
+        self.patch_dim = attack_config['patch_dim']
         self.attack_mode = attack_config['attack_mode'].split('-')
         self.transform_mode = attack_config['transform_mode']
         self.use_relight = attack_config['use_patch_relight']
         self.detectron_obj_const = attack_config['detectron_obj_const']
         self.pgd_step_size = attack_config['pgd_step_size']
-        self.ema_const = 0.9  # Constant for moving average of the loss
+        self.ema_const = 0.  # Constant for moving average of the loss
 
         # self.cfg.MODEL.RPN.NMS_THRESH = nms_thresh
         # self.cfg.MODEL.RPN.POST_NMS_TOPK_TEST = 5000
-        self.nms_thresh = 0.9
-        self.post_nms_topk = {True: 5000, False: 5000}
         self.nms_thresh_orig = deepcopy(core_model.proposal_generator.nms_thresh)
         self.post_nms_topk_orig = deepcopy(core_model.proposal_generator.post_nms_topk)
+        # self.nms_thresh = 0.9
+        # self.post_nms_topk = {True: 5000, False: 5000}
+        self.nms_thresh = self.nms_thresh_orig
+        self.post_nms_topk = self.post_nms_topk_orig
         
         # Use change of variable on delta with alpha and beta.
         # Mostly used with per-sign attack.
@@ -66,7 +69,7 @@ class RP2AttackModule(DetectorAttackModule):
         # self.rescaling = rescaling
         self.rescaling = False
 
-        self.augment_real = attack_config['rp2_augment_real']
+        augment_prob = float(attack_config['use_augment'])
         self.interp = interp
         self.num_restarts = 1
         self.verbose = verbose
@@ -76,21 +79,22 @@ class RP2AttackModule(DetectorAttackModule):
         # bg_size = (self.input_size[0] - 32, self.input_size[1] - 32)
         bg_size = self.input_size
         self.bg_transforms = K.RandomResizedCrop(
-            bg_size, scale=(0.8, 1), p=1.0, resample=self.interp)
+            bg_size, scale=(0.8, 1), p=augment_prob, resample=self.interp)
         self.obj_transforms = K.RandomAffine(
-            30, translate=(0.45, 0.45), p=1.0, return_transform=True,
+            30, translate=(0.45, 0.45), p=augment_prob, return_transform=True,
             resample=self.interp)  # DEBUG
         self.mask_transforms = K.RandomAffine(
-            30, translate=(0.45, 0.45), p=1.0, resample=Resample.NEAREST)
+            30, translate=(0.45, 0.45), p=augment_prob, 
+            resample=Resample.NEAREST)
         self.jitter_transform = K.ColorJitter(
-            brightness=0.3, contrast=0.3, p=1.0)
+            brightness=0.3, contrast=0.3, p=augment_prob)
         # Use random transforms on patch and background when attacking real signs
         self.real_transform = {}
-        if self.augment_real:
-            self.real_transform['tf_patch'] = K.RandomAffine(
-                15, translate=(0.1, 0.1), scale=(0.9, 1.1), p=1.0, resample=self.interp)
-            # Background should move very little because gt annotation is fixed
-            # self.real_transform['tf_bg'] = self.bg_transforms
+        self.real_transform['tf_patch'] = K.RandomAffine(
+            15, translate=(0.1, 0.1), scale=(0.9, 1.1), p=augment_prob, 
+            resample=self.interp)
+        # Background should move very little because gt annotation is fixed
+        # self.real_transform['tf_bg'] = self.bg_transforms
 
     def _set_nms(self):
         if self.is_detectron:
@@ -110,11 +114,13 @@ class RP2AttackModule(DetectorAttackModule):
             opt = optim.Adam([z_delta], lr=self.step_size)
         elif self.optimizer == 'rmsprop':
             opt = optim.RMSprop([z_delta], lr=self.step_size)
+        elif self.optimizer == 'pgd':
+            opt = None
         else:
             raise NotImplementedError('Given optimizer not implemented.')
 
         lr_schedule = None
-        if self.use_lr_schedule:
+        if self.use_lr_schedule and opt is not None:
             # lr_schedule = optim.lr_scheduler.MultiStepLR(opt, [500, 1000, 1500], gamma=0.1)
             lr_schedule = optim.lr_scheduler.ReduceLROnPlateau(
                 opt, factor=0.5, patience=int(self.num_steps / 10),
@@ -129,7 +135,7 @@ class RP2AttackModule(DetectorAttackModule):
             loss = self._compute_loss_yolo(adv_img, obj_class, metadata)
         tv = ((delta[:, :, :-1, :] - delta[:, :, 1:, :]).abs().mean() +
               (delta[:, :, :, :-1] - delta[:, :, :, 1:]).abs().mean())
-        loss += self.lmbda * tv
+        # loss += self.lmbda * tv  # FIXME
         return loss
 
     def _compute_loss_yolo(self, adv_img, obj_class, metadata):
@@ -160,7 +166,7 @@ class RP2AttackModule(DetectorAttackModule):
         # smaller of the two, 0.5
         _, target_labels, target_logits, obj_logits = get_targets(
             self.core_model, metadata, device=self.core_model.device,
-            iou_thres=0.1, score_thres=self.min_conf)
+            iou_thres=0., score_thres=self.min_conf, use_correct_only=False)
 
         # DEBUG
         # import cv2
@@ -182,12 +188,15 @@ class RP2AttackModule(DetectorAttackModule):
         #     pdb.set_trace()
         #     print('ok')
 
+        # Loop through each EoT image
         loss = 0
         for tgt_lb, tgt_log, obj_log in zip(target_labels, target_logits, obj_logits):
             # Filter obj_class
-            if 'shapeshifter' not in self.attack_mode:
+            if 'shapeshifter' in self.attack_mode:
                 idx = obj_class == tgt_lb
                 tgt_lb, tgt_log, obj_log = tgt_lb[idx], tgt_log[idx], obj_log[idx]
+            else:
+                tgt_lb = torch.zeros_like(tgt_lb) + obj_class
             # If there's no matched gt/prediction, then attack already succeeds.
             # TODO: This has to be changed for appearing or misclassification attacks.
             target_loss, obj_loss = 0, 0
@@ -210,7 +219,7 @@ class RP2AttackModule(DetectorAttackModule):
             self.ema_loss = (self.ema_const * self.ema_loss +
                              (1 - self.ema_const) * loss.item())
 
-        if step % 100 == 0 and self.verbose:
+        if step % 1 == 0 and self.verbose:
             print(f'step: {step:4d}  loss: {self.ema_loss:.4f}  '
                   f'time: {time.time() - self.start_time:.2f}s')
             self.start_time = time.time()
@@ -228,9 +237,11 @@ class RP2AttackModule(DetectorAttackModule):
         """Run RP2 Attack.
 
         Args:
-            obj (torch.Tesnor): Object to place the adversarial patch on, shape [C, H, W]
+            obj (torch.Tesnor): Object to place the adversarial patch on,
+                shape [C, H, W]
             obj_mask (torch.Tesnor): Mask of object, must have shape [1, H, W]
-            patch_mask (torch.Tesnor): Mask of the patch, must have shape [1, H, W]
+            patch_mask (torch.Tesnor): Mask of the patch, must have shape 
+                [1, H, W]
             backgrounds (torch.Tesnor): Background images, shape [N, C, H, W]
 
         Returns:
@@ -251,16 +262,20 @@ class RP2AttackModule(DetectorAttackModule):
         obj_mask.detach_()
         patch_mask.detach_()
         backgrounds.detach_()
-        obj_mask_dup = obj_mask.expand(self.num_eot, -1, -1, -1)
-        ymin, xmin, height, width = mask_to_box(patch_mask)
+        _, _, obj_height, obj_width = mask_to_box(obj_mask)
         all_bg_idx = np.arange(len(backgrounds))
+        
+        obj_mask_eot = obj_mask.expand(self.num_eot, -1, -1, -1)
+        patch_mask_eot = patch_mask.expand(self.num_eot, -1, -1, -1)
+        obj_eot = obj.expand(self.num_eot, -1, -1, -1)
 
         # TODO: Initialize worst-case inputs
         # x_adv_worst = x.clone().detach()
 
         for _ in range(self.num_restarts):
             # Initialize adversarial perturbation
-            z_delta = torch.zeros((1, 3, height, width), device=device, dtype=dtype)
+            z_delta = torch.zeros((1, 3, self.patch_dim, self.patch_dim), 
+                                  device=device, dtype=dtype, requires_grad=True)
             z_delta.uniform_(0, 1)
 
             opt, lr_schedule = self._setup_opt(z_delta)
@@ -294,37 +309,39 @@ class RP2AttackModule(DetectorAttackModule):
                 #         30, translate=(0.45, 0.45),
                 #         p=1.0, return_transform=True, scale=(low_bin_edge / old_ratio, high_bin_edge / old_ratio))
 
-                adv_obj = obj.clone()
+                # Apply random transformations to synthetic sign and masks
+                adv_obj, tf_params = self.obj_transforms(obj_eot)
+                o_mask = self.mask_transforms.apply_transform(
+                    obj_mask_eot, None, transform=tf_params)
+                p_mask = self.mask_transforms.apply_transform(
+                    patch_mask_eot, None, transform=tf_params)
+
+                if self.is_detectron:
+                    # Update metada with location of transformed synthetic sign
+                    for i in range(self.num_eot):
+                        m = metadata_clone[bg_idx[i]]
+                        instances = m['instances']
+                        new_instances = Instances(instances.image_size)
+                        # Turn object mask to gt_boxes
+                        o_ymin, o_xmin, o_height, o_width = mask_to_box(o_mask[i])
+                        box = torch.tensor([[o_xmin, o_ymin, o_xmin + o_width, o_ymin + o_height]])
+                        new_instances.gt_boxes = Boxes(box)
+                        new_instances.gt_classes = torch.tensor([[obj_class]])
+                        m['instances'] = new_instances
+                
                 with torch.enable_grad():
                     z_delta.requires_grad_()
-                    if 'pgd' in self.attack_mode:
-                        delta = z_delta
-                    else:
-                        delta = self._to_model_space(z_delta, 0, 1)
-                    # Copy patch to synthetic sign
-                    adv_obj[:, ymin:ymin + height, xmin:xmin + width] = delta
-
-                    # Apply random transformations to both sign and patch
-                    adv_obj = adv_obj.expand(self.num_eot, -1, -1, -1)
-                    if self.use_relight:
-                        adv_obj = self.jitter_transform(adv_obj)
-                    adv_obj, tf_params = self.obj_transforms(adv_obj)
-                    o_mask = self.mask_transforms.apply_transform(
-                        obj_mask_dup, None, transform=tf_params).detach()
-
-                    if self.is_detectron:
-                        # Update metada with location of transformed synthetic sign
-                        for i in range(self.num_eot):
-                            m = metadata_clone[bg_idx[i]]
-                            instances = m['instances']
-                            new_instances = Instances(instances.image_size)
-                            # Turn o_mask to gt_boxes
-                            o_ymin, o_xmin, o_height, o_width = mask_to_box(o_mask[i])
-                            box = torch.tensor([[o_xmin, o_ymin, o_xmin + o_width, o_ymin + o_height]])
-                            new_instances.gt_boxes = Boxes(box)
-                            new_instances.gt_classes = torch.tensor([[obj_class]])
-                            m['instances'] = new_instances
-
+                    delta = self._to_model_space(z_delta, 0, 1)
+                    delta_padded = resize_and_center(
+                        delta, self.input_size, (obj_height, obj_width), 
+                        is_binary=False)
+                    delta_eot = delta_padded.expand(self.num_eot, -1, -1, -1)
+                    delta_eot = self.obj_transforms.apply_transform(
+                        delta_eot, None, transform=tf_params)
+                    adv_obj = p_mask * delta_eot + (1 - p_mask) * adv_obj
+                    # Augment sign and patch with relighting
+                    adv_obj = self.jitter_transform(adv_obj)
+                    
                     # Apply sign on background
                     adv_img = o_mask * adv_obj + (1 - o_mask) * bgs
                     adv_img = adv_img.clamp(0, 1)
@@ -336,12 +353,14 @@ class RP2AttackModule(DetectorAttackModule):
 
                     loss = self.compute_loss(
                         delta, adv_img, obj_class, metadata_clone[bg_idx])
-                    # loss *= -1
                     loss.backward()
 
                     # counter += 1
                     # if counter < 5:
                     #     continue
+                    # print(z_delta.grad)
+                    # import pdb
+                    # pdb.set_trace()
 
                     if 'pgd' in self.attack_mode:
                         grad = z_delta.grad.detach()
@@ -375,7 +394,7 @@ class RP2AttackModule(DetectorAttackModule):
         # Return worst-case perturbed input logits
         self.core_model.train(mode)
         self._reset_nms()
-        return delta.detach()
+        return self._to_model_space(z_delta.detach(), 0, 1)
 
     @torch.no_grad()
     def attack_real(
@@ -454,9 +473,7 @@ class RP2AttackModule(DetectorAttackModule):
                 with torch.enable_grad():
                     z_delta.requires_grad_()
                     # Determine how perturbation is projected
-                    if 'pgd' in self.attack_mode:
-                        delta = z_delta
-                    elif self.use_var_change_ab:
+                    if self.use_var_change_ab:
                         # Does not work when num_eot > 1
                         alpha, beta = curr_tf_data[-2:]
                         delta = self._to_model_space(z_delta, beta, alpha + beta)
@@ -543,6 +560,9 @@ class RP2AttackModule(DetectorAttackModule):
     def _to_model_space(self, x, min_, max_):
         """Transforms an input from the attack space to the model space. 
         This transformation and the returned gradient are elementwise."""
+        if 'pgd' in self.attack_mode:
+            return x
+
         # from (-inf, +inf) to (-1, +1)
         x = torch.tanh(x)
 

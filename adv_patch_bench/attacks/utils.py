@@ -12,7 +12,7 @@ import pandas as pd
 import torch
 import torchvision
 import torchvision.transforms.functional as T
-from adv_patch_bench.utils.image import (mask_to_box, pad_and_center,
+from adv_patch_bench.utils.image import (mask_to_box, resize_and_center,
                                          prepare_obj)
 from detectron2.structures.boxes import Boxes
 from detectron2.structures.instances import Instances
@@ -22,10 +22,29 @@ from kornia.constants import Resample
 from kornia.geometry.transform import resize
 
 
+def coerce_rank(x, ndim):
+    if x.ndim == ndim:
+        return x
+
+    ndim_diff = ndim - x.ndim
+    if ndim_diff < 0:
+        for _ in range(-ndim_diff):
+            x.squeeze_(0)
+        if x.ndim != ndim:
+            raise ValueError('Can\'t coerce rank.')
+        return x
+    
+    for _ in range(ndim_diff):
+        x.unsqueeze_(0)
+    if x.ndim != ndim:
+        raise ValueError('Can\'t coerce rank.')
+    return x
+
 def prep_synthetic_eval(
     args: Namespace,
     img_size: Tuple[int, int],
     label_names: List[str],
+    transform_prob: float = 1.,
     device: str = 'cuda',
 ):
     # Testing with synthetic signs
@@ -41,13 +60,13 @@ def prep_synthetic_eval(
     # obj_transforms = K.RandomAffine(20, translate=(0.45, 0.45), p=1.0, return_transform=True, scale=(0.3, 0.6))
     # mask_transforms = K.RandomAffine(20, translate=(0.45, 0.45), p=1.0, resample=Resample.NEAREST, scale=(0.3, 0.6))
     obj_transforms = K.RandomAffine(
-        30, translate=(0.45, 0.45), p=1.0, return_transform=True)
+        30, translate=(0.45, 0.45), p=transform_prob, return_transform=True)
     mask_transforms = K.RandomAffine(
-        30, translate=(0.45, 0.45), p=1.0, resample=Resample.NEAREST)
+        30, translate=(0.45, 0.45), p=transform_prob, resample=Resample.NEAREST)
 
     # Load synthetic object/sign from file
     _, patch_mask = pickle.load(open(args.adv_patch_path, 'rb'))
-    obj_size = patch_mask.shape[1]
+    obj_size = patch_mask.shape[-2]
     obj, obj_mask = prepare_obj(args.syn_obj_path, img_size, (obj_size, obj_size))
     obj = obj.to(device)
     obj_mask = obj_mask.to(device)  # .unsqueeze(0)
@@ -62,9 +81,11 @@ def prep_attack(
     # Load patch from a pickle file if specified
     # TODO: make script to generate dummy patch
     adv_patch, patch_mask = pickle.load(open(args.adv_patch_path, 'rb'))
-    obj_size = patch_mask.shape[1]
+    adv_patch = coerce_rank(adv_patch, 3)
+    patch_mask = coerce_rank(patch_mask, 3)
+    obj_size = patch_mask.shape[-2]
     patch_mask = patch_mask.to(device)
-    patch_height, patch_width = adv_patch.shape[1:]
+    patch_height, patch_width = adv_patch.shape[-2:]
     patch_loc = mask_to_box(patch_mask)
 
     if args.attack_type == 'debug':
@@ -91,19 +112,17 @@ def prep_attack(
         h_w_ratio = patch_mask.shape[-2] / patch_mask.shape[-1]
         if isinstance(obj_size, int):
             obj_size_px = (round(obj_size * h_w_ratio), obj_size)
-        _, patch_mask = pad_and_center(None, patch_mask, img_size, obj_size_px)
-        patch_mask.squeeze_()
+        patch_mask = resize_and_center(
+            patch_mask, img_size, obj_size_px, is_binary=True)
         patch_loc = mask_to_box(patch_mask)
-        # Pad adv patch
-        pad_size = [
-            patch_loc[1],  # left
-            patch_loc[0],  # right
-            img_size[1] - patch_loc[1] - patch_loc[3],  # top
-            img_size[0] - patch_loc[0] - patch_loc[2],  # bottom
-        ]
-        adv_patch = T.pad(adv_patch, pad_size)
+        adv_patch = resize_and_center(
+            adv_patch, img_size, obj_size_px, is_binary=False)
         patch_mask = patch_mask.to(device)
         adv_patch = adv_patch.to(device)
+
+    assert adv_patch.ndim == patch_mask.ndim == 3
+    assert adv_patch.shape[-2:] == patch_mask.shape[-2:], \
+        f'{adv_patch.shape} does not match {patch_mask.shape}.'
 
     return df, adv_patch, patch_mask, patch_loc
 
@@ -125,7 +144,12 @@ def apply_synthetic_sign(
     is_detectron: bool = False,
     other_sign_class: int = None
 ):
-    _, h, w = image.shape
+    adv_patch = coerce_rank(adv_patch, 4)
+    patch_mask = coerce_rank(patch_mask, 4)
+    syn_obj = coerce_rank(syn_obj, 4)
+    image = coerce_rank(image, 4)
+    h, w = image.shape[-2:]
+    
     if use_attack:
         adv_obj = patch_mask * adv_patch + (1 - patch_mask) * syn_obj
     else:
@@ -142,10 +166,6 @@ def apply_synthetic_sign(
         return perturbed_image
 
     # get top left and bottom right points
-    # TODO: can we use mask_to_box here?
-    # indices = np.where(o_mask.cpu()[0][0] == 1)
-    # x_min, x_max = min(indices[1]), max(indices[1])
-    # y_min, y_max = min(indices[0]), max(indices[0])
     bbox = mask_to_box(o_mask.cpu()[0][0] == 1)
     y_min, x_min, h_obj, w_obj = [b.item() for b in bbox]
 
@@ -195,17 +215,12 @@ def apply_synthetic_sign(
 def get_object_and_mask_from_numpy(
     obj_numpy: np.ndarray,
     obj_size: Tuple[int, int],
-    pad_size: Union[Tuple, List] = None,
+    img_size: Tuple[int, int] = None,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
-    """Get object and its mask and resize to obj_size"""
+    """Get object and its mask and resize to obj_size."""
     obj_mask = torch.from_numpy(obj_numpy[:, :, -1] == 1).float().unsqueeze(0)
     obj = torch.from_numpy(obj_numpy[:, :, :-1]).float().permute(2, 0, 1)
-    obj = T.resize(obj, obj_size, antialias=True)
-    if pad_size is not None:
-        obj = T.pad(obj, pad_size)
-    # obj = obj.permute(1, 2, 0)
-    obj_mask = T.resize(obj_mask, obj_size, interpolation=T.InterpolationMode.NEAREST)
-    if pad_size is not None:
-        obj_mask = T.pad(obj_mask, pad_size)
-    # obj_mask = obj_mask.permute(1, 2, 0)
+    if img_size is not None:
+        obj = resize_and_center(obj, img_size, obj_size, is_binary=False)
+        obj_mask = resize_and_center(obj_mask, img_size, obj_size, is_binary=True)
     return obj, obj_mask

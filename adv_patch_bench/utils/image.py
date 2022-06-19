@@ -136,7 +136,6 @@ def letterbox(im, new_shape=(640, 640), color=114, scaleup=True, stride=32):
     top, bottom = int(round(dh - 0.1)), int(round(dh + 0.1))
     left, right = int(round(dw - 0.1)), int(round(dw + 0.1))
     im = T.pad(im, [left, top, right, bottom], fill=color)
-    # im = cv2.copyMakeBorder(im, top, bottom, left, right, cv2.BORDER_CONSTANT, value=color)  # add border
     return im, ratio, (dw, dh)
 
 
@@ -167,12 +166,23 @@ def prepare_obj(obj_path, img_size, obj_size):
     obj_numpy = np.array(Image.open(obj_path).convert('RGBA')) / 255
     obj_mask = torch.from_numpy(obj_numpy[:, :, -1] == 1).float().unsqueeze(0)
     obj = torch.from_numpy(obj_numpy[:, :, :-1]).float().permute(2, 0, 1)
-    obj, obj_mask = pad_and_center(obj, obj_mask, img_size, obj_size)
+    obj = resize_and_center(obj, img_size, obj_size, is_binary=False)
+    obj_mask = resize_and_center(obj_mask, img_size, obj_size, is_binary=True)
+    obj.unsqueeze_(0)
+    obj_mask.unsqueeze_(0)
+    assert obj.ndim == obj_mask.ndim == 4
+    assert obj.shape[-2:] == obj_mask.shape[-2:]
     return obj, obj_mask
 
 
-def pad_and_center(obj, obj_mask, img_size, obj_size):
-    # Resize and put object in the middle of zero background
+def resize_and_center(obj:torch.Tensor, 
+                      img_size:Tuple[int, int], 
+                      obj_size:Tuple[int, int], 
+                      is_binary:bool = False):
+    """
+    Resize object to obj_size and then place it in the middle of zero 
+    background.
+    """
     # left, top, right, bottom
     left = (img_size[1] - obj_size[1]) // 2
     top = (img_size[0] - obj_size[0]) // 2
@@ -182,14 +192,19 @@ def pad_and_center(obj, obj_mask, img_size, obj_size):
         img_size[1] - obj_size[1] - left,  # right
         img_size[0] - obj_size[0] - top,  # bottom
     ]
-    if obj is not None:
-        obj = T.resize(obj, obj_size, antialias=True)
-        obj = T.pad(obj, pad_size)
-
-    obj_mask = T.resize(obj_mask.unsqueeze(dim=0), obj_size,
-                        interpolation=T.InterpolationMode.NEAREST)
-    obj_mask = T.pad(obj_mask, pad_size)
-    return obj, obj_mask
+    # if obj.ndim == 2:
+    #     obj.unsqueeze_(0)
+    # elif obj.ndim == 4:
+    #     obj.squeeze_(0)
+    # assert obj.ndim == 3
+    
+    if is_binary:
+        interp = T.InterpolationMode.NEAREST
+    else:
+        interp = T.InterpolationMode.BICUBIC
+    obj = T.resize(obj, obj_size, interpolation=interp)
+    obj = T.pad(obj, pad_size)
+    return obj
 
 
 def get_obj_width(obj_class, class_names):

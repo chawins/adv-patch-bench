@@ -168,6 +168,7 @@ class DAGAttacker:
                 syn_data = list(prep_synthetic_eval(self.args,
                                                     (h, w),
                                                     self.class_names,
+                                                    transform_prob=0.,  # FIXME
                                                     device=self.device))
                 syn_data[-1] = self.adv_sign_class  # TODO(clean)
                 # Apply synthetic sign and patch to image

@@ -31,7 +31,7 @@ from adv_patch_bench.dataloaders.detectron.mapper import BenignMapper
 from adv_patch_bench.utils.argparse import (eval_args_parser,
                                             setup_detectron_test_args)
 from adv_patch_bench.utils.detectron import ShuffleInferenceSampler
-from adv_patch_bench.utils.image import get_obj_width
+from adv_patch_bench.utils.image import get_obj_width, resize_and_center
 from gen_mask import generate_mask
 from hparams import (DATASETS, LABEL_LIST, MAPILLARY_IMG_COUNTS_DICT,
                      OTHER_SIGN_CLASS, SAVE_DIR_DETECTRON)
@@ -204,23 +204,17 @@ def generate_adv_patch(
         print('=> Generating adversarial patch on synthetic signs...')
         # Resize object to the specify size and pad obj and masks to image size
         # left, top, right, bottom
-        pad_size = [(img_size[1] - obj_size[1]) // 2,
-                    (img_size[0] - obj_size[0]) // 2,
-                    (img_size[1] - obj_size[1]) // 2 + obj_size[1] % 2,
-                    (img_size[0] - obj_size[0]) // 2 + obj_size[0] % 2]
         obj, obj_mask = get_object_and_mask_from_numpy(obj_numpy, obj_size,
-                                                       pad_size=pad_size)
-        patch_mask_ = T.resize(patch_mask, obj_size,
-                               interpolation=T.InterpolationMode.NEAREST)
-        patch_mask_ = T.pad(patch_mask_, pad_size)
+                                                       img_size=img_size)
+        patch_mask_padded = resize_and_center(
+            patch_mask, img_size, obj_size, is_binary=True)
 
         adv_patch = attack.attack(obj.to(device),
                                   obj_mask.to(device),
-                                  patch_mask_.to(device),
+                                  patch_mask_padded.to(device),
                                   backgrounds.to(device),
                                   obj_class=obj_class,
                                   metadata=metadata)
-
         if save_images:
             torchvision.utils.save_image(obj, join(save_dir, 'obj.png'))
             torchvision.utils.save_image(obj_mask,
