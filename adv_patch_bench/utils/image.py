@@ -183,27 +183,25 @@ def resize_and_center(obj:torch.Tensor,
     Resize object to obj_size and then place it in the middle of zero 
     background.
     """
-    # left, top, right, bottom
-    left = (img_size[1] - obj_size[1]) // 2
-    top = (img_size[0] - obj_size[0]) // 2
-    pad_size = [
-        left,  # left
-        top,  # top
-        img_size[1] - obj_size[1] - left,  # right
-        img_size[0] - obj_size[0] - top,  # bottom
-    ]
-    # if obj.ndim == 2:
-    #     obj.unsqueeze_(0)
-    # elif obj.ndim == 4:
-    #     obj.squeeze_(0)
-    # assert obj.ndim == 3
+    if obj_size is not None:
+        if is_binary:
+            interp = T.InterpolationMode.NEAREST
+        else:
+            interp = T.InterpolationMode.BICUBIC
+        obj = T.resize(obj, obj_size, interpolation=interp)
+
+    if img_size is not None:
+        # left, top, right, bottom
+        left = (img_size[1] - obj_size[1]) // 2
+        top = (img_size[0] - obj_size[0]) // 2
+        pad_size = [
+            left,  # left
+            top,  # top
+            img_size[1] - obj_size[1] - left,  # right
+            img_size[0] - obj_size[0] - top,  # bottom
+        ]
+        obj = T.pad(obj, pad_size)
     
-    if is_binary:
-        interp = T.InterpolationMode.NEAREST
-    else:
-        interp = T.InterpolationMode.BICUBIC
-    obj = T.resize(obj, obj_size, interpolation=interp)
-    obj = T.pad(obj, pad_size)
     return obj
 
 

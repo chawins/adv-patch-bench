@@ -15,7 +15,6 @@ from adv_patch_bench.attacks.utils import (apply_synthetic_sign, prep_attack,
                                            prep_synthetic_eval)
 from adv_patch_bench.transforms import transform_and_apply_patch
 from adv_patch_bench.utils.detectron import build_evaluator
-from adv_patch_bench.utils.image import pad_image, pad_to_size
 from detectron2.config import CfgNode
 from detectron2.data import MetadataCatalog
 from detectron2.structures.boxes import pairwise_iou
@@ -128,7 +127,7 @@ class DAGAttacker:
         self.evaluator.reset()
 
         for i, batch in tqdm(enumerate(self.data_loader)):
-            if self.debug and i >= 20:
+            if self.debug and total_num_patches >= 20:
                 break
 
             file_name = batch[0]['file_name']
@@ -168,7 +167,7 @@ class DAGAttacker:
                 syn_data = list(prep_synthetic_eval(self.args,
                                                     (h, w),
                                                     self.class_names,
-                                                    transform_prob=0.,  # FIXME
+                                                    transform_prob=1.,
                                                     device=self.device))
                 syn_data[-1] = self.adv_sign_class  # TODO(clean)
                 # Apply synthetic sign and patch to image
@@ -188,7 +187,7 @@ class DAGAttacker:
             elif len(img_df) > 0:
                 new_gt = batch[0]
                 # Iterate through objects in the current image
-                for _, obj in img_df.iterrows():
+                for obj_idx, obj in img_df.iterrows():
                     obj_classname = obj['final_shape']
                     obj_class = self.class_names.index(obj_classname)
                     if (obj_class != self.adv_sign_class and
@@ -196,6 +195,7 @@ class DAGAttacker:
                         # Skip if object is not from desired class
                         continue
                     is_included = True
+                    total_num_patches += 1
                     if not self.use_attack:
                         continue
 
@@ -205,19 +205,18 @@ class DAGAttacker:
                         attack_images = [[images, data, str(file_name)]]
                         with torch.enable_grad():
                             adv_patch = self.attack.attack_real(
-                                attack_images, patch_mask, obj_class, metadata=batch)
+                                attack_images, patch_mask, obj_class, 
+                                metadata=batch)
 
                     # TODO: Should we put only one adversarial patch per image?
                     # i.e., attacking only one sign per image.
-                    self.log(f'Attacking {file_name} ...')
+                    self.log(f'Attacking {file_name} on obj {obj_idx}...')
 
-                    # Transform and apply patch on the image. `im` has range [0, 255]
-                    img_normalized, warped_patch_num_pixels = transform_and_apply_patch(
+                    # Transform and apply patch on the image
+                    perturbed_image, _ = transform_and_apply_patch(
                         perturbed_image, adv_patch.to(self.device),
                         patch_mask, patch_loc, obj_classname, obj, img_data,
                         **self.transform_params)
-                    perturbed_image = img_normalized * 255
-                    total_num_patches += 1
 
             if not is_included:
                 # Skip image without any adversarial patch when attacking

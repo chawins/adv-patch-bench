@@ -7,8 +7,10 @@ import torch
 from cv2 import getAffineTransform
 from kornia.geometry.transform import (get_perspective_transform, warp_affine,
                                        warp_perspective)
+from adv_patch_bench.attacks.utils import coerce_rank
 
 from adv_patch_bench.transforms.verifier import sort_polygon_vertices
+from adv_patch_bench.utils.image import resize_and_center
 
 
 def gen_rect_mask(size, ratio=None):
@@ -313,7 +315,7 @@ def apply_transform(
     image: torch.FloatTensor,
     adv_patch: torch.FloatTensor,
     patch_mask: torch.FloatTensor,
-    patch_loc: Tuple[float],
+    patch_loc: Tuple[float, float, float, float],
     transform_func: Any,
     tf_data: Tuple[Any],
     tf_patch: Any = None,
@@ -339,42 +341,47 @@ def apply_transform(
     Returns:
         torch.Tensor: Image with transformed patch
     """
-    ymin, xmin, height, width = patch_loc
     sign_canonical, sign_mask, M, alpha, beta = tf_data
-    adv_patch.clamp_(0, 1)
+    adv_patch = coerce_rank(adv_patch, 4)
+    patch_mask = coerce_rank(patch_mask, 4)
+    sign_canonical = coerce_rank(sign_canonical, 4)
+    obj_size = patch_mask.shape[-2:]
+    assert adv_patch.shape[-2:] == sign_canonical.shape[-2:] == obj_size
+    
+    # ymin, xmin, height, width = patch_loc
     if use_relight:
-        adv_patch.mul_(alpha).add_(beta).clamp_(0, 1)
+        adv_patch.mul_(alpha).add_(beta)
+    adv_patch.clamp_(0, 1)
 
-    sign_canonical = sign_canonical.clone()
-    sign_canonical[:, :-1, ymin:ymin + height, xmin:xmin + width] = adv_patch
-    sign_canonical[:, -1, ymin:ymin + height, xmin:xmin + width] = 1
+    # Place adv_patch on sign_canonical and set alpha channel
+    patch_on_obj = sign_canonical.clone()
+    # sign_canonical[:, :-1, ymin:ymin + height, xmin:xmin + width] = adv_patch
+    # sign_canonical[:, -1, ymin:ymin + height, xmin:xmin + width] = 1
+    # sign_canonical = sign_mask * patch_mask * sign_canonical
+    patch_on_obj[:, :-1] = patch_mask * adv_patch
+    patch_on_obj[:, -1] = patch_mask
+    # Crop with sign_mask and patch_mask
+    patch_on_obj *= sign_mask * patch_mask
 
-    sign_canonical = sign_mask * patch_mask * sign_canonical
     # Apply augmentation on the patch
     if tf_patch is not None:
-        sign_canonical = tf_patch(sign_canonical)
-    warped_patch = transform_func(sign_canonical, M, image.shape[2:],
+        patch_on_obj = tf_patch(patch_on_obj)
+    warped_patch = transform_func(patch_on_obj, M, image.shape[2:],
                                   mode=interp, padding_mode='zeros')
     warped_patch.clamp_(0, 1)
-    alpha_mask = warped_patch[:, -1].unsqueeze(1)
-    final_img = (1 - alpha_mask) * image / 255 + alpha_mask * warped_patch[:, :-1]
-    
-    warped_patch_num_pixels = torch.count_nonzero(alpha_mask).item()
+    alpha_mask = warped_patch[:, -1]
+    warped_patch = warped_patch[:, :-1]
+    alpha_mask = coerce_rank(alpha_mask, 4)
+    final_img = (1 - alpha_mask) * image / 255 + alpha_mask * warped_patch
 
     # Apply augmentation on the entire image
     if tf_bg is not None:
         final_img = tf_bg(final_img)
 
+    warped_patch_num_pixels = torch.count_nonzero(alpha_mask).item()
     # print('warped_patch_num_pixels', warped_patch_num_pixels)
-
+    final_img *= 255
     return final_img, warped_patch_num_pixels
-
-
-def add_singleton_dim(x, total_dim):
-    add_dim = total_dim - x.ndim
-    for _ in range(add_dim):
-        x = x.unsqueeze(0)
-    return x
 
 
 def transform_and_apply_patch(
@@ -391,21 +398,22 @@ def transform_and_apply_patch(
 ) -> torch.Tensor:
 
     # Does not support batch mode. Add singleton dims to 4D if needed.
-    image = add_singleton_dim(image, 4)
-    adv_patch = add_singleton_dim(adv_patch, 4)
-    patch_mask = add_singleton_dim(patch_mask, 4)
+    image = coerce_rank(image, 4)
+    adv_patch = coerce_rank(adv_patch, 4)
+    patch_mask = coerce_rank(patch_mask, 4)
     device = image.device
 
     sign_size_in_pixel = patch_mask.shape[-1]
     transform_func, sign_canonical, sign_mask, M, alpha, beta, _ = get_transform(
         sign_size_in_pixel, predicted_class, row, *img_data, transform_mode)
 
-    sign_canonical = add_singleton_dim(sign_canonical, 4).to(device)
-    sign_mask = add_singleton_dim(sign_mask, 4).to(device)
-    M = add_singleton_dim(M, 3).to(device)
+    sign_canonical = coerce_rank(sign_canonical, 4).to(device)
+    sign_mask = coerce_rank(sign_mask, 4).to(device)
+    M = coerce_rank(M, 3).to(device)
     tf_data = (sign_canonical, sign_mask, M, alpha.to(device), beta.to(device))
 
-    img, warped_patch_num_pixels = apply_transform(image, adv_patch, patch_mask, patch_loc,
-                          transform_func, tf_data, interp=interp,
-                          use_relight=use_relight)
+    img, warped_patch_num_pixels = apply_transform(
+        image, adv_patch, patch_mask, patch_loc, transform_func, tf_data, 
+        interp=interp, use_relight=use_relight)
+    
     return img, warped_patch_num_pixels

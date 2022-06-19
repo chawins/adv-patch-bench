@@ -188,7 +188,6 @@ def generate_adv_patch(
                 # print('attack_images', len(attack_images))
                 
                 img_df = df[df['filename'] == filename]
-
                 if len(img_df) == 0:
                     continue
 
@@ -286,7 +285,7 @@ def main(
         attack_config = yaml.load(file, Loader=yaml.FullLoader)
     attack_config['input_size'] = img_size
 
-    num_bg = attack_config['num_bg']
+    num_bg = attack_config['rp2']['num_bg']  # TODO(clean)
     class_name = list(MAPILLARY_IMG_COUNTS_DICT.keys())[int(obj_class)]
     if num_bg < 1:
         assert class_name is not None
@@ -294,7 +293,7 @@ def main(
         num_bg = round(MAPILLARY_IMG_COUNTS_DICT[class_name] * num_bg)
         print(f'For {class_name}, this is {num_bg} images.')
     num_bg = min(num_bg, 200)
-    kwargs['num_bg'] = num_bg
+    # kwargs['num_bg'] = num_bg
 
     # Configure object size
     # NOTE: We assume that the target object fits the tensor in the same way

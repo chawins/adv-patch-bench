@@ -424,8 +424,7 @@ def run(args,
                         patch_mask, patch_loc, predicted_class, row, img_data,
                         transform=args.patch_transform,
                         use_relight=not args.no_patch_relight, interp=args.interp)
-                    # img_normalized = img_normalized * 255
-                    im[image_i] = img_normalized * 255
+                    im[image_i] = img_normalized
                     # print(im[image_i].max())
                     # num_patches_applied_to_image += 1
                     total_num_patches += 1

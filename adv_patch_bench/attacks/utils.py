@@ -83,7 +83,6 @@ def prep_attack(
     adv_patch, patch_mask = pickle.load(open(args.adv_patch_path, 'rb'))
     adv_patch = coerce_rank(adv_patch, 3)
     patch_mask = coerce_rank(patch_mask, 3)
-    obj_size = patch_mask.shape[-2]
     patch_mask = patch_mask.to(device)
     patch_height, patch_width = adv_patch.shape[-2:]
     patch_loc = mask_to_box(patch_mask)
@@ -110,6 +109,7 @@ def prep_attack(
         # Adv patch and mask have to be made compatible with random
         # transformation for synthetic signs
         h_w_ratio = patch_mask.shape[-2] / patch_mask.shape[-1]
+        obj_size = patch_mask.shape[-2]
         if isinstance(obj_size, int):
             obj_size_px = (round(obj_size * h_w_ratio), obj_size)
         patch_mask = resize_and_center(
@@ -119,6 +119,10 @@ def prep_attack(
             adv_patch, img_size, obj_size_px, is_binary=False)
         patch_mask = patch_mask.to(device)
         adv_patch = adv_patch.to(device)
+    else:
+        obj_size = patch_mask.shape[-2:]
+        adv_patch = resize_and_center(
+            adv_patch, None, obj_size, is_binary=False)
 
     assert adv_patch.ndim == patch_mask.ndim == 3
     assert adv_patch.shape[-2:] == patch_mask.shape[-2:], \

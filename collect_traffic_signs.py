@@ -5,10 +5,10 @@ from os import listdir, makedirs
 from os.path import isfile, join
 
 import numpy as np
+import pandas as pd
 import torch.backends.cudnn as cudnn
 from PIL import Image
 from tqdm.auto import tqdm
-import pandas as pd
 
 from adv_patch_bench.utils import get_box, pad_image
 
