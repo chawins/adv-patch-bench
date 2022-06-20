@@ -312,8 +312,7 @@ def run(
             SAVE_DIR_YOLO, args.name, names[adv_sign_class])
         adv_patch_path = os.path.join(adv_patch_dir, 'adv_patch.pkl')
         args.adv_patch_path = adv_patch_path
-        df, adv_patch, patch_mask, patch_loc = prep_attack(
-            args, img_size, device)
+        df, adv_patch, patch_mask = prep_attack(args, img_size, device)
 
     if synthetic:
         # Prepare evaluation with synthetic signs
@@ -374,7 +373,6 @@ def run(
         # if model_trained_without_other:
         #     targets = targets[targets[:, 1] != other_class_label]
 
-        # DEBUG
         if args.debug and batch_i == 100:
             break
 
@@ -393,18 +391,14 @@ def run(
                         (not in_list and args.run_only_img_txt)):
                     continue
                 num_apply_imgs += 1
+                (h0, w0), ((h_ratio, w_ratio), (w_pad, h_pad)) = shapes[image_i]
+                img_data = (h0, w0, h_ratio, w_ratio, w_pad, h_pad)
 
                 # import pdb
                 # pdb.set_trace()
                 # Loop over signs on this image and apply patch if applicable
                 for _, row in img_df.iterrows():
-                    (h0, w0), ((h_ratio, w_ratio), (w_pad, h_pad)) = shapes[image_i]
-                    img_data = (h0, w0, h_ratio, w_ratio, w_pad, h_pad)
                     predicted_class = row['final_shape']
-
-                    # shape = predicted_class.split('-')[0]
-                    # print(shape)
-                    # print(names[adv_sign_class])
                     if predicted_class != names[adv_sign_class]:
                         continue
                     # Run attack for each sign
@@ -417,13 +411,13 @@ def run(
                                 attack_images, patch_mask=patch_mask,
                                 obj_class=adv_sign_class)[0]
 
-                    # # Transform and apply patch on the image. `im` has range [0, 255]
-                    img, warped_patch_num_pixels = transform_and_apply_patch(
-                        im[image_i].to(device), adv_patch.to(device),
-                        patch_mask, patch_loc, predicted_class, row, img_data,
-                        args.transform_mode, interp=args.interp,
+                    # Transform and apply patch on the image. `im` has range [0, 255]
+                    img = im[image_i].clone().to(device)
+                    adv_patch_clone = adv_patch.clone().to(device)
+                    im[image_i], warped_patch_num_pixels = transform_and_apply_patch(
+                        img, adv_patch_clone, patch_mask, predicted_class, row, 
+                        img_data, args.transform_mode, interp=args.interp,
                         use_relight=not args.no_patch_relight)
-                    im[image_i] = img
                     total_num_patches += 1
                     patch_size_df_filenames.append(row['filename'])
                     patch_size_df_object_ids.append(row['object_id'])
@@ -433,8 +427,10 @@ def run(
                 # targets[targets[:, 0] == image_i, 6] = num_patches_applied_to_image
 
             elif synthetic:
+                img = im[image_i].clone().to(device)
+                adv_patch_clone = adv_patch.clone().to(device)
                 im[image_i], targets = apply_synthetic_sign(
-                    im[image_i], targets, image_i, adv_patch, patch_mask,
+                    img, targets, image_i, adv_patch_clone, patch_mask, 
                     *syn_data, device=device, use_attack=use_attack)
 
         t1 = time_sync()
@@ -756,10 +752,13 @@ def run(
     # ======================================================================= #
 
     patch_size_df_data = {
-        'filename': patch_size_df_filenames, 'object_id': patch_size_df_object_ids,
-        'patch_num_pixels': patch_size_df_num_pixels}
+        'filename': patch_size_df_filenames, 
+        'object_id': patch_size_df_object_ids,
+        'patch_num_pixels': patch_size_df_num_pixels,
+        }
     patch_size_df = pd.DataFrame.from_dict(patch_size_df_data)
-    metrics_per_label_df = metrics_per_label_df.merge(right=patch_size_df, on=['filename', 'object_id'], how='left')
+    metrics_per_label_df = metrics_per_label_df.merge(
+        right=patch_size_df, on=['filename', 'object_id'], how='left')
 
     metrics_per_image_df.to_csv(f'{project}/{name}/results_per_image.csv', index=False)
     metrics_per_label_df.to_csv(f'{project}/{name}/results_per_label.csv', index=False)
@@ -775,14 +774,12 @@ def run(
                 # labels
                 f = save_dir_class / f'image{i}_labels.jpg'  # labels
                 targets[:, 0] = 0
-                plot_images(im, targets, [path], f, names,
-                            max_size=1920, labels=True)
+                plot_images(im, targets, [path], f, names, labels=True)
 
                 # predictions
                 f = save_dir_class / f'image{i}_pred.jpg'  # labels
                 out[:, 0] = 0
-                plot_images(im, out, [path], f, names,
-                            max_size=1920, labels=False)
+                plot_images(im, out, [path], f, names, labels=False)
 
     # Compute metrics
     stats = [np.concatenate(x, 0) for x in zip(*stats)]  # to numpy

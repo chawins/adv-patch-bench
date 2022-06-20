@@ -3,13 +3,12 @@ import os
 import pickle
 from argparse import Namespace
 from copy import deepcopy
-from typing import Any, List, Tuple, Union
+from typing import Any, List, Tuple
 
 import numpy as np
 import pandas as pd
 import torch
 import torchvision
-import torchvision.transforms.functional as T
 from adv_patch_bench.utils.image import (mask_to_box, prepare_obj,
                                          resize_and_center)
 from detectron2.structures.boxes import Boxes
@@ -46,7 +45,6 @@ def prep_synthetic_eval(
     transform_prob: float = 1.,
     device: str = 'cuda',
 ):
-    # Testing with synthetic signs
     # Add synthetic label to the label names at the last position
     # FIXME
     syn_sign_class = len(label_names)
@@ -63,7 +61,7 @@ def prep_synthetic_eval(
     obj, obj_mask = prepare_obj(
         args.syn_obj_path, img_size, (obj_size, obj_size), interp=args.interp)
     obj = obj.to(device)
-    obj_mask = obj_mask.to(device)  # .unsqueeze(0)
+    obj_mask = obj_mask.to(device)
     return obj, obj_mask, obj_transforms, mask_transforms, syn_sign_class
 
 
@@ -79,7 +77,6 @@ def prep_attack(
     patch_mask = coerce_rank(patch_mask, 3)
     patch_mask = patch_mask.to(device)
     patch_height, patch_width = adv_patch.shape[-2:]
-    patch_loc = mask_to_box(patch_mask)
 
     if args.attack_type == 'debug':
         # Load 'arrow on checkboard' patch if specified (for debug)
@@ -108,7 +105,6 @@ def prep_attack(
             obj_size_px = (round(obj_size * h_w_ratio), obj_size)
         patch_mask = resize_and_center(
             patch_mask, img_size, obj_size_px, is_binary=True)
-        patch_loc = mask_to_box(patch_mask)
         adv_patch = resize_and_center(adv_patch, img_size, obj_size_px,
                                       is_binary=False, interp=args.interp)
         patch_mask = patch_mask.to(device)
@@ -122,7 +118,7 @@ def prep_attack(
     assert adv_patch.shape[-2:] == patch_mask.shape[-2:], \
         f'{adv_patch.shape} does not match {patch_mask.shape}.'
 
-    return df, adv_patch, patch_mask, patch_loc
+    return df, adv_patch, patch_mask
 
 
 def apply_synthetic_sign(
@@ -158,10 +154,11 @@ def apply_synthetic_sign(
         syn_obj_mask, None, transform=tf_params.to(device))
     image = image.to(device).view_as(adv_obj) / 255
     adv_img = o_mask * adv_obj + (1 - o_mask) * image
-    perturbed_image = adv_img.squeeze() * 255
+    adv_img = coerce_rank(adv_img, 3)
+    adv_img *= 255
 
     if not return_target:
-        return perturbed_image
+        return adv_img
 
     # get top left and bottom right points
     bbox = mask_to_box(o_mask.cpu()[0][0] == 1)
@@ -194,7 +191,7 @@ def apply_synthetic_sign(
                                             Boxes(new_bbox[None, :])])
         new_instances.gt_classes = new_gt_classes
         targets['instances'] = new_instances
-        return perturbed_image, targets
+        return adv_img, targets
 
     # Add new target for YOLO
     assert isinstance(targets, torch.Tensor)
@@ -208,7 +205,7 @@ def apply_synthetic_sign(
         -1
     ]
     targets = torch.cat((targets, torch.tensor(label).unsqueeze(0)))
-    return perturbed_image, targets
+    return adv_img, targets
 
 
 def get_object_and_mask_from_numpy(

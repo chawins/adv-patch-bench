@@ -318,6 +318,7 @@ class RP2AttackModule(DetectorAttackModule):
                 np.random.shuffle(all_bg_idx)
                 bg_idx = all_bg_idx[:self.num_eot]
                 curr_tf_data = [data[bg_idx] for data in tf_data]
+                bgs = backgrounds[bg_idx].clone()
 
                 metadata = self._on_real_attack_step(metadata)
                 with torch.enable_grad():
@@ -333,9 +334,9 @@ class RP2AttackModule(DetectorAttackModule):
                         delta, None, obj_size, is_binary=False, interp=self.interp)
                     delta_eot = delta_resized.repeat(self.num_eot, 1, 1, 1)
                     adv_img, _ = apply_transform(
-                        backgrounds[bg_idx].clone(), delta_eot, patch_mask,
-                        patch_loc, tf_function, curr_tf_data, interp=self.interp,
-                        **self.real_transform, use_relight=self.use_relight)
+                        bgs, delta_eot, patch_mask, tf_function, curr_tf_data, 
+                        interp=self.interp, **self.real_transform, 
+                        use_relight=self.use_relight)
                     adv_img /= 255
 
                     # DEBUG

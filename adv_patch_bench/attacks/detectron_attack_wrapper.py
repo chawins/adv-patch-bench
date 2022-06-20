@@ -133,7 +133,7 @@ class DetectronAttackWrapper:
 
         # Prepare attack data
         if self.use_attack:
-            _, adv_patch, patch_mask, patch_loc = prep_attack(
+            _, adv_patch, patch_mask = prep_attack(
                 self.args, self.img_size, self.device)
 
         total_num_patches, num_vis, syn_tp, syn_total = 0, 0, 0, 0
@@ -173,7 +173,7 @@ class DetectronAttackWrapper:
             is_included = False
             if self.synthetic:
                 self.log(f'Attacking {file_name} ...')
-                _, adv_patch, patch_mask, patch_loc = prep_attack(
+                _, adv_patch, patch_mask = prep_attack(
                     self.args, (h, w), self.device)
                 # Prepare evaluation with synthetic signs, syn_data: (syn_obj,
                 # syn_obj_mask, obj_transforms, mask_transforms, syn_sign_class)
@@ -188,7 +188,7 @@ class DetectronAttackWrapper:
                     images,
                     batch[0],
                     None,
-                    adv_patch,
+                    adv_patch.clone(),
                     patch_mask,
                     *syn_data,
                     use_attack=self.use_attack,
@@ -228,10 +228,11 @@ class DetectronAttackWrapper:
                     self.log(f'Attacking {file_name} on obj {obj_idx}...')
 
                     # Transform and apply patch on the image
+                    adv_patch_clone = adv_patch.clone().to(self.device)
+                    img = perturbed_image.clone().to(self.device)
                     perturbed_image, _ = transform_and_apply_patch(
-                        perturbed_image, adv_patch.to(self.device),
-                        patch_mask, patch_loc, obj_classname, obj, img_data,
-                        **self.transform_params)
+                        img, adv_patch_clone, patch_mask, obj_classname, obj, 
+                        img_data, **self.transform_params)
 
             if not is_included:
                 # Skip image without any adversarial patch when attacking

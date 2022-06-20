@@ -8,6 +8,8 @@ Test with
 - `cuda >= 11.2`
 - `kornia == 0.6.3`: Using version `>= 0.6.4` will raise an error.
 
+We recommend creating a new conda environment with python 3.8 because `kornia` and `detectron` seem to often mess up dependencies and result in a segmentation fault.
+
 ```bash
 conda install -y pytorch torchvision torchaudio cudatoolkit=11.3 -c pytorch
 conda install -y scipy pandas scikit-learn pip seaborn
@@ -92,7 +94,7 @@ ln -s ~/data/mapillary_vistas/validation/detectron_labels_no_color/* detectron_l
 
 ```bash
 # Download yolor-p6 pretrained weights
-cd ./yolor/scripts && gdown 1Tdn3yqpZ79X7R1Ql0zNlNScB1Dv9Fp76
+cd ./yolor/scripts && gdown 1Tdn3yqpZ79X7R1Ql0zNlNScB1Dv9Fp76 
 ```
 
 ## Training
@@ -105,5 +107,9 @@ cd ./yolor/scripts && gdown 1Tdn3yqpZ79X7R1Ql0zNlNScB1Dv9Fp76
 ```bash
 sh train_yolo.sh
 ```
+
+## Running Attack
+
+- `configs` contains attack config files and detectron (Faster R-CNN) config files.
 
 <!-- ## Other Tips -->

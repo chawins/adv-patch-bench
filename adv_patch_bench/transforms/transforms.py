@@ -314,7 +314,6 @@ def apply_transform(
     image: torch.FloatTensor,
     adv_patch: torch.FloatTensor,
     patch_mask: torch.FloatTensor,
-    patch_loc: Tuple[float, float, float, float],
     transform_func: Any,
     tf_data: Tuple[Any],
     tf_patch: Any = None,
@@ -341,6 +340,7 @@ def apply_transform(
         torch.Tensor: Image with transformed patch
     """
     sign_canonical, sign_mask, M, alpha, beta = tf_data
+    adv_patch = adv_patch.clone()
     adv_patch = coerce_rank(adv_patch, 4)
     patch_mask = coerce_rank(patch_mask, 4)
     sign_canonical = coerce_rank(sign_canonical, 4)
@@ -379,12 +379,11 @@ def apply_transform(
     final_img *= 255
     return final_img, warped_patch_num_pixels
 
-
+@torch.no_grad()
 def transform_and_apply_patch(
     image: torch.Tensor,
     adv_patch: torch.Tensor,
     patch_mask: torch.Tensor,
-    patch_loc: Tuple[float],
     predicted_class: str,
     row: pd.DataFrame,
     img_data: List,
@@ -392,7 +391,6 @@ def transform_and_apply_patch(
     use_relight: bool = True,
     interp: str = 'bilinear',
 ) -> torch.Tensor:
-
     # Does not support batch mode. Add singleton dims to 4D if needed.
     image = coerce_rank(image, 4)
     adv_patch = coerce_rank(adv_patch, 4)
@@ -409,7 +407,7 @@ def transform_and_apply_patch(
     tf_data = (sign_canonical, sign_mask, M, alpha.to(device), beta.to(device))
 
     img, warped_patch_num_pixels = apply_transform(
-        image, adv_patch, patch_mask, patch_loc, transform_func, tf_data,
+        image, adv_patch, patch_mask, transform_func, tf_data,
         interp=interp, use_relight=use_relight)
 
     return img, warped_patch_num_pixels

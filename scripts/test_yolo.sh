@@ -34,37 +34,37 @@ EXP_NAME=synthetic-10x10_bottom
 #     --dataset $DATASET --patch-name $EXP_NAME --obj-class $OBJ_CLASS --obj-size 256 --save-mask
 
 # Test real attack
-CUDA_VISIBLE_DEVICES=$GPU python -u gen_patch_yolo.py \
-    --device $GPU --dataset $DATASET --padded-imgsz $IMG_SIZE --name $EXP_NAME \
-    --weights $MODEL_PATH --workers 6 --plot-class-examples $OBJ_CLASS \
-    --tgt-csv-filepath $CSV_PATH --attack-config-path $ATTACK_CONFIG_PATH \
-    --obj-class $OBJ_CLASS --bg-dir $BG_PATH --transform-mode perspective \
-    --interp $INTERP --verbose --obj-size 256 --imgsz $YOLO_IMG_SIZE
+# CUDA_VISIBLE_DEVICES=$GPU python -u gen_patch_yolo.py \
+#     --device $GPU --dataset $DATASET --padded-imgsz $IMG_SIZE --name $EXP_NAME \
+#     --weights $MODEL_PATH --workers 6 --plot-class-examples $OBJ_CLASS \
+#     --tgt-csv-filepath $CSV_PATH --attack-config-path $ATTACK_CONFIG_PATH \
+#     --obj-class $OBJ_CLASS --bg-dir $BG_PATH --transform-mode perspective \
+#     --interp $INTERP --verbose --obj-size 256 --imgsz $YOLO_IMG_SIZE
 
-CUDA_VISIBLE_DEVICES=$GPU python -u test_yolo.py \
-    --device $GPU --interp $INTERP --save-exp-metrics --workers 8 \
-    --dataset $DATASET --padded-imgsz $IMG_SIZE --weights $MODEL_PATH \
-    --tgt-csv-filepath $CSV_PATH --attack-config-path $ATTACK_CONFIG_PATH \
-    --name $EXP_NAME --obj-class $OBJ_CLASS --plot-class-examples $OBJ_CLASS \
-    --conf-thres $CONF_THRES --metrics-confidence-threshold $CONF_THRES \
-    --annotated-signs-only --batch-size 4 --attack-type load \
-    --imgsz $YOLO_IMG_SIZE --transform-mode perspective --verbose --debug
+# CUDA_VISIBLE_DEVICES=$GPU python -u test_yolo.py \
+#     --device $GPU --interp $INTERP --save-exp-metrics --workers 8 \
+#     --dataset $DATASET --padded-imgsz $IMG_SIZE --weights $MODEL_PATH \
+#     --tgt-csv-filepath $CSV_PATH --attack-config-path $ATTACK_CONFIG_PATH \
+#     --name $EXP_NAME --obj-class $OBJ_CLASS --plot-class-examples $OBJ_CLASS \
+#     --conf-thres $CONF_THRES --metrics-confidence-threshold $CONF_THRES \
+#     --annotated-signs-only --batch-size 4 --attack-type load \
+#     --imgsz $YOLO_IMG_SIZE --transform-mode perspective --verbose --debug
 
 # Test synthetic attack
 # Generate adversarial patch (add --synthetic for synthetic attack)
-CUDA_VISIBLE_DEVICES=$GPU python -u gen_patch_yolo.py \
-    --device $GPU --dataset $DATASET --padded-imgsz $IMG_SIZE --name $EXP_NAME \
-    --weights $MODEL_PATH --workers 6 --plot-class-examples $OBJ_CLASS \
-    --tgt-csv-filepath $CSV_PATH --attack-config-path $ATTACK_CONFIG_PATH \
-    --obj-class $OBJ_CLASS --bg-dir $BG_PATH --transform-mode perspective \
-    --interp $INTERP --verbose --synthetic --obj-size 256 --imgsz $YOLO_IMG_SIZE
+# CUDA_VISIBLE_DEVICES=$GPU python -u gen_patch_yolo.py \
+#     --device $GPU --dataset $DATASET --padded-imgsz $IMG_SIZE --name $EXP_NAME \
+#     --weights $MODEL_PATH --workers 6 --plot-class-examples $OBJ_CLASS \
+#     --tgt-csv-filepath $CSV_PATH --attack-config-path $ATTACK_CONFIG_PATH \
+#     --obj-class $OBJ_CLASS --bg-dir $BG_PATH --transform-mode perspective \
+#     --interp $INTERP --verbose --synthetic --obj-size 256 --imgsz $YOLO_IMG_SIZE
 
 # Test the generated patch
 CUDA_VISIBLE_DEVICES=$GPU python -u test_yolo.py \
-    --device $GPU --interp $INTERP --save-exp-metrics --workers 8 \
+    --device $GPU --interp $INTERP --save-exp-metrics --workers 2 \
     --dataset $DATASET --padded-imgsz $IMG_SIZE --weights $MODEL_PATH \
     --tgt-csv-filepath $CSV_PATH --attack-config-path $ATTACK_CONFIG_PATH \
     --name $EXP_NAME --obj-class $OBJ_CLASS --plot-class-examples $OBJ_CLASS \
     --conf-thres $CONF_THRES --metrics-confidence-threshold $CONF_THRES \
-    --annotated-signs-only --batch-size 4 --attack-type load \
+    --annotated-signs-only --batch-size 2 --attack-type load \
     --imgsz $YOLO_IMG_SIZE --transform-mode perspective --verbose --debug --synthetic
