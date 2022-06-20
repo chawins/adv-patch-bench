@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 import torch
 import torchvision
-from adv_patch_bench.utils.image import (mask_to_box, prepare_obj,
+from adv_patch_bench.utils.image import (coerce_rank, mask_to_box, prepare_obj,
                                          resize_and_center)
 from detectron2.structures.boxes import Boxes
 from detectron2.structures.instances import Instances
@@ -17,25 +17,6 @@ from hparams import PATH_SYN_OBJ
 from kornia import augmentation as K
 from kornia.constants import Resample
 from kornia.geometry.transform import resize
-
-
-def coerce_rank(x, ndim):
-    if x.ndim == ndim:
-        return x
-
-    ndim_diff = ndim - x.ndim
-    if ndim_diff < 0:
-        for _ in range(-ndim_diff):
-            x.squeeze_(0)
-        if x.ndim != ndim:
-            raise ValueError('Can\'t coerce rank.')
-        return x
-
-    for _ in range(ndim_diff):
-        x.unsqueeze_(0)
-    if x.ndim != ndim:
-        raise ValueError('Can\'t coerce rank.')
-    return x
 
 
 def prep_synthetic_eval(
@@ -50,10 +31,10 @@ def prep_synthetic_eval(
     syn_sign_class = len(label_names)
     # label_names[syn_sign_class] = 'synthetic'
     obj_transforms = K.RandomAffine(
-        30, translate=(0.45, 0.45), p=transform_prob, return_transform=True,
+        30, translate=(0.4, 0.4), p=transform_prob, return_transform=True,
         resample=args.interp)
     mask_transforms = K.RandomAffine(
-        30, translate=(0.45, 0.45), p=transform_prob, resample=Resample.NEAREST)
+        30, translate=(0.4, 0.4), p=transform_prob, resample=Resample.NEAREST)
 
     # Load synthetic object/sign from file
     _, patch_mask = pickle.load(open(args.adv_patch_path, 'rb'))
@@ -138,6 +119,9 @@ def apply_synthetic_sign(
     is_detectron: bool = False,
     other_sign_class: int = None
 ):
+    # patch_mask = patch_mask.clone()
+    # syn_obj = syn_obj.clone()
+    
     adv_patch = coerce_rank(adv_patch, 4)
     patch_mask = coerce_rank(patch_mask, 4)
     syn_obj = coerce_rank(syn_obj, 4)
@@ -150,19 +134,24 @@ def apply_synthetic_sign(
         adv_obj = syn_obj
     adv_obj, tf_params = obj_transforms(adv_obj)
     adv_obj.clamp_(0, 1)
+    # adv_obj = adv_obj.clamp(0, 1)
     o_mask = mask_transforms.apply_transform(
         syn_obj_mask, None, transform=tf_params.to(device))
-    image = image.to(device).view_as(adv_obj) / 255
-    adv_img = o_mask * adv_obj + (1 - o_mask) * image
+    # o_mask = syn_obj_mask
+    # image = image.to(device).view_as(adv_obj) / 255
+    # adv_img = o_mask * adv_obj + (1 - o_mask) * image
+    adv_img = o_mask * adv_obj + (1 - o_mask) * image / 255
     adv_img = coerce_rank(adv_img, 3)
     adv_img *= 255
+    # adv_img = adv_img * 255
+    # adv_img = adv_img.squeeze(0)
 
     if not return_target:
         return adv_img
 
     # get top left and bottom right points
-    bbox = mask_to_box(o_mask.cpu()[0][0] == 1)
-    y_min, x_min, h_obj, w_obj = [b.item() for b in bbox]
+    bbox = mask_to_box(o_mask == 1)
+    y_min, x_min, h_obj, w_obj = [b.cpu().item() for b in bbox]
 
     # Since we paste a new synthetic sign on image, we have to add
     # in a new synthetic label/target to compute the metrics

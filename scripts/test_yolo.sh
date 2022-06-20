@@ -48,7 +48,7 @@ EXP_NAME=synthetic-10x10_bottom
 #     --name $EXP_NAME --obj-class $OBJ_CLASS --plot-class-examples $OBJ_CLASS \
 #     --conf-thres $CONF_THRES --metrics-confidence-threshold $CONF_THRES \
 #     --annotated-signs-only --batch-size 4 --attack-type load \
-#     --imgsz $YOLO_IMG_SIZE --transform-mode perspective --verbose --debug
+#     --imgsz $YOLO_IMG_SIZE --transform-mode perspective --verbose
 
 # Test synthetic attack
 # Generate adversarial patch (add --synthetic for synthetic attack)
@@ -61,10 +61,10 @@ EXP_NAME=synthetic-10x10_bottom
 
 # Test the generated patch
 CUDA_VISIBLE_DEVICES=$GPU python -u test_yolo.py \
-    --device $GPU --interp $INTERP --save-exp-metrics --workers 2 \
+    --device $GPU --interp $INTERP --save-exp-metrics --workers 6 \
     --dataset $DATASET --padded-imgsz $IMG_SIZE --weights $MODEL_PATH \
     --tgt-csv-filepath $CSV_PATH --attack-config-path $ATTACK_CONFIG_PATH \
     --name $EXP_NAME --obj-class $OBJ_CLASS --plot-class-examples $OBJ_CLASS \
     --conf-thres $CONF_THRES --metrics-confidence-threshold $CONF_THRES \
-    --annotated-signs-only --batch-size 2 --attack-type load \
-    --imgsz $YOLO_IMG_SIZE --transform-mode perspective --verbose --debug --synthetic
+    --annotated-signs-only --batch-size 4 --attack-type load \
+    --imgsz $YOLO_IMG_SIZE --transform-mode perspective --verbose --synthetic

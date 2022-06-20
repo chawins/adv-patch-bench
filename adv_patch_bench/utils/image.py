@@ -9,6 +9,24 @@ import torchvision.transforms.functional as T
 from PIL import Image
 
 
+def coerce_rank(x, ndim):
+    if x.ndim == ndim:
+        return x
+
+    ndim_diff = ndim - x.ndim
+    if ndim_diff < 0:
+        for _ in range(-ndim_diff):
+            x.squeeze_(0)
+        if x.ndim != ndim:
+            raise ValueError('Can\'t coerce rank.')
+        return x
+
+    for _ in range(ndim_diff):
+        x.unsqueeze_(0)
+    if x.ndim != ndim:
+        raise ValueError('Can\'t coerce rank.')
+    return x
+
 def load_annotation(label_path, image_key):
     with open(join(label_path, '{:s}.json'.format(image_key)), 'r') as fid:
         anno = json.load(fid)
@@ -141,9 +159,10 @@ def letterbox(im, new_shape=(640, 640), color=114, scaleup=True, stride=32):
 
 def mask_to_box(mask):
     """Get a binary mask and returns a bounding box: y0, x0, h, w"""
-    if mask.ndim == 3:
-        mask = mask.squeeze(0)
-    assert mask.ndim == 2
+    # if mask.ndim == 3:
+    #     mask = mask.squeeze(0)
+    # assert mask.ndim == 2
+    mask = coerce_rank(mask, 2)
     if mask.sum() <= 0:
         raise ValueError('mask is all zeros!')
     y, x = torch.where(mask)

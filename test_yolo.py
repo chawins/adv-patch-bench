@@ -317,7 +317,8 @@ def run(
     if synthetic:
         # Prepare evaluation with synthetic signs
         # syn_data: syn_obj, obj_mask, obj_transforms, mask_transforms, syn_sign_class
-        syn_data = prep_synthetic_eval(args, img_size, names, device=device)
+        syn_data = prep_synthetic_eval(args, img_size, names, 
+                                       transform_prob=1., device=device)
         names[nc] = 'synthetic'
         syn_sign_class = syn_data[-1]
         nc += 1
@@ -431,7 +432,8 @@ def run(
                 adv_patch_clone = adv_patch.clone().to(device)
                 im[image_i], targets = apply_synthetic_sign(
                     img, targets, image_i, adv_patch_clone, patch_mask, 
-                    *syn_data, device=device, use_attack=use_attack)
+                    *syn_data, device=device, use_attack=use_attack,
+                    return_target=True, is_detectron=False)
 
         t1 = time_sync()
         if pt or jit or engine:
