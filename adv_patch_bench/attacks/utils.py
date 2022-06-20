@@ -20,6 +20,8 @@ from kornia.geometry.transform import resize
 
 
 def coerce_rank(x, ndim):
+    if x is None:
+        return x
     if x.ndim == ndim:
         return x
 

@@ -313,6 +313,9 @@ def run(
         adv_patch_path = os.path.join(adv_patch_dir, 'adv_patch.pkl')
         args.adv_patch_path = adv_patch_path
         df, adv_patch, patch_mask = prep_attack(args, img_size, device)
+    else:
+        adv_patch = None
+        patch_mask = None
 
     if synthetic:
         # Prepare evaluation with synthetic signs
@@ -321,9 +324,7 @@ def run(
         names[nc] = 'synthetic'
         syn_sign_class = syn_data[-1]
         nc += 1
-        # adv_patch = None
-        # patch_mask = None
-
+        
     # Initialize attack
     if attack_type == 'per-sign':
         with open(attack_config_path) as file:
@@ -373,7 +374,7 @@ def run(
         # if model_trained_without_other:
         #     targets = targets[targets[:, 1] != other_class_label]
 
-        if args.debug and batch_i == 100:
+        if args.debug and batch_i == 500:
             break
 
         if num_apply_imgs >= len(filename_list) and args.run_only_img_txt:
@@ -428,7 +429,10 @@ def run(
 
             elif synthetic:
                 img = im[image_i].clone().to(device)
-                adv_patch_clone = adv_patch.clone().to(device)
+                if adv_patch is not None:
+                    adv_patch_clone = adv_patch.clone().to(device)
+                else:
+                    adv_patch_clone = None
                 im[image_i], targets = apply_synthetic_sign(
                     img, targets, image_i, adv_patch_clone, patch_mask, 
                     *syn_data, device=device, use_attack=use_attack)
