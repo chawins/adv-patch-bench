@@ -23,7 +23,7 @@ import torch
 import yaml
 from tqdm import tqdm
 
-from adv_patch_bench.attacks.rp2 import RP2AttackModule
+from adv_patch_bench.attacks.rp2.rp2_yolo import RP2AttackYOLO
 from adv_patch_bench.attacks.utils import (apply_synthetic_sign, prep_attack,
                                            prep_synthetic_eval)
 from adv_patch_bench.transforms import transform_and_apply_patch
@@ -330,9 +330,9 @@ def run(
         with open(attack_config_path) as file:
             attack_config = yaml.load(file, Loader=yaml.FullLoader)
         attack_config['input_size'] = img_size
-        attack = RP2AttackModule(attack_config, model, None, None, None,
-                                 rescaling=False, interp=args.interp,
-                                 verbose=verbose)
+        attack = RP2AttackYOLO(attack_config, model, None, None, None,
+                               rescaling=False, interp=args.interp,
+                               verbose=verbose)
 
     # ======================================================================= #
     #                          BEGIN: Main eval loop                          #

@@ -1,10 +1,8 @@
-from __future__ import annotations
-
 import ast
-from copy import deepcopy
 import os
 import pickle
 from argparse import Namespace
+from copy import deepcopy
 from typing import Any, List, Tuple, Union
 
 import numpy as np
@@ -12,8 +10,8 @@ import pandas as pd
 import torch
 import torchvision
 import torchvision.transforms.functional as T
-from adv_patch_bench.utils.image import (mask_to_box, resize_and_center,
-                                         prepare_obj)
+from adv_patch_bench.utils.image import (mask_to_box, prepare_obj,
+                                         resize_and_center)
 from detectron2.structures.boxes import Boxes
 from detectron2.structures.instances import Instances
 from hparams import PATH_SYN_OBJ
@@ -33,12 +31,13 @@ def coerce_rank(x, ndim):
         if x.ndim != ndim:
             raise ValueError('Can\'t coerce rank.')
         return x
-    
+
     for _ in range(ndim_diff):
         x.unsqueeze_(0)
     if x.ndim != ndim:
         raise ValueError('Can\'t coerce rank.')
     return x
+
 
 def prep_synthetic_eval(
     args: Namespace,
@@ -52,22 +51,17 @@ def prep_synthetic_eval(
     # FIXME
     syn_sign_class = len(label_names)
     # label_names[syn_sign_class] = 'synthetic'
-    # Set up random transforms for synthetic sign
-    # obj_transforms = K.RandomAffine(20, translate=(0.45, 0.45), p=1.0,
-    #                                 return_transform=True, scale=(0.25, 0.5))
-    # mask_transforms = K.RandomAffine(20, translate=(0.45, 0.45), p=1.0,
-    #                                  resample=Resample.NEAREST, scale=(0.25, 0.5))
-    # obj_transforms = K.RandomAffine(20, translate=(0.45, 0.45), p=1.0, return_transform=True, scale=(0.3, 0.6))
-    # mask_transforms = K.RandomAffine(20, translate=(0.45, 0.45), p=1.0, resample=Resample.NEAREST, scale=(0.3, 0.6))
     obj_transforms = K.RandomAffine(
-        30, translate=(0.45, 0.45), p=transform_prob, return_transform=True)
+        30, translate=(0.45, 0.45), p=transform_prob, return_transform=True,
+        resample=args.interp)
     mask_transforms = K.RandomAffine(
         30, translate=(0.45, 0.45), p=transform_prob, resample=Resample.NEAREST)
 
     # Load synthetic object/sign from file
     _, patch_mask = pickle.load(open(args.adv_patch_path, 'rb'))
     obj_size = patch_mask.shape[-2]
-    obj, obj_mask = prepare_obj(args.syn_obj_path, img_size, (obj_size, obj_size))
+    obj, obj_mask = prepare_obj(
+        args.syn_obj_path, img_size, (obj_size, obj_size), interp=args.interp)
     obj = obj.to(device)
     obj_mask = obj_mask.to(device)  # .unsqueeze(0)
     return obj, obj_mask, obj_transforms, mask_transforms, syn_sign_class
@@ -79,7 +73,7 @@ def prep_attack(
     device: str = 'cuda',
 ):
     # Load patch from a pickle file if specified
-    # TODO: make script to generate dummy patch
+    # TODO: make script to generate dummy patch for per-sign attack
     adv_patch, patch_mask = pickle.load(open(args.adv_patch_path, 'rb'))
     adv_patch = coerce_rank(adv_patch, 3)
     patch_mask = coerce_rank(patch_mask, 3)
@@ -115,14 +109,14 @@ def prep_attack(
         patch_mask = resize_and_center(
             patch_mask, img_size, obj_size_px, is_binary=True)
         patch_loc = mask_to_box(patch_mask)
-        adv_patch = resize_and_center(
-            adv_patch, img_size, obj_size_px, is_binary=False)
+        adv_patch = resize_and_center(adv_patch, img_size, obj_size_px,
+                                      is_binary=False, interp=args.interp)
         patch_mask = patch_mask.to(device)
         adv_patch = adv_patch.to(device)
     else:
         obj_size = patch_mask.shape[-2:]
         adv_patch = resize_and_center(
-            adv_patch, None, obj_size, is_binary=False)
+            adv_patch, None, obj_size, is_binary=False, interp=args.interp)
 
     assert adv_patch.ndim == patch_mask.ndim == 3
     assert adv_patch.shape[-2:] == patch_mask.shape[-2:], \
@@ -153,7 +147,7 @@ def apply_synthetic_sign(
     syn_obj = coerce_rank(syn_obj, 4)
     image = coerce_rank(image, 4)
     h, w = image.shape[-2:]
-    
+
     if use_attack:
         adv_obj = patch_mask * adv_patch + (1 - patch_mask) * syn_obj
     else:
@@ -175,6 +169,7 @@ def apply_synthetic_sign(
 
     # Since we paste a new synthetic sign on image, we have to add
     # in a new synthetic label/target to compute the metrics
+    # TODO: decouple from models
     if is_detectron:
         assert isinstance(targets, dict) and isinstance(other_sign_class, int)
         targets = deepcopy(targets)

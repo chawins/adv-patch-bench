@@ -23,7 +23,9 @@ from PIL import Image
 from torch.nn import DataParallel
 from tqdm import tqdm
 
-from adv_patch_bench.attacks.rp2 import RP2AttackModule
+from adv_patch_bench.attacks.detectron_attack_wrapper import \
+    DetectronAttackWrapper
+from adv_patch_bench.attacks.rp2.rp2_detectron import RP2AttackDetectron
 from adv_patch_bench.attacks.utils import get_object_and_mask_from_numpy
 from adv_patch_bench.dataloaders import (get_mapillary_dict, get_mtsd_dict,
                                          register_mapillary, register_mtsd)
@@ -154,11 +156,11 @@ def generate_adv_patch(
 ):
     """Generate adversarial patch"""
     print(f'=> Initializing attack...')
-    num_bg = attack_config['num_bg']
+    num_bg = attack_config['rp2']['num_bg']  # TODO: decouple from rp2
 
     # TODO: Allow data parallel?
-    attack = RP2AttackModule(attack_config, model, None, None, None,
-                             interp=interp, verbose=verbose, is_detectron=True)
+    attack = RP2AttackDetectron(attack_config, model, None, None, None,
+                                interp=interp, verbose=verbose)
 
     # Randomly select backgrounds from `bg_dir` and resize them
     # TODO: Remoev in the future
@@ -206,18 +208,21 @@ def generate_adv_patch(
         patch_mask_padded = resize_and_center(
             patch_mask, img_size, obj_size, is_binary=True)
 
-        adv_patch = attack.attack(obj.to(device),
-                                  obj_mask.to(device),
-                                  patch_mask_padded.to(device),
-                                  backgrounds.to(device),
-                                  obj_class=obj_class,
-                                  metadata=metadata)
+        metadata = DetectronAttackWrapper.clone_metadata(backgrounds, metadata)
+        adv_patch = attack.attack_synthetic(obj.to(device),
+                                            obj_mask.to(device),
+                                            patch_mask_padded.to(device),
+                                            backgrounds.to(device),
+                                            obj_class=obj_class,
+                                            metadata=metadata)
         if save_images:
             torchvision.utils.save_image(obj, join(save_dir, 'obj.png'))
             torchvision.utils.save_image(obj_mask,
                                          join(save_dir, 'obj_mask.png'))
     else:
         print('=> Generating adversarial patch on real signs...')
+        metadata = DetectronAttackWrapper.clone_metadata(
+            [obj[0] for obj in attack_images], metadata)
         adv_patch = attack.attack_real(attack_images,
                                        patch_mask=patch_mask.to(device),
                                        obj_class=obj_class,

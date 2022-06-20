@@ -11,6 +11,7 @@ import cv2
 import numpy as np
 import pandas as pd
 import torch
+from adv_patch_bench.attacks.rp2.rp2_detectron import RP2AttackDetectron
 from adv_patch_bench.attacks.utils import (apply_synthetic_sign, prep_attack,
                                            prep_synthetic_eval)
 from adv_patch_bench.transforms import transform_and_apply_patch
@@ -22,10 +23,9 @@ from detectron2.utils.visualizer import Visualizer
 from hparams import SAVE_DIR_DETECTRON
 from tqdm import tqdm
 
-from .rp2 import RP2AttackModule
 
+class DetectronAttackWrapper:
 
-class DAGAttacker:
     def __init__(
         self,
         cfg: CfgNode,
@@ -61,9 +61,9 @@ class DAGAttacker:
         self.metadata = MetadataCatalog.get(self.cfg.DATASETS.TEST[0])
 
         # Attack params
-        self.attack = RP2AttackModule(attack_config, model, None, None, None,
-                                      rescaling=False, interp=args.interp,
-                                      verbose=self.verbose, is_detectron=True)
+        self.attack = RP2AttackDetectron(
+            attack_config, model, None, None, None, rescaling=False,
+            interp=args.interp, verbose=self.verbose)
         self.attack_type = args.attack_type
         self.use_attack = self.attack_type != 'none'
         self.adv_sign_class = args.obj_class
@@ -90,6 +90,19 @@ class DAGAttacker:
             img_txt_path = os.path.join(SAVE_DIR_DETECTRON, args.img_txt_path)
             with open(img_txt_path, 'r') as f:
                 self.skipped_filename_list = f.read().splitlines()
+
+    @staticmethod
+    def clone_metadata(imgs, metadata):
+        metadata_clone = []
+        for img, m in zip(imgs, metadata):
+            data_dict = {}
+            for keys in m:
+                data_dict[keys] = m[keys]
+            data_dict['image'] = None
+            data_dict['height'], data_dict['width'] = img.shape[1:]
+            metadata_clone.append(data_dict)
+        metadata_clone = np.array(metadata_clone)
+        return metadata_clone
 
     def log(self, *args, **kwargs):
         if self.verbose:
@@ -203,10 +216,12 @@ class DAGAttacker:
                     if self.attack_type == 'per-sign':
                         data = [obj_classname, obj, *img_data]
                         attack_images = [[images, data, str(file_name)]]
+                        cloned_metadata = self.clone_metadata(
+                            [obj[0] for obj in attack_images], batch)
                         with torch.enable_grad():
                             adv_patch = self.attack.attack_real(
-                                attack_images, patch_mask, obj_class, 
-                                metadata=batch)
+                                attack_images, patch_mask, obj_class,
+                                metadata=cloned_metadata)
 
                     # TODO: Should we put only one adversarial patch per image?
                     # i.e., attacking only one sign per image.

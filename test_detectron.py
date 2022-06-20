@@ -16,7 +16,8 @@ from detectron2.utils.visualizer import Visualizer
 from tqdm import tqdm
 
 import adv_patch_bench.utils.detectron.custom_coco_evaluator as cocoeval
-from adv_patch_bench.attacks.detectron_attack_wrapper import DAGAttacker
+from adv_patch_bench.attacks.detectron_attack_wrapper import \
+    DetectronAttackWrapper
 from adv_patch_bench.dataloaders import (BenignMapper, get_mapillary_dict,
                                          get_mtsd_dict, register_mapillary,
                                          register_mtsd)
@@ -116,8 +117,8 @@ def main_attack(cfg, args, dataset_params):
         batch_size=1, num_workers=cfg.DATALOADER.NUM_WORKERS
     )
 
-    attack = DAGAttacker(cfg, args, attack_config, model, val_loader,
-                         class_names=LABEL_LIST[args.dataset])
+    attack = DetectronAttackWrapper(cfg, args, attack_config, model, val_loader,
+                                    class_names=LABEL_LIST[args.dataset])
     if args.attack_type != 'none':
         adv_patch, patch_mask = pickle.load(open(args.adv_patch_path, 'rb'))
     else:

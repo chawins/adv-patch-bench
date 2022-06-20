@@ -20,7 +20,7 @@ import yaml
 from PIL import Image
 from torch.nn import DataParallel
 
-from adv_patch_bench.attacks.rp2 import RP2AttackModule
+from adv_patch_bench.attacks.rp2.rp2_yolo import RP2AttackYOLO
 from adv_patch_bench.utils.argparse import (eval_args_parser,
                                             setup_yolo_test_args)
 from adv_patch_bench.utils.image import get_obj_width, resize_and_center
@@ -118,8 +118,8 @@ def generate_adv_patch(
     print(f'=> Initializing attack...')
 
     # TODO: Allow data parallel?
-    attack = RP2AttackModule(attack_config, model, None, None, None,
-                             verbose=True, interp=args.interp)
+    attack = RP2AttackYOLO(attack_config, model, None, None, None,
+                           verbose=True, interp=args.interp)
 
     # Generate an adversarial patch
     if synthetic:
@@ -136,11 +136,11 @@ def generate_adv_patch(
 
         print(f'=> Start attacking...')
         with torch.enable_grad():
-            adv_patch = attack.attack(obj.to(device),
-                                      obj_mask.to(device),
-                                      patch_mask_padded.to(device),
-                                      backgrounds.to(device),
-                                      obj_class=obj_class)
+            adv_patch = attack.attack_synthetic(obj.to(device),
+                                                obj_mask.to(device),
+                                                patch_mask_padded.to(device),
+                                                backgrounds.to(device),
+                                                obj_class=obj_class)
 
         if save_images:
             torchvision.utils.save_image(obj, join(save_dir, 'obj.png'))

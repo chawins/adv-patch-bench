@@ -151,7 +151,7 @@ def mask_to_box(mask):
     return y_min, x_min, y.max() - y_min, x.max() - x_min
 
 
-def prepare_obj(obj_path, img_size, obj_size):
+def prepare_obj(obj_path, img_size, obj_size, interp):
     """Load image of an object and place it in the middle of an image tensor of
     size `img_size`. The object is also resized to `obj_size`.
 
@@ -166,7 +166,8 @@ def prepare_obj(obj_path, img_size, obj_size):
     obj_numpy = np.array(Image.open(obj_path).convert('RGBA')) / 255
     obj_mask = torch.from_numpy(obj_numpy[:, :, -1] == 1).float().unsqueeze(0)
     obj = torch.from_numpy(obj_numpy[:, :, :-1]).float().permute(2, 0, 1)
-    obj = resize_and_center(obj, img_size, obj_size, is_binary=False)
+    obj = resize_and_center(
+        obj, img_size, obj_size, is_binary=False, interp=interp)
     obj_mask = resize_and_center(obj_mask, img_size, obj_size, is_binary=True)
     obj.unsqueeze_(0)
     obj_mask.unsqueeze_(0)
@@ -175,19 +176,24 @@ def prepare_obj(obj_path, img_size, obj_size):
     return obj, obj_mask
 
 
-def resize_and_center(obj:torch.Tensor, 
-                      img_size:Tuple[int, int], 
-                      obj_size:Tuple[int, int], 
-                      is_binary:bool = False):
+def resize_and_center(obj: torch.Tensor,
+                      img_size: Tuple[int, int],
+                      obj_size: Tuple[int, int],
+                      is_binary: bool = False,
+                      interp: str = 'bicubic'):
     """
     Resize object to obj_size and then place it in the middle of zero 
     background.
     """
     if obj_size is not None:
-        if is_binary:
+        if is_binary or interp == 'nearest':
             interp = T.InterpolationMode.NEAREST
-        else:
+        elif interp == 'bicubic':
             interp = T.InterpolationMode.BICUBIC
+        elif interp == 'bilinear':
+            interp = T.InterpolationMode.BILINEAR
+        else:
+            raise NotImplementedError('interp not supported.')
         obj = T.resize(obj, obj_size, interpolation=interp)
 
     if img_size is not None:
@@ -203,7 +209,7 @@ def resize_and_center(obj:torch.Tensor,
             img_size[0] - obj_size[0] - top,  # bottom
         ]
         obj = T.pad(obj, pad_size)
-    
+
     return obj
 
 

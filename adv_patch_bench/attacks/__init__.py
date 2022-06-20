@@ -1,11 +1,11 @@
 import torch.nn as nn
 from adv_patch_bench.utils import KLDLoss
 
-from .auto import AutoAttackModule
-from .none import NoAttackModule
-from .patch import PatchAttackModule
-from .pgd import PGDAttackModule
-from .trades import TRADESAttackModule
+from adv_patch_bench.attacks.classification.auto import AutoAttackModule
+from adv_patch_bench.attacks.classification.none import NoAttackModule
+from adv_patch_bench.attacks.classification.patch import PatchAttackModule
+from adv_patch_bench.attacks.classification.pgd import PGDAttackModule
+from adv_patch_bench.attacks.classification.trades import TRADESAttackModule
 
 
 def get_ce_loss(args):

@@ -4,13 +4,11 @@ from typing import Any, List, Tuple
 import numpy as np
 import pandas as pd
 import torch
+from adv_patch_bench.attacks.utils import coerce_rank
+from adv_patch_bench.transforms.verifier import sort_polygon_vertices
 from cv2 import getAffineTransform
 from kornia.geometry.transform import (get_perspective_transform, warp_affine,
                                        warp_perspective)
-from adv_patch_bench.attacks.utils import coerce_rank
-
-from adv_patch_bench.transforms.verifier import sort_polygon_vertices
-from adv_patch_bench.utils.image import resize_and_center
 
 
 def gen_rect_mask(size, ratio=None):
@@ -259,14 +257,16 @@ def get_transform(
         max_tgt_x = max(tgt[:, 0])
         min_tgt_y = min(tgt[:, 1])
         max_tgt_y = max(tgt[:, 1])
-        tgt = np.array([[min_tgt_x, min_tgt_y], [max_tgt_x, min_tgt_y], [max_tgt_x, max_tgt_y], [min_tgt_x, max_tgt_y]])
-        
+        tgt = np.array([[min_tgt_x, min_tgt_y], [max_tgt_x, min_tgt_y],
+                        [max_tgt_x, max_tgt_y], [min_tgt_x, max_tgt_y]])
+
         min_src_x = min(src[:, 0])
         max_src_x = max(src[:, 0])
         min_src_y = min(src[:, 1])
         max_src_y = max(src[:, 1])
-        src = np.array([[min_src_x, min_src_y], [max_src_x, min_src_y], [max_src_x, max_src_y], [min_src_x, max_src_y]])
-    
+        src = np.array([[min_src_x, min_src_y], [max_src_x, min_src_y],
+                        [max_src_x, max_src_y], [min_src_x, max_src_y]])
+
     if len(src) == 3:
         M = torch.from_numpy(getAffineTransform(src, tgt)).unsqueeze(0).float()
         transform_func = warp_affine
@@ -275,7 +275,6 @@ def get_transform(
         tgt = torch.from_numpy(tgt).unsqueeze(0)
         M = get_perspective_transform(src, tgt)
         transform_func = warp_perspective
-
 
     # if transform_mode in ('affine', 'translate_scale'):
     #     if len(src) > 3:
@@ -347,7 +346,7 @@ def apply_transform(
     sign_canonical = coerce_rank(sign_canonical, 4)
     obj_size = patch_mask.shape[-2:]
     assert adv_patch.shape[-2:] == sign_canonical.shape[-2:] == obj_size
-    
+
     # ymin, xmin, height, width = patch_loc
     if use_relight:
         adv_patch.mul_(alpha).add_(beta)
@@ -355,9 +354,6 @@ def apply_transform(
 
     # Place adv_patch on sign_canonical and set alpha channel
     patch_on_obj = sign_canonical.clone()
-    # sign_canonical[:, :-1, ymin:ymin + height, xmin:xmin + width] = adv_patch
-    # sign_canonical[:, -1, ymin:ymin + height, xmin:xmin + width] = 1
-    # sign_canonical = sign_mask * patch_mask * sign_canonical
     patch_on_obj[:, :-1] = patch_mask * adv_patch
     patch_on_obj[:, -1] = patch_mask
     # Crop with sign_mask and patch_mask
@@ -413,7 +409,7 @@ def transform_and_apply_patch(
     tf_data = (sign_canonical, sign_mask, M, alpha.to(device), beta.to(device))
 
     img, warped_patch_num_pixels = apply_transform(
-        image, adv_patch, patch_mask, patch_loc, transform_func, tf_data, 
+        image, adv_patch, patch_mask, patch_loc, transform_func, tf_data,
         interp=interp, use_relight=use_relight)
-    
+
     return img, warped_patch_num_pixels
