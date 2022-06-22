@@ -30,15 +30,15 @@ EXP_NAME=real-10x10_bottom
 # MODEL.ROI_HEADS.NMS_THRESH_TEST = 0.5
 
 # Test a detector on Detectron2 without attack
-# CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
-#     --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG \
-#     --padded-imgsz $IMG_SIZE --name no_patch --tgt-csv-filepath $CSV_PATH \
-#     --dataset $DATASET --eval-mode drop --verbose \
-#     MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
-#     OUTPUT_DIR $OUTPUT_PATH \
-#     MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
-#     DATALOADER.NUM_WORKERS 6
-# SOLVER.IMS_PER_BATCH 5 \
+CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
+    --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --name no_patch \
+    --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH --dataset $DATASET \
+    --attack-config-path $ATTACK_CONFIG_PATH --eval-mode drop --verbose \
+    MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
+    OUTPUT_DIR $OUTPUT_PATH \
+    MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
+    DATALOADER.NUM_WORKERS 6
+# SOLVER.IMS_PER_BATCH 5
 # --debug --resume --annotated-signs-only
 # --dataset mtsd-val-no_color, mapillary-combined-no_color
 
@@ -98,88 +98,19 @@ EXP_NAME=real-10x10_bottom
 
 # =========================================================================== #
 
-EXP_NAME=real-10x10_bottom
-
-CUDA_VISIBLE_DEVICES=$GPU python -u gen_patch_detectron.py \
-    --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
-    --dataset $DATASET --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH \
-    --attack-config-path $ATTACK_CONFIG_PATH --obj-class $OBJ_CLASS \
-    --name $EXP_NAME --bg-dir $BG_PATH --transform-mode perspective --verbose \
-    --save-images \
-    MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
-    OUTPUT_DIR $OUTPUT_PATH \
-    MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
-    DATALOADER.NUM_WORKERS 6
-# --img-txt-path $BG_FILES
-
-CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
-    --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
-    --dataset $DATASET --padded-imgsz $IMG_SIZE --eval-mode drop \
-    --tgt-csv-filepath $CSV_PATH --attack-config-path $ATTACK_CONFIG_PATH \
-    --name $EXP_NAME --obj-class $OBJ_CLASS --conf-thres $CONF_THRES \
-    --annotated-signs-only --transform-mode perspective --attack-type load \
-    --verbose --debug \
-    MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
-    OUTPUT_DIR $OUTPUT_PATH \
-    MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
-    DATALOADER.NUM_WORKERS 6
-# --img-txt-path $BG_FILES
-
-# EXP_NAME=synthetic-10x10_bottom-bg1
-# cp -r ./detectron_output/synthetic-10x10_bottom/* ./detectron_output/$EXP_NAME
-EXP_NAME=synthetic-10x10_bottom
-
-CUDA_VISIBLE_DEVICES=$GPU python -u gen_patch_detectron.py \
-    --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
-    --dataset $DATASET --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH \
-    --attack-config-path $ATTACK_CONFIG_PATH --obj-class $OBJ_CLASS \
-    --name $EXP_NAME --bg-dir $BG_PATH --transform-mode perspective --verbose \
-    --synthetic --obj-size 256 --save-images \
-    MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
-    OUTPUT_DIR $OUTPUT_PATH \
-    MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
-    DATALOADER.NUM_WORKERS 6
-# --img-txt-path $BG_FILES --synthetic --obj-size 64 \
-
-CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
-    --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
-    --dataset $DATASET --padded-imgsz $IMG_SIZE --eval-mode drop \
-    --tgt-csv-filepath $CSV_PATH --attack-config-path $ATTACK_CONFIG_PATH \
-    --name $EXP_NAME --obj-class $OBJ_CLASS --conf-thres $CONF_THRES \
-    --annotated-signs-only --transform-mode perspective --attack-type load \
-    --synthetic --verbose --debug \
-    MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
-    OUTPUT_DIR $OUTPUT_PATH \
-    MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
-    DATALOADER.NUM_WORKERS 6
-# --img-txt-path $BG_FILES --run-only-img-txt
-
-# CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
-#     --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
-#     --dataset $DATASET --padded-imgsz $IMG_SIZE --eval-mode drop \
-#     --tgt-csv-filepath $CSV_PATH --attack-config-path $ATTACK_CONFIG_PATH \
-#     --name $EXP_NAME --obj-class $OBJ_CLASS --conf-thres $CONF_THRES \
-#     --annotated-signs-only --transform-mode perspective --attack-type load \
-#     --img-txt-path $BG_FILES \
-#     MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
-#     OUTPUT_DIR $OUTPUT_PATH \
-#     MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
-#     DATALOADER.NUM_WORKERS 6
-
-# EXP_NAME=synthetic-10x10_bottom-bg5
-# # cp -r ./detectron_output/synthetic-10x10_bottom ./detectron_output/$EXP_NAME
-# ATTACK_CONFIG_PATH=./configs/attack_config3.yaml
+# EXP_NAME=real-10x10_bottom
 
 # CUDA_VISIBLE_DEVICES=$GPU python -u gen_patch_detectron.py \
 #     --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
 #     --dataset $DATASET --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH \
 #     --attack-config-path $ATTACK_CONFIG_PATH --obj-class $OBJ_CLASS \
 #     --name $EXP_NAME --bg-dir $BG_PATH --transform-mode perspective --verbose \
-#     --img-txt-path $BG_FILES --synthetic \
+#     --save-images \
 #     MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
 #     OUTPUT_DIR $OUTPUT_PATH \
 #     MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
 #     DATALOADER.NUM_WORKERS 6
+# # --img-txt-path $BG_FILES
 
 # CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
 #     --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
@@ -187,11 +118,41 @@ CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
 #     --tgt-csv-filepath $CSV_PATH --attack-config-path $ATTACK_CONFIG_PATH \
 #     --name $EXP_NAME --obj-class $OBJ_CLASS --conf-thres $CONF_THRES \
 #     --annotated-signs-only --transform-mode perspective --attack-type load \
-#     --img-txt-path $BG_FILES --synthetic \
+#     --verbose --debug \
 #     MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
 #     OUTPUT_DIR $OUTPUT_PATH \
 #     MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
 #     DATALOADER.NUM_WORKERS 6
+# # --img-txt-path $BG_FILES
+
+# # EXP_NAME=synthetic-10x10_bottom-bg1
+# # cp -r ./detectron_output/synthetic-10x10_bottom/* ./detectron_output/$EXP_NAME
+# EXP_NAME=synthetic-10x10_bottom
+
+# CUDA_VISIBLE_DEVICES=$GPU python -u gen_patch_detectron.py \
+#     --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
+#     --dataset $DATASET --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH \
+#     --attack-config-path $ATTACK_CONFIG_PATH --obj-class $OBJ_CLASS \
+#     --name $EXP_NAME --bg-dir $BG_PATH --transform-mode perspective --verbose \
+#     --synthetic --obj-size 256 --save-images \
+#     MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
+#     OUTPUT_DIR $OUTPUT_PATH \
+#     MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
+#     DATALOADER.NUM_WORKERS 6
+# # --img-txt-path $BG_FILES --synthetic --obj-size 64 \
+
+# CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
+#     --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
+#     --dataset $DATASET --padded-imgsz $IMG_SIZE --eval-mode drop \
+#     --tgt-csv-filepath $CSV_PATH --attack-config-path $ATTACK_CONFIG_PATH \
+#     --name $EXP_NAME --obj-class $OBJ_CLASS --conf-thres $CONF_THRES \
+#     --annotated-signs-only --transform-mode perspective --attack-type load \
+#     --synthetic --verbose --debug \
+#     MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
+#     OUTPUT_DIR $OUTPUT_PATH \
+#     MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
+#     DATALOADER.NUM_WORKERS 6
+# # --img-txt-path $BG_FILES --run-only-img-txt
 
 # # CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
 # #     --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
@@ -205,18 +166,16 @@ CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
 # #     MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
 # #     DATALOADER.NUM_WORKERS 6
 
-# # =========================================================================== #
-
-# EXP_NAME=synthetic-10x10_bottom-bg10
-# # cp -r ./detectron_output/synthetic-10x10_bottom ./detectron_output/$EXP_NAME
-# ATTACK_CONFIG_PATH=./configs/attack_config4.yaml
-# # EXP_NAME=real-10x10_bottom
+# # EXP_NAME=synthetic-10x10_bottom-bg5
+# # # cp -r ./detectron_output/synthetic-10x10_bottom ./detectron_output/$EXP_NAME
+# # ATTACK_CONFIG_PATH=./configs/attack_config3.yaml
 
 # # CUDA_VISIBLE_DEVICES=$GPU python -u gen_patch_detectron.py \
 # #     --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
 # #     --dataset $DATASET --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH \
 # #     --attack-config-path $ATTACK_CONFIG_PATH --obj-class $OBJ_CLASS \
 # #     --name $EXP_NAME --bg-dir $BG_PATH --transform-mode perspective --verbose \
+# #     --img-txt-path $BG_FILES --synthetic \
 # #     MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
 # #     OUTPUT_DIR $OUTPUT_PATH \
 # #     MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
@@ -228,60 +187,60 @@ CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
 # #     --tgt-csv-filepath $CSV_PATH --attack-config-path $ATTACK_CONFIG_PATH \
 # #     --name $EXP_NAME --obj-class $OBJ_CLASS --conf-thres $CONF_THRES \
 # #     --annotated-signs-only --transform-mode perspective --attack-type load \
+# #     --img-txt-path $BG_FILES --synthetic \
 # #     MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
 # #     OUTPUT_DIR $OUTPUT_PATH \
 # #     MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
 # #     DATALOADER.NUM_WORKERS 6
 
-# # EXP_NAME=synthetic-10x10_bottom
-
-# CUDA_VISIBLE_DEVICES=$GPU python -u gen_patch_detectron.py \
-#     --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
-#     --dataset $DATASET --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH \
-#     --attack-config-path $ATTACK_CONFIG_PATH --obj-class $OBJ_CLASS \
-#     --name $EXP_NAME --bg-dir $BG_PATH --transform-mode perspective --verbose \
-#     --img-txt-path $BG_FILES --synthetic \
-#     MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
-#     OUTPUT_DIR $OUTPUT_PATH \
-#     MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
-#     DATALOADER.NUM_WORKERS 6
-
-# CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
-#     --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
-#     --dataset $DATASET --padded-imgsz $IMG_SIZE --eval-mode drop \
-#     --tgt-csv-filepath $CSV_PATH --attack-config-path $ATTACK_CONFIG_PATH \
-#     --name $EXP_NAME --obj-class $OBJ_CLASS --conf-thres $CONF_THRES \
-#     --annotated-signs-only --transform-mode perspective --attack-type load \
-#     --img-txt-path $BG_FILES --synthetic \
-#     MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
-#     OUTPUT_DIR $OUTPUT_PATH \
-#     MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
-#     DATALOADER.NUM_WORKERS 6
-
-# # CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
-# #     --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
-# #     --dataset $DATASET --padded-imgsz $IMG_SIZE --eval-mode drop \
-# #     --tgt-csv-filepath $CSV_PATH --attack-config-path $ATTACK_CONFIG_PATH \
-# #     --name $EXP_NAME --obj-class $OBJ_CLASS --conf-thres $CONF_THRES \
-# #     --annotated-signs-only --transform-mode perspective --attack-type load \
-# #     --img-txt-path $BG_FILES \
-# #     MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
-# #     OUTPUT_DIR $OUTPUT_PATH \
-# #     MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
-# #     DATALOADER.NUM_WORKERS 6
+# # # CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
+# # #     --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
+# # #     --dataset $DATASET --padded-imgsz $IMG_SIZE --eval-mode drop \
+# # #     --tgt-csv-filepath $CSV_PATH --attack-config-path $ATTACK_CONFIG_PATH \
+# # #     --name $EXP_NAME --obj-class $OBJ_CLASS --conf-thres $CONF_THRES \
+# # #     --annotated-signs-only --transform-mode perspective --attack-type load \
+# # #     --img-txt-path $BG_FILES \
+# # #     MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
+# # #     OUTPUT_DIR $OUTPUT_PATH \
+# # #     MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
+# # #     DATALOADER.NUM_WORKERS 6
 
 # # # =========================================================================== #
 
-# EXP_NAME=synthetic-10x10_bottom-bg50
-# # cp -r ./detectron_output/synthetic-10x10_bottom ./detectron_output/$EXP_NAME
-# ATTACK_CONFIG_PATH=./configs/attack_config5.yaml
-# # EXP_NAME=real-10x10_bottom
+# # EXP_NAME=synthetic-10x10_bottom-bg10
+# # # cp -r ./detectron_output/synthetic-10x10_bottom ./detectron_output/$EXP_NAME
+# # ATTACK_CONFIG_PATH=./configs/attack_config4.yaml
+# # # EXP_NAME=real-10x10_bottom
+
+# # # CUDA_VISIBLE_DEVICES=$GPU python -u gen_patch_detectron.py \
+# # #     --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
+# # #     --dataset $DATASET --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH \
+# # #     --attack-config-path $ATTACK_CONFIG_PATH --obj-class $OBJ_CLASS \
+# # #     --name $EXP_NAME --bg-dir $BG_PATH --transform-mode perspective --verbose \
+# # #     MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
+# # #     OUTPUT_DIR $OUTPUT_PATH \
+# # #     MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
+# # #     DATALOADER.NUM_WORKERS 6
+
+# # # CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
+# # #     --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
+# # #     --dataset $DATASET --padded-imgsz $IMG_SIZE --eval-mode drop \
+# # #     --tgt-csv-filepath $CSV_PATH --attack-config-path $ATTACK_CONFIG_PATH \
+# # #     --name $EXP_NAME --obj-class $OBJ_CLASS --conf-thres $CONF_THRES \
+# # #     --annotated-signs-only --transform-mode perspective --attack-type load \
+# # #     MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
+# # #     OUTPUT_DIR $OUTPUT_PATH \
+# # #     MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
+# # #     DATALOADER.NUM_WORKERS 6
+
+# # # EXP_NAME=synthetic-10x10_bottom
 
 # # CUDA_VISIBLE_DEVICES=$GPU python -u gen_patch_detectron.py \
 # #     --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
 # #     --dataset $DATASET --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH \
 # #     --attack-config-path $ATTACK_CONFIG_PATH --obj-class $OBJ_CLASS \
 # #     --name $EXP_NAME --bg-dir $BG_PATH --transform-mode perspective --verbose \
+# #     --img-txt-path $BG_FILES --synthetic \
 # #     MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
 # #     OUTPUT_DIR $OUTPUT_PATH \
 # #     MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
@@ -293,35 +252,64 @@ CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
 # #     --tgt-csv-filepath $CSV_PATH --attack-config-path $ATTACK_CONFIG_PATH \
 # #     --name $EXP_NAME --obj-class $OBJ_CLASS --conf-thres $CONF_THRES \
 # #     --annotated-signs-only --transform-mode perspective --attack-type load \
+# #     --img-txt-path $BG_FILES --synthetic \
 # #     MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
 # #     OUTPUT_DIR $OUTPUT_PATH \
 # #     MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
 # #     DATALOADER.NUM_WORKERS 6
 
-# # EXP_NAME=synthetic-10x10_bottom
+# # # CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
+# # #     --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
+# # #     --dataset $DATASET --padded-imgsz $IMG_SIZE --eval-mode drop \
+# # #     --tgt-csv-filepath $CSV_PATH --attack-config-path $ATTACK_CONFIG_PATH \
+# # #     --name $EXP_NAME --obj-class $OBJ_CLASS --conf-thres $CONF_THRES \
+# # #     --annotated-signs-only --transform-mode perspective --attack-type load \
+# # #     --img-txt-path $BG_FILES \
+# # #     MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
+# # #     OUTPUT_DIR $OUTPUT_PATH \
+# # #     MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
+# # #     DATALOADER.NUM_WORKERS 6
 
-# CUDA_VISIBLE_DEVICES=$GPU python -u gen_patch_detectron.py \
-#     --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
-#     --dataset $DATASET --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH \
-#     --attack-config-path $ATTACK_CONFIG_PATH --obj-class $OBJ_CLASS \
-#     --name $EXP_NAME --bg-dir $BG_PATH --transform-mode perspective --verbose \
-#     --img-txt-path $BG_FILES --synthetic \
-#     MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
-#     OUTPUT_DIR $OUTPUT_PATH \
-#     MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
-#     DATALOADER.NUM_WORKERS 6
+# # # # =========================================================================== #
 
-# CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
-#     --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
-#     --dataset $DATASET --padded-imgsz $IMG_SIZE --eval-mode drop \
-#     --tgt-csv-filepath $CSV_PATH --attack-config-path $ATTACK_CONFIG_PATH \
-#     --name $EXP_NAME --obj-class $OBJ_CLASS --conf-thres $CONF_THRES \
-#     --annotated-signs-only --transform-mode perspective --attack-type load \
-#     --img-txt-path $BG_FILES --synthetic \
-#     MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
-#     OUTPUT_DIR $OUTPUT_PATH \
-#     MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
-#     DATALOADER.NUM_WORKERS 6
+# # EXP_NAME=synthetic-10x10_bottom-bg50
+# # # cp -r ./detectron_output/synthetic-10x10_bottom ./detectron_output/$EXP_NAME
+# # ATTACK_CONFIG_PATH=./configs/attack_config5.yaml
+# # # EXP_NAME=real-10x10_bottom
+
+# # # CUDA_VISIBLE_DEVICES=$GPU python -u gen_patch_detectron.py \
+# # #     --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
+# # #     --dataset $DATASET --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH \
+# # #     --attack-config-path $ATTACK_CONFIG_PATH --obj-class $OBJ_CLASS \
+# # #     --name $EXP_NAME --bg-dir $BG_PATH --transform-mode perspective --verbose \
+# # #     MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
+# # #     OUTPUT_DIR $OUTPUT_PATH \
+# # #     MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
+# # #     DATALOADER.NUM_WORKERS 6
+
+# # # CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
+# # #     --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
+# # #     --dataset $DATASET --padded-imgsz $IMG_SIZE --eval-mode drop \
+# # #     --tgt-csv-filepath $CSV_PATH --attack-config-path $ATTACK_CONFIG_PATH \
+# # #     --name $EXP_NAME --obj-class $OBJ_CLASS --conf-thres $CONF_THRES \
+# # #     --annotated-signs-only --transform-mode perspective --attack-type load \
+# # #     MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
+# # #     OUTPUT_DIR $OUTPUT_PATH \
+# # #     MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
+# # #     DATALOADER.NUM_WORKERS 6
+
+# # # EXP_NAME=synthetic-10x10_bottom
+
+# # CUDA_VISIBLE_DEVICES=$GPU python -u gen_patch_detectron.py \
+# #     --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
+# #     --dataset $DATASET --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH \
+# #     --attack-config-path $ATTACK_CONFIG_PATH --obj-class $OBJ_CLASS \
+# #     --name $EXP_NAME --bg-dir $BG_PATH --transform-mode perspective --verbose \
+# #     --img-txt-path $BG_FILES --synthetic \
+# #     MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
+# #     OUTPUT_DIR $OUTPUT_PATH \
+# #     MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
+# #     DATALOADER.NUM_WORKERS 6
 
 # # CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
 # #     --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
@@ -329,8 +317,20 @@ CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
 # #     --tgt-csv-filepath $CSV_PATH --attack-config-path $ATTACK_CONFIG_PATH \
 # #     --name $EXP_NAME --obj-class $OBJ_CLASS --conf-thres $CONF_THRES \
 # #     --annotated-signs-only --transform-mode perspective --attack-type load \
-# #     --img-txt-path $BG_FILES \
+# #     --img-txt-path $BG_FILES --synthetic \
 # #     MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
 # #     OUTPUT_DIR $OUTPUT_PATH \
 # #     MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
 # #     DATALOADER.NUM_WORKERS 6
+
+# # # CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
+# # #     --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
+# # #     --dataset $DATASET --padded-imgsz $IMG_SIZE --eval-mode drop \
+# # #     --tgt-csv-filepath $CSV_PATH --attack-config-path $ATTACK_CONFIG_PATH \
+# # #     --name $EXP_NAME --obj-class $OBJ_CLASS --conf-thres $CONF_THRES \
+# # #     --annotated-signs-only --transform-mode perspective --attack-type load \
+# # #     --img-txt-path $BG_FILES \
+# # #     MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
+# # #     OUTPUT_DIR $OUTPUT_PATH \
+# # #     MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
+# # #     DATALOADER.NUM_WORKERS 6

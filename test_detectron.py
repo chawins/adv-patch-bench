@@ -119,16 +119,9 @@ def main_attack(cfg, args, dataset_params):
 
     attack = DetectronAttackWrapper(cfg, args, attack_config, model, val_loader,
                                     class_names=LABEL_LIST[args.dataset])
-    if args.attack_type != 'none':
-        adv_patch, patch_mask = pickle.load(open(args.adv_patch_path, 'rb'))
-    else:
-        patch_mask = None
     log.info('=> Running attack...')
-    coco_instances_results, metrics = attack.run(
-        patch_mask,
-        vis_save_dir=vis_dir,
-        vis_conf_thresh=0.5,
-    )
+    coco_instances_results, metrics = attack.run(vis_save_dir=vis_dir,
+                                                 vis_conf_thresh=0.5)
     pickle.dump(metrics, open(os.path.join(args.save_dir, 'results.pkl'), 'wb'))
 
     # Logging results

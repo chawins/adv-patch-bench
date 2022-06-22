@@ -110,7 +110,6 @@ class DetectronAttackWrapper:
 
     def run(
         self,
-        patch_mask: torch.Tensor,
         vis_save_dir: str = None,
         vis_conf_thresh: float = 0.5,
     ) -> List:
@@ -231,7 +230,7 @@ class DetectronAttackWrapper:
                     adv_patch_clone = adv_patch.clone().to(self.device)
                     img = perturbed_image.clone().to(self.device)
                     perturbed_image, _ = transform_and_apply_patch(
-                        img, adv_patch_clone, patch_mask, obj_classname, obj, 
+                        img, adv_patch_clone, patch_mask, obj_classname, obj,
                         img_data, **self.transform_params)
 
             if not is_included:
