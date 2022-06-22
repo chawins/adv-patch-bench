@@ -148,7 +148,7 @@ CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
     --tgt-csv-filepath $CSV_PATH --attack-config-path $ATTACK_CONFIG_PATH \
     --name $EXP_NAME --obj-class $OBJ_CLASS --conf-thres $CONF_THRES \
     --annotated-signs-only --transform-mode perspective --attack-type load \
-    --img-txt-path $BG_FILES --synthetic --verbose \
+    --img-txt-path $BG_FILES --synthetic \
     MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
     OUTPUT_DIR $OUTPUT_PATH \
     MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
@@ -160,7 +160,7 @@ CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
     --tgt-csv-filepath $CSV_PATH --attack-config-path $ATTACK_CONFIG_PATH \
     --name $EXP_NAME --obj-class $OBJ_CLASS --conf-thres $CONF_THRES \
     --annotated-signs-only --transform-mode perspective --attack-type load \
-    --img-txt-path $BG_FILES --verbose \
+    --img-txt-path $BG_FILES \
     MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
     OUTPUT_DIR $OUTPUT_PATH \
     MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
