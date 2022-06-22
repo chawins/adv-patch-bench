@@ -14,8 +14,7 @@ EPS = 1e-6
 class RP2AttackDetectron(RP2AttackModule):
 
     def __init__(self, attack_config, core_model, loss_fn, norm, eps, **kwargs):
-        super(RP2AttackDetectron, self).__init__(
-            attack_config, core_model, loss_fn, norm, eps, **kwargs)
+        super().__init__(attack_config, core_model, loss_fn, norm, eps, **kwargs)
 
         detectron_config = attack_config['detectron']
         self.detectron_obj_const = detectron_config['obj_loss_const']

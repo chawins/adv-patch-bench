@@ -8,7 +8,7 @@ import torch.optim as optim
 import torchvision
 from adv_patch_bench.attacks.base_detector import DetectorAttackModule
 from adv_patch_bench.transforms import apply_transform, get_transform
-from adv_patch_bench.utils.image import mask_to_box, resize_and_center
+from adv_patch_bench.utils.image import coerce_rank, mask_to_box, resize_and_center
 from kornia import augmentation as K
 from kornia.constants import Resample
 from yolov5.utils.general import non_max_suppression
@@ -150,6 +150,9 @@ class RP2AttackModule(DetectorAttackModule):
         _, _, obj_height, obj_width = mask_to_box(obj_mask)
         all_bg_idx = np.arange(len(backgrounds))
 
+        obj_mask = coerce_rank(obj_mask, 4)
+        patch_mask = coerce_rank(patch_mask, 4)
+        obj = coerce_rank(obj, 4)
         obj_mask_eot = obj_mask.expand(self.num_eot, -1, -1, -1)
         patch_mask_eot = patch_mask.expand(self.num_eot, -1, -1, -1)
         obj_eot = obj.expand(self.num_eot, -1, -1, -1)
@@ -160,7 +163,7 @@ class RP2AttackModule(DetectorAttackModule):
         for _ in range(self.num_restarts):
             # Initialize adversarial perturbation
             z_delta = torch.zeros((1, 3, self.patch_dim, self.patch_dim),
-                                  device=device, dtype=dtype, requires_grad=True)
+                                  device=device, dtype=dtype)
             z_delta.uniform_(0, 1)
 
             opt, lr_schedule = self._setup_opt(z_delta)
@@ -334,8 +337,8 @@ class RP2AttackModule(DetectorAttackModule):
                         delta, None, obj_size, is_binary=False, interp=self.interp)
                     delta_eot = delta_resized.repeat(self.num_eot, 1, 1, 1)
                     adv_img, _ = apply_transform(
-                        bgs, delta_eot, patch_mask, tf_function, curr_tf_data, 
-                        interp=self.interp, **self.real_transform, 
+                        bgs, delta_eot, patch_mask, tf_function, curr_tf_data,
+                        interp=self.interp, **self.real_transform,
                         use_relight=self.use_relight)
                     adv_img /= 255
 

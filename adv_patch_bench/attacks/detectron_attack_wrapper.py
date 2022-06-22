@@ -196,6 +196,7 @@ class DetectronAttackWrapper:
                     other_sign_class=self.other_sign_class,
                 )
                 is_included = True
+                total_num_patches += 1
             elif len(img_df) > 0:
                 new_gt = batch[0]
                 # Iterate through objects in the current image
