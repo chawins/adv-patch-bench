@@ -10,8 +10,8 @@
 #SBATCH --cpus-per-task=2
 #Number of GPUs, this can be in the format of "gpu:[1-4]", or "gpu:K80:[1-4] with the type included
 #SBATCH --gres=gpu:GTX2080TI:1
-#SBATCH --time=6:00:00
-#SBATCH --output slurm-%j-per-sign_10x10_bottom.out
+#SBATCH --time=24:00:00
+#SBATCH --output slurm-%j-2_10x20.out
 ## Command(s) to run:
 source /global/home/users/$USER/.bash_profile
 module purge
