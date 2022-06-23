@@ -135,11 +135,15 @@ class DetectronAttackWrapper:
             _, adv_patch, patch_mask = prep_attack(
                 self.args, self.img_size, self.device)
 
-        total_num_patches, num_vis, syn_tp, syn_total = 0, 0, 0, 0
+        total_num_images, total_num_patches, num_vis = 0, 0, 0
+        syn_is_detected = []
+        syn_tp, syn_total = 0, 0
         self.evaluator.reset()
 
         for i, batch in tqdm(enumerate(self.data_loader)):
             if self.debug and total_num_patches >= 20:
+                break
+            if total_num_images >= self.args.num_test:
                 break
 
             file_name = batch[0]['file_name']
@@ -237,6 +241,7 @@ class DetectronAttackWrapper:
             if not is_included:
                 # Skip image without any adversarial patch when attacking
                 continue
+            total_num_images += 1
 
             # Perform inference on perturbed image
             # perturbed_image = self._post_process_image(perturbed_image)
@@ -256,7 +261,9 @@ class DetectronAttackWrapper:
                 idx = ((ious >= 0.5) &
                        (new_instances.scores.to('cpu') >= self.args.conf_thres) &
                        (new_instances.pred_classes.to('cpu') == self.adv_sign_class))
-                syn_tp += idx.any().item()
+                is_detected = idx.any().item()
+                syn_is_detected.append(is_detected)
+                syn_tp += is_detected
                 syn_total += 1
                 new_instances.pred_classes[idx] = self.syn_sign_class
             # Scale output to match original input size for evaluator
@@ -314,6 +321,7 @@ class DetectronAttackWrapper:
         if self.synthetic:
             metrics['bbox']['syn_tp'] = syn_tp
             metrics['bbox']['syn_total'] = syn_total
+            metrics['bbox']['syn_is_detected'] = syn_is_detected
         return coco_instances_results, metrics
 
     def _create_instance_dicts(

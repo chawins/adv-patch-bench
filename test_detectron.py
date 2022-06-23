@@ -96,7 +96,7 @@ def main_single(cfg, dataset_params):
 
 def main_attack(cfg, args, dataset_params):
 
-    vis_dir = os.path.join(args.save_dir, 'vis')
+    vis_dir = os.path.join(args.result_dir, 'vis')
     os.makedirs(vis_dir, exist_ok=True)
     args.adv_patch_path = os.path.join(args.save_dir, 'adv_patch.pkl')
 
@@ -122,7 +122,7 @@ def main_attack(cfg, args, dataset_params):
     log.info('=> Running attack...')
     coco_instances_results, metrics = attack.run(vis_save_dir=vis_dir,
                                                  vis_conf_thresh=0.5)
-    pickle.dump(metrics, open(os.path.join(args.save_dir, 'results.pkl'), 'wb'))
+    pickle.dump(metrics, open(os.path.join(args.result_dir, 'results.pkl'), 'wb'))
 
     # Logging results
     metrics = metrics['bbox']
@@ -199,7 +199,7 @@ if __name__ == "__main__":
     # Set up logger
     log.setLevel(logging.DEBUG if args.debug else logging.INFO)
     file_handler = logging.FileHandler(
-        os.path.join(args.save_dir, 'results.log'), mode='a')
+        os.path.join(args.result_dir, 'results.log'), mode='a')
     file_handler.setFormatter(formatter)
     log.addHandler(file_handler)
 

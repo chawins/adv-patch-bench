@@ -34,6 +34,8 @@ def eval_args_parser(is_detectron, root=None):
     parser.add_argument('--conf-thres', type=float, default=None,
                         help=('Set confidence threshold for detection.'
                               'Otherwise, threshold is set to max f1 score.'))
+    parser.add_argument('--num-test', type=int, default=1e9,
+                        help='Max number of images to test on (default: 1e9)')
 
     # =========================== Attack arguments ========================== #
     parser.add_argument('--attack-type', type=str, default='none',
@@ -188,6 +190,13 @@ def get_save_dir(args):
     return save_dir
 
 
+def get_result_dir(args):
+    result_dir = args.attack_type + ('_syn' if args.synthetic else '')
+    result_dir = os.path.join(args.save_dir, result_dir)
+    os.makedirs(result_dir, exist_ok=True)
+    return result_dir
+
+
 def setup_detectron_test_args(args, other_sign_class):
     """
     Create configs and perform basic setups.
@@ -221,6 +230,7 @@ def setup_detectron_test_args(args, other_sign_class):
     args.syn_obj_path = os.path.join(
         PATH_SYN_OBJ, LABEL_LIST[args.dataset][args.obj_class] + '.png')
     args.save_dir = get_save_dir(args)
+    args.result_dir = get_result_dir(args)
     return cfg
 
 

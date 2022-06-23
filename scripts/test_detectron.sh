@@ -135,7 +135,7 @@ CUDA_VISIBLE_DEVICES=$GPU python -u gen_patch_detectron.py \
     --dataset $DATASET --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH \
     --attack-config-path $ATTACK_CONFIG_PATH --obj-class $OBJ_CLASS \
     --name $EXP_NAME --bg-dir $BG_PATH --transform-mode perspective --verbose \
-    --obj-size $SYN_OBJ_SIZE --save-images --synthetic \
+    --obj-size $SYN_OBJ_SIZE --save-images --img-txt-path $BG_FILES --synthetic \
     MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
     OUTPUT_DIR $OUTPUT_PATH \
     MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
@@ -148,7 +148,7 @@ CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
     --tgt-csv-filepath $CSV_PATH --attack-config-path $ATTACK_CONFIG_PATH \
     --name $EXP_NAME --obj-class $OBJ_CLASS --conf-thres $CONF_THRES \
     --annotated-signs-only --transform-mode perspective --attack-type load \
-    --img-txt-path $BG_FILES --synthetic \
+    --img-txt-path $BG_FILES --synthetic --num-test 5000 \
     MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
     OUTPUT_DIR $OUTPUT_PATH \
     MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
@@ -188,7 +188,7 @@ CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
     --tgt-csv-filepath $CSV_PATH --attack-config-path $ATTACK_CONFIG_PATH \
     --name $EXP_NAME --obj-class $OBJ_CLASS --conf-thres $CONF_THRES \
     --annotated-signs-only --transform-mode perspective --attack-type load \
-    --img-txt-path $BG_FILES --synthetic \
+    --img-txt-path $BG_FILES --synthetic --num-test 5000 \
     MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
     OUTPUT_DIR $OUTPUT_PATH \
     MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
@@ -228,7 +228,7 @@ CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
     --tgt-csv-filepath $CSV_PATH --attack-config-path $ATTACK_CONFIG_PATH \
     --name $EXP_NAME --obj-class $OBJ_CLASS --conf-thres $CONF_THRES \
     --annotated-signs-only --transform-mode perspective --attack-type load \
-    --img-txt-path $BG_FILES --synthetic \
+    --img-txt-path $BG_FILES --synthetic --num-test 5000 \
     MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
     OUTPUT_DIR $OUTPUT_PATH \
     MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
@@ -268,7 +268,7 @@ CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
     --tgt-csv-filepath $CSV_PATH --attack-config-path $ATTACK_CONFIG_PATH \
     --name $EXP_NAME --obj-class $OBJ_CLASS --conf-thres $CONF_THRES \
     --annotated-signs-only --transform-mode perspective --attack-type load \
-    --img-txt-path $BG_FILES --synthetic \
+    --img-txt-path $BG_FILES --synthetic --num-test 5000 \
     MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
     OUTPUT_DIR $OUTPUT_PATH \
     MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
