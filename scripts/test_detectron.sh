@@ -26,6 +26,7 @@ OBJ_CLASS=10
 EXP_NAME=real-10x10_bottom
 # EXP_NAME=synthetic-2_10x20
 # EXP_NAME=debug
+NUM_TEST_SYN=5000
 
 # MODEL.ROI_HEADS.NUM_CLASSES 11(12), 15(16), 401  # This should match model not data
 # MODEL.ROI_HEADS.IOU_THRESHOLDS = [0.5]
@@ -148,7 +149,7 @@ CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
     --tgt-csv-filepath $CSV_PATH --attack-config-path $ATTACK_CONFIG_PATH \
     --name $EXP_NAME --obj-class $OBJ_CLASS --conf-thres $CONF_THRES \
     --annotated-signs-only --transform-mode perspective --attack-type load \
-    --img-txt-path $BG_FILES --synthetic --num-test 5000 \
+    --img-txt-path $BG_FILES --synthetic --num-test $NUM_TEST_SYN \
     MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
     OUTPUT_DIR $OUTPUT_PATH \
     MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
@@ -188,7 +189,7 @@ CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
     --tgt-csv-filepath $CSV_PATH --attack-config-path $ATTACK_CONFIG_PATH \
     --name $EXP_NAME --obj-class $OBJ_CLASS --conf-thres $CONF_THRES \
     --annotated-signs-only --transform-mode perspective --attack-type load \
-    --img-txt-path $BG_FILES --synthetic --num-test 5000 \
+    --img-txt-path $BG_FILES --synthetic --num-test $NUM_TEST_SYN \
     MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
     OUTPUT_DIR $OUTPUT_PATH \
     MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
@@ -228,7 +229,7 @@ CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
     --tgt-csv-filepath $CSV_PATH --attack-config-path $ATTACK_CONFIG_PATH \
     --name $EXP_NAME --obj-class $OBJ_CLASS --conf-thres $CONF_THRES \
     --annotated-signs-only --transform-mode perspective --attack-type load \
-    --img-txt-path $BG_FILES --synthetic --num-test 5000 \
+    --img-txt-path $BG_FILES --synthetic --num-test $NUM_TEST_SYN \
     MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
     OUTPUT_DIR $OUTPUT_PATH \
     MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
@@ -268,7 +269,7 @@ CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
     --tgt-csv-filepath $CSV_PATH --attack-config-path $ATTACK_CONFIG_PATH \
     --name $EXP_NAME --obj-class $OBJ_CLASS --conf-thres $CONF_THRES \
     --annotated-signs-only --transform-mode perspective --attack-type load \
-    --img-txt-path $BG_FILES --synthetic --num-test 5000 \
+    --img-txt-path $BG_FILES --synthetic --num-test $NUM_TEST_SYN \
     MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
     OUTPUT_DIR $OUTPUT_PATH \
     MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
