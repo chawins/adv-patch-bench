@@ -100,12 +100,15 @@ def main_attack(cfg, args, dataset_params):
     os.makedirs(vis_dir, exist_ok=True)
     args.adv_patch_path = os.path.join(args.save_dir, 'adv_patch.pkl')
 
-    with open(args.attack_config_path) as file:
-        attack_config = yaml.load(file, Loader=yaml.FullLoader)
-        # `input_size` should be used for background size in synthetic
-        # attack only
-        width = cfg.INPUT.MAX_SIZE_TEST
-        attack_config['input_size'] = (int(3 / 4 * width), width)
+    if os.path.isfile(args.attack_config_path):
+        with open(args.attack_config_path) as file:
+            attack_config = yaml.load(file, Loader=yaml.FullLoader)
+            # `input_size` should be used for background size in synthetic
+            # attack only
+            width = cfg.INPUT.MAX_SIZE_TEST
+            attack_config['input_size'] = (int(3 / 4 * width), width)
+    else:
+        attack_config = None
 
     # Build model
     model = DefaultPredictor(cfg).model
@@ -129,6 +132,8 @@ def main_attack(cfg, args, dataset_params):
     max_f1_idx, tp_full, fp_full, num_gts_per_class = metrics['dumped_metrics']
     metrics['dumped_metrics'] = None
     for k, v in metrics.items():
+        if 'syn' in k:
+            continue
         log.info(f'{k}: {v}')
     iou_idx = 0
     tp, fp = tp_full[iou_idx, :, max_f1_idx], fp_full[iou_idx, :, max_f1_idx]

@@ -37,6 +37,15 @@ def eval_args_parser(is_detectron, root=None):
     parser.add_argument('--num-test', type=int, default=1e9,
                         help='Max number of images to test on (default: 1e9)')
 
+    # Specific to synthetic signs
+    parser.add_argument('--obj-size', type=int, default=None,
+                        help=('Object width in pixels (default: 0.1 * img_size).'
+                              'Only used by gen_patch in for synthetic signs.'))
+    parser.add_argument('--syn-use-scale', action='store_true',
+                        help='Use scaling transform when evaluating on synthetic signs.')
+    parser.add_argument('--syn-use-colorjitter', action='store_true',
+                        help='Use colorjitter transform when evaluating on synthetic signs.')
+
     # =========================== Attack arguments ========================== #
     parser.add_argument('--attack-type', type=str, default='none',
                         help=('attack evaluation to run: none (default), load,'
@@ -57,9 +66,9 @@ def eval_args_parser(is_detectron, root=None):
     parser.add_argument('--run-only-img-txt', action='store_true',
                         help=('run evaluation on images listed in img-txt-path. '
                               'Otherwise, images in img-txt-path are excluded instead.'))
-    # parser.add_argument('--no-patch-transform', action='store_true',
-    #                     help=('If True, do not apply patch to signs using '
-    #                           '3D-transform. Patch will directly face camera.'))
+    parser.add_argument('--no-patch-transform', action='store_true',
+                        help=('If True, do not apply patch to signs using '
+                              '3D-transform. Patch will directly face camera.'))
     parser.add_argument('--transform-mode', type=str, default='perspective',
                         help=('transform type to use on patch during evaluation'
                               ': perspective (default), affine, translate_scale.'
@@ -79,16 +88,12 @@ def eval_args_parser(is_detectron, root=None):
                         help='path to an image of a synthetic sign (used when synthetic_eval is True')
 
     # ===================== Patch generation arguments ====================== #
-    parser.add_argument('--obj-size', type=int, default=None,
-                        help=('Object width in pixels (default: 0.1 * img_size).'
-                              'Only used by gen_patch in for synthetic signs.'))
     parser.add_argument('--bg-dir', type=str, default='',
                         help='path to background directory')
     parser.add_argument('--save-images', action='store_true',
                         help='Save generated patch')
 
     if is_detectron:
-
         # TODO: is this still used?
         parser.add_argument('--compute-metrics', action='store_true',
                             help='Compute metrics after running attack')

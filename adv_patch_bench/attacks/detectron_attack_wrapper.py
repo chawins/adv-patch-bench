@@ -40,7 +40,7 @@ class DetectronAttackWrapper:
         self.verbose = args.verbose
         self.debug = args.debug
         self.model = model
-        self.num_vis = 100
+        self.num_vis = 25
         if isinstance(args.img_size, str):
             self.img_size = tuple([int(size) for size in args.img_size.split(',')])
         else:
@@ -61,9 +61,12 @@ class DetectronAttackWrapper:
         self.metadata = MetadataCatalog.get(self.cfg.DATASETS.TEST[0])
 
         # Attack params
-        self.attack = RP2AttackDetectron(
-            attack_config, model, None, None, None, rescaling=False,
-            interp=args.interp, verbose=self.verbose)
+        if attack_config is None:
+            self.attack = RP2AttackDetectron(
+                attack_config, model, None, None, None, rescaling=False,
+                interp=args.interp, verbose=self.verbose)
+        else:
+            self.attack = None
         self.attack_type = args.attack_type
         self.use_attack = self.attack_type != 'none'
         self.adv_sign_class = args.obj_class
@@ -191,7 +194,7 @@ class DetectronAttackWrapper:
                     images,
                     batch[0],
                     None,
-                    adv_patch.clone(),
+                    adv_patch,
                     patch_mask,
                     *syn_data,
                     use_attack=self.use_attack,

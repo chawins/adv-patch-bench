@@ -30,20 +30,33 @@ def prep_synthetic_eval(
     # FIXME
     syn_sign_class = len(label_names)
     # label_names[syn_sign_class] = 'synthetic'
+    transform_params = {
+        'degrees': 30,
+        'translate': (0.4, 0.4),
+        'scale': (0.5, 2) if args.syn_use_scale else None,
+    }
     obj_transforms = K.RandomAffine(
-        30, translate=(0.4, 0.4), p=transform_prob, return_transform=True,
-        resample=args.interp)
+        p=transform_prob, return_transform=True, resample=args.interp,
+        **transform_params)
     mask_transforms = K.RandomAffine(
-        30, translate=(0.4, 0.4), p=transform_prob, resample=Resample.NEAREST)
+        p=transform_prob, resample=Resample.NEAREST, **transform_params)
+    if args.syn_use_colorjitter:
+        jitter_transform = K.ColorJitter(
+            brightness=0.3, contrast=0.3, saturation=0.3, hue=0.05,
+            p=transform_prob)
+    else:
+        jitter_transform = None
 
     # Load synthetic object/sign from file
-    _, patch_mask = pickle.load(open(args.adv_patch_path, 'rb'))
-    obj_size = patch_mask.shape[-2]
-    obj, obj_mask = prepare_obj(
-        args.syn_obj_path, img_size, (obj_size, obj_size), interp=args.interp)
+    # _, patch_mask = pickle.load(open(args.adv_patch_path, 'rb'))
+    # obj_size = patch_mask.shape[-2]
+    obj, obj_mask = prepare_obj(args.syn_obj_path,
+                                img_size,
+                                (args.obj_size, args.obj_size),
+                                interp=args.interp)
     obj = obj.to(device)
     obj_mask = obj_mask.to(device)
-    return obj, obj_mask, obj_transforms, mask_transforms, syn_sign_class
+    return obj, obj_mask, obj_transforms, mask_transforms, jitter_transform, syn_sign_class
 
 
 def prep_attack(
@@ -51,6 +64,18 @@ def prep_attack(
     img_size: Tuple[int, int],
     device: str = 'cuda',
 ):
+    # load csv file containing target points for transform
+    df = pd.read_csv(args.tgt_csv_filepath)
+    # converts 'tgt_final' from string to list format
+    df['tgt_final'] = df['tgt_final'].apply(ast.literal_eval)
+    # exclude shapes to which we do not apply the transform to
+    df = df[df['final_shape'] != 'other-0.0-0.0']
+    # print(df.shape)
+    # print(df.groupby(by=['final_shape']).count())
+
+    if args.attack_type == 'none':
+        return df, None, None
+
     # Load patch from a pickle file if specified
     # TODO: make script to generate dummy patch for per-sign attack
     adv_patch, patch_mask = pickle.load(open(args.adv_patch_path, 'rb'))
@@ -68,22 +93,17 @@ def prep_attack(
         # Patch with uniformly random pixels
         adv_patch = torch.rand(3, patch_height, patch_width)
 
-    # load csv file containing target points for transform
-    df = pd.read_csv(args.tgt_csv_filepath)
-    # converts 'tgt_final' from string to list format
-    df['tgt_final'] = df['tgt_final'].apply(ast.literal_eval)
-    # exclude shapes to which we do not apply the transform to
-    df = df[df['final_shape'] != 'other-0.0-0.0']
-    # print(df.shape)
-    # print(df.groupby(by=['final_shape']).count())
-
     if args.synthetic:
         # Adv patch and mask have to be made compatible with random
         # transformation for synthetic signs
         h_w_ratio = patch_mask.shape[-2] / patch_mask.shape[-1]
-        obj_size = patch_mask.shape[-2]
+        obj_size = args.obj_size
         if isinstance(obj_size, int):
             obj_size_px = (round(obj_size * h_w_ratio), obj_size)
+        else:
+            assert isinstance(obj_size, Tuple[int, int]), (
+                f'obj_size is {obj_size}. It must be int or tuple of two ints')
+            obj_size_px = obj_size
         patch_mask = resize_and_center(
             patch_mask, img_size, obj_size_px, is_binary=True)
         adv_patch = resize_and_center(adv_patch, img_size, obj_size_px,
@@ -112,39 +132,35 @@ def apply_synthetic_sign(
     syn_obj_mask: torch.FloatTensor,
     obj_transforms: Any,
     mask_transforms: Any,
+    jitter_transform: Any,
     syn_sign_class: int,
     device: str = 'cuda',
     use_attack: bool = True,
     return_target: bool = True,
     is_detectron: bool = False,
-    other_sign_class: int = None
+    other_sign_class: int = None,
 ):
-    # patch_mask = patch_mask.clone()
-    # syn_obj = syn_obj.clone()
-    
-    adv_patch = coerce_rank(adv_patch, 4)
-    patch_mask = coerce_rank(patch_mask, 4)
     syn_obj = coerce_rank(syn_obj, 4)
     image = coerce_rank(image, 4)
     h, w = image.shape[-2:]
 
     if use_attack:
+        adv_patch = coerce_rank(adv_patch, 4)
+        patch_mask = coerce_rank(patch_mask, 4)
         adv_obj = patch_mask * adv_patch + (1 - patch_mask) * syn_obj
     else:
         adv_obj = syn_obj
     adv_obj, tf_params = obj_transforms(adv_obj)
     adv_obj.clamp_(0, 1)
-    # adv_obj = adv_obj.clamp(0, 1)
+    if jitter_transform is not None:
+        adv_obj = jitter_transform(adv_obj)
+        adv_obj.clamp_(0, 1)
+
     o_mask = mask_transforms.apply_transform(
         syn_obj_mask, None, transform=tf_params.to(device))
-    # o_mask = syn_obj_mask
-    # image = image.to(device).view_as(adv_obj) / 255
-    # adv_img = o_mask * adv_obj + (1 - o_mask) * image
     adv_img = o_mask * adv_obj + (1 - o_mask) * image / 255
     adv_img = coerce_rank(adv_img, 3)
     adv_img *= 255
-    # adv_img = adv_img * 255
-    # adv_img = adv_img.squeeze(0)
 
     if not return_target:
         return adv_img

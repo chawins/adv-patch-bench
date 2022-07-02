@@ -58,9 +58,13 @@ def generate_mask(
     patch_x_pos = mid_width + patch_x_shift
     patch_y_pos = mid_height + patch_y_shift
     hh, hw = patch_h_px // 2, patch_w_px // 2
-    patch_mask[:, patch_y_pos - hh:patch_y_pos + hh, patch_x_pos - hw:patch_x_pos + hw] = 1
+    # Bottom patch
+    patch_mask[:, patch_y_pos - hh:patch_y_pos + hh,
+               patch_x_pos - hw:patch_x_pos + hw] = 1
+    # Top patch
     patch_y_pos = mid_height - patch_y_shift
-    patch_mask[:, patch_y_pos - hh:patch_y_pos + hh, patch_x_pos - hw:patch_x_pos + hw] = 1
+    patch_mask[:, patch_y_pos - hh:patch_y_pos + hh,
+               patch_x_pos - hw:patch_x_pos + hw] = 1
 
     # (3) cover the whole sign
     # patch_mask = torch.ones_like(patch_mask)

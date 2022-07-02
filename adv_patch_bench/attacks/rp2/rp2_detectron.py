@@ -108,10 +108,10 @@ class RP2AttackDetectron(RP2AttackModule):
             target_loss, obj_loss = 0, 0
             if len(tgt_log) > 0 and len(tgt_lb) > 0:
                 # Ignore the background class on tgt_log
-                target_loss = F.cross_entropy(tgt_log, tgt_lb, reduction='sum')
+                target_loss = F.cross_entropy(tgt_log, tgt_lb, reduction='mean')
             if len(obj_logits) > 0 and self.detectron_obj_const != 0:
                 obj_lb = torch.ones_like(obj_log)
                 obj_loss = F.binary_cross_entropy_with_logits(obj_log, obj_lb,
-                                                              reduction='sum')
+                                                              reduction='mean')
             loss += target_loss + self.detectron_obj_const * obj_loss
         return -loss
