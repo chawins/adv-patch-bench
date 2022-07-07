@@ -8,7 +8,7 @@ rp2:
   augment_prob_geometric: 1
   augment_prob_relight: 0
   use_patch_relight: True
-  patch_dim: 32
+  patch_dim: 128
   num_bg: 50  # Number of backgrounds attacker uses to generate patch
   use_lr_schedule: False
   transform_mode: 'perspective'

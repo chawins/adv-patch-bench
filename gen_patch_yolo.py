@@ -248,6 +248,7 @@ def main(
     task='test',
     mask_dir=None,
     attack_config_path: str = None,
+    mask_name: str = '10x10',
     **kwargs,
 ):
     cudnn.benchmark = True
@@ -304,7 +305,8 @@ def main(
         # Otherwise, generate a new mask here
         # Get size in inch from sign class
         obj_width_inch = get_obj_width(obj_class, class_names)
-        patch_mask = generate_mask(obj_numpy, obj_size, obj_width_inch)
+        patch_mask = generate_mask(
+            mask_name, obj_numpy, obj_size, obj_width_inch)
 
     dataloader = None
     if not synthetic:

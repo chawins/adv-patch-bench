@@ -249,6 +249,7 @@ def main(
     synthetic: bool = False,
     attack_config_path: str = None,
     num_samples: int = 0,
+    mask_name: str = '10x10',
     **kwargs,
 ):
     cudnn.benchmark = True
@@ -278,7 +279,7 @@ def main(
 
     # Get object width in inch
     obj_width_inch = get_obj_width(obj_class, class_names)
-    patch_mask = generate_mask(obj_numpy, obj_size, obj_width_inch)
+    patch_mask = generate_mask(mask_name, obj_numpy, obj_size, obj_width_inch)
 
     # Build dataloader
     dataloader = build_detection_test_loader(

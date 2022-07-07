@@ -105,14 +105,16 @@ NUM_TEST_SYN=5000
 syn_attack() {
 
     NAME=$1
-    ATK_CONFIG_PATH=./configs/attack_config$2.yaml
+    MASK_NAME=$2
+    ATK_CONFIG_PATH=./configs/attack_config$3.yaml
 
     python -u gen_patch_detectron.py \
         --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
         --dataset $DATASET --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH \
         --attack-config-path $ATK_CONFIG_PATH --obj-class $OBJ_CLASS \
         --name $NAME --bg-dir $BG_PATH --transform-mode perspective --verbose \
-        --obj-size $SYN_OBJ_SIZE --save-images --synthetic --img-txt-path $BG_FILES \
+        --obj-size $SYN_OBJ_SIZE --save-images --mask-name $MASK_NAME \
+        --synthetic --img-txt-path $BG_FILES \
         MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
         OUTPUT_DIR $OUTPUT_PATH \
         MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
@@ -143,12 +145,17 @@ syn_attack() {
         DATALOADER.NUM_WORKERS $NUM_WORKERS
 }
 
-syn_attack synthetic-10x20-adam-ps128-lmd1e0 2
-syn_attack synthetic-10x20-adam-ps128-lmd1e-1 3
-syn_attack synthetic-10x20-adam-ps128-lmd1e-2 4
-syn_attack synthetic-10x20-adam-ps128-lmd1e-3 5
-syn_attack synthetic-10x20-adam-ps128-lmd1e-4 6
-syn_attack synthetic-10x20-adam-ps128-lmd1e-5 7
-# syn_attack synthetic-10x20-adam-ps8 8
-# syn_attack synthetic-10x20-adam-ps16 9
-# syn_attack synthetic-10x20-adam-ps512 10
+syn_attack synthetic-10x20-adam-ps128-lmd1e0 10x20 2
+syn_attack synthetic-10x20-adam-ps128-lmd1e-1 10x20 3
+syn_attack synthetic-10x20-adam-ps128-lmd1e-2 10x20 4
+syn_attack synthetic-10x20-adam-ps128-lmd1e-3 10x20 5
+syn_attack synthetic-10x20-adam-ps128-lmd1e-4 10x20 6
+syn_attack synthetic-10x20-adam-ps128-lmd1e-5 10x20 7
+
+# syn_attack synthetic-10x10-adam-ps8 10x10 8
+# syn_attack synthetic-10x10-adam-ps16 10x10 9
+# syn_attack synthetic-10x10-adam-ps32 10x10 10
+# syn_attack synthetic-10x10-adam-ps64 10x10 11
+# syn_attack synthetic-10x10-adam-ps128 10x10 12
+# syn_attack synthetic-10x10-adam-ps256 10x10 13
+# syn_attack synthetic-10x10-adam-ps512 10x10 14

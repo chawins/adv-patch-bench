@@ -52,6 +52,8 @@ def eval_args_parser(is_detectron, root=None):
                               ' per-sign, random, debug'))
     parser.add_argument('--adv-patch-path', type=str, default=None,
                         help='path to adv patch and mask to load')
+    parser.add_argument('--mask-name', type=str, default='10x10',
+                        help='Specify mask shape.')
     parser.add_argument('--mask-dir', type=str, default=None,
                         help=('Path to dir with predefined masks '
                               '(default: generate a new mask)'))
