@@ -12,7 +12,7 @@
 #SBATCH --gres=gpu:V100:1
 #SBATCH --qos=v100_gpu3_normal
 #SBATCH --time=12:00:00
-#SBATCH --output slurm-%j-2_10x20.out
+#SBATCH --output slurm-%j-10x20.out
 ## Command(s) to run:
 source /global/home/users/$USER/.bash_profile
 module purge
