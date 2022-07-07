@@ -1,5 +1,5 @@
 # Detector test script
-GPU=0
+GPU=1
 NUM_GPU=1
 NUM_WORKERS=8
 
