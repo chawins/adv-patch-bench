@@ -112,12 +112,11 @@ syn_attack() {
         --dataset $DATASET --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH \
         --attack-config-path $ATK_CONFIG_PATH --obj-class $OBJ_CLASS \
         --name $NAME --bg-dir $BG_PATH --transform-mode perspective --verbose \
-        --obj-size $SYN_OBJ_SIZE --save-images --synthetic \
+        --obj-size $SYN_OBJ_SIZE --save-images --synthetic --img-txt-path $BG_FILES \
         MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
         OUTPUT_DIR $OUTPUT_PATH \
         MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
         DATALOADER.NUM_WORKERS $NUM_WORKERS
-    # --img-txt-path $BG_FILES
 
     python -u test_detectron.py \
         --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
