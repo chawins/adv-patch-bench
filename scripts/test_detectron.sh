@@ -112,23 +112,23 @@ syn_attack() {
         --dataset $DATASET --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH \
         --attack-config-path $ATK_CONFIG_PATH --obj-class $OBJ_CLASS \
         --name $NAME --bg-dir $BG_PATH --transform-mode perspective --verbose \
-        --obj-size $SYN_OBJ_SIZE --save-images --synthetic \
+        --obj-size $SYN_OBJ_SIZE --save-images --img-txt-path $BG_FILES --synthetic \
         MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
         OUTPUT_DIR $OUTPUT_PATH \
         MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
         DATALOADER.NUM_WORKERS $NUM_WORKERS
 
-    # CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
-    #     --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
-    #     --dataset $DATASET --padded-imgsz $IMG_SIZE --eval-mode drop \
-    #     --tgt-csv-filepath $CSV_PATH --attack-config-path $ATK_CONFIG_PATH \
-    #     --name $NAME --obj-class $OBJ_CLASS --conf-thres $CONF_THRES \
-    #     --transform-mode perspective --attack-type load --num-test $NUM_TEST_SYN \
-    #     --synthetic --obj-size $SYN_OBJ_SIZE --img-txt-path $BG_FILES \
-    #     MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
-    #     OUTPUT_DIR $OUTPUT_PATH \
-    #     MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
-    #     DATALOADER.NUM_WORKERS $NUM_WORKERS
+    CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
+        --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
+        --dataset $DATASET --padded-imgsz $IMG_SIZE --eval-mode drop \
+        --tgt-csv-filepath $CSV_PATH --attack-config-path $ATK_CONFIG_PATH \
+        --name $NAME --obj-class $OBJ_CLASS --conf-thres $CONF_THRES \
+        --transform-mode perspective --attack-type load --num-test $NUM_TEST_SYN \
+        --synthetic --obj-size $SYN_OBJ_SIZE --img-txt-path $BG_FILES \
+        MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
+        OUTPUT_DIR $OUTPUT_PATH \
+        MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
+        DATALOADER.NUM_WORKERS $NUM_WORKERS
 
     CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
         --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
@@ -143,12 +143,12 @@ syn_attack() {
         DATALOADER.NUM_WORKERS $NUM_WORKERS
 }
 
-# syn_attack synthetic-2_10x20-adam-bg20 2
-# syn_attack synthetic-2_10x20-adam-bg30 3
-# syn_attack synthetic-2_10x20-adam-bg40 4
-# syn_attack synthetic-2_10x20-adam-lmd1e-4 5
-# syn_attack synthetic-2_10x20-adam-lmd1e-5 6
-# syn_attack synthetic-2_10x20-adam-ps8 7
-# syn_attack synthetic-2_10x20-adam-ps16 8
-# syn_attack synthetic-2_10x20-adam-ps512 9
-syn_attack synthetic-2_10x20-adam-eot2 10
+syn_attack synthetic-10x20-adam-ps128-lmd1e0 2
+syn_attack synthetic-10x20-adam-ps128-lmd1e-1 3
+syn_attack synthetic-10x20-adam-ps128-lmd1e-2 4
+syn_attack synthetic-10x20-adam-ps128-lmd1e-3 5
+syn_attack synthetic-10x20-adam-ps128-lmd1e-4 6
+syn_attack synthetic-10x20-adam-ps128-lmd1e-5 7
+# syn_attack synthetic-10x20-adam-ps8 8
+# syn_attack synthetic-10x20-adam-ps16 9
+# syn_attack synthetic-10x20-adam-ps512 10

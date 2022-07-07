@@ -1,7 +1,7 @@
 import time
 from abc import abstractmethod
 from typing import Any, List, Optional
-
+import torch.nn as nn
 import numpy as np
 import torch
 import torch.optim as optim
@@ -272,9 +272,6 @@ class RP2AttackModule(DetectorAttackModule):
         """
         self._on_enter_attack()
         device = patch_mask.device
-
-        ymin, xmin, obj_height, obj_width = mask_to_box(patch_mask)
-        patch_loc = (ymin, xmin, obj_height, obj_width)
 
         # Process transform data and create batch tensors
         obj_size = patch_mask.shape[-2:]

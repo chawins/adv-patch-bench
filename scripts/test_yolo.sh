@@ -32,6 +32,8 @@ EXP_NAME=yolo_unit_test
 # CUDA_VISIBLE_DEVICES=$GPU python -u gen_mask.py \
 #     --dataset $DATASET --patch-name $EXP_NAME --obj-class $OBJ_CLASS --obj-size 256 --save-mask
 
+# !!! THIS IS A SIMPLE TEST. --img-txt-path $BG_FILES is removed to save time
+
 # Test real attack
 CUDA_VISIBLE_DEVICES=$GPU python -u gen_patch_yolo.py \
     --device $GPU --dataset $DATASET --padded-imgsz $IMG_SIZE --name $EXP_NAME \
