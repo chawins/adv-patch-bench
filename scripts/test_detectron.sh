@@ -145,17 +145,17 @@ syn_attack() {
         DATALOADER.NUM_WORKERS $NUM_WORKERS
 }
 
-syn_attack synthetic-10x20-adam-ps128-lmd1e0 10x20 2
-syn_attack synthetic-10x20-adam-ps128-lmd1e-1 10x20 3
-syn_attack synthetic-10x20-adam-ps128-lmd1e-2 10x20 4
-syn_attack synthetic-10x20-adam-ps128-lmd1e-3 10x20 5
-syn_attack synthetic-10x20-adam-ps128-lmd1e-4 10x20 6
-syn_attack synthetic-10x20-adam-ps128-lmd1e-5 10x20 7
+# syn_attack synthetic-10x20-adam-ps128-lmd1e0 10x20 2
+# syn_attack synthetic-10x20-adam-ps128-lmd1e-1 10x20 3
+# syn_attack synthetic-10x20-adam-ps128-lmd1e-2 10x20 4
+# syn_attack synthetic-10x20-adam-ps128-lmd1e-3 10x20 5
+# syn_attack synthetic-10x20-adam-ps128-lmd1e-4 10x20 6
+# syn_attack synthetic-10x20-adam-ps128-lmd1e-5 10x20 7
 
-# syn_attack synthetic-10x10-adam-ps8 10x10 8
-# syn_attack synthetic-10x10-adam-ps16 10x10 9
-# syn_attack synthetic-10x10-adam-ps32 10x10 10
-# syn_attack synthetic-10x10-adam-ps64 10x10 11
-# syn_attack synthetic-10x10-adam-ps128 10x10 12
-# syn_attack synthetic-10x10-adam-ps256 10x10 13
-# syn_attack synthetic-10x10-adam-ps512 10x10 14
+syn_attack synthetic-10x10-adam-ps8 10x10 8
+syn_attack synthetic-10x10-adam-ps16 10x10 9
+syn_attack synthetic-10x10-adam-ps32 10x10 10
+syn_attack synthetic-10x10-adam-ps64 10x10 11
+syn_attack synthetic-10x10-adam-ps128 10x10 12
+syn_attack synthetic-10x10-adam-ps256 10x10 13
+syn_attack synthetic-10x10-adam-ps512 10x10 14
