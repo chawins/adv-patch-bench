@@ -96,21 +96,11 @@ def generate_adv_patch(
         [type]: [description]
     """
 
-    # Randomly select backgrounds from `bg_dir` and resize them
-    all_bgs = os.listdir(os.path.expanduser(bg_dir))
-    print(f'There are {len(all_bgs)} background images in {bg_dir}.')
-    idx = np.arange(len(all_bgs))
-    np.random.shuffle(idx)
+    
     # FIXME: does this break anything?
     # bg_size = (img_size[0] - 32, img_size[1] - 32)
     bg_size = img_size
-
-    backgrounds = torch.zeros((num_bg, 3) + bg_size, )
-
-    for i, index in enumerate(idx[:num_bg]):
-        bg = torchvision.io.read_image(join(bg_dir, all_bgs[index])) / 255
-        backgrounds[i] = T.resize(bg, bg_size, antialias=True)
-
+    
     # getting object classes names
     # names = {k: v for k, v in enumerate(model.names if hasattr(model, 'names') else model.module.names)}
     class_names = LABEL_LIST[args.dataset]
@@ -123,6 +113,19 @@ def generate_adv_patch(
 
     # Generate an adversarial patch
     if synthetic:
+        # Randomly select backgrounds from `bg_dir` and resize them
+        all_bgs = os.listdir(os.path.expanduser(bg_dir))
+        print(f'There are {len(all_bgs)} background images in {bg_dir}.')
+        idx = np.arange(len(all_bgs))
+        np.random.shuffle(idx)
+
+        backgrounds = torch.zeros((num_bg, 3) + bg_size, )
+
+        for i, index in enumerate(idx[:num_bg]):
+            bg = torchvision.io.read_image(join(bg_dir, all_bgs[index])) / 255
+            backgrounds[i] = T.resize(bg, bg_size, antialias=True)
+
+
         print('=> Generating adversarial patch on synthetic signs...')
         obj_mask = torch.from_numpy(obj_numpy[:, :, -1] == 1).float().unsqueeze(0)
         obj = torch.from_numpy(obj_numpy[:, :, :-1]).float().permute(2, 0, 1)
@@ -148,17 +151,22 @@ def generate_adv_patch(
             torchvision.utils.save_image(backgrounds, join(save_dir, 'backgrounds.png'))
 
     else:
+
+        with open(bg_dir) as f:
+            filenames = f.readlines()
+        filenames = [fn.strip('\n') for fn in filenames]
+        num_bg = len(filenames)
+
         print('=> Generating adversarial patch on real signs...')
         df = pd.read_csv(tgt_csv_filepath)
         df['tgt_final'] = df['tgt_final'].apply(literal_eval)
         df = df[df['final_shape'] != 'other-0.0-0.0']
+        df = df[df['filename'].isin(filenames)]
 
         attack_images = []
         print('=> Collecting background images...')
 
-        from tqdm import tqdm
-        for batch_i, (im, targets, paths, shapes) in tqdm(enumerate(dataloader)):
-
+        for batch_i, (im, targets, paths, shapes) in enumerate(dataloader):
             for image_i, path in enumerate(paths):
                 filename = path.split('/')[-1]
 

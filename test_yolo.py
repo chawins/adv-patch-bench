@@ -320,7 +320,8 @@ def run(
     if synthetic:
         # Prepare evaluation with synthetic signs
         # syn_data: syn_obj, obj_mask, obj_transforms, mask_transforms, syn_sign_class
-        syn_data = prep_synthetic_eval(args, img_size, names, device=device)
+        syn_data = prep_synthetic_eval(args, img_size, names, 
+                                       transform_prob=1., device=device)
         names[nc] = 'synthetic'
         syn_sign_class = syn_data[-1]
         nc += 1
@@ -435,7 +436,8 @@ def run(
                     adv_patch_clone = None
                 im[image_i], targets = apply_synthetic_sign(
                     img, targets, image_i, adv_patch_clone, patch_mask, 
-                    *syn_data, device=device, use_attack=use_attack)
+                    *syn_data, device=device, use_attack=use_attack,
+                    return_target=True, is_detectron=False)
 
         t1 = time_sync()
         if pt or jit or engine:
@@ -535,16 +537,14 @@ def run(
                     if lbl[0] != syn_sign_class:
                         continue
                     for pi, prd in enumerate(predn):
-                        # [x1, y1, x2, y2] where xy1=top-left, xy2=bottom-right
-                        x1 = 0.9 * lbl[1] if 0.9 * lbl[1] > 5 else -20
-                        y1 = 0.9 * lbl[2] if 0.9 * lbl[2] > 5 else -20
-                        if (prd[0] >= x1 and prd[1] >= y1 and
-                                prd[2] <= 1.1 * lbl[3] and prd[3] <= 1.1 * lbl[4]):
+                        iou = box_iou(torch.unsqueeze(torch.tensor(lbl[1:5]), 0), torch.unsqueeze(prd[:4].cpu(), 0))
+
+                        if iou > 0.25:
                             if prd[5] == adv_sign_class:
                                 predn[pi, 5] = syn_sign_class
                                 pred[pi, 5] = syn_sign_class
                                 num_labels_changed += 1
-
+ 
             scale_coords(im[si].shape[1:], predn[:, :4], shape, shapes[si][1])  # native-space pred
 
             # Evaluate

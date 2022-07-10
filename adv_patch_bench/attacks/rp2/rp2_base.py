@@ -8,7 +8,7 @@ import torch.optim as optim
 import torchvision
 from adv_patch_bench.attacks.base_detector import DetectorAttackModule
 from adv_patch_bench.transforms import apply_transform, get_transform
-from adv_patch_bench.utils.image import mask_to_box, resize_and_center
+from adv_patch_bench.utils.image import coerce_rank, mask_to_box, resize_and_center
 from kornia import augmentation as K
 from kornia.constants import Resample
 from yolov5.utils.general import non_max_suppression
@@ -69,6 +69,8 @@ class RP2AttackModule(DetectorAttackModule):
             resample=self.interp)
         self.mask_transforms = K.RandomAffine(
             30, translate=(0.45, 0.45), p=p_geo, resample=Resample.NEAREST)
+
+
         self.jitter_transform = K.ColorJitter(
             brightness=0.3, contrast=0.3, p=p_light)
 
@@ -145,11 +147,14 @@ class RP2AttackModule(DetectorAttackModule):
 
         obj.detach_()
         obj_mask.detach_()
+
         patch_mask.detach_()
         backgrounds.detach_()
         _, _, obj_height, obj_width = mask_to_box(obj_mask)
+        obj_mask = coerce_rank(obj_mask, 3)
         all_bg_idx = np.arange(len(backgrounds))
 
+        # obj_mask_eot = obj_mask.expand(self.num_eot, -1, -1)
         obj_mask_eot = obj_mask.expand(self.num_eot, -1, -1, -1)
         patch_mask_eot = patch_mask.expand(self.num_eot, -1, -1, -1)
         obj_eot = obj.expand(self.num_eot, -1, -1, -1)
