@@ -375,7 +375,7 @@ def run(
         # if model_trained_without_other:
         #     targets = targets[targets[:, 1] != other_class_label]
 
-        if args.debug and batch_i == 500:
+        if args.debug and batch_i == 2500:
             break
 
         if num_apply_imgs >= len(filename_list) and args.run_only_img_txt:

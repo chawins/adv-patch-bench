@@ -118,7 +118,6 @@ def generate_adv_patch(
         print(f'There are {len(all_bgs)} background images in {bg_dir}.')
         idx = np.arange(len(all_bgs))
         np.random.shuffle(idx)
-
         backgrounds = torch.zeros((num_bg, 3) + bg_size, )
 
         for i, index in enumerate(idx[:num_bg]):
@@ -280,7 +279,9 @@ def main(
     attack_config['input_size'] = img_size
 
     num_bg = attack_config['rp2']['num_bg']  # TODO(clean)
+    
     class_name = list(MAPILLARY_IMG_COUNTS_DICT.keys())[int(obj_class)]
+
     if num_bg < 1:
         assert class_name is not None
         print(f'num_bg is a fraction ({num_bg}).')
@@ -300,7 +301,7 @@ def main(
     if obj_size is None:
         obj_size = int(min(img_size) * 0.1)
     if isinstance(obj_size, int):
-        obj_size = (round(obj_size * h_w_ratio), obj_size)
+        obj_size = (round(obj_size * h_w_ratio), obj_size)   
 
     if mask_dir is not None:
         # Load path mask from file if specified (gen_mask.py)
@@ -313,6 +314,7 @@ def main(
         # Get size in inch from sign class
         obj_width_inch = get_obj_width(obj_class, class_names)
         patch_mask = generate_mask(obj_numpy, obj_size, obj_width_inch)
+    
 
     dataloader = None
     if not synthetic:
@@ -344,5 +346,4 @@ def main(
 if __name__ == "__main__":
     args = eval_args_parser(False, root=ROOT)
     setup_yolo_test_args(args, OTHER_SIGN_CLASS)
-    print(args)
     main(**vars(args))

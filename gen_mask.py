@@ -30,8 +30,8 @@ def generate_mask(
     patch_mask = torch.zeros((1, ) + obj_size_px)
 
     # EDIT: User defines from this point on
-    patch_size_inch = 10
-    # patch_size_inch = (10, 20)
+    # patch_size_inch = 10
+    patch_size_inch = (10, 20)
     if isinstance(patch_size_inch, int):
         patch_size_inch = (patch_size_inch, patch_size_inch)
     patch_h_inch, patch_w_inch = patch_size_inch
