@@ -4,24 +4,24 @@ import numpy as np
 POLYGON_ERROR = 0.04
 
 SHAPE_TO_VERTICES = {
-    'circle': ((0, 1, 2, 3), ),
-    'triangle_inverted': ((0, 1, 2), ),
-    'triangle': ((0, 1, 2), ),
-    'rect': ((0, 1, 2, 3), ),
-    'diamond': ((0, 1, 2, 3), ),
-    'pentagon': ((0, 2, 3, 4), ),
-    'octagon': ((0, 2, 4, 6), ),
+    "circle": ((0, 1, 2, 3),),
+    "triangle_inverted": ((0, 1, 2),),
+    "triangle": ((0, 1, 2),),
+    "rect": ((0, 1, 2, 3),),
+    "diamond": ((0, 1, 2, 3),),
+    "pentagon": ((0, 2, 3, 4),),
+    "octagon": ((0, 2, 4, 6),),
 }
 
 # TODO
 MATCH_SHAPES = {
-    'circle': ('circle', 'rect'),
-    'triangle_inverted': ((0, 1, 2), ),
-    'triangle': ((0, 1, 2), ),
-    'rect': ((0, 1, 2, 3), ),
-    'diamond': ((0, 1, 2, 3), ),
-    'pentagon': ((0, 2, 3, 4), ),
-    'octagon': ((0, 2, 4, 6), ),
+    "circle": ("circle", "rect"),
+    "triangle_inverted": ((0, 1, 2),),
+    "triangle": ((0, 1, 2),),
+    "rect": ((0, 1, 2, 3),),
+    "diamond": ((0, 1, 2, 3),),
+    "pentagon": ((0, 2, 3, 4),),
+    "octagon": ((0, 2, 4, 6),),
 }
 
 
@@ -34,7 +34,9 @@ def detect_polygon(contour):
 def get_corners(mask):
     # Check that we have a binary mask
     assert mask.ndim == 2
-    assert (mask == 1).sum() + (mask == 0).sum() == mask.shape[0] * mask.shape[1]
+    assert (mask == 1).sum() + (mask == 0).sum() == mask.shape[0] * mask.shape[
+        1
+    ]
 
     # Find contour of the object
     contours, _ = cv.findContours(mask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE)
@@ -66,7 +68,7 @@ def get_box_from_ellipse(rect):
     dev_ratio = abs(rect[1][0] - mean_size) / mean_size
     if dev_ratio < DEV_RATIO_THRES:
         # Set angle to 0 when width and height are similar
-        box = cv.boxPoints((rect[0], rect[1], 0.))
+        box = cv.boxPoints((rect[0], rect[1], 0.0))
     else:
         box = cv.boxPoints(rect)
     return box
@@ -75,7 +77,7 @@ def get_box_from_ellipse(rect):
 def sort_polygon_vertices(vertices):
     """
     Sort vertices such that the first one is the top left corner, and the rest
-    follows in clockwise order. First, find a point inside the polygon (e.g., 
+    follows in clockwise order. First, find a point inside the polygon (e.g.,
     mean of all vertices) and sort vertices by the angles.
     """
     # Compute normalized vectors from mean to vertices
@@ -89,7 +91,7 @@ def sort_polygon_vertices(vertices):
     vec /= vec_len
     # Compute angle from positive x-axis (negative sign is for clockwise)
     # NOTE: numpy.arctan2 takes y and x (not x and y)
-    angles = - np.arctan2(vec[:, 1], vec[:, 0])
+    angles = -np.arctan2(vec[:, 1], vec[:, 0])
     # print(angles)
     sorted_idx = np.argsort(angles)
     vertices = vertices[sorted_idx]
@@ -97,7 +99,10 @@ def sort_polygon_vertices(vertices):
 
     first_idx = find_first_vertex(vertices)
     # If shape is diamond, find_first_vertex can be ambiguous
-    if -np.pi * 5 / 8 < angles[first_idx] < -np.pi * 3 / 8 and len(vertices) == 4:
+    if (
+        -np.pi * 5 / 8 < angles[first_idx] < -np.pi * 3 / 8
+        and len(vertices) == 4
+    ):
         # We want first_idx for diamond to be the left corner
         first_idx = (first_idx - 1) % 4
 
@@ -108,7 +113,7 @@ def sort_polygon_vertices(vertices):
 
 def get_box_vertices(vertices, predicted_shape):
     """To apply perspective transform, we need to extract a set of four points
-    from `vertices` of the polygon or the circle we identify. There is a 
+    from `vertices` of the polygon or the circle we identify. There is a
     separate function for each `predicted_shape`.
 
     Args:
@@ -119,7 +124,7 @@ def get_box_vertices(vertices, predicted_shape):
         np.ndarray: Array of vertices of a convex quadrilateral used for
             perspective transform
     """
-    if predicted_shape == 'circle':
+    if predicted_shape == "circle":
         vertices = get_box_from_ellipse(vertices)
 
     # print(vertices)
@@ -148,23 +153,23 @@ def get_shape_from_vertices(vertices):
     if num_vertices == 3:
         angle = get_side_angle(vertices.astype(np.float32))
         if angle < np.pi / 6:
-            shape = 'triangle_inverted'
+            shape = "triangle_inverted"
         else:
-            shape = 'triangle'
+            shape = "triangle"
     elif num_vertices == 4:
         angle = get_side_angle(vertices.astype(np.float32))
         side1 = vertices[0] - vertices[1]
         side2 = vertices[1] - vertices[2]
-        len1 = np.sqrt((side1 ** 2).sum())
-        len2 = np.sqrt((side2 ** 2).sum())
+        len1 = np.sqrt((side1**2).sum())
+        len2 = np.sqrt((side2**2).sum())
         if max(len1, len2) / min(len1, len2) > 1.5 or angle < np.pi / 8:
-            shape = 'rect'
+            shape = "rect"
         else:
-            shape = 'diamond'
+            shape = "diamond"
     elif num_vertices == 5:
-        shape = 'pentagon'
+        shape = "pentagon"
     elif num_vertices == 8:
-        shape = 'octagon'
+        shape = "octagon"
     else:
-        shape = 'other'
+        shape = "other"
     return shape

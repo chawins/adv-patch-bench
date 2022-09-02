@@ -8,39 +8,43 @@ import cv2
 import numpy as np
 import torch
 import yaml
-from detectron2.data import (MetadataCatalog, build_detection_test_loader,
-                             build_detection_train_loader)
+from detectron2.data import build_detection_test_loader
 from detectron2.engine import DefaultPredictor
-from detectron2.evaluation import inference_on_dataset, verify_results
-from detectron2.utils.visualizer import Visualizer
+from detectron2.evaluation import inference_on_dataset
 from tqdm import tqdm
 
-import adv_patch_bench.utils.detectron.custom_coco_evaluator as cocoeval
-from adv_patch_bench.attacks.detectron_attack_wrapper import \
-    DetectronAttackWrapper
-from adv_patch_bench.dataloaders import (BenignMapper, get_mapillary_dict,
-                                         get_mtsd_dict, register_mapillary,
-                                         register_mtsd)
-from adv_patch_bench.utils.argparse import (eval_args_parser,
-                                            setup_detectron_test_args)
+from adv_patch_bench.attacks.detectron_attack_wrapper import (
+    DetectronAttackWrapper,
+)
+from adv_patch_bench.dataloaders import (
+    BenignMapper,
+    get_mapillary_dict,
+    register_mapillary,
+    register_mtsd,
+)
+from adv_patch_bench.utils.argparse import (
+    eval_args_parser,
+    setup_detectron_test_args,
+)
 from adv_patch_bench.utils.detectron import build_evaluator
 from hparams import DATASETS, LABEL_LIST, OTHER_SIGN_CLASS, SAVE_DIR_DETECTRON
 
 log = logging.getLogger(__name__)
-formatter = logging.Formatter('[%(levelname)s] %(asctime)s: %(message)s')
+formatter = logging.Formatter("[%(levelname)s] %(asctime)s: %(message)s")
 
 
 def main(cfg, args):
+
     # NOTE: distributed is set to False
     dataset_name = cfg.DATASETS.TEST[0]
-    log.info(f'=> Creating a custom evaluator on {dataset_name}...')
+    log.info(f"=> Creating a custom evaluator on {dataset_name}...")
     evaluator = build_evaluator(cfg, dataset_name)
     if args.debug:
-        log.info(f'=> Running debug mode...')
+        log.info(f"=> Running debug mode...")
         sampler = list(range(20))
     else:
         sampler = None
-    log.info(f'=> Building {dataset_name} dataloader...')
+    log.info(f"=> Building {dataset_name} dataloader...")
     val_loader = build_detection_test_loader(
         cfg,
         dataset_name,
@@ -58,24 +62,20 @@ def main(cfg, args):
 
 
 def main_single(cfg, dataset_params):
+    from detectron2.utils.visualizer import Visualizer
+
     # Build model
     model = DefaultPredictor(cfg)
     # Build dataloader
-    metadata = MetadataCatalog.get(cfg.DATASETS.TEST[0])
-    # val_loader = build_detection_test_loader(cfg, cfg.DATASETS.TEST[0],
-    #                                          batch_size=1,
-    #                                          num_workers=cfg.DATALOADER.NUM_WORKERS)
-    # val_loader = build_detection_train_loader(cfg)
-    split = cfg.DATASETS.TEST[0].split('_')[1]
-    # val_loader = get_mtsd_dict(split, *dataset_params)
+    split = cfg.DATASETS.TEST[0].split("_")[1]
     val_loader = get_mapillary_dict(split, *dataset_params)
     for i, inpt in enumerate(val_loader):
 
-        img = cv2.imread(inpt['file_name'])
+        img = cv2.imread(inpt["file_name"])
 
         # DEBUG
         if args.debug:
-            print(inpt['file_name'])
+            print(inpt["file_name"])
         if i == 10:
             break
             # import pdb
@@ -96,17 +96,18 @@ def main_single(cfg, dataset_params):
 
 def main_attack(cfg, args, dataset_params):
 
-    vis_dir = os.path.join(args.result_dir, 'vis')
+    vis_dir = os.path.join(args.result_dir, "vis")
     os.makedirs(vis_dir, exist_ok=True)
-    args.adv_patch_path = os.path.join(args.save_dir, 'adv_patch.pkl')
 
+    # Load adversarial patch and config
+    args.adv_patch_path = os.path.join(args.save_dir, "adv_patch.pkl")
     if os.path.isfile(args.attack_config_path):
         with open(args.attack_config_path) as file:
             attack_config = yaml.load(file, Loader=yaml.FullLoader)
             # `input_size` should be used for background size in synthetic
             # attack only
             width = cfg.INPUT.MAX_SIZE_TEST
-            attack_config['input_size'] = (int(3 / 4 * width), width)
+            attack_config["input_size"] = (int(3 / 4 * width), width)
     else:
         attack_config = None
 
@@ -115,59 +116,76 @@ def main_attack(cfg, args, dataset_params):
 
     # Build dataloader
     val_loader = build_detection_test_loader(
-        cfg, cfg.DATASETS.TEST[0], mapper=BenignMapper(cfg, is_train=False),
-        # cfg, cfg.DATASETS.TEST[0],
-        batch_size=1, num_workers=cfg.DATALOADER.NUM_WORKERS
+        cfg,
+        cfg.DATASETS.TEST[0],
+        mapper=BenignMapper(cfg, is_train=False),
+        batch_size=1,
+        num_workers=cfg.DATALOADER.NUM_WORKERS,
     )
 
-    attack = DetectronAttackWrapper(cfg, args, attack_config, model, val_loader,
-                                    class_names=LABEL_LIST[args.dataset])
-    log.info('=> Running attack...')
-    coco_instances_results, metrics = attack.run(vis_save_dir=vis_dir,
-                                                 vis_conf_thresh=0.5)
-    pickle.dump(metrics, open(os.path.join(args.result_dir, 'results.pkl'), 'wb'))
+    attack = DetectronAttackWrapper(
+        cfg,
+        args,
+        attack_config,
+        model,
+        val_loader,
+        class_names=LABEL_LIST[args.dataset],
+    )
+    log.info("=> Running attack...")
+    coco_instances_results, metrics = attack.run(
+        vis_save_dir=vis_dir, vis_conf_thresh=0.5
+    )
+    with open(os.path.join(args.result_dir, "results.pkl"), "wb") as f:
+        pickle.dump(metrics, f)
 
     # Logging results
-    metrics = metrics['bbox']
-    max_f1_idx, tp_full, fp_full, num_gts_per_class = metrics['dumped_metrics']
-    metrics['dumped_metrics'] = None
+    metrics = metrics["bbox"]
+    max_f1_idx, tp_full, fp_full, num_gts_per_class = metrics["dumped_metrics"]
+    metrics["dumped_metrics"] = None
     for k, v in metrics.items():
-        if 'syn' in k:
+        if "syn" in k:
             continue
-        log.info(f'{k}: {v}')
+        log.info(f"{k}: {v}")
     iou_idx = 0
     tp, fp = tp_full[iou_idx, :, max_f1_idx], fp_full[iou_idx, :, max_f1_idx]
-    log.info('          tp   fp   num_gt')
+
+    log.info("          tp   fp   num_gt")
     for i, (t, f, n) in enumerate(zip(tp, fp, num_gts_per_class)):
-        log.info(f'Class {i:2d}: {int(t):4d} {int(f):4d} {int(n):4d}')
+        log.info(f"Class {i:2d}: {int(t):4d} {int(f):4d} {int(n):4d}")
     log.info(f'Total num patches: {metrics["total_num_patches"]}')
+
     if args.synthetic:
-        log.info(f'Synthetic: {metrics["syn_tp"]:4d} / {metrics["syn_total"]:4d}')
+        log.info(
+            f'Synthetic: {metrics["syn_tp"]:4d} / {metrics["syn_total"]:4d}'
+        )
 
 
 def compute_metrics(cfg, args):
 
     dataset_name = cfg.DATASETS.TEST[0]
-    print(f'=> Creating a custom evaluator on {dataset_name}...')
+    print(f"=> Creating a custom evaluator on {dataset_name}...")
     evaluator = build_evaluator(cfg, dataset_name)
 
     # Load results from coco_instances.json
     save_dir = os.path.join(SAVE_DIR_DETECTRON, args.name)
-    with open(os.path.join(save_dir, f'coco_instances_results.json')) as f:
+    with open(os.path.join(save_dir, f"coco_instances_results.json")) as f:
         coco_results = json.load(f)
     img_ids = None  # Set to None to evaluate the entire dataset
 
     val_loader = build_detection_test_loader(
-        cfg, cfg.DATASETS.TEST[0], mapper=BenignMapper(cfg, is_train=False),
-        batch_size=1, num_workers=cfg.DATALOADER.NUM_WORKERS
+        cfg,
+        cfg.DATASETS.TEST[0],
+        mapper=BenignMapper(cfg, is_train=False),
+        batch_size=1,
+        num_workers=cfg.DATALOADER.NUM_WORKERS,
     )
-    coco_results = [[r for r in coco_results if r['image_id'] == i] for i in range(len(val_loader))]
+    coco_results = [
+        [r for r in coco_results if r["image_id"] == i]
+        for i in range(len(val_loader))
+    ]
 
     evaluator.reset()
     for i, batch in tqdm(enumerate(val_loader)):
-        # print(batch, coco_results[i])
-        # import pdb
-        # pdb.set_trace()
         evaluator.process(batch, [coco_results[i]], outputs_are_json=True)
     results = evaluator.evaluate()
 
@@ -190,8 +208,9 @@ def compute_metrics(cfg, args):
     #     coco_eval, 'bbox', class_names=evaluator._metadata.get('thing_classes')
     # )
     import pdb
+
     pdb.set_trace()
-    print('Done')
+    print("Done")
     return
 
 
@@ -204,7 +223,8 @@ if __name__ == "__main__":
     # Set up logger
     log.setLevel(logging.DEBUG if args.debug else logging.INFO)
     file_handler = logging.FileHandler(
-        os.path.join(args.result_dir, 'results.log'), mode='a')
+        os.path.join(args.result_dir, "results.log"), mode="a"
+    )
     file_handler.setFormatter(formatter)
     log.addHandler(file_handler)
 
@@ -215,17 +235,19 @@ if __name__ == "__main__":
     random.seed(cfg.SEED)
 
     # Register dataset
-    if 'mtsd' in args.dataset:
-        assert 'mtsd' in cfg.DATASETS.TEST[0], \
-            'MTSD is specified as dataset in args but not config file'
+    if "mtsd" in args.dataset:
+        assert (
+            "mtsd" in cfg.DATASETS.TEST[0]
+        ), "MTSD is specified as dataset in args but not config file"
         dataset_params = register_mtsd(
-            use_mtsd_original_labels='orig' in args.dataset,
+            use_mtsd_original_labels="orig" in args.dataset,
             use_color=args.use_color,
             ignore_other=args.data_no_other,
         )
     else:
-        assert 'mapillary' in cfg.DATASETS.TEST[0], \
-            'Mapillary is specified as dataset in args but not config file'
+        assert (
+            "mapillary" in cfg.DATASETS.TEST[0]
+        ), "Mapillary is specified as dataset in args but not config file"
         dataset_params = register_mapillary(
             use_color=args.use_color,
             ignore_other=args.data_no_other,
@@ -236,7 +258,7 @@ if __name__ == "__main__":
         compute_metrics(cfg, args)
     elif args.single_image:
         main_single(cfg, dataset_params)
-    elif args.attack_type != 'none':
+    elif args.attack_type != "none":
         main_attack(cfg, args, dataset_params)
     else:
         # main(cfg, args)

@@ -20,8 +20,8 @@ BG_FILES=bg_filenames_octagon-915.0.txt
 # BG_FILES=synthetic-10x20/octagon-915.0/bg_filenames-1.txt
 IMG_SIZE=1536,2048 # sizes: (1536,2048), (3040,4032)
 INTERP=bilinear
-SYN_OBJ_SIZE=256
-OBJ_CLASS=10
+SYN_OBJ_SIZE=128
+# OBJ_CLASS=10
 # EXP_NAME=none
 EXP_NAME=real-10x10_bottom
 # EXP_NAME=synthetic-10x20
@@ -106,8 +106,10 @@ syn_attack() {
 
     NAME=$1
     MASK_NAME=$2
-    ATK_CONFIG_PATH=./configs/attack_config$3.yaml
+    OBJ_CLASS=$3
+    ATK_CONFIG_PATH=./configs/attack_config$4.yaml
 
+    # Generate adversarial patch
     python -u gen_patch_detectron.py \
         --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
         --dataset $DATASET --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH \
@@ -120,6 +122,7 @@ syn_attack() {
         MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
         DATALOADER.NUM_WORKERS $NUM_WORKERS
 
+    # Test patch on synthetic signs
     python -u test_detectron.py \
         --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
         --dataset $DATASET --padded-imgsz $IMG_SIZE --eval-mode drop \
@@ -132,6 +135,7 @@ syn_attack() {
         MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
         DATALOADER.NUM_WORKERS $NUM_WORKERS
 
+    # Test patch on real signs
     python -u test_detectron.py \
         --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
         --dataset $DATASET --padded-imgsz $IMG_SIZE --eval-mode drop \

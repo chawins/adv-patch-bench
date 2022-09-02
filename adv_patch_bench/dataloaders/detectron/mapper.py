@@ -26,10 +26,16 @@ benign_eval_coco_path = benign_data_dir / "coco_eval.json"
 benign_bet365_coco_path = benign_data_dir / "coco_bet365.json"
 
 # Register benign train and test sets
-register_coco_instances("benign_train", {}, benign_train_coco_path, benign_img_dir)
-register_coco_instances("benign_test", {}, benign_test_coco_path, benign_img_dir)
+register_coco_instances(
+    "benign_train", {}, benign_train_coco_path, benign_img_dir
+)
+register_coco_instances(
+    "benign_test", {}, benign_test_coco_path, benign_img_dir
+)
 register_coco_instances("benign_eval", {}, benign_eval_coco_path, eval_img_dir)
-register_coco_instances("benign_bet365", {}, benign_bet365_coco_path, benign_img_dir)
+register_coco_instances(
+    "benign_bet365", {}, benign_bet365_coco_path, benign_img_dir
+)
 
 
 def build_transform_gen(cfg, is_train):
@@ -49,7 +55,9 @@ def build_transform_gen(cfg, is_train):
         max_size = cfg.INPUT.MAX_SIZE_TEST
         sample_style = "choice"
     if sample_style == "range":
-        assert len(min_size) == 2, "more than 2 ({}) min_size(s) are provided for ranges".format(
+        assert (
+            len(min_size) == 2
+        ), "more than 2 ({}) min_size(s) are provided for ranges".format(
             len(min_size)
         )
 
@@ -80,8 +88,12 @@ class BenignMapper:
 
     def __init__(self, cfg, is_train=True):
         if cfg.INPUT.CROP.ENABLED and is_train:
-            self.crop_gen = T.RandomCrop(cfg.INPUT.CROP.TYPE, cfg.INPUT.CROP.SIZE)
-            logging.getLogger(__name__).info("CropGen used in training: " + str(self.crop_gen))
+            self.crop_gen = T.RandomCrop(
+                cfg.INPUT.CROP.TYPE, cfg.INPUT.CROP.SIZE
+            )
+            logging.getLogger(__name__).info(
+                "CropGen used in training: " + str(self.crop_gen)
+            )
         else:
             self.crop_gen = None
 
@@ -96,7 +108,9 @@ class BenignMapper:
         # fmt: on
         if self.keypoint_on and is_train:
             # Flip only makes sense in training
-            self.keypoint_hflip_indices = utils.create_keypoint_hflip_indices(cfg.DATASETS.TRAIN)
+            self.keypoint_hflip_indices = utils.create_keypoint_hflip_indices(
+                cfg.DATASETS.TRAIN
+            )
         else:
             self.keypoint_hflip_indices = None
 
@@ -116,14 +130,19 @@ class BenignMapper:
         Returns:
             dict: a format that builtin models in detectron2 accept
         """
-        dataset_dict = copy.deepcopy(dataset_dict)  # it will be modified by code below
+        dataset_dict = copy.deepcopy(
+            dataset_dict
+        )  # it will be modified by code below
         # USER: Write your own image loading if it's not from a file
-        image = utils.read_image(dataset_dict["file_name"], format=self.img_format)
+        image = utils.read_image(
+            dataset_dict["file_name"], format=self.img_format
+        )
         utils.check_image_size(dataset_dict, image)
 
         if "annotations" not in dataset_dict:
             image, transforms = T.apply_transform_gens(
-                ([self.crop_gen] if self.crop_gen else []) + self.tfm_gens, image
+                ([self.crop_gen] if self.crop_gen else []) + self.tfm_gens,
+                image,
             )
         else:
             # Crop around an instance if there are instances in the image.
@@ -144,7 +163,9 @@ class BenignMapper:
         # Pytorch's dataloader is efficient on torch.Tensor due to shared-memory,
         # but not efficient on large generic data structures due to the use of pickle & mp.Queue.
         # Therefore it's important to use torch.Tensor.
-        dataset_dict["image"] = torch.as_tensor(np.ascontiguousarray(image.transpose(2, 0, 1)))
+        dataset_dict["image"] = torch.as_tensor(
+            np.ascontiguousarray(image.transpose(2, 0, 1))
+        )
 
         # USER: Remove if you don't use pre-computed proposals.
         # Most users would not need this feature.
@@ -175,7 +196,10 @@ class BenignMapper:
             # USER: Implement additional transformations if you have other types of data
             annos = [
                 utils.transform_instance_annotations(
-                    obj, transforms, image_shape, keypoint_hflip_indices=self.keypoint_hflip_indices
+                    obj,
+                    transforms,
+                    image_shape,
+                    keypoint_hflip_indices=self.keypoint_hflip_indices,
                 )
                 for obj in dataset_dict.pop("annotations")
                 if obj.get("iscrowd", 0) == 0
@@ -188,14 +212,14 @@ class BenignMapper:
                 instances.gt_boxes = instances.gt_masks.get_bounding_boxes()
             dataset_dict["instances"] = utils.filter_empty_instances(instances)
 
-        instances = dataset_dict['instances']
-        dataset_dict['annotations'] = []
+        instances = dataset_dict["instances"]
+        dataset_dict["annotations"] = []
         for i in range(len(instances)):
             obj = {
-                'bbox': instances[i].gt_boxes.tensor[0].tolist(),
-                'category_id': instances[i].gt_classes.item(),
-                'bbox_mode': BoxMode.XYXY_ABS,
+                "bbox": instances[i].gt_boxes.tensor[0].tolist(),
+                "category_id": instances[i].gt_classes.item(),
+                "bbox_mode": BoxMode.XYXY_ABS,
             }
-            dataset_dict['annotations'].append(obj)
+            dataset_dict["annotations"].append(obj)
 
         return dataset_dict

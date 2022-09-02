@@ -12,20 +12,23 @@ EPS = 1e-6
 
 
 class RP2AttackDetectron(RP2AttackModule):
-
     def __init__(self, attack_config, core_model, loss_fn, norm, eps, **kwargs):
-        super().__init__(attack_config, core_model, loss_fn, norm, eps, **kwargs)
+        super().__init__(
+            attack_config, core_model, loss_fn, norm, eps, **kwargs
+        )
 
-        detectron_config = attack_config['detectron']
-        self.detectron_obj_const = detectron_config['obj_loss_const']
-        self.detectron_iou_thres = detectron_config['iou_thres']
+        detectron_config = attack_config["detectron"]
+        self.detectron_obj_const = detectron_config["obj_loss_const"]
+        self.detectron_iou_thres = detectron_config["iou_thres"]
 
         # self.cfg.MODEL.RPN.NMS_THRESH = nms_thresh
         # self.cfg.MODEL.RPN.POST_NMS_TOPK_TEST = 5000
         self.nms_thresh_orig = deepcopy(
-            core_model.proposal_generator.nms_thresh)
+            core_model.proposal_generator.nms_thresh
+        )
         self.post_nms_topk_orig = deepcopy(
-            core_model.proposal_generator.post_nms_topk)
+            core_model.proposal_generator.post_nms_topk
+        )
         # self.nms_thresh = 0.9
         # self.post_nms_topk = {True: 5000, False: 5000}
         self.nms_thresh = self.nms_thresh_orig
@@ -40,32 +43,42 @@ class RP2AttackDetectron(RP2AttackModule):
     def _on_exit_attack(self, **kwargs):
         self.core_model.train(self.is_training)
         self.core_model.proposal_generator.nms_thresh = self.nms_thresh_orig
-        self.core_model.proposal_generator.post_nms_topk = self.post_nms_topk_orig
+        self.core_model.proposal_generator.post_nms_topk = (
+            self.post_nms_topk_orig
+        )
 
-    def _on_syn_attack_step(self, metadata, o_mask, bg_idx, obj_class, **kwargs):
+    def _on_syn_attack_step(
+        self, metadata, o_mask, bg_idx, obj_class, **kwargs
+    ):
         # Update metada with location of transformed synthetic sign
         for i in range(self.num_eot):
             m = metadata[bg_idx[i]]
-            instances = m['instances']
+            instances = m["instances"]
             new_instances = Instances(instances.image_size)
             # Turn object mask to gt_boxes
             o_ymin, o_xmin, o_height, o_width = mask_to_box(o_mask[i])
-            box = torch.tensor([[o_xmin, o_ymin, o_xmin + o_width, o_ymin + o_height]])
+            box = torch.tensor(
+                [[o_xmin, o_ymin, o_xmin + o_width, o_ymin + o_height]]
+            )
             new_instances.gt_boxes = Boxes(box)
             new_instances.gt_classes = torch.tensor([[obj_class]])
-            m['instances'] = new_instances
+            m["instances"] = new_instances
         return metadata
 
     def _loss_func(self, adv_img, obj_class, metadata):
         """Compute loss for Faster R-CNN models"""
         for i, m in enumerate(metadata):
             # Flip image from RGB to BGR
-            m['image'] = adv_img[i].flip(0) * 255
+            m["image"] = adv_img[i].flip(0) * 255
         # NOTE: IoU threshold for ROI is 0.5 and for RPN is 0.7
         _, target_labels, target_logits, obj_logits = get_targets(
-            self.core_model, metadata, device=self.core_model.device,
-            iou_thres=self.detectron_iou_thres, score_thres=self.min_conf,
-            use_correct_only=False)
+            self.core_model,
+            metadata,
+            device=self.core_model.device,
+            iou_thres=self.detectron_iou_thres,
+            score_thres=self.min_conf,
+            use_correct_only=False,
+        )
 
         # DEBUG
         # import cv2
@@ -96,11 +109,17 @@ class RP2AttackDetectron(RP2AttackModule):
 
         # Loop through each EoT image
         loss = 0
-        for tgt_lb, tgt_log, obj_log in zip(target_labels, target_logits, obj_logits):
+        for tgt_lb, tgt_log, obj_log in zip(
+            target_labels, target_logits, obj_logits
+        ):
             # Filter obj_class
-            if 'obj_class_only' in self.attack_mode:
+            if "obj_class_only" in self.attack_mode:
                 idx = obj_class == tgt_lb
-                tgt_lb, tgt_log, obj_log = tgt_lb[idx], tgt_log[idx], obj_log[idx]
+                tgt_lb, tgt_log, obj_log = (
+                    tgt_lb[idx],
+                    tgt_log[idx],
+                    obj_log[idx],
+                )
             else:
                 tgt_lb = torch.zeros_like(tgt_lb) + obj_class
             # If there's no matched gt/prediction, then attack already succeeds.
@@ -108,10 +127,11 @@ class RP2AttackDetectron(RP2AttackModule):
             target_loss, obj_loss = 0, 0
             if len(tgt_log) > 0 and len(tgt_lb) > 0:
                 # Ignore the background class on tgt_log
-                target_loss = F.cross_entropy(tgt_log, tgt_lb, reduction='mean')
+                target_loss = F.cross_entropy(tgt_log, tgt_lb, reduction="mean")
             if len(obj_logits) > 0 and self.detectron_obj_const != 0:
                 obj_lb = torch.ones_like(obj_log)
-                obj_loss = F.binary_cross_entropy_with_logits(obj_log, obj_lb,
-                                                              reduction='mean')
+                obj_loss = F.binary_cross_entropy_with_logits(
+                    obj_log, obj_lb, reduction="mean"
+                )
             loss += target_loss + self.detectron_obj_const * obj_loss
         return -loss
