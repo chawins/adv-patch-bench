@@ -348,6 +348,7 @@ def main(
 
     # Get object width in inch
     obj_width_inch = get_obj_width(obj_class, class_names)
+    # TODO: why don't we include mask_name in attack config?
     patch_mask = generate_mask(mask_name, obj_numpy, obj_size, obj_width_inch)
 
     # Build dataloader
