@@ -1,9 +1,8 @@
 import ast
 import os
 import pickle
-from argparse import Namespace
 from copy import deepcopy
-from typing import Any, List, Tuple
+from typing import Any, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -24,31 +23,34 @@ from kornia.geometry.transform import resize
 
 
 def prep_synthetic_eval(
-    args: Namespace,
-    img_size: Tuple[int, int],
-    label_names: List[str],
+    syn_obj_path: str,
+    syn_use_scale: bool = True,
+    syn_use_colorjitter: bool = False,
+    img_size: Tuple[int, int] = (1536, 2048),
+    obj_size: int = 128,
     transform_prob: float = 1.0,
+    interp: str = "bilinear",
     device: str = "cuda",
 ):
+    assert isinstance(obj_size, int)
     # Add synthetic label to the label names at the last position
-    # FIXME
-    syn_sign_class = len(label_names)
+    # syn_sign_class = len(label_names)
     # label_names[syn_sign_class] = 'synthetic'
     transform_params = {
         "degrees": 30,
         "translate": (0.4, 0.4),
-        "scale": (0.5, 2) if args.syn_use_scale else None,
+        "scale": (0.5, 2) if syn_use_scale else None,
     }
     obj_transforms = K.RandomAffine(
         p=transform_prob,
         return_transform=True,
-        resample=args.interp,
+        resample=interp,
         **transform_params,
     )
     mask_transforms = K.RandomAffine(
         p=transform_prob, resample=Resample.NEAREST, **transform_params
     )
-    if args.syn_use_colorjitter:
+    if syn_use_colorjitter:
         jitter_transform = K.ColorJitter(
             brightness=0.3,
             contrast=0.3,
@@ -59,14 +61,12 @@ def prep_synthetic_eval(
     else:
         jitter_transform = None
 
-    # Load synthetic object/sign from file
-    # _, patch_mask = pickle.load(open(args.adv_patch_path, 'rb'))
-    # obj_size = patch_mask.shape[-2]
+    # Load synthetic sign from file and covert them to the right size and format
     obj, obj_mask = prepare_obj(
-        args.syn_obj_path,
+        syn_obj_path,
         img_size,
-        (args.obj_size, args.obj_size),
-        interp=args.interp,
+        (obj_size, obj_size),
+        interp=interp,
     )
     obj = obj.to(device)
     obj_mask = obj_mask.to(device)
@@ -76,36 +76,58 @@ def prep_synthetic_eval(
         obj_transforms,
         mask_transforms,
         jitter_transform,
-        syn_sign_class,
     )
 
 
-def prep_attack(
-    args: Namespace,
-    img_size: Tuple[int, int],
-    device: str = "cuda",
-):
-    # load csv file containing target points for transform
-    df = pd.read_csv(args.tgt_csv_filepath)
-    # converts 'tgt_final' from string to list format
+def load_annotation_df(tgt_csv_filepath: str) -> pd.DataFrame:
+    """Load CSV annotation (transforms and sign class) into pd.DataFrame."""
+    df = pd.read_csv(tgt_csv_filepath)
+    # Converts 'tgt_final' from string to list format
     df["tgt_final"] = df["tgt_final"].apply(ast.literal_eval)
-    # exclude shapes to which we do not apply the transform to
+    # Exclude shapes to which we do not apply the transform to
     df = df[df["final_shape"] != "other-0.0-0.0"]
-    # print(df.shape)
-    # print(df.groupby(by=['final_shape']).count())
+    return df
 
-    if args.attack_type == "none":
-        return df, None, None
+
+def prep_adv_patch(
+    img_size: Tuple[int, int] = (1536, 2048),
+    adv_patch_path: Optional[str] = None,
+    attack_type: str = "none",
+    synthetic: bool = False,
+    obj_size: Union[int, Tuple[int, int]] = 128,
+    interp: str = "bilinear",
+    device: str = "cuda",
+) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor]]:
+    """Load and prepare adversarial patch along with its mask.
+
+    Args:
+        img_size (Tuple[int, int]): Size of test image in pixels.
+        adv_patch_path (Optional[str], optional): Path to pickle file containing
+            adversarial patch and its mask. Defaults to None.
+        attack_type (str, optional): Type of attack to run. Options are "none",
+            "debug", "random", "load". Defaults to "none".
+        synthetic (bool, optional): Whether we are attacking synthetic signs or
+            real signs. Defaults to False.
+        obj_size (Optional[int], optional): Object size (width) in pixels.
+            Defaults to 128.
+        interp (str, optional): Interpolation method. Defaults to "bilinear".
+        device (str, optional): Device for torch.Tensor. Defaults to "cuda".
+
+    Returns:
+        Tuple[Optional[torch.Tensor], Optional[torch.Tensor]]: _description_
+    """
+    if attack_type == "none":
+        return None, None
 
     # Load patch from a pickle file if specified
     # TODO: make script to generate dummy patch for per-sign attack
-    adv_patch, patch_mask = pickle.load(open(args.adv_patch_path, "rb"))
+    adv_patch, patch_mask = pickle.load(open(adv_patch_path, "rb"))
     adv_patch = coerce_rank(adv_patch, 3)
     patch_mask = coerce_rank(patch_mask, 3)
     patch_mask = patch_mask.to(device)
     patch_height, patch_width = adv_patch.shape[-2:]
 
-    if args.attack_type == "debug":
+    if attack_type == "debug":
         # Load 'arrow on checkboard' patch if specified (for debug)
         adv_patch = (
             torchvision.io.read_image(
@@ -114,22 +136,24 @@ def prep_attack(
             / 255
         )
         adv_patch = resize(adv_patch, (patch_height, patch_width))
-    elif args.attack_type == "random":
+    elif attack_type == "random":
         # Patch with uniformly random pixels
         adv_patch = torch.rand(3, patch_height, patch_width)
 
-    if args.synthetic:
+    if synthetic:
         # Adv patch and mask have to be made compatible with random
         # transformation for synthetic signs
         h_w_ratio = patch_mask.shape[-2] / patch_mask.shape[-1]
-        obj_size = args.obj_size
         if isinstance(obj_size, int):
             obj_size_px = (round(obj_size * h_w_ratio), obj_size)
         else:
-            assert isinstance(
-                obj_size, Tuple[int, int]
-            ), f"obj_size is {obj_size}. It must be int or tuple of two ints"
             obj_size_px = obj_size
+        assert isinstance(
+            obj_size, Tuple[int, int]
+        ), f"obj_size is {obj_size}. It must be int or tuple of two ints!"
+
+        # Resize patch_mask and adv_patch to obj_size_px and place them in
+        # middle of image by padding to image_size.
         patch_mask = resize_and_center(
             patch_mask, img_size, obj_size_px, is_binary=True
         )
@@ -138,14 +162,14 @@ def prep_attack(
             img_size,
             obj_size_px,
             is_binary=False,
-            interp=args.interp,
+            interp=interp,
         )
         patch_mask = patch_mask.to(device)
         adv_patch = adv_patch.to(device)
     else:
         obj_size = patch_mask.shape[-2:]
         adv_patch = resize_and_center(
-            adv_patch, None, obj_size, is_binary=False, interp=args.interp
+            adv_patch, None, obj_size, is_binary=False, interp=interp
         )
 
     assert adv_patch.ndim == patch_mask.ndim == 3
@@ -153,7 +177,7 @@ def prep_attack(
         adv_patch.shape[-2:] == patch_mask.shape[-2:]
     ), f"{adv_patch.shape} does not match {patch_mask.shape}."
 
-    return df, adv_patch, patch_mask
+    return adv_patch, patch_mask
 
 
 def apply_synthetic_sign(

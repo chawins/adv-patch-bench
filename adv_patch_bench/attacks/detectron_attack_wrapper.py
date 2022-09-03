@@ -12,8 +12,11 @@ import numpy as np
 import pandas as pd
 import torch
 from adv_patch_bench.attacks.rp2.rp2_detectron import RP2AttackDetectron
-from adv_patch_bench.attacks.utils import (apply_synthetic_sign, prep_attack,
-                                           prep_synthetic_eval)
+from adv_patch_bench.attacks.utils import (
+    apply_synthetic_sign,
+    prep_adv_patch,
+    prep_synthetic_eval,
+)
 from adv_patch_bench.transforms import transform_and_apply_patch
 from adv_patch_bench.utils.detectron import build_evaluator
 from detectron2.config import CfgNode
@@ -32,9 +35,18 @@ class DetectronAttackWrapper:
         attack_config: Dict,
         model: torch.nn.Module,
         dataloader: Any,
-        class_names: List,
+        class_names: List[str],
     ) -> None:
-        """Attack wrapper for detectron model"""
+        """Attack wrapper for detectron model.
+
+        Args:
+            cfg (CfgNode): Detectron model config.
+            args (Namespace): All command line args.
+            attack_config (Dict): Dictionary containing attack parameters.
+            model (torch.nn.Module): Target model.
+            dataloader (Any): Dataset to run attack on.
+            class_names (List[str]): List of class names in string.
+        """
         self.args = args
         self.verbose = args.verbose
         self.debug = args.debug
@@ -142,8 +154,14 @@ class DetectronAttackWrapper:
 
         # Prepare attack data
         if self.use_attack:
-            _, adv_patch, patch_mask = prep_attack(
-                self.args, self.img_size, self.device
+            adv_patch, patch_mask = prep_adv_patch(
+                img_size=self.img_size,
+                adv_patch_path=self.args.adv_patch_path,
+                attack_type=self.args.attack_type,
+                synthetic=self.args.synthetic,
+                obj_size=self.args.obj_size,
+                interp=self.args.interp,
+                device=self.device,
             )
 
         total_num_images, total_num_patches, num_vis = 0, 0, 0
@@ -188,21 +206,33 @@ class DetectronAttackWrapper:
             is_included = False
             if self.synthetic:
                 self.log(f"Attacking {file_name} ...")
-                _, adv_patch, patch_mask = prep_attack(
-                    self.args, (h, w), self.device
+                adv_patch, patch_mask = prep_adv_patch(
+                    img_size=(h, w),
+                    adv_patch_path=self.args.adv_patch_path,
+                    attack_type=self.args.attack_type,
+                    synthetic=self.args.synthetic,
+                    obj_size=self.args.obj_size,
+                    interp=self.args.interp,
+                    device=self.device,
                 )
+
                 # Prepare evaluation with synthetic signs, syn_data: (syn_obj,
                 # syn_obj_mask, obj_transforms, mask_transforms, syn_sign_class)
-                syn_data = list(
-                    prep_synthetic_eval(
-                        self.args,
-                        (h, w),
-                        self.class_names,
-                        transform_prob=1.0,
-                        device=self.device,
-                    )
+                syn_data = prep_synthetic_eval(
+                    self.args.syn_obj_path,
+                    syn_use_scale=self.args.syn_use_scale,
+                    syn_use_colorjitter=self.args.syn_use_colorjitter,
+                    img_size=(h, w),
+                    objh_size=self.args.obj_size,
+                    transform_prob=1.0,
+                    interp=self.args.interp,
+                    device=self.device,
                 )
-                syn_data[-1] = self.adv_sign_class  # TODO(clean)
+
+                # Append with synthetic sign class
+                syn_data = list(syn_data)
+                syn_data.append(self.adv_sign_class)
+
                 # Apply synthetic sign and patch to image
                 perturbed_image, new_gt = apply_synthetic_sign(
                     images,
@@ -218,6 +248,7 @@ class DetectronAttackWrapper:
                 )
                 is_included = True
                 total_num_patches += 1
+
             elif len(img_df) > 0:
                 new_gt = batch[0]
                 # Iterate through objects in the current image
@@ -426,7 +457,7 @@ class DetectronAttackWrapper:
         Args:
             original_image (np.ndarray): an image of shape (H, W, C) (in RGB order).
                 or (torch.Tensor): an image of shape (C, H, W) (in RGB order).
-                
+
         Returns:
             predictions (dict):
                 the output of the model for one image only.

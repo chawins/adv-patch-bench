@@ -187,7 +187,12 @@ def mask_to_box(mask):
     return y_min, x_min, y.max() - y_min, x.max() - x_min
 
 
-def prepare_obj(obj_path, img_size, obj_size, interp):
+def prepare_obj(
+    obj_path: str,
+    img_size: Tuple[int, int],
+    obj_size: Tuple[int, int],
+    interp: str,
+) -> Tuple[torch.Tensor, torch.Tensor]:
     """Load image of an object and place it in the middle of an image tensor of
     size `img_size`. The object is also resized to `obj_size`.
 
@@ -200,8 +205,13 @@ def prepare_obj(obj_path, img_size, obj_size, interp):
         torch.Tensor, torch.Tensor: Object and its mask
     """
     obj_numpy = np.array(Image.open(obj_path).convert("RGBA")) / 255
+    assert obj_numpy.ndim == 3 and obj_numpy.shape[-1] == 4
+
+    # Separate RGB object from alpha channel. Convert the latter to mask, and
+    # convert both to pytorch tensor.
     obj_mask = torch.from_numpy(obj_numpy[:, :, -1] == 1).float().unsqueeze(0)
     obj = torch.from_numpy(obj_numpy[:, :, :-1]).float().permute(2, 0, 1)
+
     obj = resize_and_center(
         obj, img_size, obj_size, is_binary=False, interp=interp
     )

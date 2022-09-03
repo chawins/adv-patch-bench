@@ -478,12 +478,6 @@ class COCOeval:
         A0 = len(_pe.areaRng)
 
         # EDIT:
-        # tp_full = np.zeros((T, R, K))
-        # fp_full = np.zeros((T, R, K))
-        # recall_full = np.zeros((T, R, K))
-        # precision_full = np.zeros((T, R, K))
-        # tp_cmb = np.zeros((T))
-        # fp_cmb = np.zeros((T))
         num_gts_per_class = np.zeros(K)
         scores_full = {}
         for k in setK:
@@ -491,7 +485,6 @@ class COCOeval:
             for i in range(T):
                 scores_t.append([[], []])
             scores_full[k] = scores_t
-        # num_all_classes = 0
 
         # retrieve E at each category, area range, and max number of detections
         for k, k0 in enumerate(k_list):
@@ -626,10 +619,8 @@ class COCOeval:
             max_f1_idx = np.abs(self.conf_thres - scores_thres).argmin()
 
         max_f1 = f1_mean[max_f1_idx]
-        tp, fp = (
-            tp_full[iou_idx, :, max_f1_idx],
-            fp_full[iou_idx, :, max_f1_idx],
-        )
+        tp = tp_full[iou_idx, :, max_f1_idx]
+        fp = fp_full[iou_idx, :, max_f1_idx]
         print(f"[DEBUG] max_f1_idx: {max_f1_idx}, max_f1: {max_f1:.4f}")
         print(f"[DEBUG] num_gts_per_class: {num_gts_per_class}")
         print(f"[DEBUG] tp: {tp}")
