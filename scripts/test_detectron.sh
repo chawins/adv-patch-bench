@@ -1,7 +1,7 @@
 # Detector test script
 GPU=1
 NUM_GPU=1
-NUM_WORKERS=8
+NUM_WORKERS=4
 
 # Dataset and model params
 DATASET=mapillary-combined-no_color
@@ -33,15 +33,15 @@ NUM_TEST_SYN=5000
 # MODEL.ROI_HEADS.NMS_THRESH_TEST = 0.5
 
 # Test a detector on Detectron2 without attack
-# python -u test_detectron.py \
-#     --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --name no_patch \
-#     --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH --dataset $DATASET \
-#     --attack-config-path $ATTACK_CONFIG_PATH --eval-mode drop --verbose \
-#     MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
-#     OUTPUT_DIR $OUTPUT_PATH \
-#     MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
-#     DATALOADER.NUM_WORKERS $NUM_WORKERS
-# SOLVER.IMS_PER_BATCH 5
+python -u test_detectron.py \
+    --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --name no_patch \
+    --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH --dataset $DATASET \
+    --attack-config-path $ATTACK_CONFIG_PATH --eval-mode drop \
+    MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
+    OUTPUT_DIR $OUTPUT_PATH \
+    MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
+    DATALOADER.NUM_WORKERS $NUM_WORKERS
+# Other options
 # --debug --resume --annotated-signs-only
 # --dataset mtsd-val-no_color, mapillary-combined-no_color
 
@@ -149,17 +149,17 @@ syn_attack() {
         DATALOADER.NUM_WORKERS $NUM_WORKERS
 }
 
-syn_attack synthetic-10x20 10x20 0 2
-syn_attack synthetic-10x20 10x20 1 2
-syn_attack synthetic-10x20 10x20 2 2
-syn_attack synthetic-10x20 10x20 3 2
-syn_attack synthetic-10x20 10x20 4 2
-syn_attack synthetic-10x20 10x20 5 2
-syn_attack synthetic-10x20 10x20 6 2
-syn_attack synthetic-10x20 10x20 7 2
-syn_attack synthetic-10x20 10x20 8 2
-syn_attack synthetic-10x20 10x20 9 2
-syn_attack synthetic-10x20 10x20 10 2
+# syn_attack synthetic-10x20 10x20 0 2
+# syn_attack synthetic-10x20 10x20 1 2
+# syn_attack synthetic-10x20 10x20 2 2
+# syn_attack synthetic-10x20 10x20 3 2
+# syn_attack synthetic-10x20 10x20 4 2
+# syn_attack synthetic-10x20 10x20 5 2
+# syn_attack synthetic-10x20 10x20 6 2
+# syn_attack synthetic-10x20 10x20 7 2
+# syn_attack synthetic-10x20 10x20 8 2
+# syn_attack synthetic-10x20 10x20 9 2
+# syn_attack synthetic-10x20 10x20 10 2
 
 # syn_attack synthetic-10x20-adam-ps128-lmd1e0 10x20 2
 # syn_attack synthetic-10x20-adam-ps128-lmd1e-1 10x20 3
