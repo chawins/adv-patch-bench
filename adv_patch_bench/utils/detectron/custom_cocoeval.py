@@ -300,14 +300,14 @@ class COCOeval:
         p = self.params
         # EDIT: ============================================================= #
         catId_is_other = catId == self.other_catId
-        if self.eval_mode is not None and catId_is_other:
+        if self.eval_mode == "drop" and catId_is_other:
             # For other gt, consider all detections regardless of their catId
+            # NOTE: (legacy) This part may be removed altogether because all gt
+            # and dt are dropped in drop mode (ignore flag is set below).
             gt = self._gts[imgId, catId]
             dt = [_ for cId in p.catIds for _ in self._dts[imgId, cId]]
-        elif self.eval_mode == "mtsd":
+        elif self.eval_mode == "mtsd" and not catId_is_other:
             # In MTSD, for non-other gt, match to either other or non-other dt
-            # gt = [*self._gts[imgId, catId], *self._gts[imgId, self.other_catId]]
-            # dt = self._dts[imgId, catId]
             gt = self._gts[imgId, catId]
             dt = [*self._dts[imgId, catId], *self._dts[imgId, self.other_catId]]
         # =================================================================== #
@@ -377,7 +377,7 @@ class COCOeval:
                     gtm[tind, m] = d["id"]  # gtm contains matched dt id
 
         # EDIT: ============================================================= #
-        if self.eval_mode is not None and catId_is_other:
+        if self.eval_mode == "drop" and catId_is_other:
             # When gt is other, ignore all gt and ignore all dt
             # TODO: don't even need matching in this case
             gtIg[:] = 1
@@ -448,9 +448,8 @@ class COCOeval:
         K = len(p.catIds) if p.useCats else 1
         A = len(p.areaRng)
         M = len(p.maxDets)
-        precision = -np.ones(
-            (T, R, K, A, M)
-        )  # -1 for the precision of absent categories
+        # -1 for the precision of absent categories
+        precision = -np.ones((T, R, K, A, M))
         recall = -np.ones((T, K, A, M))
         scores = -np.ones((T, R, K, A, M))
 
@@ -462,18 +461,16 @@ class COCOeval:
         setM = set(_pe.maxDets)
         setI = set(_pe.imgIds)
         # get inds to evaluate
-        k_list = [
-            n for n, k in enumerate(p.catIds) if k in setK
-        ]  # list of indices of catIds
+        # list of indices of catIds
+        k_list = [n for n, k in enumerate(p.catIds) if k in setK]
         m_list = [m for n, m in enumerate(p.maxDets) if m in setM]
         a_list = [
             n
             for n, a in enumerate(map(lambda x: tuple(x), p.areaRng))
             if a in setA
         ]
-        i_list = [
-            n for n, i in enumerate(p.imgIds) if i in setI
-        ]  # list of indices of image id's to eval
+        # list of indices of image id's to eval
+        i_list = [n for n, i in enumerate(p.imgIds) if i in setI]
         I0 = len(_pe.imgIds)
         A0 = len(_pe.areaRng)
 
@@ -500,8 +497,9 @@ class COCOeval:
                         [e["dtScores"][0:maxDet] for e in E]
                     )
 
-                    # different sorting method generates slightly different results.
-                    # mergesort is used to be consistent as Matlab implementation.
+                    # different sorting method generates slightly different
+                    # results. mergesort is used to be consistent as Matlab
+                    # implementation.
                     inds = np.argsort(-dtScores, kind="mergesort")
                     dtScoresSorted = dtScores[inds]
 
@@ -543,8 +541,9 @@ class COCOeval:
                         else:
                             recall[t, k, a, m] = 0
 
-                        # numpy is slow without cython optimization for accessing elements
-                        # use python array gets significant speed improvement
+                        # numpy is slow without cython optimization for
+                        # accessing elements use python array gets significant
+                        # speed improvement
                         pr = pr.tolist()
                         q = q.tolist()
 
@@ -552,9 +551,7 @@ class COCOeval:
                             if pr[i] > pr[i - 1]:
                                 pr[i - 1] = pr[i]
 
-                        # TODO: score
                         inds = np.searchsorted(rc, p.recThrs, side="left")
-                        # print(rc.max(), np.any(rc == 1), inds[-1], nd)
                         try:
                             for ri, pi in enumerate(inds):
                                 q[ri] = pr[pi]
@@ -564,8 +561,8 @@ class COCOeval:
                         precision[t, :, k, a, m] = np.array(q)
                         scores[t, :, k, a, m] = np.array(ss)
 
-                        # EDIT: Aggregate tp and fp over all classes at every
-                        # IoU threshold
+                        # EDIT: Collect scores of tp and fp over all classes at
+                        # every IoU threshold
                         if a == 0 and m == M - 1 and nd:
                             scores_full[k][t][0].extend(
                                 dtScoresSorted[tps[t]].tolist()
@@ -573,19 +570,6 @@ class COCOeval:
                             scores_full[k][t][1].extend(
                                 dtScoresSorted[fps[t]].tolist()
                             )
-                            # tp_cmb[t] += tp[-1]
-                            # fp_cmb[t] += fp[-1]
-                            # inds = np.searchsorted(rc, p.recThrs, side='right')
-                            # for ri, pi in enumerate(inds):
-                            #     if pi == 0:
-                            #         continue
-                            #     tp_full[t, ri, k] = tp[pi - 1]
-                            #     fp_full[t, ri, k] = fp[pi - 1]
-                            #     if nd:
-                            #         recall_full[t, ri, k] = rc[pi - 1]
-                            #     else:
-                            #         recall_full[t, ri, k] = 0
-                            #     precision_full[t, ri, k] = pr[pi - 1]
 
         # EDIT ============================================================== #
         iou_thres = 0.5

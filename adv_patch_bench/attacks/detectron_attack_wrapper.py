@@ -207,8 +207,11 @@ class DetectronAttackWrapper:
             _, h, w = images.shape
             img_data = (h0, w0, h / h0, w / w0, 0, 0)
 
-            is_included = False
+            # Include all images if annotated_signs_only is False
+            is_included = not self.annotated_signs_only
+
             if self.synthetic:
+                # Attacking synthetic signs
                 self.log(f"Attacking {file_name} ...")
                 adv_patch, patch_mask = prep_adv_patch(
                     img_size=(h, w),
@@ -250,10 +253,13 @@ class DetectronAttackWrapper:
                     is_detectron=True,
                     other_sign_class=self.other_sign_class,
                 )
+                # Image is used as background only so we can include any of
+                # them when evaluating synthetic signs.
                 is_included = True
                 total_num_patches += 1
 
             elif len(img_df) > 0:
+                # Attacking real signs
 
                 new_gt = batch[0]
                 # Iterate through annotated objects in the current image
@@ -305,10 +311,6 @@ class DetectronAttackWrapper:
                         img_data,
                         **self.transform_params,
                     )
-
-            elif not self.annotated_signs_only:
-                # Include all images if annotated_signs_only is not set to True
-                is_included = True
 
             if not is_included:
                 # Skip image without any adversarial patch when attacking
