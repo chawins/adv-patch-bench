@@ -34,7 +34,7 @@ def get_mtsd_dict(
     mtsd_label_to_class_index: Dict,
     bg_idx: int,
     ignore_other: bool = False,
-) -> List:
+) -> List[Dict[str, Any]]:
 
     filenames = readlines(expanduser(join(path, "splits", split + ".txt")))
     filenames = set(filenames)
@@ -99,7 +99,7 @@ def register_mtsd(
     use_mtsd_original_labels: bool = False,
     use_color: bool = False,
     ignore_other: bool = False,
-) -> Tuple:
+) -> Tuple[Any, ...]:
     path = PATH_MTSD_BASE
     csv_path = PATH_APB_ANNO
     similarity_df_csv_path = PATH_SIMILAR_FILES

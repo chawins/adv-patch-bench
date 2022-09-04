@@ -12,78 +12,125 @@ import torch
 import torch.backends.cudnn as cudnn
 import torchvision
 import torchvision.transforms as transforms
-from kornia.geometry.transform import (get_perspective_transform, resize,
-                                       warp_affine, warp_perspective)
+from kornia.geometry.transform import (
+    get_perspective_transform,
+    resize,
+    warp_affine,
+    warp_perspective,
+)
 from PIL import Image
 from torchvision.utils import save_image
 from tqdm.auto import tqdm
-from adv_patch_bench.transforms.transforms import get_sign_canonical
 
 from adv_patch_bench.dataloaders import ImageOnlyFolder
 from adv_patch_bench.models import build_classifier
-from adv_patch_bench.transforms import (gen_sign_mask, get_box_vertices,
-                                        get_corners, get_shape_from_vertices,
-                                        relight_range)
-from adv_patch_bench.utils import (draw_from_contours, img_numpy_to_torch,
-                                   pad_image)
+from adv_patch_bench.transforms import (
+    gen_sign_mask,
+    get_box_vertices,
+    get_corners,
+    get_shape_from_vertices,
+    relight_range,
+)
+from adv_patch_bench.transforms.transforms import get_sign_canonical
+from adv_patch_bench.utils import (
+    draw_from_contours,
+    img_numpy_to_torch,
+    pad_image,
+)
+
 from .hparams import TS_NO_COLOR_LABEL_LIST, TS_SHAPE_LIST
 
-DATASET = 'mapillaryvistas'
+DATASET = "mapillaryvistas"
 # DATASET = 'bdd100k'
 
-if DATASET == 'mapillaryvistas':
+if DATASET == "mapillaryvistas":
     TRAFFIC_SIGN_LABEL = 95
-elif DATASET == 'bdd100k':
-    TRAFFIC_SIGN_LABEL = 'traffic sign'
+elif DATASET == "bdd100k":
+    TRAFFIC_SIGN_LABEL = "traffic sign"
 
 CLASS_LIST = TS_NO_COLOR_LABEL_LIST
 SHAPE_LIST = TS_SHAPE_LIST
 
 # PLOT_FOLDER = 'mapillaryvistas_plots_model_3_updated_optimized'
-split = 'validation'
-PLOT_FOLDER = 'delete_mapillaryvistas_plots_model_3_updated_optimized'
+split = "validation"
+PLOT_FOLDER = "delete_mapillaryvistas_plots_model_3_updated_optimized"
 NUM_IMGS_PER_PLOT = 100
-COLUMN_NAMES = 'abcdefghijklmnopqrstuvwxyz'
+COLUMN_NAMES = "abcdefghijklmnopqrstuvwxyz"
 ROW_NAMES = list(range(NUM_IMGS_PER_PLOT))
 
 
 def get_args_parser():
-    parser = argparse.ArgumentParser(description='Part classification', add_help=False)
-    parser.add_argument('--data', default='~/data/shared/', type=str)
-    parser.add_argument('--arch', default='resnet18', type=str)
-    parser.add_argument('--pretrained', action='store_true', help='Load pretrained model on ImageNet-1k')
-    parser.add_argument('--output-dir', default='./', type=str, help='output dir')
-    parser.add_argument('-j', '--workers', default=10, type=int, metavar='N',
-                        help='number of data loading workers per process')
-    parser.add_argument('--batch-size', default=256, type=int,
-                        help='mini-batch size per device.')
-    parser.add_argument('--full-precision', action='store_true')
-    parser.add_argument('--world-size', default=1, type=int,
-                        help='number of nodes for distributed training')
-    parser.add_argument('--distributed', default=False, type=bool)
-    parser.add_argument('--rank', default=0, type=int,
-                        help='node rank for distributed training')
-    parser.add_argument('--dist-url', default='tcp://localhost:10001', type=str,
-                        help='url used to set up distributed training')
-    parser.add_argument('--dist-backend', default='nccl', type=str)
-    parser.add_argument('--seed', default=0, type=int)
-    parser.add_argument('--gpu', default=None, type=int, help='GPU id to use.')
-    parser.add_argument('--wandb', action='store_true', help='Enable WandB')
+    parser = argparse.ArgumentParser(
+        description="Part classification", add_help=False
+    )
+    parser.add_argument("--data", default="~/data/shared/", type=str)
+    parser.add_argument("--arch", default="resnet18", type=str)
+    parser.add_argument(
+        "--pretrained",
+        action="store_true",
+        help="Load pretrained model on ImageNet-1k",
+    )
+    parser.add_argument(
+        "--output-dir", default="./", type=str, help="output dir"
+    )
+    parser.add_argument(
+        "-j",
+        "--workers",
+        default=10,
+        type=int,
+        metavar="N",
+        help="number of data loading workers per process",
+    )
+    parser.add_argument(
+        "--batch-size",
+        default=256,
+        type=int,
+        help="mini-batch size per device.",
+    )
+    parser.add_argument("--full-precision", action="store_true")
+    parser.add_argument(
+        "--world-size",
+        default=1,
+        type=int,
+        help="number of nodes for distributed training",
+    )
+    parser.add_argument("--distributed", default=False, type=bool)
+    parser.add_argument(
+        "--rank", default=0, type=int, help="node rank for distributed training"
+    )
+    parser.add_argument(
+        "--dist-url",
+        default="tcp://localhost:10001",
+        type=str,
+        help="url used to set up distributed training",
+    )
+    parser.add_argument("--dist-backend", default="nccl", type=str)
+    parser.add_argument("--seed", default=0, type=int)
+    parser.add_argument("--gpu", default=None, type=int, help="GPU id to use.")
+    parser.add_argument("--wandb", action="store_true", help="Enable WandB")
     # TODO
-    parser.add_argument('--dataset', required=True, type=str, help='Dataset')
-    parser.add_argument('--num-classes', default=10, type=int,
-                        help='Number of classes')
-    parser.add_argument('--experiment', required=False, type=str,
-                        help='Type of experiment to run')
+    parser.add_argument("--dataset", required=True, type=str, help="Dataset")
+    parser.add_argument(
+        "--num-classes", default=10, type=int, help="Number of classes"
+    )
+    parser.add_argument(
+        "--experiment",
+        required=False,
+        type=str,
+        help="Type of experiment to run",
+    )
     # Unused
-    parser.add_argument('--lr', default=0.1, type=float)
-    parser.add_argument('--momentum', default=0.9, type=float)
-    parser.add_argument('--wd', default=1e-4, type=float)
-    parser.add_argument('--optim', default='sgd', type=str)
-    parser.add_argument('--betas', default=(0.9, 0.999), nargs=2, type=float)
-    parser.add_argument('--eps', default=1e-8, type=float)
-    parser.add_argument('--resume', default='', type=str, help='path to latest checkpoint')
+    parser.add_argument("--lr", default=0.1, type=float)
+    parser.add_argument("--momentum", default=0.9, type=float)
+    parser.add_argument("--wd", default=1e-4, type=float)
+    parser.add_argument("--optim", default="sgd", type=str)
+    parser.add_argument("--betas", default=(0.9, 0.999), nargs=2, type=float)
+    parser.add_argument("--eps", default=1e-8, type=float)
+    parser.add_argument(
+        "--resume", default="", type=str, help="path to latest checkpoint"
+    )
     return parser
+
 
 def draw_vertices(traffic_sign, points, color=[0, 255, 0]):
     size = traffic_sign.size(-1)
@@ -93,8 +140,14 @@ def draw_vertices(traffic_sign, points, color=[0, 255, 0]):
     return (1 - vert_mask) * traffic_sign + vert_mask * vert
 
 
-def compute_example_transform(traffic_sign, mask, predicted_class, demo_patch,
-                              patch_size_in_mm=150, patch_size_in_pixel=32):
+def compute_example_transform(
+    traffic_sign,
+    mask,
+    predicted_class,
+    demo_patch,
+    patch_size_in_mm=150,
+    patch_size_in_pixel=32,
+):
 
     # TODO: temporary only. delete afterwards
     alpha = None
@@ -104,39 +157,45 @@ def compute_example_transform(traffic_sign, mask, predicted_class, demo_patch,
     height, width, _ = traffic_sign.shape
     assert width == height
     size = width
-    predicted_shape = predicted_class.split('-')[0]
+    predicted_shape = predicted_class.split("-")[0]
     bool_mask = (mask == 255).astype(np.uint8)
     traffic_sign = img_numpy_to_torch(traffic_sign)
 
     # Get vertices of mask
     vertices, hull = get_corners(bool_mask)
-    hull_mask = cv.drawContours(np.zeros_like(bool_mask), [hull], -1, (1, ), 1)
+    hull_mask = cv.drawContours(np.zeros_like(bool_mask), [hull], -1, (1,), 1)
     hull_draw_points = np.stack(np.where(hull_mask), axis=1)[:, ::-1]
     ellipse = cv.fitEllipse(hull_draw_points)
-    ellipse_mask = cv.ellipse(np.zeros_like(bool_mask, dtype=np.float32), ellipse, (1,), thickness=-1)
-    ellipse_error = np.abs(ellipse_mask - bool_mask.astype(np.float32)).sum() / bool_mask.sum()
+    ellipse_mask = cv.ellipse(
+        np.zeros_like(bool_mask, dtype=np.float32), ellipse, (1,), thickness=-1
+    )
+    ellipse_error = (
+        np.abs(ellipse_mask - bool_mask.astype(np.float32)).sum()
+        / bool_mask.sum()
+    )
 
     # shape = get_shape_from_vertices(vertices)
-    
+
     shape = predicted_shape
-    print('shape', shape)
+    print("shape", shape)
     # tgt = get_box_vertices(vertices, shape).astype(np.int64)
     # traffic_sign = draw_vertices(traffic_sign, tgt, color=[0, 0, 255])
     group = 1
-    
+
     # Determine polygon shape from vertices
     # shape = get_shape_from_vertices(vertices)
-    
-    if predicted_shape == 'other':
+
+    if predicted_shape == "other":
         group = 3
     elif ellipse_error < 0.1:
         # Check circle based on ellipse fit error
-        shape = 'circle'
+        shape = "circle"
         vertices = ellipse
-        group = 1 if predicted_shape == 'circle' else 2
+        group = 1 if predicted_shape == "circle" else 2
     else:
-        if ((shape != 'other' and predicted_shape == shape) or
-                (shape == 'rect' and predicted_shape != 'other')):
+        if (shape != "other" and predicted_shape == shape) or (
+            shape == "rect" and predicted_shape != "other"
+        ):
             # (shape == 'rect' and not (predicted_shape == 'other' or predicted_shape == 'diamond'))):
             # (shape == 'rect' and (predicted_shape == 'circle' or predicted_shape == 'triangle'))):
             # Both classifier and verifier agree on some polygons or
@@ -147,7 +206,7 @@ def compute_example_transform(traffic_sign, mask, predicted_class, demo_patch,
             # Disagree but not other
             group = 2
 
-    if shape != 'other':
+    if shape != "other":
         # tgt = get_box_vertices(vertices, shape).astype(np.int64)
         # Filter some vertices that might be out of bound
         # if (tgt < 0).any() or (tgt >= size).any():
@@ -159,18 +218,20 @@ def compute_example_transform(traffic_sign, mask, predicted_class, demo_patch,
         #     bool_mask = pad_image(bool_mask, pad_size=pad_size)
         #     tgt += pad_size
         #     size = traffic_sign.size(-1)
-            # group = 2
-            # results.append([traffic_sign, shape, predicted_shape, predicted_class, 4])
+        # group = 2
+        # results.append([traffic_sign, shape, predicted_shape, predicted_class, 4])
 
         # If shape is not other, draw vertices
         # traffic_sign = draw_vertices(traffic_sign, tgt)
 
         # Group 1: draw both vertices and patch
         if group == 1:
-            
+
             # torchvision.utils.save_image(traffic_sign, f'tmp/{random.randint()}.png')
             bool_mask = (mask == 255).astype(np.uint8)
-            old_patch = torch.masked_select(traffic_sign, torch.from_numpy(bool_mask).bool())
+            old_patch = torch.masked_select(
+                traffic_sign, torch.from_numpy(bool_mask).bool()
+            )
             alpha, beta = relight_range(old_patch.numpy().reshape(-1, 1))
         return alpha, beta
     else:
@@ -236,13 +297,20 @@ def compute_example_transform(traffic_sign, mask, predicted_class, demo_patch,
     # return traffic_sign, shape, group, tgt, alpha, beta
 
 
-def plot_subgroup(adversarial_images, metadata, group, shape, 
-                  plot_folder=PLOT_FOLDER,
-                  num_imgs_per_plot=NUM_IMGS_PER_PLOT):
+def plot_subgroup(
+    adversarial_images,
+    metadata,
+    group,
+    shape,
+    plot_folder=PLOT_FOLDER,
+    num_imgs_per_plot=NUM_IMGS_PER_PLOT,
+):
     if len(adversarial_images) == 0:
         return
-    if not os.path.exists('{}/{}/{}'.format(plot_folder, shape, group)):
-        os.makedirs('{}/{}/{}'.format(plot_folder, shape, group), exist_ok=False)
+    if not os.path.exists("{}/{}/{}".format(plot_folder, shape, group)):
+        os.makedirs(
+            "{}/{}/{}".format(plot_folder, shape, group), exist_ok=False
+        )
 
     fig = None
     num_images_plotted = 0
@@ -251,11 +319,11 @@ def plot_subgroup(adversarial_images, metadata, group, shape,
 
     for i, adv_img in enumerate(adversarial_images):
         filename, obj_id, predicted_class, tgt, alpha, beta = metadata[i]
-        predicted_shape = predicted_class.split('-')[0]
+        predicted_shape = predicted_class.split("-")[0]
 
         if fig is None:
-            fig, ax = plt.subplots(int(num_imgs_per_plot/5), 5)
-            fig.set_figheight(int(num_imgs_per_plot/5)*5)
+            fig, ax = plt.subplots(int(num_imgs_per_plot / 5), 5)
+            fig.set_figheight(int(num_imgs_per_plot / 5) * 5)
             fig.set_figwidth(5 * 5)
 
         col = num_images_plotted % 5
@@ -263,22 +331,33 @@ def plot_subgroup(adversarial_images, metadata, group, shape,
         col_name = COLUMN_NAMES[col]
         row_name = ROW_NAMES[row]
 
-        if shape == 'triangle_inverted':
-            plot_shape_name = 't_inv'
-        elif shape == 'diamond':
-            plot_shape_name = 'dmnd'
+        if shape == "triangle_inverted":
+            plot_shape_name = "t_inv"
+        elif shape == "diamond":
+            plot_shape_name = "dmnd"
         else:
             plot_shape_name = shape
 
-        title = 'id({}, {}) | ({}, {}) | cord({}{})'.format(
-            filename[:6], obj_id, plot_shape_name, predicted_class, row_name, col_name)
+        title = "id({}, {}) | ({}, {}) | cord({}{})".format(
+            filename[:6],
+            obj_id,
+            plot_shape_name,
+            predicted_class,
+            row_name,
+            col_name,
+        )
 
         ax[row][col].set_title(title, fontsize=10)
         ax[row][col].imshow(adv_img)
 
-        if num_images_plotted == num_imgs_per_plot-1:
-            fig.savefig('{}/{}/{}/batch_{}.png'.format(plot_folder, shape,
-                        group, batch_number), bbox_inches='tight', pad_inches=0)
+        if num_images_plotted == num_imgs_per_plot - 1:
+            fig.savefig(
+                "{}/{}/{}/batch_{}.png".format(
+                    plot_folder, shape, group, batch_number
+                ),
+                bbox_inches="tight",
+                pad_inches=0,
+            )
             batch_number += 1
             num_images_plotted = -1
             plt.close(fig)
@@ -289,13 +368,31 @@ def plot_subgroup(adversarial_images, metadata, group, shape,
         if tgt.ndim == 3:
             tgt = tgt[0]
 
-        df_data.append([filename, obj_id, shape, predicted_shape,
-                       predicted_class, group, batch_number, row_name, 
-                       col_name, tgt.tolist(), alpha, beta])
+        df_data.append(
+            [
+                filename,
+                obj_id,
+                shape,
+                predicted_shape,
+                predicted_class,
+                group,
+                batch_number,
+                row_name,
+                col_name,
+                tgt.tolist(),
+                alpha,
+                beta,
+            ]
+        )
 
     if fig:
-        fig.savefig('{}/{}/{}/batch_{}.png'.format(plot_folder, shape,
-                    group, batch_number), bbox_inches='tight', pad_inches=0)
+        fig.savefig(
+            "{}/{}/{}/batch_{}.png".format(
+                plot_folder, shape, group, batch_number
+            ),
+            bbox_inches="tight",
+            pad_inches=0,
+        )
     return df_data
 
 
@@ -303,20 +400,20 @@ def main(args):
 
     # Arguments
     max_num_imgs = 200
-    DATA_DIR = '~/data/'
+    DATA_DIR = "~/data/"
 
-    if DATASET == 'mapillaryvistas':
-        if split == 'train':
-            data_dir = f'{DATA_DIR}/mapillary_vistas/training/'
-        elif split == 'validation':
-            data_dir = f'{DATA_DIR}/mapillary_vistas/validation/'
-    elif DATASET == 'bdd100k':
-        data_dir = f'{DATA_DIR}/bdd100k/images/10k/train/'
+    if DATASET == "mapillaryvistas":
+        if split == "train":
+            data_dir = f"{DATA_DIR}/mapillary_vistas/training/"
+        elif split == "validation":
+            data_dir = f"{DATA_DIR}/mapillary_vistas/validation/"
+    elif DATASET == "bdd100k":
+        data_dir = f"{DATA_DIR}/bdd100k/images/10k/train/"
 
     # data_dir = '/data/shared/mtsd_v2_fully_annotated/'
     # model_path = '/home/nab_126/adv-patch-bench/model_weights/resnet18_cropped_signs_good_resolution_and_not_edge_10_labels.pth'
 
-    device = 'cuda'
+    device = "cuda"
     # seed = 2021
     # torch.manual_seed(seed)
     # np.random.seed(seed)
@@ -326,16 +423,28 @@ def main(args):
     model = build_classifier(args)[0]
     model.eval()
 
-    if DATASET == 'mapillaryvistas':
-        img_path = join(data_dir, 'traffic_signs')
-        img_files = sorted([join(img_path, f) for f in listdir(img_path) if
-                            isfile(join(img_path, f)) and f.endswith('.png')])
-        mask_path = join(data_dir, 'masks')
-        mask_files = sorted([join(mask_path, f) for f in listdir(mask_path) if
-                             isfile(join(mask_path, f)) and f.endswith('.png')])
+    if DATASET == "mapillaryvistas":
+        img_path = join(data_dir, "traffic_signs")
+        img_files = sorted(
+            [
+                join(img_path, f)
+                for f in listdir(img_path)
+                if isfile(join(img_path, f)) and f.endswith(".png")
+            ]
+        )
+        mask_path = join(data_dir, "masks")
+        mask_files = sorted(
+            [
+                join(mask_path, f)
+                for f in listdir(mask_path)
+                if isfile(join(mask_path, f)) and f.endswith(".png")
+            ]
+        )
     # TODO: Read in panoptic file
-    elif DATASET == 'bdd100k':
-        panoptic_json_path = f'{DATA_DIR}/bdd100k/labels/pan_seg/polygons/pan_seg_train.json'
+    elif DATASET == "bdd100k":
+        panoptic_json_path = (
+            f"{DATA_DIR}/bdd100k/labels/pan_seg/polygons/pan_seg_train.json"
+        )
 
         with open(panoptic_json_path) as panoptic_file:
             panoptic = json.load(panoptic_file)
@@ -343,23 +452,23 @@ def main(args):
         # creating same mapping for bdd100k
         panoptic_per_image_id = {}
         for image_annotation in tqdm(panoptic):
-            filename = image_annotation['name']
-            image_id = filename.split('.jpg')[0]
+            filename = image_annotation["name"]
+            image_id = filename.split(".jpg")[0]
             annotation = {}
-            annotation['filename'] = filename
-            annotation['image_id'] = image_id
+            annotation["filename"] = filename
+            annotation["image_id"] = image_id
             segments_info = []
-            for label in image_annotation['labels']:
+            for label in image_annotation["labels"]:
                 label_dict = {}
 
                 # TODO: check if occluded and exclude if True
-                if label['category'] == 'traffic sign':
+                if label["category"] == "traffic sign":
                     # if label['category'] == 'traffic sign' or label['category'] == 'traffic sign frame':
                     # label_dict['id'] = label['id']
-                    label_dict['id'] = 26
-                    label_dict['category_id'] = label['category']
-                    for sign in label['poly2d']:
-                        vertices = sign['vertices']
+                    label_dict["id"] = 26
+                    label_dict["category_id"] = label["category"]
+                    for sign in label["poly2d"]:
+                        vertices = sign["vertices"]
                         vertices = np.array(vertices)
 
                         x_cords, y_cords = vertices[:, 0], vertices[:, 1]
@@ -367,51 +476,59 @@ def main(args):
                         xmax = max(x_cords)
                         ymin = min(y_cords)
                         ymax = max(y_cords)
-                        width = xmax-xmin
-                        height = ymax-ymin
+                        width = xmax - xmin
+                        height = ymax - ymin
 
-                        label_dict['area'] = int(width) * int(height)
-                        label_dict['bbox'] = [int(xmin), int(ymin), int(width), int(height)]
+                        label_dict["area"] = int(width) * int(height)
+                        label_dict["bbox"] = [
+                            int(xmin),
+                            int(ymin),
+                            int(width),
+                            int(height),
+                        ]
                         segments_info.append(label_dict)
-            annotation['segments_info'] = segments_info
+            annotation["segments_info"] = segments_info
             panoptic_per_image_id[image_id] = annotation
 
         # data_dir = '/data/shared/bdd100k/images/10k/train/'
-        label_path = '/data/shared/bdd100k/labels/pan_seg/bitmasks/train/'
+        label_path = "/data/shared/bdd100k/labels/pan_seg/bitmasks/train/"
         filenames = [f for f in listdir(data_dir) if isfile(join(data_dir, f))]
         img_path = data_dir
 
         np.random.seed(1111)
         np.random.shuffle(filenames)
 
-    demo_patch = torchvision.io.read_image('demo.png').float()[:3, :, :] / 255
+    demo_patch = torchvision.io.read_image("demo.png").float()[:3, :, :] / 255
     demo_patch = resize(demo_patch, (32, 32))
 
-    print('[INFO] constructing a dataloader for cropped traffic signs...')
+    print("[INFO] constructing a dataloader for cropped traffic signs...")
     bs = args.batch_size
-    transform = transforms.Compose([
-        # transforms.RandomEqualize(p=1.0),
-        transforms.Resize((128, 128)),
-        transforms.ToTensor()
-    ])
+    transform = transforms.Compose(
+        [
+            # transforms.RandomEqualize(p=1.0),
+            transforms.Resize((128, 128)),
+            transforms.ToTensor(),
+        ]
+    )
     dataset = ImageOnlyFolder(img_files, transform=transform)
     dataloader = torch.utils.data.DataLoader(
-        dataset, batch_size=bs, shuffle=False, num_workers=8, pin_memory=True)
+        dataset, batch_size=bs, shuffle=False, num_workers=8, pin_memory=True
+    )
     y_hat = torch.zeros(len(dataset), dtype=torch.long)
-    print('[INFO] classifying traffic signs...')
+    print("[INFO] classifying traffic signs...")
 
     # model.eval()
     with torch.no_grad():
         for i, images in enumerate(dataloader):
-            y_hat[i * bs:(i + 1) * bs] = model(images.cuda()).argmax(-1).cpu()
+            y_hat[i * bs : (i + 1) * bs] = model(images.cuda()).argmax(-1).cpu()
 
-    print('==> Predicted label distribution')
+    print("==> Predicted label distribution")
     print(CLASS_LIST)
     print(torch.bincount(y_hat) / len(y_hat))
     print(len(dataset) * torch.bincount(y_hat) / len(y_hat))
     print()
 
-    print('[INFO] running detection algorithm')
+    print("[INFO] running detection algorithm")
 
     missed_alpha_beta_df = pd.DataFrame()
     df_filenames = []
@@ -419,32 +536,39 @@ def main(args):
     df_betas = []
 
     for img_file, mask_file, y in tqdm(zip(img_files, mask_files, y_hat)):
-        
-        filename = img_file.split('/')[-1]
-        
-        assert filename == mask_file.split('/')[-1]
+
+        filename = img_file.split("/")[-1]
+
+        assert filename == mask_file.split("/")[-1]
         image = np.asarray(Image.open(img_file))
-        Image.open(mask_file).save('test_mask.png')
+        Image.open(mask_file).save("test_mask.png")
         mask = np.asarray(Image.open(mask_file))
-        
+
         try:
             bool_mask = (mask == 255).astype(np.uint8)
             traffic_sign = img_numpy_to_torch(image)
-            old_patch = torch.masked_select(traffic_sign, torch.from_numpy(bool_mask).bool())
+            old_patch = torch.masked_select(
+                traffic_sign, torch.from_numpy(bool_mask).bool()
+            )
             alpha, beta = relight_range(old_patch.numpy().reshape(-1, 1))
-            
+
             df_filenames.append(filename)
             df_alphas.append(alpha)
             df_betas.append(beta)
         except ValueError:
             continue
-        
-    missed_alpha_beta_df['filename'] = df_filenames
-    missed_alpha_beta_df['alpha'] = df_alphas
-    missed_alpha_beta_df['beta'] = df_betas
-    missed_alpha_beta_df.to_csv(f'mapillary_vistas_{split}_missed_alpha_beta.csv', index=False)
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser('Example Transform', parents=[get_args_parser()])
+    missed_alpha_beta_df["filename"] = df_filenames
+    missed_alpha_beta_df["alpha"] = df_alphas
+    missed_alpha_beta_df["beta"] = df_betas
+    missed_alpha_beta_df.to_csv(
+        f"mapillary_vistas_{split}_missed_alpha_beta.csv", index=False
+    )
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        "Example Transform", parents=[get_args_parser()]
+    )
     args = parser.parse_args()
     main(args)

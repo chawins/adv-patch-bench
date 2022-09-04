@@ -258,8 +258,5 @@ if __name__ == "__main__":
         compute_metrics(cfg, args)
     elif args.single_image:
         main_single(cfg, dataset_params)
-    elif args.attack_type != "none":
-        main_attack(cfg, args, dataset_params)
     else:
-        # main(cfg, args)
         main_attack(cfg, args, dataset_params)
