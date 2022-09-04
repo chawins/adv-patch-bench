@@ -21,22 +21,19 @@ BG_FILES=bg_filenames_octagon-915.0.txt
 IMG_SIZE=1536,2048 # sizes: (1536,2048), (3040,4032)
 INTERP=bilinear
 SYN_OBJ_SIZE=128
-# OBJ_CLASS=10
+OBJ_CLASS=1
 # EXP_NAME=none
 EXP_NAME=real-10x10_bottom
 # EXP_NAME=synthetic-10x20
 # EXP_NAME=debug
 NUM_TEST_SYN=5000
 
-# MODEL.ROI_HEADS.NUM_CLASSES 11(12), 15(16), 401  # This should match model not data
-# MODEL.ROI_HEADS.IOU_THRESHOLDS = [0.5]
-# MODEL.ROI_HEADS.NMS_THRESH_TEST = 0.5
-
 # Test a detector on Detectron2 without attack
 python -u test_detectron.py \
-    --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --name no_patch \
+    --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --name no_patch_2 \
     --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH --dataset $DATASET \
     --attack-config-path $ATTACK_CONFIG_PATH --eval-mode drop \
+    --annotated-signs-only \
     MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
     OUTPUT_DIR $OUTPUT_PATH \
     MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \

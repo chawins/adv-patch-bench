@@ -26,10 +26,7 @@ from detectron2.utils.logger import create_small_table
 from pycocotools.coco import COCO
 from tabulate import tabulate
 
-# from pycocotools.cocoeval import COCOeval
 from .custom_cocoeval import COCOeval
-
-# from .custom_cocoeval_2 import COCOeval
 
 
 class CustomCOCOEvaluator(DatasetEvaluator):
@@ -128,7 +125,7 @@ class CustomCOCOEvaluator(DatasetEvaluator):
         # Test set json files do not contain annotations (evaluation must be
         # performed using the COCO evaluation server).
         self._do_evaluation = "annotations" in self._coco_api.dataset
-        # EDIT:
+        # EDIT: Add other_catId (ID for "other" class)
         self.cocoeval_args = {
             "eval_mode": cfg.eval_mode,
             "other_catId": cfg.other_catId,

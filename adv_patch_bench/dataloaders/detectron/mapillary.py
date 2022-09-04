@@ -1,6 +1,6 @@
 import os
 from os.path import isfile, join
-from typing import List, Tuple
+from typing import Any, Dict, List, Tuple
 
 import pandas as pd
 from detectron2.data import DatasetCatalog, MetadataCatalog
@@ -29,7 +29,7 @@ def get_mapillary_dict(
     use_color: bool = False,
     ignore_other: bool = False,
     only_annotated: bool = True,
-) -> List:
+) -> List[Dict[str, Any]]:
 
     mapillary_split = {
         "train": "training",
@@ -117,7 +117,7 @@ def register_mapillary(
     use_color: bool = False,
     ignore_other: bool = False,
     only_annotated: bool = True,
-) -> Tuple:
+) -> Tuple[Any, ...]:
     base_path = PATH_MAPILLARY_BASE
     dataset = "mapillary_color" if use_color else "mapillary_no_color"
     bg_idx = OTHER_SIGN_CLASS[dataset]

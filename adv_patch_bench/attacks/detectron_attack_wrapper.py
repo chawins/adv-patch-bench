@@ -14,11 +14,13 @@ import torch
 from adv_patch_bench.attacks.rp2.rp2_detectron import RP2AttackDetectron
 from adv_patch_bench.attacks.utils import (
     apply_synthetic_sign,
+    load_annotation_df,
     prep_adv_patch,
     prep_synthetic_eval,
 )
 from adv_patch_bench.transforms import transform_and_apply_patch
 from adv_patch_bench.utils.detectron import build_evaluator
+from adv_patch_bench.utils.image import coerce_rank
 from detectron2.config import CfgNode
 from detectron2.data import MetadataCatalog
 from detectron2.structures.boxes import pairwise_iou
@@ -73,6 +75,9 @@ class DetectronAttackWrapper:
         self.device = self.model.device
         self.metadata = MetadataCatalog.get(self.cfg.DATASETS.TEST[0])
 
+        # Load annotation DataFrame. "Other" signs are discarded.
+        self.df = load_annotation_df(args.tgt_csv_filepath)
+
         # Attack params
         if attack_config is None:
             self.attack = RP2AttackDetectron(
@@ -90,10 +95,10 @@ class DetectronAttackWrapper:
         self.attack_type = args.attack_type
         self.use_attack = self.attack_type != "none"
         self.adv_sign_class = args.obj_class
-        self.df = pd.read_csv(args.tgt_csv_filepath)
         self.class_names = class_names
         self.other_sign_class = len(self.class_names) - 1
         self.synthetic = args.synthetic
+        self.annotated_signs_only = args.annotated_signs_only
         self.transform_params = {
             "transform_mode": args.transform_mode,
             "use_relight": not args.no_patch_relight,
@@ -136,7 +141,7 @@ class DetectronAttackWrapper:
         self,
         vis_save_dir: str = None,
         vis_conf_thresh: float = 0.5,
-    ) -> List:
+    ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
         """Runs the DAG algorithm and saves the prediction results.
 
         Args:
@@ -157,8 +162,8 @@ class DetectronAttackWrapper:
             adv_patch, patch_mask = prep_adv_patch(
                 img_size=self.img_size,
                 adv_patch_path=self.args.adv_patch_path,
-                attack_type=self.args.attack_type,
-                synthetic=self.args.synthetic,
+                attack_type=self.attack_type,
+                synthetic=self.synthetic,
                 obj_size=self.args.obj_size,
                 interp=self.args.interp,
                 device=self.device,
@@ -177,7 +182,6 @@ class DetectronAttackWrapper:
 
             file_name = batch[0]["file_name"]
             filename = file_name.split("/")[-1]
-            # basename = os.path.basename(file_name)
             image_id = batch[0]["image_id"]
             h0, w0 = batch[0]["height"], batch[0]["width"]
             img_df = self.df[self.df["filename"] == filename]
@@ -209,8 +213,8 @@ class DetectronAttackWrapper:
                 adv_patch, patch_mask = prep_adv_patch(
                     img_size=(h, w),
                     adv_patch_path=self.args.adv_patch_path,
-                    attack_type=self.args.attack_type,
-                    synthetic=self.args.synthetic,
+                    attack_type=self.attack_type,
+                    synthetic=self.synthetic,
                     obj_size=self.args.obj_size,
                     interp=self.args.interp,
                     device=self.device,
@@ -250,17 +254,21 @@ class DetectronAttackWrapper:
                 total_num_patches += 1
 
             elif len(img_df) > 0:
+
                 new_gt = batch[0]
-                # Iterate through objects in the current image
+                # Iterate through annotated objects in the current image
                 for obj_idx, obj in img_df.iterrows():
+
                     obj_classname = obj["final_shape"]
-                    obj_class = self.class_names.index(obj_classname)
-                    if (
-                        obj_class != self.adv_sign_class
+                    obj_class_id = self.class_names.index(obj_classname)
+
+                    # Skip if it is "other" class or not from desired class
+                    if obj_class_id == self.other_sign_class or (
+                        obj_class_id != self.adv_sign_class
                         and self.adv_sign_class != -1
                     ):
-                        # Skip if object is not from desired class
                         continue
+
                     is_included = True
                     total_num_patches += 1
                     if not self.use_attack:
@@ -277,7 +285,7 @@ class DetectronAttackWrapper:
                             adv_patch = self.attack.attack_real(
                                 attack_images,
                                 patch_mask,
-                                obj_class,
+                                obj_class_id,
                                 metadata=cloned_metadata,
                             )
 
@@ -298,6 +306,10 @@ class DetectronAttackWrapper:
                         **self.transform_params,
                     )
 
+            elif not self.annotated_signs_only:
+                # Include all images if annotated_signs_only is not set to True
+                is_included = True
+
             if not is_included:
                 # Skip image without any adversarial patch when attacking
                 continue
@@ -305,10 +317,7 @@ class DetectronAttackWrapper:
 
             # Perform inference on perturbed image
             # perturbed_image = self._post_process_image(perturbed_image)
-            if perturbed_image.ndim == 4:
-                # TODO: Remove batch dim
-                perturbed_image = perturbed_image[0]
-
+            perturbed_image = coerce_rank(perturbed_image, 3)
             outputs = self(perturbed_image)
             new_outputs = deepcopy(outputs)
             new_instances = new_outputs["instances"]
@@ -317,21 +326,20 @@ class DetectronAttackWrapper:
             # of the synthetic sign to a new syn_sign_class
             if self.synthetic:
                 ious = pairwise_iou(
-                    new_instances.pred_boxes.to("cpu"),
-                    new_gt["instances"].gt_boxes[-1],
+                    new_instances.pred_boxes,
+                    new_gt["instances"].gt_boxes[-1].to(self.device),
                 )[:, 0]
+                # TODO: compute mAP
                 idx = (
                     (ious >= 0.5)
-                    & (new_instances.scores.to("cpu") >= self.args.conf_thres)
-                    & (
-                        new_instances.pred_classes.to("cpu")
-                        == self.adv_sign_class
-                    )
+                    & (new_instances.scores >= self.args.conf_thres)
+                    & (new_instances.pred_classes == self.adv_sign_class)
                 )
                 is_detected = idx.any().item()
                 syn_is_detected.append(is_detected)
                 syn_tp += is_detected
                 syn_total += 1
+                # FIXME: this is set to "other"
                 new_instances.pred_classes[idx] = self.syn_sign_class
             # Scale output to match original input size for evaluator
             h_ratio, w_ratio = h / h0, w / w0
@@ -451,7 +459,7 @@ class DetectronAttackWrapper:
     def __call__(
         self,
         original_image: Union[np.ndarray, torch.Tensor],
-    ) -> Dict:
+    ) -> Dict[str, Any]:
         """Simple inference on a single image
 
         Args:

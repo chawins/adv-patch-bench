@@ -9,7 +9,19 @@ import torchvision.transforms.functional as T
 from PIL import Image
 
 
-def coerce_rank(x, ndim):
+def coerce_rank(x: torch.Tensor, ndim: int) -> torch.Tensor:
+    """Reshape x *in-place* to ndim rank by adding/removing first singleton dim.
+
+    Args:
+        x (torch.Tensor): Tensor to reshape.
+        ndim (int): Desired number of dimension/rank
+
+    Raises:
+        ValueError: Desired rank/ndim cannot be achieved.
+
+    Returns:
+        torch.Tensor: Tensor x that is reshaped to desired rank or ndim.
+    """
     if x.ndim == ndim:
         return x
 
