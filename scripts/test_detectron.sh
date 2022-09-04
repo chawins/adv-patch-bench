@@ -30,6 +30,15 @@ NUM_TEST_SYN=5000
 
 # Test a detector on Detectron2 without attack
 python -u test_detectron.py \
+    --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --name no_patch \
+    --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH --dataset $DATASET \
+    --attack-config-path $ATTACK_CONFIG_PATH --eval-mode drop \
+    MODEL.ROI_HEADS.NUM_CLASSES $NUM_CLASSES \
+    OUTPUT_DIR $OUTPUT_PATH \
+    MODEL.WEIGHTS $OUTPUT_PATH/model_best.pth \
+    DATALOADER.NUM_WORKERS $NUM_WORKERS
+
+python -u test_detectron.py \
     --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --name no_patch_2 \
     --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH --dataset $DATASET \
     --attack-config-path $ATTACK_CONFIG_PATH --eval-mode drop \

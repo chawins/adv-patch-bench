@@ -144,10 +144,10 @@ class COCOeval:
         )  # per-image per-category evaluation results
         self.eval = {}  # accumulated evaluation results
 
-    def evaluate(self):
+    def evaluate(self) -> None:
         """
-        Run per image evaluation on given images and store results (a list of dict) in self.evalImgs
-        :return: None
+        Run per image evaluation on given images and store results (a list of
+        dict) in self.evalImgs
         """
         tic = time.time()
         print("Running per image evaluation...")
@@ -525,7 +525,6 @@ class COCOeval:
                     if a == 0 and m == M - 1:
                         # a = 0 is all area range
                         # m = M-1 is max number of detection
-                        # num_all_classes += npig
                         num_gts_per_class[k] += npig
 
                     tp_sum = np.cumsum(tps, axis=1).astype(dtype=np.float)
