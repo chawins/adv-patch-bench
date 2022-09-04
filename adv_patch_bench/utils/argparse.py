@@ -50,7 +50,7 @@ def eval_args_parser(is_detectron, root=None):
     parser.add_argument(
         "--annotated-signs-only",
         action="store_true",
-        help="if True, only calculate metrics on annotated signs",
+        help="if True, only calculate metrics on annotated signs.",
     )
     parser.add_argument(
         "--conf-thres",
