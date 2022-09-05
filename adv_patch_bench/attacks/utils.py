@@ -16,7 +16,7 @@ from adv_patch_bench.utils.image import (
 )
 from detectron2.structures.boxes import Boxes
 from detectron2.structures.instances import Instances
-from hparams import PATH_SYN_OBJ
+from hparams import PATH_DEBUG_ADV_PATCH
 from kornia import augmentation as K
 from kornia.constants import Resample
 from kornia.geometry.transform import resize
@@ -27,12 +27,16 @@ def prep_synthetic_eval(
     syn_use_scale: bool = True,
     syn_use_colorjitter: bool = False,
     img_size: Tuple[int, int] = (1536, 2048),
-    obj_size: int = 128,
+    obj_size: Tuple[int, int] = (128, 128),
     transform_prob: float = 1.0,
     interp: str = "bilinear",
     device: str = "cuda",
 ):
-    assert isinstance(obj_size, int)
+    if not isinstance(obj_size, tuple):
+        raise ValueError(
+            f"obj_size must be tuple of two ints, but it is {obj_size}"
+        )
+
     # Add synthetic label to the label names at the last position
     # syn_sign_class = len(label_names)
     # label_names[syn_sign_class] = 'synthetic'
@@ -65,7 +69,7 @@ def prep_synthetic_eval(
     obj, obj_mask = prepare_obj(
         syn_obj_path,
         img_size,
-        (obj_size, obj_size),
+        obj_size,
         interp=interp,
     )
     obj = obj.to(device)
@@ -129,12 +133,8 @@ def prep_adv_patch(
 
     if attack_type == "debug":
         # Load 'arrow on checkboard' patch if specified (for debug)
-        adv_patch = (
-            torchvision.io.read_image(
-                os.path.join(PATH_SYN_OBJ, "debug.png")
-            ).float()[:3, :, :]
-            / 255
-        )
+        adv_patch = torchvision.io.read_image(PATH_DEBUG_ADV_PATCH)
+        adv_patch = adv_patch.float()[:3, :, :] / 255
         adv_patch = resize(adv_patch, (patch_height, patch_width))
     elif attack_type == "random":
         # Patch with uniformly random pixels
@@ -149,29 +149,33 @@ def prep_adv_patch(
         else:
             obj_size_px = obj_size
         assert isinstance(
-            obj_size, Tuple[int, int]
+            obj_size, tuple
         ), f"obj_size is {obj_size}. It must be int or tuple of two ints!"
 
         # Resize patch_mask and adv_patch to obj_size_px and place them in
         # middle of image by padding to image_size.
         patch_mask = resize_and_center(
-            patch_mask, img_size, obj_size_px, is_binary=True
+            patch_mask, img_size=img_size, obj_size=obj_size_px, is_binary=True
         )
         adv_patch = resize_and_center(
             adv_patch,
-            img_size,
-            obj_size_px,
+            img_size=img_size,
+            obj_size=obj_size_px,
             is_binary=False,
             interp=interp,
         )
-        patch_mask = patch_mask.to(device)
-        adv_patch = adv_patch.to(device)
     else:
+        # For real sign, just resize adv_patch to have same size as patch_mask
         obj_size = patch_mask.shape[-2:]
         adv_patch = resize_and_center(
-            adv_patch, None, obj_size, is_binary=False, interp=interp
+            adv_patch,
+            obj_size=obj_size,
+            is_binary=False,
+            interp=interp,
         )
 
+    patch_mask = patch_mask.to(device)
+    adv_patch = adv_patch.to(device)
     assert adv_patch.ndim == patch_mask.ndim == 3
     assert (
         adv_patch.shape[-2:] == patch_mask.shape[-2:]

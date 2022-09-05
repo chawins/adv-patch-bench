@@ -140,24 +140,36 @@ def main_attack(cfg, args, dataset_params):
 
     # Logging results
     metrics = metrics["bbox"]
-    max_f1_idx, tp_full, fp_full, num_gts_per_class = metrics["dumped_metrics"]
-    metrics["dumped_metrics"] = None
-    for k, v in metrics.items():
-        if "syn" in k:
-            continue
-        log.info(f"{k}: {v}")
-    iou_idx = 0
-    tp, fp = tp_full[iou_idx, :, max_f1_idx], fp_full[iou_idx, :, max_f1_idx]
-
-    log.info("          tp   fp   num_gt")
-    for i, (t, f, n) in enumerate(zip(tp, fp, num_gts_per_class)):
-        log.info(f"Class {i:2d}: {int(t):4d} {int(f):4d} {int(n):4d}")
-    log.info(f'Total num patches: {metrics["total_num_patches"]}')
-
     if args.synthetic:
+        # tpr = metrics["syn_tp"] / metrics["syn_total"]
+        # fn = metrics["syn_total"] - metrics["syn_tp"]
+        # fnr = 1 - tpr
         log.info(
-            f'Synthetic: {metrics["syn_tp"]:4d} / {metrics["syn_total"]:4d}'
+            f'[Synthetic] Total: {metrics["syn_total"]:4d}\n'
+            f'            TP: {metrics["syn_tp"]:4d} ({metrics["syn_tpr"]:.4f})\n'
+            f'            FN: {metrics["syn_fn"]:4d} ({metrics["syn_fnr"]:.4f})\n'
+            # f'            AP: {metrics["syn_ap"]:4f}'
+            # f'            AP@0.5: {metrics["syn_ap50"]:4f}'
         )
+    else:
+        max_f1_idx, tp_full, fp_full, num_gts_per_class = metrics[
+            "dumped_metrics"
+        ]
+        metrics["dumped_metrics"] = None
+        for k, v in metrics.items():
+            if "syn" in k:
+                continue
+            log.info(f"{k}: {v}")
+        iou_idx = 0
+        tp, fp = (
+            tp_full[iou_idx, :, max_f1_idx],
+            fp_full[iou_idx, :, max_f1_idx],
+        )
+
+        log.info("          tp   fp   num_gt")
+        for i, (t, f, n) in enumerate(zip(tp, fp, num_gts_per_class)):
+            log.info(f"Class {i:2d}: {int(t):4d} {int(f):4d} {int(n):4d}")
+        log.info(f'Total num patches: {metrics["total_num_patches"]}')
 
 
 def compute_metrics(cfg, args):

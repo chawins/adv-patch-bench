@@ -1,12 +1,18 @@
 import argparse
 import os
+from pathlib import Path
 
 from detectron2.config import get_cfg
 from detectron2.engine import default_argument_parser, default_setup
-from hparams import LABEL_LIST, PATH_SYN_OBJ, SAVE_DIR_DETECTRON
+from hparams import LABEL_LIST, NUM_CLASSES, PATH_SYN_OBJ, SAVE_DIR_DETECTRON
 
 
 def eval_args_parser(is_detectron, root=None):
+
+    if root is None:
+        root = os.getcwd()
+    root = Path(root)
+
     if is_detectron:
         parser = default_argument_parser()
     else:
@@ -20,18 +26,19 @@ def eval_args_parser(is_detectron, root=None):
         action="store_true",
         help='If True, do not load "other" or "background" class to the dataset.',
     )
+    # TODO: Is this still needed? Since we can set it in hparams.
     parser.add_argument(
         "--other-class-label",
         type=int,
         default=None,
-        help="Class for the 'other' label",
+        help='Class for the "other" label.',
     )
     parser.add_argument("--eval-mode", type=str, default=None)
     parser.add_argument(
         "--interp",
         type=str,
         default="bicubic",
-        help="interpolation method: nearest, bilinear, bicubic (default)",
+        help="Interpolation method: nearest, bilinear, bicubic (default).",
     )
     parser.add_argument(
         "--synthetic",
@@ -53,6 +60,13 @@ def eval_args_parser(is_detectron, root=None):
         help="if True, only calculate metrics on annotated signs.",
     )
     parser.add_argument(
+        "--weights",
+        nargs="+",
+        type=str,
+        default=root / "yolov5s.pt",
+        help="Path to PyTorch model weights.",
+    )
+    parser.add_argument(
         "--conf-thres",
         type=float,
         default=None,
@@ -64,8 +78,14 @@ def eval_args_parser(is_detectron, root=None):
     parser.add_argument(
         "--num-test",
         type=int,
-        default=1e9,
+        default=int(1e9),
         help="Max number of images to test on (default: 1e9)",
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=8,
+        help="Number of dataloader workers (per RANK in DDP mode).",
     )
 
     # Specific to synthetic signs
@@ -95,15 +115,15 @@ def eval_args_parser(is_detectron, root=None):
         type=str,
         default="none",
         help=(
-            "attack evaluation to run: none (default), load,"
-            " per-sign, random, debug"
+            "Attack evaluation to run: none (default), load, per-sign, random,"
+            " debug."
         ),
     )
     parser.add_argument(
         "--adv-patch-path",
         type=str,
         default=None,
-        help="path to adv patch and mask to load",
+        help="Path to adv patch and mask to load.",
     )
     parser.add_argument(
         "--mask-name", type=str, default="10x10", help="Specify mask shape."
@@ -113,8 +133,7 @@ def eval_args_parser(is_detectron, root=None):
         type=str,
         default=None,
         help=(
-            "Path to dir with predefined masks "
-            "(default: generate a new mask)"
+            "Path to dir with predefined masks (default: generate a new mask)."
         ),
     )
     parser.add_argument(
@@ -125,12 +144,14 @@ def eval_args_parser(is_detectron, root=None):
     )
     parser.add_argument(
         "--tgt-csv-filepath",
+        type=str,
         required=True,
         help="path to csv which contains target points for transform",
     )
     parser.add_argument(
         "--attack-config-path",
-        help="path to yaml file with attack configs (used when attack_type is per-sign)",
+        type=str,
+        help="Path to YAML file with attack configs.",
     )
     parser.add_argument(
         "--img-txt-path",
@@ -150,8 +171,8 @@ def eval_args_parser(is_detectron, root=None):
         "--no-patch-transform",
         action="store_true",
         help=(
-            "If True, do not apply patch to signs using "
-            "3D-transform. Patch will directly face camera."
+            "If True, do not apply patch to signs using 3D-transform. "
+            "Patch will directly face camera."
         ),
     )
     parser.add_argument(
@@ -159,16 +180,15 @@ def eval_args_parser(is_detectron, root=None):
         type=str,
         default="perspective",
         help=(
-            "transform type to use on patch during evaluation"
-            ": perspective (default), affine, translate_scale."
-            " This can be different from patch generation"
-            " specified in attack config"
+            "transform type to use on patch during evaluation: perspective "
+            "(default), affine, translate_scale. This can be different from "
+            "patch generation specified in attack config."
         ),
     )
     parser.add_argument(
         "--no-patch-relight",
         action="store_true",
-        help=("If True, do not apply relighting transform to patch"),
+        help="If True, do not apply relighting transform to patch.",
     )
     parser.add_argument(
         "--min-area",
@@ -185,8 +205,8 @@ def eval_args_parser(is_detectron, root=None):
         type=float,
         default=0,
         help=(
-            "Minimum area for predictions. if a predicion has area < min_area and "
-            "that prediction is not matched to any label, it will be discarded"
+            "Minimum area for predictions. If predicion has area < min_area and"
+            " that prediction is not matched by any gt, it will be discarded."
         ),
     )
     # TODO: deprecate, set automatically given obj class
@@ -194,7 +214,7 @@ def eval_args_parser(is_detectron, root=None):
         "--syn-obj-path",
         type=str,
         default="",
-        help="path to an image of a synthetic sign (used when synthetic_eval is True",
+        help="path to image of synthetic sign (used when synthetic_eval is True)",
     )
 
     # ===================== Patch generation arguments ====================== #
@@ -220,13 +240,7 @@ def eval_args_parser(is_detectron, root=None):
             default=root / "data/coco128.yaml",
             help="dataset.yaml path",
         )
-        parser.add_argument(
-            "--weights",
-            nargs="+",
-            type=str,
-            default=root / "yolov5s.pt",
-            help="model.pt path(s)",
-        )
+
         parser.add_argument(
             "--batch-size", type=int, default=32, help="batch size"
         )
@@ -246,12 +260,6 @@ def eval_args_parser(is_detectron, root=None):
         )
         parser.add_argument(
             "--device", default="", help="cuda device, i.e. 0 or 0,1,2,3 or cpu"
-        )
-        parser.add_argument(
-            "--workers",
-            type=int,
-            default=8,
-            help="max dataloader workers (per RANK in DDP mode)",
         )
         parser.add_argument(
             "--single-cls",
@@ -336,7 +344,10 @@ def eval_args_parser(is_detectron, root=None):
         "--other-class-confidence-threshold",
         type=float,
         default=0,
-        help="confidence threshold at which other labels are changed if there is a match with a prediction",
+        help=(
+            "confidence threshold at which other labels are changed if there "
+            "is a match with a prediction"
+        ),
     )
 
     args = parser.parse_args()
@@ -407,11 +418,12 @@ def setup_detectron_test_args(args, other_sign_class):
     tokens = parse_dataset_name(args)
     cfg.DATASETS.TEST = (f"{tokens[0]}_{tokens[1]}",)
 
-    # Copy test dataset to train one since we will use
+    # (Deprecated) Copy test dataset to train one since we will use
     # `build_detection_train_loader` to get labels
-    cfg.DATASETS.TRAIN = cfg.DATASETS.TEST
+    # cfg.DATASETS.TRAIN = cfg.DATASETS.TEST
     cfg.SOLVER.IMS_PER_BATCH = 1
-    cfg.INPUT.CROP.ENABLED = False
+    cfg.INPUT.CROP.ENABLED = False  # Turn off augmentation for testing
+    cfg.DATALOADER.NUM_WORKERS = args.workers
     cfg.eval_mode = args.eval_mode
     cfg.obj_class = args.obj_class
     cfg.other_catId = other_sign_class[args.dataset]
@@ -422,6 +434,17 @@ def setup_detectron_test_args(args, other_sign_class):
         [int(x) for x in args.padded_imgsz.split(",")]
     )
     cfg.INPUT.MAX_SIZE_TEST = cfg.INPUT.MIN_SIZE_TEST
+
+    # Model config
+    cfg.MODEL.ROI_HEADS.NUM_CLASSES = NUM_CLASSES[args.dataset]
+    cfg.OUTPUT_DIR = SAVE_DIR_DETECTRON
+    weight_path = args.weights
+    if isinstance(args.weights, list):
+        weight_path = weight_path[0]
+    assert isinstance(
+        weight_path, str
+    ), f"weight_path must be string, but it is {weight_path}!"
+    cfg.MODEL.WEIGHTS = weight_path
 
     cfg.freeze()
     default_setup(cfg, args)

@@ -447,7 +447,7 @@ class COCOeval:
         R = len(p.recThrs)
         K = len(p.catIds) if p.useCats else 1
         A = len(p.areaRng)
-        M = len(p.maxDets)
+        M = len(p.maxDets)  # Number of max detections to consider
         # -1 for the precision of absent categories
         precision = -np.ones((T, R, K, A, M))
         recall = -np.ones((T, K, A, M))
@@ -474,8 +474,10 @@ class COCOeval:
         I0 = len(_pe.imgIds)
         A0 = len(_pe.areaRng)
 
-        # EDIT:
+        # EDIT: Keep track of number of gt's for each class
         num_gts_per_class = np.zeros(K)
+        # Save scores of all detections separated into gt with and without
+        # matched detection (per class per IoU thres).
         scores_full = {}
         for k in setK:
             scores_t = []

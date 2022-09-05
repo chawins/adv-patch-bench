@@ -210,8 +210,9 @@ def get_transform(
     w_pad: float,
     h_pad: float,
     transform_mode: str,
-) -> Tuple:
+) -> Tuple[Any, ...]:
     """Get transformation matrix and parameters including relighting.
+
     Args:
         sign_size_in_pixel (int): _description_
         predicted_class (str): _description_
@@ -223,6 +224,7 @@ def get_transform(
         w_pad (float): _description_
         h_pad (float): _description_
         transform (str, required): _description_. 'transform_scale, affine or perspective'.
+
     Returns:
         Tuple: _description_
     """
@@ -297,6 +299,8 @@ def get_transform(
     # Get transformation matrix and transform function (affine or perspective)
     # from source and target coordinates
     if transform_mode == "translate_scale":
+        # Use corners of axis-aligned bounding box for transform (translation
+        # and scaling) instead of real corners.
         min_tgt_x = min(tgt[:, 0])
         max_tgt_x = max(tgt[:, 0])
         min_tgt_y = min(tgt[:, 1])
@@ -332,6 +336,7 @@ def get_transform(
         M = get_perspective_transform(src, tgt)
         transform_func = warp_perspective
 
+    # (DEPRECATED)
     # if transform_mode in ('affine', 'translate_scale'):
     #     if len(src) > 3:
     #         src = src[:-1]
@@ -389,6 +394,7 @@ def apply_transform(
     Apply patch with transformation specified by `tf_data` and `transform_func`.
     This function is designed to be used with `get_transform` function.
     All Tensor inputs must have batch dimension.
+
     Args:
         image (torch.Tensor): Input image (0-255)
         adv_patch (torch.Tensor): Patch in canonical size
@@ -400,6 +406,7 @@ def apply_transform(
             `adv_patch`. Used for random augmentation. Defaults to None.
         tf_bg (Any, optional): Additional transformation applied to `image`.
             Used for random augmentation.. Defaults to None.
+
     Returns:
         torch.Tensor: Image with transformed patch
     """
@@ -452,7 +459,7 @@ def transform_and_apply_patch(
     patch_mask: torch.Tensor,
     predicted_class: str,
     row: pd.DataFrame,
-    img_data: List,
+    img_data: List[Any],
     transform_mode: str,
     use_relight: bool = True,
     interp: str = "bilinear",
@@ -464,17 +471,10 @@ def transform_and_apply_patch(
     device = image.device
 
     sign_size_in_pixel = patch_mask.shape[-1]
-    (
-        transform_func,
-        sign_canonical,
-        sign_mask,
-        M,
-        alpha,
-        beta,
-        _,
-    ) = get_transform(
+    tf_data = get_transform(
         sign_size_in_pixel, predicted_class, row, *img_data, transform_mode
     )
+    transform_func, sign_canonical, sign_mask, M, alpha, beta, _ = tf_data
 
     sign_canonical = coerce_rank(sign_canonical, 4).to(device)
     sign_mask = coerce_rank(sign_mask, 4).to(device)

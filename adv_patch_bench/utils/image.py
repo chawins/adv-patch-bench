@@ -1,7 +1,7 @@
 import json
 import os
 from os.path import join
-from typing import Tuple
+from typing import Optional, Tuple
 
 import numpy as np
 import torch
@@ -79,6 +79,7 @@ def pad_image(img, pad_size=0.1, pad_mode="constant", return_pad_size=False):
         if isinstance(pad_size, float)
         else pad_size
     )
+
     if isinstance(img, np.ndarray):
         height, width = img.shape[0], img.shape[1]
         pad_size_tuple = ((pad_size, pad_size), (pad_size, pad_size)) + (
@@ -88,6 +89,7 @@ def pad_image(img, pad_size=0.1, pad_mode="constant", return_pad_size=False):
     else:
         height, width = img.shape[img.ndim - 2], img.shape[img.ndim - 1]
         img_padded = T.pad(img, pad_size, padding_mode=pad_mode)
+
     if return_pad_size:
         return img_padded, pad_size
     return img_padded
@@ -237,8 +239,8 @@ def prepare_obj(
 
 def resize_and_center(
     obj: torch.Tensor,
-    img_size: Tuple[int, int],
-    obj_size: Tuple[int, int],
+    img_size: Optional[Tuple[int, int]] = None,
+    obj_size: Optional[Tuple[int, int]] = None,
     is_binary: bool = False,
     interp: str = "bicubic",
 ):
@@ -254,13 +256,13 @@ def resize_and_center(
         elif interp == "bilinear":
             interp = T.InterpolationMode.BILINEAR
         else:
-            raise NotImplementedError("interp not supported.")
+            raise NotImplementedError(f"Interp {interp} not supported!")
         obj = T.resize(obj, obj_size, interpolation=interp)
+    else:
+        obj_size = obj.shape[-2:]
 
     if img_size is not None:
         # left, top, right, bottom
-        # left = (img_size[1] - obj_size[1]) // 2
-        # top = (img_size[0] - obj_size[0]) // 2
         left = torch.div(img_size[1] - obj_size[1], 2, rounding_mode="trunc")
         top = torch.div(img_size[0] - obj_size[0], 2, rounding_mode="trunc")
         pad_size = [
