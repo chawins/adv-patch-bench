@@ -3,6 +3,7 @@ import logging
 import os
 import pickle
 import random
+import time
 
 import cv2
 import numpy as np
@@ -135,7 +136,9 @@ def main_attack(cfg, args, dataset_params):
     coco_instances_results, metrics = attack.run(
         vis_save_dir=vis_dir, vis_conf_thresh=0.5
     )
-    with open(os.path.join(args.result_dir, "results.pkl"), "wb") as f:
+    t = int(time.time())
+    with open(os.path.join(args.result_dir, f"results_{t}.pkl"), "wb") as f:
+        metrics = {**metrics, **vars(args)}
         pickle.dump(metrics, f)
 
     # Logging results

@@ -138,11 +138,12 @@ class DetectronAttackWrapper:
         self.input_format = cfg.INPUT.FORMAT
         assert self.input_format == "BGR", "Only allow BGR input format for now"
 
-        self.num_test = args.num_test
+        self.num_test = args.num_test if not self.debug else 20
         self.data_loader = dataloader
         self.device = self.model.device
         self.conf_thres = args.conf_thres
         self.metadata = MetadataCatalog.get(self.cfg.DATASETS.TEST[0])
+        self.interp = args.interp
 
         # Load annotation DataFrame. "Other" signs are discarded.
         self.df = load_annotation_df(args.tgt_csv_filepath)
@@ -156,7 +157,7 @@ class DetectronAttackWrapper:
                 None,
                 None,
                 rescaling=False,
-                interp=args.interp,
+                interp=self.interp,
                 verbose=self.verbose,
             )
         else:
@@ -171,31 +172,35 @@ class DetectronAttackWrapper:
         self.transform_params = {
             "transform_mode": args.transform_mode,
             "use_relight": not args.no_patch_relight,
-            "interp": args.interp,
+            "interp": self.interp,
         }
+        self.fixed_input_size = True  # TODO: Make this an option
+
         if self.synthetic:
-            # TODO: self.syn_sign_class is not really used now.
+            # TODO: (DEPRECATED)
             # self.syn_sign_class = self.other_sign_class + 1
             # self.metadata.thing_classes.append("synthetic")
-            self.syn_sign_class = self.other_sign_class
+            # self.syn_sign_class = self.other_sign_class
 
-        # Compute obj_size
-        obj_size = args.obj_size
-        obj_class_name = class_names[self.adv_sign_class_id]
-        obj_class_name_list = obj_class_name.split("-")
-        sign_width_in_mm = float(obj_class_name_list[1])
-        if len(obj_class_name_list) == 3 and sign_width_in_mm != 0:
-            sign_height_in_mm = float(obj_class_name_list[2])
-            hw_ratio = sign_height_in_mm / sign_width_in_mm
+            # Compute obj_size
+            obj_size = args.obj_size
+            obj_class_name = class_names[self.adv_sign_class_id]
+            obj_class_name_list = obj_class_name.split("-")
+            sign_width_in_mm = float(obj_class_name_list[1])
+            if len(obj_class_name_list) == 3 and sign_width_in_mm != 0:
+                sign_height_in_mm = float(obj_class_name_list[2])
+                hw_ratio = sign_height_in_mm / sign_width_in_mm
+            else:
+                hw_ratio = 1
+            if isinstance(obj_size, int):
+                obj_size = (round(obj_size * hw_ratio), obj_size)
+
+            assert isinstance(obj_size, tuple) and all(
+                [isinstance(s, int) for s in obj_size]
+            ), f"obj_size is {obj_size}. It must be int or tuple of two ints!"
+            self.obj_size = obj_size
         else:
-            hw_ratio = 1
-        if isinstance(obj_size, int):
-            obj_size = (round(obj_size * hw_ratio), obj_size)
-
-        assert isinstance(obj_size, tuple) and all(
-            [isinstance(s, int) for s in obj_size]
-        ), f"obj_size is {obj_size}. It must be int or tuple of two ints!"
-        self.obj_size = obj_size
+            self.obj_size = None
 
         # Loading file names from the specified text file
         self.skipped_filename_list = []
@@ -258,7 +263,7 @@ class DetectronAttackWrapper:
                 attack_type=self.attack_type,
                 synthetic=self.synthetic,
                 obj_size=self.obj_size,
-                interp=self.args.interp,
+                interp=self.interp,
                 device=self.device,
             )
 
@@ -272,7 +277,7 @@ class DetectronAttackWrapper:
                 img_size=self.img_size,
                 obj_size=self.obj_size,
                 transform_prob=1.0,
-                interp=self.args.interp,
+                interp=self.interp,
                 device=self.device,
             )
             # Append with synthetic sign class
@@ -287,8 +292,7 @@ class DetectronAttackWrapper:
         self.evaluator.reset()
 
         for i, batch in tqdm(enumerate(self.data_loader)):
-            if self.debug and total_num_patches >= 20:
-                break
+
             if total_num_images >= self.num_test:
                 break
 
@@ -317,7 +321,32 @@ class DetectronAttackWrapper:
                 images = images.flip(0)
             perturbed_image = images.clone()
             _, h, w = images.shape
-            img_dim_data = (h0, w0, h / h0, w / w0, 0, 0)
+
+            if self.fixed_input_size or w < self.img_size[1]:
+                # Resize and pad perturbed_image to self.img_size preseving
+                # aspect ratio. This also handles images whose width is the
+                # shorter side in the varying input size case.
+                if w < self.img_size[1]:
+                    # If real width is smaller than desired one, then height
+                    # must be longer than width so we scale down by height ratio
+                    scale = self.img_size[0] / h
+                else:
+                    scale = 1
+                resized_size = (int(h * scale), int(w * scale))
+                perturbed_image = resize_and_center(
+                    perturbed_image,
+                    img_size=self.img_size,
+                    obj_size=resized_size,
+                    interp=self.interp,
+                )
+                h, w = self.img_size
+                h_pad = h - resized_size[0]
+                w_pad = w - resized_size[1]
+            else:
+                h_pad, w_pad = 0, 0
+
+            # NOTE: w_pad, h_pad is not typo!
+            img_dim_data = (h0, w0, h / h0, w / w0, w_pad, h_pad)
 
             # Include all images if annotated_signs_only is False
             is_included = not self.annotated_signs_only
@@ -325,15 +354,26 @@ class DetectronAttackWrapper:
             if self.synthetic:
                 # Attacking synthetic signs
                 self.log(f"Attacking {file_name} ...")
-                # Pad or crop adv_patch and patch_mask to current image size
-                cur_adv_patch, cur_patch_mask, cur_syn_obj, cur_obj_mask = [
-                    _pad_or_crop_height(p, (h, w))
-                    for p in [adv_patch, patch_mask, syn_obj, syn_obj_mask]
-                ]
+
+                if not self.fixed_input_size:
+                    # When image size is not fixed, other objects (sign, patch,
+                    # masks) have to be resized instead.
+                    cur_adv_patch, cur_patch_mask, cur_syn_obj, cur_obj_mask = [
+                        _pad_or_crop_height(p, (h, w))
+                        for p in [adv_patch, patch_mask, syn_obj, syn_obj_mask]
+                    ]
+                else:
+                    # Otherwise, sizes should already match
+                    cur_adv_patch, cur_patch_mask, cur_syn_obj, cur_obj_mask = (
+                        adv_patch,
+                        patch_mask,
+                        syn_obj,
+                        syn_obj_mask,
+                    )
 
                 # Apply synthetic sign and patch to image
                 perturbed_image, new_gt = apply_synthetic_sign(
-                    images,
+                    perturbed_image,
                     batch[0],
                     None,
                     cur_adv_patch,

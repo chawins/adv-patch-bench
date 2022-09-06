@@ -38,8 +38,10 @@ def prep_synthetic_eval(
         )
 
     # Add synthetic label to the label names at the last position
+    # TODO: needed?
     # syn_sign_class = len(label_names)
     # label_names[syn_sign_class] = 'synthetic'
+    # TODO: We want to do an experiment with these
     transform_params = {
         "degrees": 30,
         "translate": (0.4, 0.4),
@@ -98,7 +100,7 @@ def prep_adv_patch(
     adv_patch_path: Optional[str] = None,
     attack_type: str = "none",
     synthetic: bool = False,
-    obj_size: Union[int, Tuple[int, int]] = 128,
+    obj_size: Optional[Union[int, Tuple[int, int]]] = None,
     interp: str = "bilinear",
     device: str = "cuda",
 ) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor]]:
@@ -234,22 +236,24 @@ def apply_synthetic_sign(
 
     # Since we paste a new synthetic sign on image, we have to add
     # in a new synthetic label/target to compute the metrics
-    # TODO: decouple from models
+    # TODO: (DEPRECATED) This does not work because COCO evaluator seems to use
+    # the registered dataset to evaluate. Modifying annotation after the fact
+    # does not work.
     if is_detectron:
         assert isinstance(targets, dict) and isinstance(other_sign_class, int)
         targets = deepcopy(targets)
-        annotations = targets["annotations"]
-        instances = targets["instances"]
-        for anno in annotations:
-            anno["category_id"] = other_sign_class
         new_bbox = [x_min, y_min, x_min + w_obj, y_min + h_obj]
-        new_anno = {
-            "bbox": new_bbox,
-            "category_id": syn_sign_class,
-            "bbox_mode": annotations[0]["bbox_mode"],
-        }
-        annotations.append(new_anno)
+        # annotations = targets["annotations"]
+        # for anno in annotations:
+        #     anno["category_id"] = other_sign_class
+        # new_anno = {
+        #     "bbox": new_bbox,
+        #     "category_id": syn_sign_class,
+        #     "bbox_mode": annotations[0]["bbox_mode"],
+        # }
+        # annotations.append(new_anno)
         # Create new gt instances
+        instances = targets["instances"]
         new_instances = Instances(instances.image_size)
         new_gt_classes = torch.zeros(len(instances) + 1, dtype=torch.int64)
         new_gt_classes[:-1] = other_sign_class
