@@ -462,6 +462,7 @@ class DetectronAttackWrapper:
                 # Save scores and gt-dt matches at each level of IoU thresholds
                 # Find the match with highest IoU and has correct class
                 ious *= instances.pred_classes == self.adv_sign_class_id
+                # FIXME: empty ious
                 max_idx = ious.argmax()
                 # Compute matches at different values of IoU threshold
                 matches = ious[max_idx] >= self.iou_thres
