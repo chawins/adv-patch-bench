@@ -412,11 +412,15 @@ class CustomCOCOEvaluator(DatasetEvaluator):
             numalign="left",
         )
         self._logger.info("Per-category {} AP: \n".format(iou_type) + table)
-        rc = coco_eval.eval["recall_cmb"] * 100
-        self._logger.info(f"recall_cmb: {rc:.4f}, fnr_cmb: {100 - rc:.4f}")
+        # EDIT: add some more metrics to collect
+        # rc = coco_eval.eval["recall_cmb"] * 100
+        # self._logger.info(f"recall_cmb: {rc:.4f}, fnr_cmb: {100 - rc:.4f}")
 
         results.update({"AP-" + name: ap for name, ap in results_per_category})
-        results["dumped_metrics"] = coco_eval.eval["dumped_metrics"]
+        results["scores_full"] = coco_eval.eval["scores_full"]
+        results["num_gts_per_class"] = coco_eval.eval["num_gts_per_class"]
+        results["detected"] = coco_eval.eval["detected"]
+        results["gtScores"] = coco_eval.eval["gtScores"]
         return results
 
 

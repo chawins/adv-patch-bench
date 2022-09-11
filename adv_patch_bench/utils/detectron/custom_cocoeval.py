@@ -126,12 +126,20 @@ class COCOeval:
         if p.iouType == "segm":
             _toMask(gts, self.cocoGt)
             _toMask(dts, self.cocoDt)
+
+        # EDIT:
+        self.class_to_gtIds = {}
+        for cid in self.params.catIds:
+            self.class_to_gtIds[cid] = []
+
         # set ignore flag
         for gt in gts:
             gt["ignore"] = gt["ignore"] if "ignore" in gt else 0
             gt["ignore"] = "iscrowd" in gt and gt["iscrowd"]
             if p.iouType == "keypoints":
                 gt["ignore"] = (gt["num_keypoints"] == 0) or gt["ignore"]
+            self.class_to_gtIds[gt["category_id"]].append(gt["id"])
+        self.gtScores = np.zeros((len(self.params.iouThrs), gts[-1]["id"]))
 
         self._gts = defaultdict(list)  # gt for evaluation
         self._dts = defaultdict(list)  # dt for evaluation
@@ -484,6 +492,7 @@ class COCOeval:
             for i in range(T):
                 scores_t.append([[], []])
             scores_full[k] = scores_t
+        detected = {}
 
         # retrieve E at each category, area range, and max number of detections
         for k, k0 in enumerate(k_list):
@@ -526,6 +535,12 @@ class COCOeval:
                         # a = 0 is all area range
                         # m = M-1 is max number of detection
                         num_gts_per_class[k] += npig
+                        for t in range(T):
+                            dtm_t = dtm[t].astype(np.int64) - 1
+                            matched_dtm_idx = dtm_t >= 0
+                            matched_dtm_t = dtm_t[matched_dtm_idx]
+                            matched_dtScores = dtScoresSorted[matched_dtm_idx]
+                            self.gtScores[t, matched_dtm_t] = matched_dtScores
 
                     tp_sum = np.cumsum(tps, axis=1).astype(dtype=np.float)
                     fp_sum = np.cumsum(fps, axis=1).astype(dtype=np.float)
@@ -574,47 +589,53 @@ class COCOeval:
                             )
 
         # EDIT ============================================================== #
-        iou_thres = 0.5
-        iou_idx = np.where(p.iouThrs == iou_thres)[0][0]
+        # iou_thres = 0.5
+        # iou_idx = np.where(p.iouThrs == iou_thres)[0][0]
 
-        # Find score threshold that maximizes F1 score
-        num_scores = 1000
-        EPS = np.spacing(1)
-        scores_thres = np.linspace(0, 1, num_scores)
-        tp_full = np.zeros((T, K, num_scores))
-        fp_full = np.zeros_like(tp_full)
-        for t in range(T):
-            for k in setK:
-                for si, s in enumerate(scores_thres):
-                    tps = np.sum(np.array(scores_full[k][t][0]) >= s)
-                    fps = np.sum(np.array(scores_full[k][t][1]) >= s)
-                    tp_full[t, k, si] = tps
-                    fp_full[t, k, si] = fps
-        rc = tp_full / (num_gts_per_class[None, :, None] + EPS)
-        pr = tp_full / (tp_full + fp_full + EPS)
-        f1 = 2 * pr * rc / (pr + rc + EPS)
-        assert np.all(f1 >= 0) and not np.any(np.isnan(f1))
-        # Remove 'other' class from f1 and average over remaining classes
-        f1_mean = np.delete(f1[iou_idx], self.other_catId, axis=0).mean(0)
-        if self.conf_thres is None:
-            max_f1_idx = f1_mean.argmax()
-        else:
-            print("Using specified conf_thres...")
-            # Find f1 index closest to the specified conf_thres
-            max_f1_idx = np.abs(self.conf_thres - scores_thres).argmin()
+        # # Find score threshold that maximizes F1 score
+        # num_scores = 1000
+        # EPS = np.spacing(1)
+        # scores_thres = np.linspace(0, 1, num_scores)
+        # tp_full = np.zeros((T, K, num_scores))
+        # fp_full = np.zeros_like(tp_full)
+        # for t in range(T):
+        #     for k in setK:
+        #         for si, s in enumerate(scores_thres):
+        #             tps = np.sum(np.array(scores_full[k][t][0]) >= s)
+        #             fps = np.sum(np.array(scores_full[k][t][1]) >= s)
+        #             tp_full[t, k, si] = tps
+        #             fp_full[t, k, si] = fps
+        # rc = tp_full / (num_gts_per_class[None, :, None] + EPS)
+        # pr = tp_full / (tp_full + fp_full + EPS)
+        # f1 = 2 * pr * rc / (pr + rc + EPS)
+        # assert np.all(f1 >= 0) and not np.any(np.isnan(f1))
+        # # Remove 'other' class from f1 and average over remaining classes
+        # f1_mean = np.delete(f1[iou_idx], self.other_catId, axis=0).mean(0)
+        # if self.conf_thres is None:
+        #     max_f1_idx = f1_mean.argmax()
+        # else:
+        #     print("Using specified conf_thres...")
+        #     # Find f1 index closest to the specified conf_thres
+        #     max_f1_idx = np.abs(self.conf_thres - scores_thres).argmin()
 
-        max_f1 = f1_mean[max_f1_idx]
-        tp = tp_full[iou_idx, :, max_f1_idx]
-        fp = fp_full[iou_idx, :, max_f1_idx]
-        print(f"[DEBUG] max_f1_idx: {max_f1_idx}, max_f1: {max_f1:.4f}")
-        print(f"[DEBUG] num_gts_per_class: {num_gts_per_class}")
-        print(f"[DEBUG] tp: {tp}")
-        print(f"[DEBUG] fp: {fp}")
-        print(f"[DEBUG] precision: {pr[iou_idx, :, max_f1_idx]}")
-        print(f"[DEBUG] recall: {rc[iou_idx, :, max_f1_idx]}")
+        # max_f1 = f1_mean[max_f1_idx]
+        # tp = tp_full[iou_idx, :, max_f1_idx]
+        # fp = fp_full[iou_idx, :, max_f1_idx]
+        # print(f"[DEBUG] max_f1_idx: {max_f1_idx}, max_f1: {max_f1:.4f}")
+        # print(f"[DEBUG] num_gts_per_class: {num_gts_per_class}")
+        # print(f"[DEBUG] tp: {tp}")
+        # print(f"[DEBUG] fp: {fp}")
+        # print(f"[DEBUG] precision: {pr[iou_idx, :, max_f1_idx]}")
+        # print(f"[DEBUG] recall: {rc[iou_idx, :, max_f1_idx]}")
 
-        # Compute combined metrics, ignoring class
-        recall_cmb = tp.sum() / (num_gts_per_class.sum() + EPS)
+        # # Compute combined metrics, ignoring class
+        # recall_cmb = tp.sum() / (num_gts_per_class.sum() + EPS)
+
+        gtScores = {}
+        for catId, gtIds in self.class_to_gtIds.items():
+            gtIds = np.array(gtIds) - 1
+            gtScores[catId] = self.gtScores[:, gtIds]
+
         # END_EDIT ========================================================== #
 
         self.eval = {
@@ -624,8 +645,12 @@ class COCOeval:
             "precision": precision,
             "recall": recall,
             "scores": scores,
-            "recall_cmb": recall_cmb,
-            "dumped_metrics": [max_f1_idx, tp_full, fp_full, num_gts_per_class],
+            # "recall_cmb": recall_cmb,
+            # "dumped_metrics": [max_f1_idx, tp_full, fp_full, num_gts_per_class],
+            "scores_full": scores_full,
+            "num_gts_per_class": num_gts_per_class,
+            "detected": detected,
+            "gtScores": gtScores,
         }
         toc = time.time()
         print("DONE (t={:0.2f}s).".format(toc - tic))

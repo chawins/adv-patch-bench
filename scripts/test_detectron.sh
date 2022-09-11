@@ -17,13 +17,21 @@ BG_PATH=~/data/mtsd_v2_fully_annotated/test/
 
 IMG_SIZE=1536,2048 # sizes: (1536,2048), (3040,4032)
 INTERP=bilinear
-SYN_OBJ_SIZE=128
+SYN_OBJ_SIZE=64
 OBJ_CLASS=7
 NUM_TEST_SYN=5000
 
 # Temp
 EXP_NAME=debug
 BG_FILES=bg_filenames_octagon-915.0.txt
+
+python -u test_detectron.py \
+    --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --name no_patch \
+    --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH --dataset $DATASET \
+    --attack-config-path $ATTACK_CONFIG_PATH --workers $NUM_WORKERS \
+    --weights $MODEL_PATH --eval-mode drop --annotated-signs-only \
+    --obj-class -1 --obj-size $SYN_OBJ_SIZE --conf-thres $CONF_THRES \
+    --img-txt-path $BG_FILES --debug
 
 # TODO: Ignore all bg images when computing clean acc too
 # num_gt does not account for ignored bg
@@ -135,13 +143,13 @@ syn_attack() {
     esac
 
     # Test on real clean samples (should only be done once ever)
-    python -u test_detectron.py \
-        --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --name no_patch \
-        --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH --dataset $DATASET \
-        --attack-config-path $ATK_CONFIG_PATH --workers $NUM_WORKERS \
-        --weights $MODEL_PATH --eval-mode drop --annotated-signs-only \
-        --obj-class $OBJ_CLASS --obj-size $SYN_OBJ_SIZE --conf-thres $CONF_THRES \
-        --img-txt-path $BG_FILES
+    # python -u test_detectron.py \
+    #     --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --name no_patch \
+    #     --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH --dataset $DATASET \
+    #     --attack-config-path $ATK_CONFIG_PATH --workers $NUM_WORKERS \
+    #     --weights $MODEL_PATH --eval-mode drop --annotated-signs-only \
+    #     --obj-class $OBJ_CLASS --obj-size $SYN_OBJ_SIZE --conf-thres $CONF_THRES \
+    #     --img-txt-path $BG_FILES
 
     # Test on synthetic clean samples (should only be done once per aug method)
     python -u test_detectron.py \
@@ -153,33 +161,33 @@ syn_attack() {
         --img-txt-path $BG_FILES --num-test $NUM_TEST_SYN --synthetic
 
     # Generate adversarial patch
-    python -u gen_patch_detectron.py \
-        --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
-        --dataset $DATASET --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH \
-        --attack-config-path $ATK_CONFIG_PATH --obj-class $OBJ_CLASS \
-        --name $NAME --bg-dir $BG_PATH --transform-mode perspective \
-        --weights $MODEL_PATH --workers $NUM_WORKERS --mask-name $MASK_NAME \
-        --img-txt-path $BG_FILES --save-images --obj-size $SYN_OBJ_SIZE \
-        --synthetic --verbose
+    # python -u gen_patch_detectron.py \
+    #     --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
+    #     --dataset $DATASET --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH \
+    #     --attack-config-path $ATK_CONFIG_PATH --obj-class $OBJ_CLASS \
+    #     --name $NAME --bg-dir $BG_PATH --transform-mode perspective \
+    #     --weights $MODEL_PATH --workers $NUM_WORKERS --mask-name $MASK_NAME \
+    #     --img-txt-path $BG_FILES --save-images --obj-size $SYN_OBJ_SIZE \
+    #     --synthetic --verbose
 
     # Test patch on synthetic signs
-    python -u test_detectron.py \
-        --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
-        --dataset $DATASET --padded-imgsz $IMG_SIZE --eval-mode drop \
-        --tgt-csv-filepath $CSV_PATH --attack-config-path $ATK_CONFIG_PATH \
-        --name $NAME --obj-class $OBJ_CLASS --conf-thres $CONF_THRES \
-        --weights $MODEL_PATH --workers $NUM_WORKERS --transform-mode perspective \
-        --img-txt-path $BG_FILES --num-test $NUM_TEST_SYN \
-        --obj-size $SYN_OBJ_SIZE --attack-type load --synthetic
+    # python -u test_detectron.py \
+    #     --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
+    #     --dataset $DATASET --padded-imgsz $IMG_SIZE --eval-mode drop \
+    #     --tgt-csv-filepath $CSV_PATH --attack-config-path $ATK_CONFIG_PATH \
+    #     --name $NAME --obj-class $OBJ_CLASS --conf-thres $CONF_THRES \
+    #     --weights $MODEL_PATH --workers $NUM_WORKERS --transform-mode perspective \
+    #     --img-txt-path $BG_FILES --num-test $NUM_TEST_SYN \
+    #     --obj-size $SYN_OBJ_SIZE --attack-type load --synthetic
 
     # Test patch on real signs
-    python -u test_detectron.py \
-        --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
-        --dataset $DATASET --padded-imgsz $IMG_SIZE --eval-mode drop \
-        --tgt-csv-filepath $CSV_PATH --attack-config-path $ATK_CONFIG_PATH \
-        --name $NAME --obj-class $OBJ_CLASS --conf-thres $CONF_THRES \
-        --weights $MODEL_PATH --workers $NUM_WORKERS --transform-mode perspective \
-        --img-txt-path $BG_FILES --attack-type load --annotated-signs-only
+    # python -u test_detectron.py \
+    #     --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
+    #     --dataset $DATASET --padded-imgsz $IMG_SIZE --eval-mode drop \
+    #     --tgt-csv-filepath $CSV_PATH --attack-config-path $ATK_CONFIG_PATH \
+    #     --name $NAME --obj-class $OBJ_CLASS --conf-thres $CONF_THRES \
+    #     --weights $MODEL_PATH --workers $NUM_WORKERS --transform-mode perspective \
+    #     --img-txt-path $BG_FILES --attack-type load --annotated-signs-only
 }
 
 syn_attack_all() {
@@ -188,7 +196,7 @@ syn_attack_all() {
     done
 }
 
-syn_attack_all
+# syn_attack_all
 # syn_attack synthetic-10x20 10x20 1 2
 
 # syn_attack synthetic-10x20-adam-ps128-lmd1e0 10x20 2

@@ -105,6 +105,7 @@ class DetectronAttackWrapper:
         model: torch.nn.Module,
         dataloader: Any,
         class_names: List[str],
+        iou_thres: float = 0.5,
     ) -> None:
         """Attack wrapper for detectron model.
 
@@ -212,10 +213,13 @@ class DetectronAttackWrapper:
         self.evaluator = build_evaluator(
             cfg, cfg.DATASETS.TEST[0], synthetic=self.synthetic
         )
-        iou_thres = np.linspace(
+
+        # Set up list of IoU thresholds to consider
+        all_iou_thres = np.linspace(
             0.5, 0.95, int(np.round((0.95 - 0.5) / 0.05)) + 1, endpoint=True
         )
-        self.iou_thres = torch.from_numpy(iou_thres).to(self.device)
+        self.iou_thres_idx = int(np.where(all_iou_thres == iou_thres)[0])
+        self.all_iou_thres = torch.from_numpy(all_iou_thres).to(self.device)
 
     @staticmethod
     def clone_metadata(imgs, metadata):
@@ -284,7 +288,7 @@ class DetectronAttackWrapper:
             syn_obj, syn_obj_mask = syn_data[:2]
             syn_data = [*syn_data[2:], self.adv_sign_class_id]
             syn_scores = torch.zeros(
-                (len(self.iou_thres), self.num_test), device=self.device
+                (len(self.all_iou_thres), self.num_test), device=self.device
             )
             syn_matches = torch.zeros_like(syn_scores)
 
@@ -465,7 +469,7 @@ class DetectronAttackWrapper:
                 # FIXME: empty ious
                 max_idx = ious.argmax()
                 # Compute matches at different values of IoU threshold
-                matches = ious[max_idx] >= self.iou_thres
+                matches = ious[max_idx] >= self.all_iou_thres
                 syn_matches[:, total_num_images] = matches
                 scores = instances.scores[max_idx] * matches
                 syn_scores[:, total_num_images] = scores
@@ -535,22 +539,29 @@ class DetectronAttackWrapper:
 
         if self.synthetic:
             metrics = {"bbox": {}}
-            # ap_t = np.zeros(len(self.iou_thres))
             syn_scores = syn_scores.cpu().numpy()
             syn_matches = syn_matches.float().cpu().numpy()
+
             # Iterate over each IoU threshold
+            # ap_t = np.zeros(len(self.all_iou_thres))
             # for t, (scores, matches) in enumerate(zip(syn_scores, syn_matches)):
             #     results = _compute_ap_recall(scores, matches, total_num_images)
             #     ap_t[t] = results["AP"]
             # metrics["bbox"]["syn_ap"] = ap_t.mean()
             # metrics["bbox"]["syn_ap50"] = ap_t[0]
-            tp = ((syn_scores[0] >= self.conf_thres) * syn_matches[0]).sum()
+
+            # Get detection for desired score and for all IoU thresholds
+            detected = (syn_scores >= self.conf_thres) * syn_matches
+            # Select desired IoU threshold
+            tp = detected[self.iou_thres_idx].sum()
             fn = total_num_images - tp
             metrics["bbox"]["syn_total"] = total_num_images
             metrics["bbox"]["syn_tp"] = int(tp)
             metrics["bbox"]["syn_fn"] = int(fn)
             metrics["bbox"]["syn_tpr"] = tp / total_num_images
             metrics["bbox"]["syn_fnr"] = fn / total_num_images
+            metrics["bbox"]["syn_scores"] = syn_scores
+            metrics["bbox"]["syn_matches"] = syn_matches
         else:
             metrics = self.evaluator.evaluate()
             metrics["bbox"]["total_num_patches"] = total_num_patches

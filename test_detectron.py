@@ -4,6 +4,7 @@ import os
 import pickle
 import random
 import time
+from typing import Dict, Optional
 
 import cv2
 import numpy as np
@@ -32,6 +33,90 @@ from hparams import DATASETS, LABEL_LIST, OTHER_SIGN_CLASS, SAVE_DIR_DETECTRON
 
 log = logging.getLogger(__name__)
 formatter = logging.Formatter("[%(levelname)s] %(asctime)s: %(message)s")
+
+
+def _compute_metrics(
+    scores_full: np.ndarray,
+    gtScores: np.ndarray,
+    num_gts_per_class: np.ndarray,
+    other_sign_class: int,
+    conf_thres: Optional[float] = None,
+    iou_thres: float = 0.5,
+):
+
+    all_iou_thres = np.linspace(
+        0.5, 0.95, int(np.round((0.95 - 0.5) / 0.05)) + 1, endpoint=True
+    )
+    iou_idx = np.where(all_iou_thres == iou_thres)[0]
+    # iou_idx can be [0], and this evaluate to True
+    if len(iou_idx) == 0:
+        raise ValueError(f"Invalid iou_thres {iou_thres}!")
+    iou_idx = int(iou_idx)
+
+    # Find score threshold that maximizes F1 score
+    EPS = np.spacing(1)
+    num_classes = len(scores_full)
+    num_ious = len(scores_full[0])
+
+    if conf_thres is None:
+        num_scores = 1000
+        scores_thres = np.linspace(0, 1, num_scores)
+        tp_full = np.zeros((num_ious, num_classes, num_scores))
+        fp_full = np.zeros_like(tp_full)
+
+        for t in range(num_ious):
+            for k in range(num_classes):
+                for si, s in enumerate(scores_thres):
+                    tp_full[t, k, si] = np.sum(
+                        np.array(scores_full[k][t][0]) >= s
+                    )
+                    fp_full[t, k, si] = np.sum(
+                        np.array(scores_full[k][t][1]) >= s
+                    )
+
+        rc = tp_full / (num_gts_per_class[None, :, None] + EPS)
+        pr = tp_full / (tp_full + fp_full + EPS)
+        f1 = 2 * pr * rc / (pr + rc + EPS)
+        assert np.all(f1 >= 0) and not np.any(np.isnan(f1))
+
+        # Remove 'other' class from f1 and average over remaining classes
+        f1_mean = np.delete(f1[iou_idx], other_sign_class, axis=0).mean(0)
+        max_f1_idx = f1_mean.argmax()
+        max_f1 = f1_mean[max_f1_idx]
+        tp = tp_full[iou_idx, :, max_f1_idx]
+        fp = fp_full[iou_idx, :, max_f1_idx]
+        print(f"[DEBUG] max_f1_idx: {max_f1_idx}, max_f1: {max_f1:.4f}")
+
+    else:
+
+        print("Using specified conf_thres...")
+
+        tp_full = np.zeros((num_ious, num_classes))
+        fp_full = np.zeros_like(tp_full)
+
+        for t in range(num_ious):
+            for k in range(num_classes):
+                tp_full[t, k] = np.sum(
+                    np.array(scores_full[k][t][0]) >= conf_thres
+                )
+                fp_full[t, k] = np.sum(
+                    np.array(scores_full[k][t][1]) >= conf_thres
+                )
+        tp = tp_full[iou_idx]
+        fp = fp_full[iou_idx]
+
+    rc = tp / (num_gts_per_class + EPS)
+    pr = tp / (tp + fp + EPS)
+
+    # Compute combined metrics, ignoring class
+    recall_cmb = tp.sum() / (num_gts_per_class.sum() + EPS)
+
+    print(f"[DEBUG] num_gts_per_class: {num_gts_per_class}")
+    print(f"[DEBUG] tp: {tp}")
+    print(f"[DEBUG] fp: {fp}")
+    print(f"[DEBUG] precision: {pr}")
+    print(f"[DEBUG] recall: {rc}")
+    print(f"[DEBUG] recall_cmb: {recall_cmb}")
 
 
 def main(cfg, args):
@@ -136,6 +221,7 @@ def main_attack(cfg, args, dataset_params):
     coco_instances_results, metrics = attack.run(
         vis_save_dir=vis_dir, vis_conf_thresh=0.5
     )
+
     t = int(time.time())
     with open(os.path.join(args.result_dir, f"results_{t}.pkl"), "wb") as f:
         metrics = {**metrics, **vars(args)}
@@ -155,19 +241,21 @@ def main_attack(cfg, args, dataset_params):
             # f'            AP@0.5: {metrics["syn_ap50"]:4f}'
         )
     else:
-        max_f1_idx, tp_full, fp_full, num_gts_per_class = metrics[
-            "dumped_metrics"
-        ]
-        metrics["dumped_metrics"] = None
+
+        num_gts_per_class = metrics["num_gts_per_class"]
+        tp, fp = _compute_metrics(
+            metrics["scores_full"],
+            metrics["gtScores"],
+            num_gts_per_class,
+            OTHER_SIGN_CLASS[args.dataset],
+            args.conf_thres,
+            args.dt_iou_thres,
+        )
+
         for k, v in metrics.items():
-            if "syn" in k:
+            if "syn" in k or not isinstance(v, (int, float, str, bool)):
                 continue
             log.info(f"{k}: {v}")
-        iou_idx = 0
-        tp, fp = (
-            tp_full[iou_idx, :, max_f1_idx],
-            fp_full[iou_idx, :, max_f1_idx],
-        )
 
         log.info("          tp   fp   num_gt")
         for i, (t, f, n) in enumerate(zip(tp, fp, num_gts_per_class)):

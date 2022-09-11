@@ -216,6 +216,15 @@ def eval_args_parser(is_detectron, root=None):
         default="",
         help="path to image of synthetic sign (used when synthetic_eval is True)",
     )
+    parser.add_argument(
+        "--dt-iou-thres",
+        type=float,
+        default=0.5,
+        help=(
+            "IoU threshold to consider a match between ground-truth and "
+            "predicted bbox."
+        ),
+    )
 
     # ===================== Patch generation arguments ====================== #
     parser.add_argument(
