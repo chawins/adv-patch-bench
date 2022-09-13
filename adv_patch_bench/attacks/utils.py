@@ -8,12 +8,8 @@ import numpy as np
 import pandas as pd
 import torch
 import torchvision
-from adv_patch_bench.utils.image import (
-    coerce_rank,
-    mask_to_box,
-    prepare_obj,
-    resize_and_center,
-)
+from adv_patch_bench.utils.image import (coerce_rank, mask_to_box, prepare_obj,
+                                         resize_and_center)
 from detectron2.structures.boxes import Boxes
 from detectron2.structures.instances import Instances
 from hparams import PATH_DEBUG_ADV_PATCH
@@ -43,7 +39,7 @@ def prep_synthetic_eval(
     # label_names[syn_sign_class] = 'synthetic'
     # TODO: We want to do an experiment with these
     transform_params = {
-        "degrees": 30,
+        "degrees": 15,
         "translate": (0.4, 0.4),
         "scale": (0.5, 2) if syn_use_scale else None,
     }

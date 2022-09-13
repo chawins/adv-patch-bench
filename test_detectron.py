@@ -4,7 +4,7 @@ import os
 import pickle
 import random
 import time
-from typing import Dict, Optional
+from typing import Optional
 
 import cv2
 import numpy as np
@@ -29,7 +29,13 @@ from adv_patch_bench.utils.argparse import (
     setup_detectron_test_args,
 )
 from adv_patch_bench.utils.detectron import build_evaluator
-from hparams import DATASETS, LABEL_LIST, OTHER_SIGN_CLASS, SAVE_DIR_DETECTRON
+from hparams import (
+    DATASETS,
+    LABEL_LIST,
+    OTHER_SIGN_CLASS,
+    SAVE_DIR_DETECTRON,
+    TS_NO_COLOR_LABEL_LIST,
+)
 
 log = logging.getLogger(__name__)
 formatter = logging.Formatter("[%(levelname)s] %(asctime)s: %(message)s")
@@ -37,12 +43,11 @@ formatter = logging.Formatter("[%(levelname)s] %(asctime)s: %(message)s")
 
 def _compute_metrics(
     scores_full: np.ndarray,
-    gtScores: np.ndarray,
     num_gts_per_class: np.ndarray,
     other_sign_class: int,
     conf_thres: Optional[float] = None,
     iou_thres: float = 0.5,
-):
+) -> float:
 
     all_iou_thres = np.linspace(
         0.5, 0.95, int(np.round((0.95 - 0.5) / 0.05)) + 1, endpoint=True
@@ -85,7 +90,11 @@ def _compute_metrics(
         max_f1 = f1_mean[max_f1_idx]
         tp = tp_full[iou_idx, :, max_f1_idx]
         fp = fp_full[iou_idx, :, max_f1_idx]
-        print(f"[DEBUG] max_f1_idx: {max_f1_idx}, max_f1: {max_f1:.4f}")
+        conf_thres = scores_thres[max_f1_idx]
+        print(
+            f"[DEBUG] max_f1_idx: {max_f1_idx}, max_f1: {max_f1:.4f}, "
+            f"conf_thres: {conf_thres:.3f}"
+        )
 
     else:
 
@@ -117,6 +126,8 @@ def _compute_metrics(
     print(f"[DEBUG] precision: {pr}")
     print(f"[DEBUG] recall: {rc}")
     print(f"[DEBUG] recall_cmb: {recall_cmb}")
+
+    return tp, fp, conf_thres
 
 
 def main(cfg, args):
@@ -224,15 +235,12 @@ def main_attack(cfg, args, dataset_params):
 
     t = int(time.time())
     with open(os.path.join(args.result_dir, f"results_{t}.pkl"), "wb") as f:
-        metrics = {**metrics, **vars(args)}
-        pickle.dump(metrics, f)
+        results = {**metrics, **vars(args)}
+        pickle.dump(results, f)
 
     # Logging results
-    metrics = metrics["bbox"]
+    metrics = results["bbox"]
     if args.synthetic:
-        # tpr = metrics["syn_tp"] / metrics["syn_total"]
-        # fn = metrics["syn_total"] - metrics["syn_tp"]
-        # fnr = 1 - tpr
         log.info(
             f'[Synthetic] Total: {metrics["syn_total"]:4d}\n'
             f'            TP: {metrics["syn_tp"]:4d} ({metrics["syn_tpr"]:.4f})\n'
@@ -243,14 +251,16 @@ def main_attack(cfg, args, dataset_params):
     else:
 
         num_gts_per_class = metrics["num_gts_per_class"]
-        tp, fp = _compute_metrics(
+        tp, fp, conf_thres = _compute_metrics(
             metrics["scores_full"],
-            metrics["gtScores"],
             num_gts_per_class,
             OTHER_SIGN_CLASS[args.dataset],
             args.conf_thres,
             args.dt_iou_thres,
         )
+        if args.conf_thres is None:
+            # Update with new conf_thres
+            metrics["conf_thres"] = conf_thres
 
         for k, v in metrics.items():
             if "syn" in k or not isinstance(v, (int, float, str, bool)):
@@ -258,9 +268,22 @@ def main_attack(cfg, args, dataset_params):
             log.info(f"{k}: {v}")
 
         log.info("          tp   fp   num_gt")
+        tp_all = 0
+        fp_all = 0
+        total = 0
         for i, (t, f, n) in enumerate(zip(tp, fp, num_gts_per_class)):
             log.info(f"Class {i:2d}: {int(t):4d} {int(f):4d} {int(n):4d}")
+            metrics[f"TP-{TS_NO_COLOR_LABEL_LIST[i]}"] = t
+            metrics[f"FP-{TS_NO_COLOR_LABEL_LIST[i]}"] = f
+            tp_all += t
+            fp_all += f
+            total += n
+        metrics[f"TPR-all"] = tp_all / total
+        metrics[f"FPR-all"] = fp_all / total
         log.info(f'Total num patches: {metrics["total_num_patches"]}')
+
+        with open(os.path.join(args.result_dir, f"results_{t}.pkl"), "wb") as f:
+            pickle.dump(results, f)
 
 
 def compute_metrics(cfg, args):
@@ -310,9 +333,7 @@ def compute_metrics(cfg, args):
     # res = evaluator._derive_coco_results(
     #     coco_eval, 'bbox', class_names=evaluator._metadata.get('thing_classes')
     # )
-    import pdb
 
-    pdb.set_trace()
     print("Done")
     return
 
@@ -363,3 +384,4 @@ if __name__ == "__main__":
         main_single(cfg, dataset_params)
     else:
         main_attack(cfg, args, dataset_params)
+        # main(cfg, args)

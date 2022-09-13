@@ -175,7 +175,7 @@ class DetectronAttackWrapper:
             "use_relight": not args.no_patch_relight,
             "interp": self.interp,
         }
-        self.fixed_input_size = True  # TODO: Make this an option
+        self.fixed_input_size = False  # TODO: Make this an option
 
         if self.synthetic:
             # TODO: (DEPRECATED)
@@ -321,12 +321,15 @@ class DetectronAttackWrapper:
 
             # Image from dataloader is 'BGR' and has shape [C, H, W]
             images = batch[0]["image"].float().to(self.device)
+            new_gt = batch[0]
             if self.input_format == "BGR":
                 images = images.flip(0)
             perturbed_image = images.clone()
             _, h, w = images.shape
 
             if self.fixed_input_size or w < self.img_size[1]:
+                # TODO: This code does not work correctly because gt is not
+                # adjusted in the same way (still requires padding).
                 # Resize and pad perturbed_image to self.img_size preseving
                 # aspect ratio. This also handles images whose width is the
                 # shorter side in the varying input size case.
@@ -344,7 +347,7 @@ class DetectronAttackWrapper:
                     interp=self.interp,
                 )
                 h, w = self.img_size
-                h_pad = h - resized_size[0]
+                h_pad = h - resized_size[0]  # TODO: divided by 2?
                 w_pad = w - resized_size[1]
             else:
                 h_pad, w_pad = 0, 0
@@ -398,7 +401,6 @@ class DetectronAttackWrapper:
             elif len(img_df) > 0:
                 # Attacking real signs
 
-                new_gt = batch[0]
                 # Iterate through annotated objects in the current image
                 for obj_idx, obj in img_df.iterrows():
 
@@ -455,7 +457,7 @@ class DetectronAttackWrapper:
             # Perform inference on perturbed image
             # perturbed_image = self._post_process_image(perturbed_image)
             perturbed_image = coerce_rank(perturbed_image, 3)
-            outputs = self(perturbed_image)
+            outputs = self(perturbed_image, (h0, w0))
 
             if self.synthetic:
                 instances = outputs["instances"]
@@ -463,10 +465,12 @@ class DetectronAttackWrapper:
                     instances.pred_boxes,
                     new_gt["instances"].gt_boxes[-1].to(self.device),
                 )[:, 0]
+                # Skip empty ious (no overlap)
+                if len(ious) == 0:
+                    continue
                 # Save scores and gt-dt matches at each level of IoU thresholds
                 # Find the match with highest IoU and has correct class
                 ious *= instances.pred_classes == self.adv_sign_class_id
-                # FIXME: empty ious
                 max_idx = ious.argmax()
                 # Compute matches at different values of IoU threshold
                 matches = ious[max_idx] >= self.all_iou_thres
@@ -475,14 +479,14 @@ class DetectronAttackWrapper:
                 syn_scores[:, total_num_images] = scores
             else:
                 new_outputs = deepcopy(outputs)
-                new_instances = new_outputs["instances"]
-                new_instances._image_size = (h0, w0)
-                # Scale output to match original input size for evaluator
-                h_ratio, w_ratio = h / h0, w / w0
-                new_instances.pred_boxes.tensor[:, 0] /= h_ratio
-                new_instances.pred_boxes.tensor[:, 1] /= w_ratio
-                new_instances.pred_boxes.tensor[:, 2] /= h_ratio
-                new_instances.pred_boxes.tensor[:, 3] /= w_ratio
+                # new_instances = new_outputs["instances"]
+                # new_instances._image_size = (h0, w0)
+                # # Scale output to match original input size for evaluator
+                # h_ratio, w_ratio = h / h0, w / w0
+                # new_instances.pred_boxes.tensor[:, 0] /= h_ratio
+                # new_instances.pred_boxes.tensor[:, 1] /= w_ratio
+                # new_instances.pred_boxes.tensor[:, 2] /= h_ratio
+                # new_instances.pred_boxes.tensor[:, 3] /= w_ratio
                 self.evaluator.process([new_gt], [new_outputs])
 
             # Convert to coco predictions format
@@ -516,7 +520,7 @@ class DetectronAttackWrapper:
 
                 if self.use_attack:
                     # Save original predictions
-                    outputs = self(original_image)
+                    outputs = self(original_image, (h0, w0))  # FIXME
                     instances = outputs["instances"]
                     mask = instances.scores > vis_conf_thresh
                     instances = instances[mask]
@@ -617,6 +621,7 @@ class DetectronAttackWrapper:
     def __call__(
         self,
         original_image: Union[np.ndarray, torch.Tensor],
+        height_width,
     ) -> Dict[str, Any]:
         """Simple inference on a single image
 
@@ -635,8 +640,7 @@ class DetectronAttackWrapper:
                     # whether the model expects BGR inputs or RGB
                     original_image = original_image[:, :, ::-1]
                 height, width = original_image.shape[:2]
-                # image = self.aug.get_transform(original_image).apply_image(original_image)
-                image = torch.as_tensor(
+                image = torch.from_numpy(
                     original_image.astype("float32").transpose(2, 0, 1)
                 )
             else:
@@ -646,7 +650,9 @@ class DetectronAttackWrapper:
                 if self.input_format == "BGR":
                     image = image.flip(0)
 
-            inputs = {"image": image, "height": height, "width": width}
             # inputs = {"image": image, "height": size[0], "width": size[1]}
+            height, width = height_width
+            inputs = {"image": image, "height": height, "width": width}
+
             predictions = self.model([inputs])[0]
             return predictions

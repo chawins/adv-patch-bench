@@ -425,7 +425,10 @@ def setup_detectron_test_args(args, other_sign_class):
 
     # Copy dataset from args
     tokens = parse_dataset_name(args)
-    cfg.DATASETS.TEST = (f"{tokens[0]}_{tokens[1]}",)
+    if "mtsd" in tokens:
+        cfg.DATASETS.TEST = ("mtsd_val",)
+    else:
+        cfg.DATASETS.TEST = (f"{tokens[0]}_{tokens[1]}",)
 
     # (Deprecated) Copy test dataset to train one since we will use
     # `build_detection_train_loader` to get labels

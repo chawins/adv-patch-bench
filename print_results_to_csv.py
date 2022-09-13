@@ -4,8 +4,6 @@ import pickle
 import numpy as np
 import pandas as pd
 
-from hparams import TS_NO_COLOR_LABEL_LIST
-
 
 def _compute_ap_recall(scores, matched, NP, recall_thresholds=None):
     """
@@ -53,25 +51,23 @@ def _compute_ap_recall(scores, matched, NP, recall_thresholds=None):
     }
 
 
-#
-# syn_use_scale
-# syn_use_colorjitter
-# obj_class
-# obj_size
-# time
-
-
 BASE_PATH = "./detectron_output/"
-# EXP_NAME = "synthetic-10x20"
-EXP_NAME = "no_patch"
-iou_idx = 0
+CLEAN_EXP_NAME = "no_patch"
+ATTACK_EXP_NAME = "synthetic-10x20"
+CONF_THRES = 0.792
+iou_idx = 0  # 0.5
 
-exp_path = pathlib.Path(BASE_PATH) / EXP_NAME
+clean_exp_path = pathlib.Path(BASE_PATH) / CLEAN_EXP_NAME
+attack_exp_path = pathlib.Path(BASE_PATH) / ATTACK_EXP_NAME
+exp_paths = list(clean_exp_path.iterdir())
+exp_paths.extend(list(attack_exp_path.iterdir()))
 
-df_rows = []
+df_rows = {}
+gt_scores = [{}, {}]
+results_all_classes = {}
 
 # Iterate over sign classes
-for sign_path in exp_path.iterdir():
+for sign_path in exp_paths:
 
     if not sign_path.is_dir():
         continue
@@ -87,6 +83,14 @@ for sign_path in exp_path.iterdir():
             with open(result_path, "rb") as f:
                 results = pickle.load(f)
 
+            # if "bbox" not in results:
+            #     import pdb
+
+            #     pdb.set_trace()
+
+            if "dumped_metrics" in results["bbox"]:
+                # Skip deprecated version
+                continue
             if "obj_class" not in results:
                 continue
             conf_thres = results["conf_thres"]
@@ -94,43 +98,86 @@ for sign_path in exp_path.iterdir():
             # Add timestamp
             time = result_path.split("_")[-1].split(".pkl")[0]
             results["timestamp"] = time
+            metrics = results["bbox"]
 
-            if "dumped_metrics" in results["bbox"]:
-                # Real sign
-                metrics = results["bbox"]["dumped_metrics"]
-                max_f1_idx, tp_full, fp_full, num_gts_per_class = metrics
-                tp = tp_full[iou_idx, :, max_f1_idx]
-                fp = fp_full[iou_idx, :, max_f1_idx]
-                total = results["bbox"]["total_num_patches"]
-
-                for i, (t, f, n) in enumerate(zip(tp, fp, num_gts_per_class)):
-                    if i != results["obj_class"] and results["obj_class"] != -1:
-                        continue
-                    class_name = TS_NO_COLOR_LABEL_LIST[i]
-                    df_row[f"TP-{class_name}"] = int(t)
-                    df_row[f"FP-{class_name}"] = int(f)
-                    df_row[f"Total-{class_name}"] = int(n)
-                    df_row[f"TPR-{class_name}"] = t / n if n > 0 else 0
-                    df_row[f"FNR-{class_name}"] = 1 - (t / n) if n > 0 else 0
-
-                # TODO
+            # Experiment setting identifier for matching clean and attack
+            obj_class = results["obj_class"]
+            obj_size = results["obj_size"]
+            synthetic = int(results["synthetic"])
+            syn_use_scale = int(results["syn_use_scale"])
+            syn_use_colorjitter = int(results["syn_use_colorjitter"])
+            if obj_class == -1 and not synthetic:
+                clean_setting_id = "all_clean_real"
             else:
+                clean_setting_id = f"{obj_class}_{obj_size}_{synthetic}_{syn_use_scale}_{syn_use_colorjitter}"
+
+            is_attack = int(results["attack_type"] != "none")
+            scores_dict = gt_scores[is_attack]
+            if not is_attack and clean_setting_id in scores_dict:
+                raise ValueError(
+                    "There are multiple results on clean data. Check result at"
+                    f"{result_path}."
+                )
+
+            if "syn_scores" in metrics:
                 # Synthetic sign
-                # syn_scores = results["syn_scores"]
-                # syn_matches = results["syn_matches"]
-                # # Pick IoU 0.5 which is at index 0
-                # detected = ((syn_scores >= conf_thres) * syn_matches)[iou_idx]
-                df_row = {}
+                scores_dict[clean_setting_id] = (
+                    time,
+                    metrics["syn_scores"] * metrics["syn_matches"],
+                )
+            else:
+                # Real signs
+                if "gtScores" not in metrics:
+                    continue
+                scores_dict[clean_setting_id] = (time, metrics["gtScores"])
 
             # Print result as one row in df
+            df_row = {}
             for k, v in results.items():
                 if isinstance(v, (float, int, str, bool)):
                     df_row[k] = v
-            for k, v in results["bbox"].items():
+            for k, v in metrics.items():
                 if isinstance(v, float):
                     df_row[k] = v
-            df_rows.append(df_row)
+            df_rows[time] = df_row
 
+# Iterate through all attack experiments
+for clean_setting_id, (time, scores) in gt_scores[1].items():
+
+    adv_scores = scores
+    if not df_rows[time]["synthetic"]:
+        obj_class = df_rows[time]["obj_class"]
+        clean_scores = gt_scores[0]["all_clean_real"][1]
+        clean_scores = clean_scores[obj_class]
+        adv_scores = adv_scores[obj_class]
+    else:
+        clean_scores = gt_scores[0][clean_setting_id][1]
+
+    clean_detected = clean_scores[iou_idx] >= CONF_THRES
+    adv_detected = adv_scores[iou_idx] >= CONF_THRES
+    num_succeed = np.sum(~adv_detected & clean_detected)
+    num_clean = np.sum(clean_detected)
+    attack_success_rate = num_succeed / (num_clean + 1e-9)
+    df_rows[time]["ASR"] = attack_success_rate
+    setting_id_no_class = "_".join(clean_setting_id.split("_")[1:])
+
+    if setting_id_no_class in results_all_classes:
+        results_all_classes[setting_id_no_class]["num_succeed"] += num_succeed
+        results_all_classes[setting_id_no_class]["num_clean"] += num_clean
+    else:
+        results_all_classes[setting_id_no_class] = {
+            "num_succeed": num_succeed,
+            "num_clean": num_clean,
+        }
+
+df_rows = list(df_rows.values())
 df = pd.DataFrame.from_records(df_rows)
 df = df.sort_index(axis=1)
-df.to_csv(exp_path / "results.csv")
+df.to_csv(attack_exp_path / "results.csv")
+
+print("All-class ASR")
+for sid in results_all_classes:
+    asr = results_all_classes[sid]["num_succeed"] / (
+        results_all_classes[sid]["num_clean"] + 1e-9
+    )
+    print(f"{sid}: {asr:.4f}")

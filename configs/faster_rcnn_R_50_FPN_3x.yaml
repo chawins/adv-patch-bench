@@ -42,7 +42,6 @@ DATALOADER:
   REPEAT_THRESHOLD: 1.0  # EDIT: default: 0
 DATASETS:
   TRAIN: ('mtsd_train', )  # EDIT
-  # TEST: ('mtsd_val', )  # EDIT
-  TEST: ('mapillary_train', )  # EDIT
+  TEST: ('mtsd_val', )  # EDIT
 TEST:
   EVAL_PERIOD: 2000
