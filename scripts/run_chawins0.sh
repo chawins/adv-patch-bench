@@ -88,7 +88,7 @@ function syn_attack {
         --name "$EXP_NAME" --bg-dir $BG_PATH --transform-mode $TF_MODE \
         --weights $MODEL_PATH --workers $NUM_WORKERS --mask-name "$MASK_SIZE" \
         --img-txt-path $BG_FILES --save-images --obj-size $SYN_OBJ_SIZE \
-        --synthetic --verbose &&
+         --annotated-signs-only --synthetic --verbose &&
 
     # Test patch on synthetic signs
     python -u test_detectron.py \
