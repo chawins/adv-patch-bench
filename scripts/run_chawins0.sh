@@ -1,53 +1,137 @@
 #!/bin/bash
-GPU=0
-PATCH_NAME=10x10_bottom
-EXP=1
-MODEL_PATH=~/data/adv-patch-bench/yolov5/runs/train/exp11/weights/best.pt
-CSV_PATH=mapillary_vistas_final_merged.csv
-SYN_OBJ_PATH=attack_assets/octagon-915.0.png
-OBJ_CLASS=10
-YOLO_IMG_SIZE=2016
+#SBATCH --job-name=apb
+#SBATCH --account=fc_wagner
+#SBATCH --partition=savio3_gpu
+# Number of nodes:
+#SBATCH --nodes=1
+# Number of tasks (one for each GPU desired for use case) (example):
+#SBATCH --ntasks=1
+# Processors per task (please always specify the total number of processors twice the number of GPUs):
+#SBATCH --cpus-per-task=2
+#Number of GPUs, this can be in the format of "gpu:[1-4]", or "gpu:K80:[1-4] with the type included
+#SBATCH --gres=gpu:GTX2080TI:1
+#SBATCH --time=48:00:00
+#SBATCH --output slurm-%j-synthetic-10x20-obj64-pd64-ld0.1.out
+## Command(s) to run:
+source /global/home/users/$USER/.bash_profile
+module purge
+module load python
+source activate /global/scratch/users/$USER/apb
+
+# Detector test script
+NUM_GPU=1
+NUM_WORKERS=4
+
+# Dataset and model params
+DATASET=mapillary-combined-no_color # Options: mapillary-combined-no_color, mtsd-no_color
+MODEL=faster_rcnn_R_50_FPN_mtsd_no_color_2
+MODEL_PATH=~/adv-patch-bench/detectron_output/$MODEL/model_best.pth
+DETECTRON_CONFIG_PATH=./configs/faster_rcnn_R_50_FPN_3x.yaml
+CONF_THRES=0.634
 IMG_SIZE=1536,2048 # sizes: (1536,2048), (3040,4032)
+NUM_TEST_SYN=5000
 
-# --data mtsd_no_color.yaml --task val \
+# Attack params
+EXP_NAME=synthetic-10x20-obj64-pd64-ld0.1
+MASK_SIZE=10x20
+ATK_CONFIG_PATH=./configs/attack_config3.yaml
+CSV_PATH=mapillary_vistas_final_merged.csv
+BG_PATH=~/data/mtsd_v2_fully_annotated/test/
 
-# Test a detector on Detectron2 without attack
-CUDA_VISIBLE_DEVICES=$GPU python -u test_yolo.py \
-    --tgt-csv-filepath $CSV_PATH --save-exp-metrics \
-    --data mapillary_no_color.yaml --dataset mapillary-combined-no_color --task test \
-    --weights $MODEL_PATH --exist-ok --workers 8 \
-    --attack-config-path attack_config.yaml --name $PATCH_NAME \
-    --obj-class $OBJ_CLASS --plot-class-examples $OBJ_CLASS --syn-obj-path $SYN_OBJ_PATH \
-    --imgsz $YOLO_IMG_SIZE --padded-imgsz $IMG_SIZE --batch-size 16 --debug \
-    --attack-type none
+INTERP=bilinear
+TF_MODE=perspective
+SYN_OBJ_SIZE=64
+CLEAN_EXP_NAME=no_patch_syn_${TF_MODE}_${SYN_OBJ_SIZE}
 
-# Generate mask for adversarial patch
-# CUDA_VISIBLE_DEVICES=$GPU python -u gen_mask.py \
-#     --syn-obj-path $SYN_OBJ_PATH --dataset mapillary-combined-no_color \
-#     --patch-name $PATCH_NAME --obj-class $OBJ_CLASS --obj-size 256 --save-mask
+# Evaluate on all annotated Mapillary Vistas signs and compute score thres
+rm ./detectron_output/mapillary_combined_coco_format.json
+DATASET=mapillary-combined-no_color
+python -u test_detectron.py \
+    --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --name no_patch \
+    --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH --dataset $DATASET \
+    --attack-config-path $ATK_CONFIG_PATH --workers $NUM_WORKERS \
+    --weights $MODEL_PATH --img-txt-path "$BG_FILES" --eval-mode drop --obj-class -1 \
+    --annotated-signs-only --conf-thres $CONF_THRES
 
-# Generate adversarial patch
-# CUDA_VISIBLE_DEVICES=$GPU python -u gen_patch_yolo.py \
-#     --device $GPU --seed 0 \
-#     --data mapillary_no_color.yaml --dataset mapillary-combined-no_color \
-#     --weights $MODEL_PATH --name $PATCH_NAME --tgt-csv-filepath $CSV_PATH \
-#     --bg-dir ~/data/mtsd_v2_fully_annotated/train \
-#     --save-images --attack-config-path attack_config.yaml \
-#     --imgsz $YOLO_IMG_SIZE --padded-imgsz $IMG_SIZE \
-#     --obj-class $OBJ_CLASS --syn-obj-path $SYN_OBJ_PATH \
-#     --num-bg 5 --attack-type real
+function syn_attack {
 
-# CUDA_VISIBLE_DEVICES=$GPU python -u val_attack_synthetic.py \
-#     --data mapillary_no_color.yaml --tgt-csv-filepath $CSV_PATH \
-#     --exist-ok --workers 8 --task test --save-exp-metrics \
-#     --adv-patch-path ./runs/val/exp$EXP/$PATCH_NAME.pkl \
-#     --tgt-csv-filepath $CSV_PATH --weights $MODEL_PATH \
-#     --attack-config-path attack_config.yaml --name $PATCH_NAME \
-#     --obj-class $OBJ_CLASS --plot-class-examples $OBJ_CLASS --syn-obj-path $SYN_OBJ_PATH \
-#     --imgsz 4000 --padded_imgsz 3000,4000 --batch-size 1 \
-#     --interp bilinear --attack-type none --min-area 600 --debug
-# --metrics-confidence-threshold 0.527
-# --data mtsd.yaml --tgt-csv-filepath $CSV_PATH \
-# --adv-patch-path ./runs/val/exp2/stop_sign_10x10.pkl \
-# --imgsz 1280 --padded_imgsz 992,1312 --batch-size 12
-#  --imgsz 2560 --padded_imgsz 1952,2592 --batch-size 1 \
+    OBJ_CLASS=$1
+
+    case $OBJ_CLASS in
+    0) BG_FILES=bg_filenames_circle-750.0.txt ;;
+    1) BG_FILES=bg_filenames_triangle-900.0.txt ;;
+    2) BG_FILES=bg_filenames_triangle_inverted-1220.0.txt ;;
+    3) BG_FILES=bg_filenames_diamond-600.0.txt ;;
+    4) BG_FILES=bg_filenames_diamond-915.0.txt ;;
+    5) BG_FILES=bg_filenames_square-600.0.txt ;;
+    6) BG_FILES=bg_filenames_rect-458.0-610.0.txt ;;
+    7) BG_FILES=bg_filenames_rect-762.0-915.0.txt ;;
+    8) BG_FILES=bg_filenames_rect-915.0-1220.0.txt ;;
+    9) BG_FILES=bg_filenames_pentagon-915.0.txt ;;
+    10) BG_FILES=bg_filenames_octagon-915.0.txt ;;
+    esac
+
+    # Test on synthetic clean samples (should only be done once per aug method)
+    python -u test_detectron.py \
+        --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --name $CLEAN_EXP_NAME \
+        --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH --dataset $DATASET \
+        --attack-config-path "$ATK_CONFIG_PATH" --workers $NUM_WORKERS --interp $INTERP \
+        --weights $MODEL_PATH --eval-mode drop --annotated-signs-only \
+        --obj-class "$OBJ_CLASS" --obj-size $SYN_OBJ_SIZE --conf-thres $CONF_THRES \
+        --img-txt-path $BG_FILES --num-test $NUM_TEST_SYN --synthetic &&
+
+    # Generate adversarial patch
+    python -u gen_patch_detectron.py \
+        --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
+        --dataset $DATASET --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH \
+        --attack-config-path "$ATK_CONFIG_PATH" --obj-class "$OBJ_CLASS" \
+        --name "$EXP_NAME" --bg-dir $BG_PATH --transform-mode $TF_MODE \
+        --weights $MODEL_PATH --workers $NUM_WORKERS --mask-name "$MASK_SIZE" \
+        --img-txt-path $BG_FILES --save-images --obj-size $SYN_OBJ_SIZE \
+        --synthetic --verbose &&
+
+    # Test patch on synthetic signs
+    python -u test_detectron.py \
+        --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
+        --dataset $DATASET --padded-imgsz $IMG_SIZE --eval-mode drop \
+        --tgt-csv-filepath $CSV_PATH --attack-config-path "$ATK_CONFIG_PATH" \
+        --name "$EXP_NAME" --obj-class "$OBJ_CLASS" --conf-thres $CONF_THRES \
+        --mask-name "$MASK_SIZE" --weights $MODEL_PATH --workers $NUM_WORKERS \
+        --transform-mode $TF_MODE --img-txt-path $BG_FILES --attack-type load \
+        --annotated-signs-only --synthetic --obj-size $SYN_OBJ_SIZE \
+        --num-test $NUM_TEST_SYN &&
+
+    # Test patch on real signs
+    python -u test_detectron.py \
+        --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
+        --dataset $DATASET --padded-imgsz $IMG_SIZE --eval-mode drop \
+        --tgt-csv-filepath $CSV_PATH --attack-config-path "$ATK_CONFIG_PATH" \
+        --name "$EXP_NAME" --obj-class "$OBJ_CLASS" --conf-thres $CONF_THRES \
+        --mask-name "$MASK_SIZE" --weights $MODEL_PATH --workers $NUM_WORKERS \
+        --transform-mode $TF_MODE --img-txt-path $BG_FILES --attack-type load \
+        --annotated-signs-only &&
+
+    echo "Done with $OBJ_CLASS."
+}
+
+function syn_attack_all {
+    for i in {0..10}; do
+        syn_attack "$i"
+    done
+}
+
+syn_attack_all
+
+exit 0
+
+# =========================================================================== #
+#                                Extra Commands                               #
+# =========================================================================== #
+# Evaluate on all Mapillary Vistas signs
+rm ./detectron_output/mapillary_combined_coco_format.json
+DATASET=mapillary-combined-no_color
+python -u test_detectron.py \
+    --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --name no_patch \
+    --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH --dataset $DATASET \
+    --attack-config-path $ATTACK_CONFIG_PATH --workers $NUM_WORKERS \
+    --weights $MODEL_PATH --img-txt-path $BG_FILES --eval-mode drop --obj-class -1
