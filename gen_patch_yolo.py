@@ -119,11 +119,11 @@ def generate_adv_patch(
         idx = np.arange(len(all_bgs))
         np.random.shuffle(idx)
         backgrounds = torch.zeros((num_bg, 3) + bg_size, )
-
+        
         for i, index in enumerate(idx[:num_bg]):
             bg = torchvision.io.read_image(join(bg_dir, all_bgs[index])) / 255
             backgrounds[i] = T.resize(bg, bg_size, antialias=True)
-
+            
 
         print('=> Generating adversarial patch on synthetic signs...')
         obj_mask = torch.from_numpy(obj_numpy[:, :, -1] == 1).float().unsqueeze(0)
@@ -255,6 +255,7 @@ def main(
     task='test',
     mask_dir=None,
     attack_config_path: str = None,
+    mask_name: str = '10x10',
     **kwargs,
 ):
     cudnn.benchmark = True
@@ -313,8 +314,10 @@ def main(
         # Otherwise, generate a new mask here
         # Get size in inch from sign class
         obj_width_inch = get_obj_width(obj_class, class_names)
-        patch_mask = generate_mask(obj_numpy, obj_size, obj_width_inch)
+        # patch_mask = generate_mask(obj_numpy, obj_size, obj_width_inch)
     
+        patch_mask = generate_mask(
+            mask_name, obj_numpy, obj_size, obj_width_inch)
 
     dataloader = None
     if not synthetic:
@@ -346,4 +349,5 @@ def main(
 if __name__ == "__main__":
     args = eval_args_parser(False, root=ROOT)
     setup_yolo_test_args(args, OTHER_SIGN_CLASS)
+    print(args.mask_name)
     main(**vars(args))

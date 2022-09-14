@@ -1,14 +1,17 @@
 import time
 from abc import abstractmethod
-from typing import Any, List, Optional
+from typing import List, Optional
 
 import numpy as np
 import torch
 import torch.optim as optim
-import torchvision
 from adv_patch_bench.attacks.base_detector import DetectorAttackModule
 from adv_patch_bench.transforms import apply_transform, get_transform
-from adv_patch_bench.utils.image import coerce_rank, mask_to_box, resize_and_center
+from adv_patch_bench.utils.image import (
+    coerce_rank,
+    mask_to_box,
+    resize_and_center,
+)
 from kornia import augmentation as K
 from kornia.constants import Resample
 from yolov5.utils.general import non_max_suppression
@@ -16,25 +19,35 @@ from yolov5.utils.plots import output_to_target, plot_images
 
 
 class RP2AttackModule(DetectorAttackModule):
-
-    def __init__(self, attack_config, core_model, loss_fn, norm, eps,
-                 rescaling=False, verbose=False, interp=None, **kwargs):
+    def __init__(
+        self,
+        attack_config,
+        core_model,
+        loss_fn,
+        norm,
+        eps,
+        rescaling=False,
+        verbose=False,
+        interp=None,
+        **kwargs,
+    ):
         super(RP2AttackModule, self).__init__(
-            attack_config, core_model, loss_fn, norm, eps, **kwargs)
-        self.input_size = attack_config['input_size']
+            attack_config, core_model, loss_fn, norm, eps, **kwargs
+        )
+        self.input_size = attack_config["input_size"]
 
-        rp2_config = attack_config['rp2']
-        self.num_steps = rp2_config['num_steps']
-        self.step_size = rp2_config['step_size']
-        self.optimizer = rp2_config['optimizer']
-        self.use_lr_schedule = rp2_config['use_lr_schedule']
-        self.num_eot = rp2_config['num_eot']
-        self.lmbda = rp2_config['lambda']
-        self.min_conf = rp2_config['min_conf']
-        self.patch_dim = rp2_config['patch_dim']
-        self.attack_mode = rp2_config['attack_mode'].split('-')
-        self.transform_mode = rp2_config['transform_mode']
-        self.use_relight = rp2_config['use_patch_relight']
+        rp2_config = attack_config["rp2"]
+        self.num_steps = rp2_config["num_steps"]
+        self.step_size = rp2_config["step_size"]
+        self.optimizer = rp2_config["optimizer"]
+        self.use_lr_schedule = rp2_config["use_lr_schedule"]
+        self.num_eot = rp2_config["num_eot"]
+        self.lmbda = rp2_config["lambda"]
+        self.min_conf = rp2_config["min_conf"]
+        self.patch_dim = rp2_config["patch_dim"]
+        self.attack_mode = rp2_config["attack_mode"].split("-")
+        self.transform_mode = rp2_config["transform_mode"]
+        self.use_relight = rp2_config["use_patch_relight"]
         self.interp = interp
         self.num_restarts = 1
         self.verbose = verbose
@@ -43,13 +56,14 @@ class RP2AttackModule(DetectorAttackModule):
 
         # Use change of variable on delta with alpha and beta.
         # Mostly used with per-sign attack.
-        self.use_var_change_ab = 'var_change_ab' in self.attack_mode
+        self.use_var_change_ab = "var_change_ab" in self.attack_mode
         if not self.use_relight:
             self.use_var_change_ab = False
         if self.use_var_change_ab:
             # Does not work when num_eot > 1
-            assert self.num_eot == 1, ('When use_var_change_ab is used, '
-                                       'num_eot can only be set to 1.')
+            assert (
+                self.num_eot == 1
+            ), "When use_var_change_ab is used, num_eot can only be set to 1."
             # No need to relight further
             self.use_relight = False
 
@@ -58,35 +72,42 @@ class RP2AttackModule(DetectorAttackModule):
         self.rescaling = False
 
         # Define EoT augmentation for attacking synthetic signs
-        p_geo = float(rp2_config['augment_prob_geometric'])
-        p_light = float(rp2_config['augment_prob_relight'])
+        p_geo = float(rp2_config["augment_prob_geometric"])
+        p_light = float(rp2_config["augment_prob_relight"])
         # bg_size = (self.input_size[0] - 32, self.input_size[1] - 32)
         bg_size = self.input_size
         self.bg_transforms = K.RandomResizedCrop(
-            bg_size, scale=(0.8, 1), p=p_geo, resample=self.interp)
+            bg_size, scale=(0.8, 1), p=p_geo, resample=self.interp
+        )
         self.obj_transforms = K.RandomAffine(
-            30, translate=(0.45, 0.45), p=p_geo, return_transform=True,
-            resample=self.interp)
+            15, translate=(0.4, 0.4), p=p_geo,
+            return_transform=True,
+            resample=self.interp,
+        )
         self.mask_transforms = K.RandomAffine(
-            30, translate=(0.45, 0.45), p=p_geo, resample=Resample.NEAREST)
-
-
+            15, translate=(0.4, 0.4), p=p_geo, resample=Resample.NEAREST
+        )
         self.jitter_transform = K.ColorJitter(
-            brightness=0.3, contrast=0.3, p=p_light)
+            brightness=0.3, contrast=0.3, p=p_light
+        )
 
         # Define EoT augmentation for attacking real signs
         # Transforms patch and background when attacking real signs
         self.real_transform = {
-            'tf_patch': K.RandomAffine(
-                15, translate=(0.1, 0.1), scale=(0.9, 1.1), p=p_geo,
-                resample=self.interp)
+            "tf_patch": K.RandomAffine(
+                15,
+                translate=(0.1, 0.1),
+                scale=(0.9, 1.1),
+                p=p_geo,
+                resample=self.interp,
+            )
         }
         # Background should move very little because gt annotation is fixed
         # self.real_transform['tf_bg'] = self.bg_transforms
 
     @abstractmethod
     def _loss_func(self, delta, adv_img, obj_class, metadata):
-        raise NotImplementedError('_loss_func not implemented!')
+        raise NotImplementedError("_loss_func not implemented!")
 
     def _on_enter_attack(self, **kwargs):
         """Method called at the begining of the attack call."""
@@ -113,8 +134,9 @@ class RP2AttackModule(DetectorAttackModule):
 
     def compute_loss(self, delta, adv_img, obj_class, metadata):
         loss = self._loss_func(adv_img, obj_class, metadata)
-        tv = ((delta[:, :, :-1, :] - delta[:, :, 1:, :]).abs().mean() +
-              (delta[:, :, :, :-1] - delta[:, :, :, 1:]).abs().mean())
+        tv = (delta[:, :, :-1, :] - delta[:, :, 1:, :]).abs().mean() + (
+            delta[:, :, :, :-1] - delta[:, :, :, 1:]
+        ).abs().mean()
         loss += self.lmbda * tv
         return loss
 
@@ -134,7 +156,7 @@ class RP2AttackModule(DetectorAttackModule):
             obj (torch.Tesnor): Object to place the adversarial patch on,
                 shape [C, H, W]
             obj_mask (torch.Tesnor): Mask of object, must have shape [1, H, W]
-            patch_mask (torch.Tesnor): Mask of the patch, must have shape 
+            patch_mask (torch.Tesnor): Mask of the patch, must have shape
                 [1, H, W]
             backgrounds (torch.Tesnor): Background images, shape [N, C, H, W]
 
@@ -155,6 +177,9 @@ class RP2AttackModule(DetectorAttackModule):
         all_bg_idx = np.arange(len(backgrounds))
 
         # obj_mask_eot = obj_mask.expand(self.num_eot, -1, -1)
+        obj_mask = coerce_rank(obj_mask, 4)
+        patch_mask = coerce_rank(patch_mask, 4)
+        obj = coerce_rank(obj, 4)
         obj_mask_eot = obj_mask.expand(self.num_eot, -1, -1, -1)
         patch_mask_eot = patch_mask.expand(self.num_eot, -1, -1, -1)
         obj_eot = obj.expand(self.num_eot, -1, -1, -1)
@@ -164,8 +189,11 @@ class RP2AttackModule(DetectorAttackModule):
 
         for _ in range(self.num_restarts):
             # Initialize adversarial perturbation
-            z_delta = torch.zeros((1, 3, self.patch_dim, self.patch_dim),
-                                  device=device, dtype=dtype, requires_grad=True)
+            z_delta = torch.zeros(
+                (1, 3, self.patch_dim, self.patch_dim),
+                device=device,
+                dtype=dtype,
+            )
             z_delta.uniform_(0, 1)
 
             opt, lr_schedule = self._setup_opt(z_delta)
@@ -176,7 +204,7 @@ class RP2AttackModule(DetectorAttackModule):
             for step in range(self.num_steps):
                 # Randomly select background and apply transforms (crop and scale)
                 np.random.shuffle(all_bg_idx)
-                bg_idx = all_bg_idx[:self.num_eot]
+                bg_idx = all_bg_idx[: self.num_eot]
                 bgs = backgrounds[bg_idx]
                 bgs = self.bg_transforms(bgs)
 
@@ -198,22 +226,30 @@ class RP2AttackModule(DetectorAttackModule):
                 # Apply random transformations to synthetic sign and masks
                 adv_obj, tf_params = self.obj_transforms(obj_eot)
                 o_mask = self.mask_transforms.apply_transform(
-                    obj_mask_eot, None, transform=tf_params)
+                    obj_mask_eot, None, transform=tf_params
+                )
                 p_mask = self.mask_transforms.apply_transform(
-                    patch_mask_eot, None, transform=tf_params)
+                    patch_mask_eot, None, transform=tf_params
+                )
 
                 metadata = self._on_syn_attack_step(
-                    metadata, o_mask=o_mask, bg_idx=bg_idx, obj_class=obj_class)
+                    metadata, o_mask=o_mask, bg_idx=bg_idx, obj_class=obj_class
+                )
 
                 with torch.enable_grad():
                     z_delta.requires_grad_()
                     delta = self._to_model_space(z_delta, 0, 1)
                     delta_padded = resize_and_center(
-                        delta, self.input_size, (obj_height, obj_width),
-                        is_binary=False, interp=self.interp)
+                        delta,
+                        self.input_size,
+                        (obj_height, obj_width),
+                        is_binary=False,
+                        interp=self.interp,
+                    )
                     delta_eot = delta_padded.expand(self.num_eot, -1, -1, -1)
                     delta_eot = self.obj_transforms.apply_transform(
-                        delta_eot, None, transform=tf_params)
+                        delta_eot, None, transform=tf_params
+                    )
                     adv_obj = p_mask * delta_eot + (1 - p_mask) * adv_obj
                     # Augment sign and patch with relighting
                     adv_obj = self.jitter_transform(adv_obj)
@@ -275,9 +311,6 @@ class RP2AttackModule(DetectorAttackModule):
         self._on_enter_attack()
         device = patch_mask.device
 
-        ymin, xmin, obj_height, obj_width = mask_to_box(patch_mask)
-        patch_loc = (ymin, xmin, obj_height, obj_width)
-
         # Process transform data and create batch tensors
         obj_size = patch_mask.shape[-2:]
         obj_width_px = obj_size[-1]
@@ -285,9 +318,12 @@ class RP2AttackModule(DetectorAttackModule):
         # TODO: Assume that every signs use the same transform function
         # i.e., warp_perspetive. Have to fix this for triangles
         tf_function = get_transform(
-            obj_width_px, *objs[0][1], self.transform_mode)[0]
-        tf_data_temp = [get_transform(
-            obj_width_px, *obj[1], self.transform_mode)[1:-1] for obj in objs]
+            obj_width_px, *objs[0][1], self.transform_mode
+        )[0]
+        tf_data_temp = [
+            get_transform(obj_width_px, *obj[1], self.transform_mode)[1:-1]
+            for obj in objs
+        ]
 
         # tf_data contains [sign_canonical, sign_mask, M, alpha, beta]
         tf_data = []
@@ -302,13 +338,17 @@ class RP2AttackModule(DetectorAttackModule):
             tf_data.append(data_i)
 
         all_bg_idx = np.arange(len(tf_data_temp))
-        backgrounds = torch.cat([obj[0].unsqueeze(0) for obj in objs],
-                                dim=0).to(device)
+        backgrounds = torch.cat(
+            [obj[0].unsqueeze(0) for obj in objs], dim=0
+        ).to(device)
 
         for _ in range(self.num_restarts):
             # Initialize adversarial perturbation
-            z_delta = torch.zeros((1, 3, self.patch_dim, self.patch_dim),
-                                  device=device, dtype=torch.float32)
+            z_delta = torch.zeros(
+                (1, 3, self.patch_dim, self.patch_dim),
+                device=device,
+                dtype=torch.float32,
+            )
             z_delta.uniform_(0, 1)
 
             # Set up optimizer
@@ -321,7 +361,7 @@ class RP2AttackModule(DetectorAttackModule):
 
                 # Randomly select background and place patch with transforms
                 np.random.shuffle(all_bg_idx)
-                bg_idx = all_bg_idx[:self.num_eot]
+                bg_idx = all_bg_idx[: self.num_eot]
                 curr_tf_data = [data[bg_idx] for data in tf_data]
                 bgs = backgrounds[bg_idx].clone()
 
@@ -332,16 +372,29 @@ class RP2AttackModule(DetectorAttackModule):
                     if self.use_var_change_ab:
                         # Does not work when num_eot > 1
                         alpha, beta = curr_tf_data[-2:]
-                        delta = self._to_model_space(z_delta, beta, alpha + beta)
+                        delta = self._to_model_space(
+                            z_delta, beta, alpha + beta
+                        )
                     else:
                         delta = self._to_model_space(z_delta, 0, 1)
                     delta_resized = resize_and_center(
-                        delta, None, obj_size, is_binary=False, interp=self.interp)
+                        delta,
+                        None,
+                        obj_size,
+                        is_binary=False,
+                        interp=self.interp,
+                    )
                     delta_eot = delta_resized.repeat(self.num_eot, 1, 1, 1)
                     adv_img, _ = apply_transform(
-                        bgs, delta_eot, patch_mask, tf_function, curr_tf_data, 
-                        interp=self.interp, **self.real_transform, 
-                        use_relight=self.use_relight)
+                        bgs,
+                        delta_eot,
+                        patch_mask,
+                        tf_function,
+                        curr_tf_data,
+                        interp=self.interp,
+                        **self.real_transform,
+                        use_relight=self.use_relight,
+                    )
                     adv_img /= 255
 
                     # DEBUG
@@ -375,28 +428,33 @@ class RP2AttackModule(DetectorAttackModule):
 
     def _setup_opt(self, z_delta):
         # Set up optimizer
-        if self.optimizer == 'sgd':
+        if self.optimizer == "sgd":
             opt = optim.SGD([z_delta], lr=self.step_size, momentum=0.999)
-        elif self.optimizer == 'adam':
+        elif self.optimizer == "adam":
             opt = optim.Adam([z_delta], lr=self.step_size)
-        elif self.optimizer == 'rmsprop':
+        elif self.optimizer == "rmsprop":
             opt = optim.RMSprop([z_delta], lr=self.step_size)
-        elif self.optimizer == 'pgd':
+        elif self.optimizer == "pgd":
             opt = None
         else:
-            raise NotImplementedError('Given optimizer not implemented.')
+            raise NotImplementedError("Given optimizer not implemented.")
 
         lr_schedule = None
         if self.use_lr_schedule and opt is not None:
             # lr_schedule = optim.lr_scheduler.MultiStepLR(opt, [500, 1000, 1500], gamma=0.1)
             lr_schedule = optim.lr_scheduler.ReduceLROnPlateau(
-                opt, factor=0.5, patience=int(self.num_steps / 10),
-                threshold=1e-9, min_lr=self.step_size * 1e-6, verbose=self.verbose)
+                opt,
+                factor=0.5,
+                patience=int(self.num_steps / 10),
+                threshold=1e-9,
+                min_lr=self.step_size * 1e-6,
+                verbose=self.verbose,
+            )
 
         return opt, lr_schedule
 
     def _step_opt(self, z_delta, opt):
-        if self.optimizer == 'pgd':
+        if self.optimizer == "pgd":
             grad = z_delta.grad.detach()
             grad = torch.sign(grad)
             z_delta = z_delta.detach() - self.step_size * grad
@@ -406,9 +464,9 @@ class RP2AttackModule(DetectorAttackModule):
         return z_delta
 
     def _to_model_space(self, x, min_, max_):
-        """Transforms an input from the attack space to the model space. 
+        """Transforms an input from the attack space to the model space.
         This transformation and the returned gradient are elementwise."""
-        if 'pgd' in self.attack_mode:
+        if "pgd" in self.attack_mode:
             return x
 
         # from (-inf, +inf) to (-1, +1)
@@ -424,10 +482,14 @@ class RP2AttackModule(DetectorAttackModule):
         if self.ema_loss is None:
             self.ema_loss = loss.item()
         else:
-            self.ema_loss = (self.ema_const * self.ema_loss +
-                             (1 - self.ema_const) * loss.item())
+            self.ema_loss = (
+                self.ema_const * self.ema_loss
+                + (1 - self.ema_const) * loss.item()
+            )
 
         if step % 100 == 0 and self.verbose:
-            print(f'step: {step:4d}  loss: {self.ema_loss:.4f}  '
-                  f'time: {time.time() - self.start_time:.2f}s')
+            print(
+                f"step: {step:4d}  loss: {self.ema_loss:.4f}  "
+                f"time: {time.time() - self.start_time:.2f}s"
+            )
             self.start_time = time.time()

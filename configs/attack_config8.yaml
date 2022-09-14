@@ -3,12 +3,12 @@ rp2:
   step_size: 0.01
   num_eot: 1
   optimizer: 'adam'  # 'adam', 'sgd', 'pgd'
-  lambda: 1.0e-3
+  lambda: 0
   min_conf: 0
   augment_prob_geometric: 1
   augment_prob_relight: 0
   use_patch_relight: True
-  patch_dim: 128
+  patch_dim: 8
   num_bg: 50  # Number of backgrounds attacker uses to generate patch
   use_lr_schedule: False
   transform_mode: 'perspective'

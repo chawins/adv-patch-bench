@@ -1,8 +1,8 @@
-'''
+"""
 Code is adapted from 
 https://github.com/facebookresearch/detectron2/blob/main/detectron2/engine/hooks.py
 to implement similar model checkpoint as YOLO
-'''
+"""
 import logging
 import math
 import operator
@@ -36,7 +36,7 @@ class BestCheckpointer(HookBase):
         """
         self._logger = logging.getLogger(__name__)
         self._period = eval_period
-        self._val_metric = 'YOLO\'s fitness'
+        self._val_metric = "YOLO's fitness"
         assert mode in [
             "max",
             "min",
@@ -59,11 +59,11 @@ class BestCheckpointer(HookBase):
 
     def _best_checking(self):
         # Get AP50 and AP50:95 metrics
-        map50_95_tuple = self.trainer.storage.latest().get('bbox/AP')
-        map50_tuple = self.trainer.storage.latest().get('bbox/AP50')
+        map50_95_tuple = self.trainer.storage.latest().get("bbox/AP")
+        map50_tuple = self.trainer.storage.latest().get("bbox/AP50")
         if map50_95_tuple is None or map50_tuple is None:
-            print('==============> ', self.trainer.storage.latest())
-            raise ValueError('bbox/AP or bbox/AP50 is not computed!')
+            print("==============> ", self.trainer.storage.latest())
+            raise ValueError("bbox/AP or bbox/AP50 is not computed!")
         else:
             latest_map50_95, metric_iter = map50_95_tuple
             latest_map50, _ = map50_tuple
@@ -73,7 +73,9 @@ class BestCheckpointer(HookBase):
         if self.best_metric is None:
             if self._update_best(latest_metric, metric_iter):
                 additional_state = {"iteration": metric_iter}
-                self._checkpointer.save(f"{self._file_prefix}", **additional_state)
+                self._checkpointer.save(
+                    f"{self._file_prefix}", **additional_state
+                )
                 self._logger.info(
                     f"Saved first model at {self.best_metric:0.5f} @ {self.best_iter} steps"
                 )

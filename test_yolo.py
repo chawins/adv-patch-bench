@@ -274,6 +274,7 @@ def run(
         # run once to warmup
         _ = model(img.half() if half else img) if device.type != 'cpu' else None
 
+
     dataloader = create_dataloader(data[task], imgsz, batch_size, stride,
                                    single_cls, pad=pad, rect=pt,
                                    workers=workers,
@@ -308,10 +309,12 @@ def run(
 
     if use_attack:
         # Prepare attack data
-        adv_patch_dir = os.path.join(
-            SAVE_DIR_YOLO, args.name, names[adv_sign_class])
-        adv_patch_path = os.path.join(adv_patch_dir, 'adv_patch.pkl')
-        args.adv_patch_path = adv_patch_path
+        if args.adv_patch_path is None:
+            adv_patch_dir = os.path.join(
+                SAVE_DIR_YOLO, args.name, names[adv_sign_class])
+            adv_patch_path = os.path.join(adv_patch_dir, 'adv_patch.pkl')
+            args.adv_patch_path = adv_patch_path
+
         df, adv_patch, patch_mask = prep_attack(args, img_size, device)
     else:
         adv_patch = None
@@ -382,9 +385,16 @@ def run(
             break
         # ======================= BEGIN: apply patch ======================== #
         for image_i, path in enumerate(paths):
+            # filename = path.split('/')[-1]
+            # if filename != '-8EClSWhRM4FuiWdu-kbQg.jpg':
+            #     continue
+            # print(filename)
+            # print(im[image_i].shape)
+            
             if use_attack and not synthetic:
                 filename = path.split('/')[-1]
                 img_df = df[df['filename'] == filename]
+
                 if len(img_df) == 0:
                     continue
                 # Skip (or only run on) files listed in the txt file
@@ -438,6 +448,12 @@ def run(
                     img, targets, image_i, adv_patch_clone, patch_mask, 
                     *syn_data, device=device, use_attack=use_attack,
                     return_target=True, is_detectron=False)
+                
+                # print('SHAPE')
+                # print(im[image_i].shape)
+                # import torchvision
+                # torchvision.utils.save_image(im[image_i]/255, f'test_data.png')
+                # qqq
 
         t1 = time_sync()
         if pt or jit or engine:
@@ -799,6 +815,10 @@ def run(
         #     *stats, plot=plots, save_dir=save_dir, names=names,
         #     metrics_conf_thres=None, other_class_label=other_class_label)
         tp, p, r, ap, ap_class, fnr, fn, max_f1_index, precision_cmb, fnr_cmb, fp = metrics
+                
+        # save ap array
+        with open(f'{save_dir}/ap.npy', 'wb') as f:
+            np.save(f, ap)
         ap50, ap = ap[:, 0], ap.mean(1)  # AP@0.5, AP@0.5:0.95
         mp, mr, map50, map = p.mean(), r.mean(), ap50.mean(), ap.mean()
         nt = np.bincount(stats[3].astype(np.int64), minlength=nc)  # number of targets per class

@@ -1,7 +1,8 @@
 import itertools
 import math
-from collections import defaultdict
 import random
+from collections import defaultdict
+
 import torch
 from detectron2.utils import comm
 from torch.utils.data.sampler import Sampler
@@ -58,7 +59,9 @@ class RepeatFactorTrainingSampler(Sampler):
         # 1. For each category c, compute the fraction of images that contain it: f(c)
         category_freq = defaultdict(int)
         for dataset_dict in dataset_dicts:  # For each image (without repeats)
-            cat_ids = {ann["category_id"] for ann in dataset_dict["annotations"]}
+            cat_ids = {
+                ann["category_id"] for ann in dataset_dict["annotations"]
+            }
             for cat_id in cat_ids:
                 category_freq[cat_id] += 1
         num_images = len(dataset_dicts)
@@ -77,8 +80,12 @@ class RepeatFactorTrainingSampler(Sampler):
         #    r(I) = max_{c in I} r(c)
         rep_factors = []
         for dataset_dict in dataset_dicts:
-            cat_ids = {ann["category_id"] for ann in dataset_dict["annotations"]}
-            rep_factor = max({category_rep[cat_id] for cat_id in cat_ids}, default=1.0)
+            cat_ids = {
+                ann["category_id"] for ann in dataset_dict["annotations"]
+            }
+            rep_factor = max(
+                {category_rep[cat_id] for cat_id in cat_ids}, default=1.0
+            )
             rep_factors.append(rep_factor)
 
         return torch.tensor(rep_factors, dtype=torch.float32)
@@ -108,7 +115,9 @@ class RepeatFactorTrainingSampler(Sampler):
 
     def __iter__(self):
         start = self._rank
-        yield from itertools.islice(self._infinite_indices(), start, None, self._world_size)
+        yield from itertools.islice(
+            self._infinite_indices(), start, None, self._world_size
+        )
 
     def _infinite_indices(self):
         g = torch.Generator()
@@ -141,8 +150,9 @@ class ShuffleInferenceSampler(Sampler):
         assert size > 0
         self._rank = comm.get_rank()
         self._world_size = comm.get_world_size()
-        self._local_indices = self._get_local_indices(size, self._world_size, self._rank)
-
+        self._local_indices = self._get_local_indices(
+            size, self._world_size, self._rank
+        )
 
     @staticmethod
     def _get_local_indices(total_size, world_size, rank):

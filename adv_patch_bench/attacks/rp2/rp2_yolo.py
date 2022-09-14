@@ -2,10 +2,10 @@ from .rp2_base import RP2AttackModule
 
 
 class RP2AttackYOLO(RP2AttackModule):
-
     def __init__(self, attack_config, core_model, loss_fn, norm, eps, **kwargs):
         super(RP2AttackYOLO, self).__init__(
-            attack_config, core_model, loss_fn, norm, eps, **kwargs)
+            attack_config, core_model, loss_fn, norm, eps, **kwargs
+        )
 
     def _loss_func(self, adv_img, obj_class, metadata):
         """Compute loss for YOLO models"""

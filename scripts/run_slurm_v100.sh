@@ -11,8 +11,8 @@
 #Number of GPUs, this can be in the format of "gpu:[1-4]", or "gpu:K80:[1-4] with the type included
 #SBATCH --gres=gpu:V100:1
 #SBATCH --qos=v100_gpu3_normal
-#SBATCH --time=6:00:00
-#SBATCH --output slurm-%j-10x10-bottom.out
+#SBATCH --time=12:00:00
+#SBATCH --output slurm-%j-10x20.out
 ## Command(s) to run:
 source /global/home/users/$USER/.bash_profile
 module purge

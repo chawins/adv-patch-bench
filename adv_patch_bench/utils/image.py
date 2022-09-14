@@ -20,17 +20,18 @@ def coerce_rank(x, ndim):
         for _ in range(-ndim_diff):
             x.squeeze_(0)
         if x.ndim != ndim:
-            raise ValueError('Can\'t coerce rank.')
+            raise ValueError("Can't coerce rank.")
         return x
 
     for _ in range(ndim_diff):
         x.unsqueeze_(0)
     if x.ndim != ndim:
-        raise ValueError('Can\'t coerce rank.')
+        raise ValueError("Can't coerce rank.")
     return x
 
+
 def load_annotation(label_path, image_key):
-    with open(join(label_path, '{:s}.json'.format(image_key)), 'r') as fid:
+    with open(join(label_path, "{:s}.json".format(image_key)), "r") as fid:
         anno = json.load(fid)
     return anno
 
@@ -38,7 +39,9 @@ def load_annotation(label_path, image_key):
 def get_image_files(path):
     image_keys = []
     for entry in os.scandir(path):
-        if (entry.path.endswith('.jpg') or entry.path.endswith('.png')) and entry.is_file():
+        if (
+            entry.path.endswith(".jpg") or entry.path.endswith(".png")
+        ) and entry.is_file():
             image_keys.append(entry.name)
     return image_keys
 
@@ -51,15 +54,26 @@ def pad_to_size(img: torch.Tensor, size: Tuple[int, int]):
         size[1] - img_size[1] - (size[1] - img_size[1]) // 2,  # right
         size[0] - img_size[0] - (size[0] - img_size[0]) // 2,  # bottom
     ]
-    bbox = [pad_size[0], pad_size[1], size[1] - pad_size[2], size[0] - pad_size[3]]
+    bbox = [
+        pad_size[0],
+        pad_size[1],
+        size[1] - pad_size[2],
+        size[0] - pad_size[3],
+    ]
     return pad_image(img, pad_size), bbox
 
 
-def pad_image(img, pad_size=0.1, pad_mode='constant', return_pad_size=False):
-    pad_size = int(max(height, width) * pad_size) if isinstance(pad_size, float) else pad_size
+def pad_image(img, pad_size=0.1, pad_mode="constant", return_pad_size=False):
+    pad_size = (
+        int(max(height, width) * pad_size)
+        if isinstance(pad_size, float)
+        else pad_size
+    )
     if isinstance(img, np.ndarray):
         height, width = img.shape[0], img.shape[1]
-        pad_size_tuple = ((pad_size, pad_size), (pad_size, pad_size)) + ((0, 0), ) * (img.ndim - 2)
+        pad_size_tuple = ((pad_size, pad_size), (pad_size, pad_size)) + (
+            (0, 0),
+        ) * (img.ndim - 2)
         img_padded = np.pad(img, pad_size_tuple, mode=pad_mode)
     else:
         height, width = img.shape[img.ndim - 2], img.shape[img.ndim - 1]
@@ -70,7 +84,7 @@ def pad_image(img, pad_size=0.1, pad_mode='constant', return_pad_size=False):
 
 
 def crop(img_padded, mask, pad, offset):
-    """Crop a square bounding box of an object with a correcponding 
+    """Crop a square bounding box of an object with a correcponding
     segmentation mask from an (padded) image.
 
     Args:
@@ -100,7 +114,7 @@ def crop(img_padded, mask, pad, offset):
 
 def img_numpy_to_torch(img):
     assert img.ndim == 3 and isinstance(img, np.ndarray)
-    return torch.from_numpy(img).float().permute(2, 0, 1) / 255.
+    return torch.from_numpy(img).float().permute(2, 0, 1) / 255.0
 
 
 def get_box(mask, pad):
@@ -145,7 +159,10 @@ def letterbox(im, new_shape=(640, 640), color=114, scaleup=True, stride=32):
     # Compute padding
     ratio = r, r  # width, height ratios
     new_unpad = int(round(shape[0] * r)), int(round(shape[1] * r))
-    dw, dh = new_shape[1] - new_unpad[1], new_shape[0] - new_unpad[0]  # wh padding
+    dw, dh = (
+        new_shape[1] - new_unpad[1],
+        new_shape[0] - new_unpad[0],
+    )  # wh padding
     # dw, dh = np.mod(dw, stride), np.mod(dh, stride)  # wh padding
 
     dw /= 2  # divide padding into 2 sides
@@ -166,7 +183,7 @@ def mask_to_box(mask):
     # assert mask.ndim == 2
     mask = coerce_rank(mask, 2)
     if mask.sum() <= 0:
-        raise ValueError('mask is all zeros!')
+        raise ValueError("mask is all zeros!")
     y, x = torch.where(mask)
     y_min, x_min = y.min(), x.min()
     return y_min, x_min, y.max() - y_min, x.max() - x_min
@@ -184,11 +201,12 @@ def prepare_obj(obj_path, img_size, obj_size, interp):
     Returns:
         torch.Tensor, torch.Tensor: Object and its mask
     """
-    obj_numpy = np.array(Image.open(obj_path).convert('RGBA')) / 255
+    obj_numpy = np.array(Image.open(obj_path).convert("RGBA")) / 255
     obj_mask = torch.from_numpy(obj_numpy[:, :, -1] == 1).float().unsqueeze(0)
     obj = torch.from_numpy(obj_numpy[:, :, :-1]).float().permute(2, 0, 1)
     obj = resize_and_center(
-        obj, img_size, obj_size, is_binary=False, interp=interp)
+        obj, img_size, obj_size, is_binary=False, interp=interp
+    )
     obj_mask = resize_and_center(obj_mask, img_size, obj_size, is_binary=True)
     obj.unsqueeze_(0)
     obj_mask.unsqueeze_(0)
@@ -197,32 +215,34 @@ def prepare_obj(obj_path, img_size, obj_size, interp):
     return obj, obj_mask
 
 
-def resize_and_center(obj: torch.Tensor,
-                      img_size: Tuple[int, int],
-                      obj_size: Tuple[int, int],
-                      is_binary: bool = False,
-                      interp: str = 'bicubic'):
+def resize_and_center(
+    obj: torch.Tensor,
+    img_size: Tuple[int, int],
+    obj_size: Tuple[int, int],
+    is_binary: bool = False,
+    interp: str = "bicubic",
+):
     """
-    Resize object to obj_size and then place it in the middle of zero 
+    Resize object to obj_size and then place it in the middle of zero
     background.
     """
     if obj_size is not None:
-        if is_binary or interp == 'nearest':
+        if is_binary or interp == "nearest":
             interp = T.InterpolationMode.NEAREST
-        elif interp == 'bicubic':
+        elif interp == "bicubic":
             interp = T.InterpolationMode.BICUBIC
-        elif interp == 'bilinear':
+        elif interp == "bilinear":
             interp = T.InterpolationMode.BILINEAR
         else:
-            raise NotImplementedError('interp not supported.')
+            raise NotImplementedError("interp not supported.")
         obj = T.resize(obj, obj_size, interpolation=interp)
 
     if img_size is not None:
         # left, top, right, bottom
         # left = (img_size[1] - obj_size[1]) // 2
         # top = (img_size[0] - obj_size[0]) // 2
-        left = torch.div(img_size[1] - obj_size[1], 2, rounding_mode='trunc')
-        top = torch.div(img_size[0] - obj_size[0], 2, rounding_mode='trunc')
+        left = torch.div(img_size[1] - obj_size[1], 2, rounding_mode="trunc")
+        top = torch.div(img_size[0] - obj_size[0], 2, rounding_mode="trunc")
         pad_size = [
             left,  # left
             top,  # top
@@ -235,4 +255,4 @@ def resize_and_center(obj: torch.Tensor,
 
 
 def get_obj_width(obj_class, class_names):
-    return float(class_names[obj_class].split('-')[1]) * 0.0393701
+    return float(class_names[obj_class].split("-")[1]) * 0.0393701

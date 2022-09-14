@@ -8,7 +8,7 @@ from detectron2.structures import Boxes, pairwise_iou
 def get_targets(
     model: torch.nn.Module,
     inputs: List[Dict[Any, Any]],
-    device: str = 'cuda',
+    device: str = "cuda",
     iou_thres: float = 0.1,
     score_thres: float = 0.1,
     use_correct_only: bool = False,
@@ -38,7 +38,7 @@ def get_targets(
     # Get proposal boxes' classification scores
     predictions = get_roi_heads_predictions(model, features, proposal_boxes)
     # predictions = get_roi_heads_predictions(model, features, proposals)
-    
+
     # Scores (softmaxed) for a single image, [n_proposals, n_classes + 1]
     # scores = model.roi_heads.box_predictor.predict_probs(predictions, proposals)[0]
     # Instead, we want to get logit scores without softmax. For API, see
@@ -49,14 +49,21 @@ def get_targets(
 
     # NOTE: class_logits dim [[1000, num_classes + 1], ...]
 
-    gt_boxes = [i['instances'].gt_boxes.to(device) for i in inputs]
-    gt_classes = [i['instances'].gt_classes for i in inputs]
+    gt_boxes = [i["instances"].gt_boxes.to(device) for i in inputs]
+    gt_classes = [i["instances"].gt_classes for i in inputs]
     objectness_logits = [x.objectness_logits for x in proposals]
 
     return filter_positive_proposals(
-        proposal_boxes, class_logits, gt_boxes, gt_classes, objectness_logits,
-        device=device, iou_thres=iou_thres, score_thres=score_thres,
-        use_correct_only=use_correct_only)
+        proposal_boxes,
+        class_logits,
+        gt_boxes,
+        gt_classes,
+        objectness_logits,
+        device=device,
+        iou_thres=iou_thres,
+        score_thres=score_thres,
+        use_correct_only=use_correct_only,
+    )
 
 
 def get_roi_heads_predictions(
@@ -92,7 +99,9 @@ def filter_positive_proposals(
 ) -> Tuple[Boxes, torch.Tensor, torch.Tensor]:
 
     outputs = [[], [], [], []]
-    for inpt in zip(proposal_boxes, class_logits, gt_boxes, gt_classes, objectness_logits):
+    for inpt in zip(
+        proposal_boxes, class_logits, gt_boxes, gt_classes, objectness_logits
+    ):
         out = filter_positive_proposals_single(*inpt, **kwargs)
         for i in range(4):
             outputs[i].append(out[i])
@@ -105,7 +114,7 @@ def filter_positive_proposals_single(
     gt_boxes: Boxes,
     gt_classes: torch.Tensor,
     objectness_logits: torch.Tensor,
-    device: str = 'cuda',
+    device: str = "cuda",
     iou_thres: float = 0.1,
     score_thres: float = 0.1,
     use_correct_only: bool = False,
@@ -155,5 +164,9 @@ def filter_positive_proposals_single(
     else:
         cond = iou_cond
 
-    return (proposal_boxes[cond], paired_gt_classes[cond].to(device),
-            class_logits[cond], objectness_logits[cond])
+    return (
+        proposal_boxes[cond],
+        paired_gt_classes[cond].to(device),
+        class_logits[cond],
+        objectness_logits[cond],
+    )
