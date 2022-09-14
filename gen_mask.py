@@ -34,7 +34,7 @@ def gen_mask_10x10(obj_h_inch, obj_w_inch, obj_h_px, obj_w_px):
     patch_mask[
         :,
         patch_y_pos - hh : patch_y_pos + hh,
-        patch_x_pos - hw : patch_x_pos + hw,
+        max(0, patch_x_pos - hw) : patch_x_pos + hw,
     ] = 1
     return patch_mask
 
@@ -47,28 +47,30 @@ def gen_mask_10x20(obj_h_inch, obj_w_inch, obj_h_px, obj_w_px, num_patches=1):
     patch_w_px = round(patch_w_inch / obj_w_inch * obj_w_px)
 
     # Define patch location and size
-    # (2) two 10x20 rectangles
     mid_height, mid_width = obj_h_px // 2, obj_w_px // 2
-    patch_x_shift = 0
     shift_inch = (obj_h_inch - patch_h_inch) / 2
     patch_y_shift = round(shift_inch / obj_h_inch * obj_h_px)
-    patch_x_pos = mid_width + patch_x_shift
+    patch_x_pos = mid_width
     patch_y_pos = mid_height + patch_y_shift
     hh, hw = patch_h_px // 2, patch_w_px // 2
     # Bottom patch
     patch_mask[
         :,
         patch_y_pos - hh : patch_y_pos + hh,
-        patch_x_pos - hw : patch_x_pos + hw,
+        max(0, patch_x_pos - hw) : patch_x_pos + hw,
     ] = 1
+
     if num_patches == 2:
         # Top patch
         patch_y_pos = mid_height - patch_y_shift
+        top_edge = min(patch_y_pos + hh, obj_h_px)
+        bot_edge = obj_h_px - patch_h_px
         patch_mask[
             :,
-            patch_y_pos - hh : patch_y_pos + hh,
-            patch_x_pos - hw : patch_x_pos + hw,
+            bot_edge:top_edge,
+            max(0, patch_x_pos - hw) : patch_x_pos + hw,
         ] = 1
+
     return patch_mask
 
 

@@ -1,5 +1,6 @@
+#!/bin/bash
+
 # Detector test script
-GPU=1
 NUM_GPU=1
 NUM_WORKERS=24
 
@@ -132,7 +133,7 @@ BG_FILES=bg_filenames_octagon-915.0.txt
 # --syn-use-scale --syn-use-colorjitter
 # =========================================================================== #
 
-syn_attack() {
+function syn_attack() {
 
     NAME=$1
     MASK_NAME=$2
@@ -154,33 +155,34 @@ syn_attack() {
     esac
 
     # Test on synthetic clean samples (should only be done once per aug method)
-    python -u test_detectron.py \
-        --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --name no_patch \
-        --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH --dataset $DATASET \
-        --attack-config-path $ATK_CONFIG_PATH --workers $NUM_WORKERS --interp $INTERP \
-        --weights $MODEL_PATH --eval-mode drop --annotated-signs-only \
-        --obj-class $OBJ_CLASS --obj-size $SYN_OBJ_SIZE --conf-thres $CONF_THRES \
-        --img-txt-path $BG_FILES --num-test $NUM_TEST_SYN --synthetic
+    # python -u test_detectron.py \
+    #     --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --name no_patch \
+    #     --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH --dataset $DATASET \
+    #     --attack-config-path "$ATK_CONFIG_PATH" --workers $NUM_WORKERS --interp $INTERP \
+    #     --weights $MODEL_PATH --eval-mode drop --annotated-signs-only \
+    #     --obj-class "$OBJ_CLASS" --obj-size $SYN_OBJ_SIZE --conf-thres $CONF_THRES \
+    #     --img-txt-path $BG_FILES --num-test $NUM_TEST_SYN --synthetic &&
 
     # Generate adversarial patch
-    # python -u gen_patch_detectron.py \
-    #     --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
-    #     --dataset $DATASET --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH \
-    #     --attack-config-path $ATK_CONFIG_PATH --obj-class $OBJ_CLASS \
-    #     --name $NAME --bg-dir $BG_PATH --transform-mode perspective \
-    #     --weights $MODEL_PATH --workers $NUM_WORKERS --mask-name $MASK_NAME \
-    #     --img-txt-path $BG_FILES --save-images --obj-size $SYN_OBJ_SIZE \
-    #     --synthetic --verbose
+    python -u gen_patch_detectron.py \
+        --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
+        --dataset $DATASET --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH \
+        --attack-config-path "$ATK_CONFIG_PATH" --obj-class "$OBJ_CLASS" \
+        --name "$NAME" --bg-dir $BG_PATH --transform-mode $TF_MODE \
+        --weights $MODEL_PATH --workers $NUM_WORKERS --mask-name "$MASK_NAME" \
+        --img-txt-path $BG_FILES --save-images --obj-size $SYN_OBJ_SIZE \
+        --synthetic --verbose &&
 
     # Test patch on synthetic signs
     python -u test_detectron.py \
         --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
         --dataset $DATASET --padded-imgsz $IMG_SIZE --eval-mode drop \
-        --tgt-csv-filepath $CSV_PATH --attack-config-path $ATK_CONFIG_PATH \
-        --name $NAME --obj-class $OBJ_CLASS --conf-thres $CONF_THRES \
-        --mask-name $MASK_NAME --weights $MODEL_PATH --workers $NUM_WORKERS \
+        --tgt-csv-filepath $CSV_PATH --attack-config-path "$ATK_CONFIG_PATH" \
+        --name "$NAME" --obj-class "$OBJ_CLASS" --conf-thres $CONF_THRES \
+        --mask-name "$MASK_NAME" --weights $MODEL_PATH --workers $NUM_WORKERS \
         --transform-mode $TF_MODE --img-txt-path $BG_FILES --attack-type load \
-        --synthetic --obj-size $SYN_OBJ_SIZE --num-test $NUM_TEST_SYN
+        --annotated-signs-only --synthetic --obj-size $SYN_OBJ_SIZE \
+        --num-test $NUM_TEST_SYN --debug &&
 
     # Test patch on real signs
     # python -u test_detectron.py \
@@ -190,36 +192,22 @@ syn_attack() {
     #     --name $NAME --obj-class $OBJ_CLASS --conf-thres $CONF_THRES \
     #     --mask-name $MASK_NAME --weights $MODEL_PATH --workers $NUM_WORKERS \
     #     --transform-mode $TF_MODE --img-txt-path $BG_FILES --attack-type load \
-    #     --annotated-signs-only
+    #     --annotated-signs-only &&
+
+    echo "Done with $OBJ_CLASS."
 }
 
-syn_attack_all() {
-    for i in {0..10}; do
-        syn_attack synthetic-10x20-obj64-pd64-ld0.001 10x20 $i 2
-    done
-    # syn_attack synthetic-10x20-obj64-pd64-ld0.001 10x20 3 2
+function syn_attack_all() {
+    # for i in {0..10}; do
+    #     syn_attack synthetic-10x20-obj64-pd64-ld0.001 10x20 "$i" 2
+    # done
+    syn_attack synthetic-10x20-obj64-pd64-ld0.001 10x20 6 2
 }
 
 # FIXME: change naming in test_detectron.py
 syn_attack_all
-# syn_attack synthetic-10x20 10x20 1 2
 
-# syn_attack synthetic-10x20-adam-ps128-lmd1e0 10x20 2
-# syn_attack synthetic-10x20-adam-ps128-lmd1e-1 10x20 3
-# syn_attack synthetic-10x20-adam-ps128-lmd1e-2 10x20 4
-# syn_attack synthetic-10x20-adam-ps128-lmd1e-3 10x20 5
-# syn_attack synthetic-10x20-adam-ps128-lmd1e-4 10x20 6
-# syn_attack synthetic-10x20-adam-ps128-lmd1e-5 10x20 7
-
-# syn_attack synthetic-10x10-adam-ps8 10x10 8
-# syn_attack synthetic-10x10-adam-ps16 10x10 9
-# syn_attack synthetic-10x10-adam-ps32 10x10 10
-# syn_attack synthetic-10x10-adam-ps64 10x10 11
-# syn_attack synthetic-10x10-adam-ps128 10x10 12
-# syn_attack synthetic-10x10-adam-ps256 10x10 13
-# syn_attack synthetic-10x10-adam-ps512 10x10 14
-
-exit
+exit 0
 
 # =========================================================================== #
 #                                Extra Commands                               #
