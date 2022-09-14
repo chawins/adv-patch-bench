@@ -3,6 +3,8 @@ import logging
 import os
 import pickle
 import random
+import time
+from typing import Optional
 
 import cv2
 import numpy as np
@@ -27,10 +29,105 @@ from adv_patch_bench.utils.argparse import (
     setup_detectron_test_args,
 )
 from adv_patch_bench.utils.detectron import build_evaluator
-from hparams import DATASETS, LABEL_LIST, OTHER_SIGN_CLASS, SAVE_DIR_DETECTRON
+from hparams import (
+    DATASETS,
+    LABEL_LIST,
+    OTHER_SIGN_CLASS,
+    SAVE_DIR_DETECTRON,
+    TS_NO_COLOR_LABEL_LIST,
+)
 
 log = logging.getLogger(__name__)
 formatter = logging.Formatter("[%(levelname)s] %(asctime)s: %(message)s")
+
+
+def _compute_metrics(
+    scores_full: np.ndarray,
+    num_gts_per_class: np.ndarray,
+    other_sign_class: int,
+    conf_thres: Optional[float] = None,
+    iou_thres: float = 0.5,
+) -> float:
+
+    all_iou_thres = np.linspace(
+        0.5, 0.95, int(np.round((0.95 - 0.5) / 0.05)) + 1, endpoint=True
+    )
+    iou_idx = np.where(all_iou_thres == iou_thres)[0]
+    # iou_idx can be [0], and this evaluate to True
+    if len(iou_idx) == 0:
+        raise ValueError(f"Invalid iou_thres {iou_thres}!")
+    iou_idx = int(iou_idx)
+
+    # Find score threshold that maximizes F1 score
+    EPS = np.spacing(1)
+    num_classes = len(scores_full)
+    num_ious = len(scores_full[0])
+
+    if conf_thres is None:
+        num_scores = 1000
+        scores_thres = np.linspace(0, 1, num_scores)
+        tp_full = np.zeros((num_ious, num_classes, num_scores))
+        fp_full = np.zeros_like(tp_full)
+
+        for t in range(num_ious):
+            for k in range(num_classes):
+                for si, s in enumerate(scores_thres):
+                    tp_full[t, k, si] = np.sum(
+                        np.array(scores_full[k][t][0]) >= s
+                    )
+                    fp_full[t, k, si] = np.sum(
+                        np.array(scores_full[k][t][1]) >= s
+                    )
+
+        rc = tp_full / (num_gts_per_class[None, :, None] + EPS)
+        pr = tp_full / (tp_full + fp_full + EPS)
+        f1 = 2 * pr * rc / (pr + rc + EPS)
+        assert np.all(f1 >= 0) and not np.any(np.isnan(f1))
+
+        # Remove 'other' class from f1 and average over remaining classes
+        f1_mean = np.delete(f1[iou_idx], other_sign_class, axis=0).mean(0)
+        max_f1_idx = f1_mean.argmax()
+        max_f1 = f1_mean[max_f1_idx]
+        tp = tp_full[iou_idx, :, max_f1_idx]
+        fp = fp_full[iou_idx, :, max_f1_idx]
+        conf_thres = scores_thres[max_f1_idx]
+        print(
+            f"[DEBUG] max_f1_idx: {max_f1_idx}, max_f1: {max_f1:.4f}, "
+            f"conf_thres: {conf_thres:.3f}"
+        )
+
+    else:
+
+        print("Using specified conf_thres...")
+
+        tp_full = np.zeros((num_ious, num_classes))
+        fp_full = np.zeros_like(tp_full)
+
+        for t in range(num_ious):
+            for k in range(num_classes):
+                tp_full[t, k] = np.sum(
+                    np.array(scores_full[k][t][0]) >= conf_thres
+                )
+                fp_full[t, k] = np.sum(
+                    np.array(scores_full[k][t][1]) >= conf_thres
+                )
+        tp = tp_full[iou_idx]
+        fp = fp_full[iou_idx]
+
+    rc = tp / (num_gts_per_class + EPS)
+    pr = tp / (tp + fp + EPS)
+
+    # Compute combined metrics, ignoring class
+    recall_cmb = tp.sum() / (num_gts_per_class.sum() + EPS)
+
+    print(f"[DEBUG] num_gts_per_class: {num_gts_per_class}")
+    print(f"[DEBUG] tp: {tp}")
+    print(f"[DEBUG] fp: {fp}")
+    print(f"[DEBUG] precision: {pr}")
+    print(f"[DEBUG] recall: {rc}")
+    print(f"[DEBUG] recall_cmb: {recall_cmb}")
+
+    return tp, fp, conf_thres
 
 
 def main(cfg, args):
@@ -135,29 +232,58 @@ def main_attack(cfg, args, dataset_params):
     coco_instances_results, metrics = attack.run(
         vis_save_dir=vis_dir, vis_conf_thresh=0.5
     )
-    with open(os.path.join(args.result_dir, "results.pkl"), "wb") as f:
-        pickle.dump(metrics, f)
+
+    t = int(time.time())
+    with open(os.path.join(args.result_dir, f"results_{t}.pkl"), "wb") as f:
+        results = {**metrics, **vars(args)}
+        pickle.dump(results, f)
 
     # Logging results
-    metrics = metrics["bbox"]
-    max_f1_idx, tp_full, fp_full, num_gts_per_class = metrics["dumped_metrics"]
-    metrics["dumped_metrics"] = None
-    for k, v in metrics.items():
-        if "syn" in k:
-            continue
-        log.info(f"{k}: {v}")
-    iou_idx = 0
-    tp, fp = tp_full[iou_idx, :, max_f1_idx], fp_full[iou_idx, :, max_f1_idx]
-
-    log.info("          tp   fp   num_gt")
-    for i, (t, f, n) in enumerate(zip(tp, fp, num_gts_per_class)):
-        log.info(f"Class {i:2d}: {int(t):4d} {int(f):4d} {int(n):4d}")
-    log.info(f'Total num patches: {metrics["total_num_patches"]}')
-
+    metrics = results["bbox"]
     if args.synthetic:
         log.info(
-            f'Synthetic: {metrics["syn_tp"]:4d} / {metrics["syn_total"]:4d}'
+            f'[Synthetic] Total: {metrics["syn_total"]:4d}\n'
+            f'            TP: {metrics["syn_tp"]:4d} ({metrics["syn_tpr"]:.4f})\n'
+            f'            FN: {metrics["syn_fn"]:4d} ({metrics["syn_fnr"]:.4f})\n'
+            # f'            AP: {metrics["syn_ap"]:4f}'
+            # f'            AP@0.5: {metrics["syn_ap50"]:4f}'
         )
+    else:
+
+        num_gts_per_class = metrics["num_gts_per_class"]
+        tp, fp, conf_thres = _compute_metrics(
+            metrics["scores_full"],
+            num_gts_per_class,
+            OTHER_SIGN_CLASS[args.dataset],
+            args.conf_thres,
+            args.dt_iou_thres,
+        )
+        if args.conf_thres is None:
+            # Update with new conf_thres
+            metrics["conf_thres"] = conf_thres
+
+        for k, v in metrics.items():
+            if "syn" in k or not isinstance(v, (int, float, str, bool)):
+                continue
+            log.info(f"{k}: {v}")
+
+        log.info("          tp   fp   num_gt")
+        tp_all = 0
+        fp_all = 0
+        total = 0
+        for i, (t, f, n) in enumerate(zip(tp, fp, num_gts_per_class)):
+            log.info(f"Class {i:2d}: {int(t):4d} {int(f):4d} {int(n):4d}")
+            metrics[f"TP-{TS_NO_COLOR_LABEL_LIST[i]}"] = t
+            metrics[f"FP-{TS_NO_COLOR_LABEL_LIST[i]}"] = f
+            tp_all += t
+            fp_all += f
+            total += n
+        metrics[f"TPR-all"] = tp_all / total
+        metrics[f"FPR-all"] = fp_all / total
+        log.info(f'Total num patches: {metrics["total_num_patches"]}')
+
+        with open(os.path.join(args.result_dir, f"results_{t}.pkl"), "wb") as f:
+            pickle.dump(results, f)
 
 
 def compute_metrics(cfg, args):
@@ -207,9 +333,7 @@ def compute_metrics(cfg, args):
     # res = evaluator._derive_coco_results(
     #     coco_eval, 'bbox', class_names=evaluator._metadata.get('thing_classes')
     # )
-    import pdb
 
-    pdb.set_trace()
     print("Done")
     return
 
@@ -258,8 +382,6 @@ if __name__ == "__main__":
         compute_metrics(cfg, args)
     elif args.single_image:
         main_single(cfg, dataset_params)
-    elif args.attack_type != "none":
-        main_attack(cfg, args, dataset_params)
     else:
-        # main(cfg, args)
         main_attack(cfg, args, dataset_params)
+        # main(cfg, args)

@@ -113,3 +113,5 @@ sh train_yolo.sh
 - `configs` contains attack config files and detectron (Faster R-CNN) config files.
 
 <!-- ## Other Tips -->
+
+- To run on annotated signs only (consistent with results in the paper), use flag `--annotated-signs-only`. For Detectron, the dataset cache has to be deleted before this option to really take effect.

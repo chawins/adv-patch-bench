@@ -1,17 +1,30 @@
 import json
 import os
 from os.path import join
-from typing import Tuple
+from typing import Optional, Tuple
 
 import numpy as np
 import torch
 import torchvision.transforms.functional as T
 from PIL import Image
 
+    
+def coerce_rank(x: torch.Tensor, ndim: int) -> torch.Tensor:
+    """Reshape x *in-place* to ndim rank by adding/removing first singleton dim.
 
-def coerce_rank(x, ndim):
+    Args:
+        x (torch.Tensor): Tensor to reshape.
+        ndim (int): Desired number of dimension/rank
+
+    Raises:
+        ValueError: Desired rank/ndim cannot be achieved.
+
+    Returns:
+        torch.Tensor: Tensor x that is reshaped to desired rank or ndim.
+    """
     if x is None:
         return x
+        
     if x.ndim == ndim:
         return x
 
@@ -69,6 +82,7 @@ def pad_image(img, pad_size=0.1, pad_mode="constant", return_pad_size=False):
         if isinstance(pad_size, float)
         else pad_size
     )
+
     if isinstance(img, np.ndarray):
         height, width = img.shape[0], img.shape[1]
         pad_size_tuple = ((pad_size, pad_size), (pad_size, pad_size)) + (
@@ -78,6 +92,7 @@ def pad_image(img, pad_size=0.1, pad_mode="constant", return_pad_size=False):
     else:
         height, width = img.shape[img.ndim - 2], img.shape[img.ndim - 1]
         img_padded = T.pad(img, pad_size, padding_mode=pad_mode)
+
     if return_pad_size:
         return img_padded, pad_size
     return img_padded
@@ -189,7 +204,12 @@ def mask_to_box(mask):
     return y_min, x_min, y.max() - y_min, x.max() - x_min
 
 
-def prepare_obj(obj_path, img_size, obj_size, interp):
+def prepare_obj(
+    obj_path: str,
+    img_size: Tuple[int, int],
+    obj_size: Tuple[int, int],
+    interp: str,
+) -> Tuple[torch.Tensor, torch.Tensor]:
     """Load image of an object and place it in the middle of an image tensor of
     size `img_size`. The object is also resized to `obj_size`.
 
@@ -202,8 +222,13 @@ def prepare_obj(obj_path, img_size, obj_size, interp):
         torch.Tensor, torch.Tensor: Object and its mask
     """
     obj_numpy = np.array(Image.open(obj_path).convert("RGBA")) / 255
+    assert obj_numpy.ndim == 3 and obj_numpy.shape[-1] == 4
+
+    # Separate RGB object from alpha channel. Convert the latter to mask, and
+    # convert both to pytorch tensor.
     obj_mask = torch.from_numpy(obj_numpy[:, :, -1] == 1).float().unsqueeze(0)
     obj = torch.from_numpy(obj_numpy[:, :, :-1]).float().permute(2, 0, 1)
+
     obj = resize_and_center(
         obj, img_size, obj_size, is_binary=False, interp=interp
     )
@@ -217,8 +242,8 @@ def prepare_obj(obj_path, img_size, obj_size, interp):
 
 def resize_and_center(
     obj: torch.Tensor,
-    img_size: Tuple[int, int],
-    obj_size: Tuple[int, int],
+    img_size: Optional[Tuple[int, int]] = None,
+    obj_size: Optional[Tuple[int, int]] = None,
     is_binary: bool = False,
     interp: str = "bicubic",
 ):
@@ -234,13 +259,13 @@ def resize_and_center(
         elif interp == "bilinear":
             interp = T.InterpolationMode.BILINEAR
         else:
-            raise NotImplementedError("interp not supported.")
+            raise NotImplementedError(f"Interp {interp} not supported!")
         obj = T.resize(obj, obj_size, interpolation=interp)
+    else:
+        obj_size = obj.shape[-2:]
 
     if img_size is not None:
         # left, top, right, bottom
-        # left = (img_size[1] - obj_size[1]) // 2
-        # top = (img_size[0] - obj_size[0]) // 2
         left = torch.div(img_size[1] - obj_size[1], 2, rounding_mode="trunc")
         top = torch.div(img_size[0] - obj_size[0], 2, rounding_mode="trunc")
         pad_size = [

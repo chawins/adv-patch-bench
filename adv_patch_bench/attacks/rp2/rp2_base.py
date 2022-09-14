@@ -80,12 +80,17 @@ class RP2AttackModule(DetectorAttackModule):
             bg_size, scale=(0.8, 1), p=p_geo, resample=self.interp
         )
         self.obj_transforms = K.RandomAffine(
-            15, translate=(0.4, 0.4), p=p_geo,
+            degrees=15,
+            translate=(0.4, 0.4),
+            p=p_geo,
             return_transform=True,
             resample=self.interp,
+            # TODO: add scaling
         )
+        # Args to mask_transforms can be set to anything because it will use
+        # the same params as obj_transforms anyway (via apply_transform).
         self.mask_transforms = K.RandomAffine(
-            15, translate=(0.4, 0.4), p=p_geo, resample=Resample.NEAREST
+            15, translate=(0.40, 0.40), p=p_geo, resample=Resample.NEAREST
         )
         self.jitter_transform = K.ColorJitter(
             brightness=0.3, contrast=0.3, p=p_light

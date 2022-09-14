@@ -126,12 +126,20 @@ class COCOeval:
         if p.iouType == "segm":
             _toMask(gts, self.cocoGt)
             _toMask(dts, self.cocoDt)
+
+        # EDIT:
+        self.class_to_gtIds = {}
+        for cid in self.params.catIds:
+            self.class_to_gtIds[cid] = []
+
         # set ignore flag
         for gt in gts:
             gt["ignore"] = gt["ignore"] if "ignore" in gt else 0
             gt["ignore"] = "iscrowd" in gt and gt["iscrowd"]
             if p.iouType == "keypoints":
                 gt["ignore"] = (gt["num_keypoints"] == 0) or gt["ignore"]
+            self.class_to_gtIds[gt["category_id"]].append(gt["id"])
+        self.gtScores = np.zeros((len(self.params.iouThrs), gts[-1]["id"]))
 
         self._gts = defaultdict(list)  # gt for evaluation
         self._dts = defaultdict(list)  # dt for evaluation
@@ -144,10 +152,10 @@ class COCOeval:
         )  # per-image per-category evaluation results
         self.eval = {}  # accumulated evaluation results
 
-    def evaluate(self):
+    def evaluate(self) -> None:
         """
-        Run per image evaluation on given images and store results (a list of dict) in self.evalImgs
-        :return: None
+        Run per image evaluation on given images and store results (a list of
+        dict) in self.evalImgs
         """
         tic = time.time()
         print("Running per image evaluation...")
@@ -300,14 +308,14 @@ class COCOeval:
         p = self.params
         # EDIT: ============================================================= #
         catId_is_other = catId == self.other_catId
-        if self.eval_mode is not None and catId_is_other:
+        if self.eval_mode == "drop" and catId_is_other:
             # For other gt, consider all detections regardless of their catId
+            # NOTE: (legacy) This part may be removed altogether because all gt
+            # and dt are dropped in drop mode (ignore flag is set below).
             gt = self._gts[imgId, catId]
             dt = [_ for cId in p.catIds for _ in self._dts[imgId, cId]]
-        elif self.eval_mode == "mtsd":
+        elif self.eval_mode == "mtsd" and not catId_is_other:
             # In MTSD, for non-other gt, match to either other or non-other dt
-            # gt = [*self._gts[imgId, catId], *self._gts[imgId, self.other_catId]]
-            # dt = self._dts[imgId, catId]
             gt = self._gts[imgId, catId]
             dt = [*self._dts[imgId, catId], *self._dts[imgId, self.other_catId]]
         # =================================================================== #
@@ -377,7 +385,7 @@ class COCOeval:
                     gtm[tind, m] = d["id"]  # gtm contains matched dt id
 
         # EDIT: ============================================================= #
-        if self.eval_mode is not None and catId_is_other:
+        if self.eval_mode == "drop" and catId_is_other:
             # When gt is other, ignore all gt and ignore all dt
             # TODO: don't even need matching in this case
             gtIg[:] = 1
@@ -447,10 +455,9 @@ class COCOeval:
         R = len(p.recThrs)
         K = len(p.catIds) if p.useCats else 1
         A = len(p.areaRng)
-        M = len(p.maxDets)
-        precision = -np.ones(
-            (T, R, K, A, M)
-        )  # -1 for the precision of absent categories
+        M = len(p.maxDets)  # Number of max detections to consider
+        # -1 for the precision of absent categories
+        precision = -np.ones((T, R, K, A, M))
         recall = -np.ones((T, K, A, M))
         scores = -np.ones((T, R, K, A, M))
 
@@ -462,36 +469,30 @@ class COCOeval:
         setM = set(_pe.maxDets)
         setI = set(_pe.imgIds)
         # get inds to evaluate
-        k_list = [
-            n for n, k in enumerate(p.catIds) if k in setK
-        ]  # list of indices of catIds
+        # list of indices of catIds
+        k_list = [n for n, k in enumerate(p.catIds) if k in setK]
         m_list = [m for n, m in enumerate(p.maxDets) if m in setM]
         a_list = [
             n
             for n, a in enumerate(map(lambda x: tuple(x), p.areaRng))
             if a in setA
         ]
-        i_list = [
-            n for n, i in enumerate(p.imgIds) if i in setI
-        ]  # list of indices of image id's to eval
+        # list of indices of image id's to eval
+        i_list = [n for n, i in enumerate(p.imgIds) if i in setI]
         I0 = len(_pe.imgIds)
         A0 = len(_pe.areaRng)
 
-        # EDIT:
-        # tp_full = np.zeros((T, R, K))
-        # fp_full = np.zeros((T, R, K))
-        # recall_full = np.zeros((T, R, K))
-        # precision_full = np.zeros((T, R, K))
-        # tp_cmb = np.zeros((T))
-        # fp_cmb = np.zeros((T))
+        # EDIT: Keep track of number of gt's for each class
         num_gts_per_class = np.zeros(K)
+        # Save scores of all detections separated into gt with and without
+        # matched detection (per class per IoU thres).
         scores_full = {}
         for k in setK:
             scores_t = []
             for i in range(T):
                 scores_t.append([[], []])
             scores_full[k] = scores_t
-        # num_all_classes = 0
+        detected = {}
 
         # retrieve E at each category, area range, and max number of detections
         for k, k0 in enumerate(k_list):
@@ -507,8 +508,9 @@ class COCOeval:
                         [e["dtScores"][0:maxDet] for e in E]
                     )
 
-                    # different sorting method generates slightly different results.
-                    # mergesort is used to be consistent as Matlab implementation.
+                    # different sorting method generates slightly different
+                    # results. mergesort is used to be consistent as Matlab
+                    # implementation.
                     inds = np.argsort(-dtScores, kind="mergesort")
                     dtScoresSorted = dtScores[inds]
 
@@ -532,8 +534,13 @@ class COCOeval:
                     if a == 0 and m == M - 1:
                         # a = 0 is all area range
                         # m = M-1 is max number of detection
-                        # num_all_classes += npig
                         num_gts_per_class[k] += npig
+                        for t in range(T):
+                            dtm_t = dtm[t].astype(np.int64) - 1
+                            matched_dtm_idx = dtm_t >= 0
+                            matched_dtm_t = dtm_t[matched_dtm_idx]
+                            matched_dtScores = dtScoresSorted[matched_dtm_idx]
+                            self.gtScores[t, matched_dtm_t] = matched_dtScores
 
                     tp_sum = np.cumsum(tps, axis=1).astype(dtype=np.float)
                     fp_sum = np.cumsum(fps, axis=1).astype(dtype=np.float)
@@ -551,8 +558,9 @@ class COCOeval:
                         else:
                             recall[t, k, a, m] = 0
 
-                        # numpy is slow without cython optimization for accessing elements
-                        # use python array gets significant speed improvement
+                        # numpy is slow without cython optimization for
+                        # accessing elements use python array gets significant
+                        # speed improvement
                         pr = pr.tolist()
                         q = q.tolist()
 
@@ -560,9 +568,7 @@ class COCOeval:
                             if pr[i] > pr[i - 1]:
                                 pr[i - 1] = pr[i]
 
-                        # TODO: score
                         inds = np.searchsorted(rc, p.recThrs, side="left")
-                        # print(rc.max(), np.any(rc == 1), inds[-1], nd)
                         try:
                             for ri, pi in enumerate(inds):
                                 q[ri] = pr[pi]
@@ -572,8 +578,8 @@ class COCOeval:
                         precision[t, :, k, a, m] = np.array(q)
                         scores[t, :, k, a, m] = np.array(ss)
 
-                        # EDIT: Aggregate tp and fp over all classes at every
-                        # IoU threshold
+                        # EDIT: Collect scores of tp and fp over all classes at
+                        # every IoU threshold
                         if a == 0 and m == M - 1 and nd:
                             scores_full[k][t][0].extend(
                                 dtScoresSorted[tps[t]].tolist()
@@ -581,64 +587,55 @@ class COCOeval:
                             scores_full[k][t][1].extend(
                                 dtScoresSorted[fps[t]].tolist()
                             )
-                            # tp_cmb[t] += tp[-1]
-                            # fp_cmb[t] += fp[-1]
-                            # inds = np.searchsorted(rc, p.recThrs, side='right')
-                            # for ri, pi in enumerate(inds):
-                            #     if pi == 0:
-                            #         continue
-                            #     tp_full[t, ri, k] = tp[pi - 1]
-                            #     fp_full[t, ri, k] = fp[pi - 1]
-                            #     if nd:
-                            #         recall_full[t, ri, k] = rc[pi - 1]
-                            #     else:
-                            #         recall_full[t, ri, k] = 0
-                            #     precision_full[t, ri, k] = pr[pi - 1]
 
         # EDIT ============================================================== #
-        iou_thres = 0.5
-        iou_idx = np.where(p.iouThrs == iou_thres)[0][0]
+        # iou_thres = 0.5
+        # iou_idx = np.where(p.iouThrs == iou_thres)[0][0]
 
-        # Find score threshold that maximizes F1 score
-        num_scores = 1000
-        EPS = np.spacing(1)
-        scores_thres = np.linspace(0, 1, num_scores)
-        tp_full = np.zeros((T, K, num_scores))
-        fp_full = np.zeros_like(tp_full)
-        for t in range(T):
-            for k in setK:
-                for si, s in enumerate(scores_thres):
-                    tps = np.sum(np.array(scores_full[k][t][0]) >= s)
-                    fps = np.sum(np.array(scores_full[k][t][1]) >= s)
-                    tp_full[t, k, si] = tps
-                    fp_full[t, k, si] = fps
-        rc = tp_full / (num_gts_per_class[None, :, None] + EPS)
-        pr = tp_full / (tp_full + fp_full + EPS)
-        f1 = 2 * pr * rc / (pr + rc + EPS)
-        assert np.all(f1 >= 0) and not np.any(np.isnan(f1))
-        # Remove 'other' class from f1 and average over remaining classes
-        f1_mean = np.delete(f1[iou_idx], self.other_catId, axis=0).mean(0)
-        if self.conf_thres is None:
-            max_f1_idx = f1_mean.argmax()
-        else:
-            print("Using specified conf_thres...")
-            # Find f1 index closest to the specified conf_thres
-            max_f1_idx = np.abs(self.conf_thres - scores_thres).argmin()
+        # # Find score threshold that maximizes F1 score
+        # num_scores = 1000
+        # EPS = np.spacing(1)
+        # scores_thres = np.linspace(0, 1, num_scores)
+        # tp_full = np.zeros((T, K, num_scores))
+        # fp_full = np.zeros_like(tp_full)
+        # for t in range(T):
+        #     for k in setK:
+        #         for si, s in enumerate(scores_thres):
+        #             tps = np.sum(np.array(scores_full[k][t][0]) >= s)
+        #             fps = np.sum(np.array(scores_full[k][t][1]) >= s)
+        #             tp_full[t, k, si] = tps
+        #             fp_full[t, k, si] = fps
+        # rc = tp_full / (num_gts_per_class[None, :, None] + EPS)
+        # pr = tp_full / (tp_full + fp_full + EPS)
+        # f1 = 2 * pr * rc / (pr + rc + EPS)
+        # assert np.all(f1 >= 0) and not np.any(np.isnan(f1))
+        # # Remove 'other' class from f1 and average over remaining classes
+        # f1_mean = np.delete(f1[iou_idx], self.other_catId, axis=0).mean(0)
+        # if self.conf_thres is None:
+        #     max_f1_idx = f1_mean.argmax()
+        # else:
+        #     print("Using specified conf_thres...")
+        #     # Find f1 index closest to the specified conf_thres
+        #     max_f1_idx = np.abs(self.conf_thres - scores_thres).argmin()
 
-        max_f1 = f1_mean[max_f1_idx]
-        tp, fp = (
-            tp_full[iou_idx, :, max_f1_idx],
-            fp_full[iou_idx, :, max_f1_idx],
-        )
-        print(f"[DEBUG] max_f1_idx: {max_f1_idx}, max_f1: {max_f1:.4f}")
-        print(f"[DEBUG] num_gts_per_class: {num_gts_per_class}")
-        print(f"[DEBUG] tp: {tp}")
-        print(f"[DEBUG] fp: {fp}")
-        print(f"[DEBUG] precision: {pr[iou_idx, :, max_f1_idx]}")
-        print(f"[DEBUG] recall: {rc[iou_idx, :, max_f1_idx]}")
+        # max_f1 = f1_mean[max_f1_idx]
+        # tp = tp_full[iou_idx, :, max_f1_idx]
+        # fp = fp_full[iou_idx, :, max_f1_idx]
+        # print(f"[DEBUG] max_f1_idx: {max_f1_idx}, max_f1: {max_f1:.4f}")
+        # print(f"[DEBUG] num_gts_per_class: {num_gts_per_class}")
+        # print(f"[DEBUG] tp: {tp}")
+        # print(f"[DEBUG] fp: {fp}")
+        # print(f"[DEBUG] precision: {pr[iou_idx, :, max_f1_idx]}")
+        # print(f"[DEBUG] recall: {rc[iou_idx, :, max_f1_idx]}")
 
-        # Compute combined metrics, ignoring class
-        recall_cmb = tp.sum() / (num_gts_per_class.sum() + EPS)
+        # # Compute combined metrics, ignoring class
+        # recall_cmb = tp.sum() / (num_gts_per_class.sum() + EPS)
+
+        gtScores = {}
+        for catId, gtIds in self.class_to_gtIds.items():
+            gtIds = np.array(gtIds) - 1
+            gtScores[catId] = self.gtScores[:, gtIds]
+
         # END_EDIT ========================================================== #
 
         self.eval = {
@@ -648,8 +645,12 @@ class COCOeval:
             "precision": precision,
             "recall": recall,
             "scores": scores,
-            "recall_cmb": recall_cmb,
-            "dumped_metrics": [max_f1_idx, tp_full, fp_full, num_gts_per_class],
+            # "recall_cmb": recall_cmb,
+            # "dumped_metrics": [max_f1_idx, tp_full, fp_full, num_gts_per_class],
+            "scores_full": scores_full,
+            "num_gts_per_class": num_gts_per_class,
+            "detected": detected,
+            "gtScores": gtScores,
         }
         toc = time.time()
         print("DONE (t={:0.2f}s).".format(toc - tic))

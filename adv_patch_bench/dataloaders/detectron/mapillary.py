@@ -1,6 +1,6 @@
 import os
 from os.path import isfile, join
-from typing import List, Tuple
+from typing import Any, Dict, List, Tuple
 
 import pandas as pd
 from detectron2.data import DatasetCatalog, MetadataCatalog
@@ -16,7 +16,7 @@ from hparams import (
 from tqdm import tqdm
 
 
-def readlines(path: str) -> List:
+def readlines(path: str) -> List[List[str]]:
     with open(path, "r") as f:
         lines = f.readlines()
     return [line.strip() for line in lines]
@@ -29,7 +29,7 @@ def get_mapillary_dict(
     use_color: bool = False,
     ignore_other: bool = False,
     only_annotated: bool = True,
-) -> List:
+) -> List[Dict[str, Any]]:
 
     mapillary_split = {
         "train": "training",
@@ -81,10 +81,12 @@ def get_mapillary_dict(
                 # If we want results on annotated signs, we set the class of
                 # the unannotated ones to "other" or background class
                 class_index = bg_idx
-            # Compute object area if the image were to be resized to have width of 1280 pixels
+            # Compute object area if the image were to be resized to have width
+            # of 1280 pixels.
             obj_width = xmax - xmin
             obj_height = ymax - ymin
-            # Scale by 1280 / width to normalize varying image size (this is not a bug)
+            # Scale by 1280 / width to normalize varying image size (this is
+            # not a bug).
             obj_area = (obj_width / width * 1280) * (obj_height / width * 1280)
             # Remove labels for small or "other" objects
             if obj_area < MIN_OBJ_AREA or (
@@ -117,7 +119,7 @@ def register_mapillary(
     use_color: bool = False,
     ignore_other: bool = False,
     only_annotated: bool = True,
-) -> Tuple:
+) -> Tuple[Any, ...]:
     base_path = PATH_MAPILLARY_BASE
     dataset = "mapillary_color" if use_color else "mapillary_no_color"
     bg_idx = OTHER_SIGN_CLASS[dataset]

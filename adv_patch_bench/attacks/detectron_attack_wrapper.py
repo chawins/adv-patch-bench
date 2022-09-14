@@ -9,19 +9,91 @@ from typing import Any, Dict, List, Tuple, Union
 
 import cv2
 import numpy as np
-import pandas as pd
 import torch
 from adv_patch_bench.attacks.rp2.rp2_detectron import RP2AttackDetectron
-from adv_patch_bench.attacks.utils import (apply_synthetic_sign, prep_attack,
-                                           prep_synthetic_eval)
+from adv_patch_bench.attacks.utils import (
+    apply_synthetic_sign,
+    load_annotation_df,
+    prep_adv_patch,
+    prep_synthetic_eval,
+)
 from adv_patch_bench.transforms import transform_and_apply_patch
 from adv_patch_bench.utils.detectron import build_evaluator
+from adv_patch_bench.utils.image import coerce_rank, resize_and_center
 from detectron2.config import CfgNode
 from detectron2.data import MetadataCatalog
 from detectron2.structures.boxes import pairwise_iou
 from detectron2.utils.visualizer import Visualizer
 from hparams import SAVE_DIR_DETECTRON
 from tqdm import tqdm
+
+
+def _pad_or_crop_height(
+    img: torch.Tensor, size: Tuple[int, int]
+) -> torch.Tensor:
+    if img is None:
+        return None
+    cur_h, cur_w = img.shape[-2:]
+    h, w = size
+    assert (
+        w == cur_w
+    ), f"Width should already match ({img.shape[-2:]} vs {size})!"
+    if h > cur_h:
+        # Pad to adv_patch/patch_mask to match cur image height
+        img = resize_and_center(img, img_size=size)
+    elif h < cur_h:
+        # Crop adv_patch/patch_mask to match cur image height
+        top_crop = (cur_h - h) // 2
+        bot_crop = cur_h - h - top_crop
+        img = img[..., top_crop:-bot_crop, :]
+    assert img.shape[-2:] == size
+    return img
+
+
+def _compute_ap_recall(scores, matched, NP, recall_thresholds=None):
+    """
+    (DEPRECATED) This curve tracing method has some quirks that do not appear
+    when only unique confidence thresholds are used (i.e. Scikit-learn's
+    implementation), however, in order to be consistent, the COCO's method is
+    reproduced.
+    """
+
+    # by default evaluate on 101 recall levels
+    if recall_thresholds is None:
+        recall_thresholds = np.linspace(
+            0.0, 1.00, int(np.round((1.00 - 0.0) / 0.01)) + 1, endpoint=True
+        )
+
+    # sort in descending score order
+    inds = np.argsort(-scores, kind="stable")
+
+    scores = scores[inds]
+    matched = matched[inds]
+
+    tp = np.cumsum(matched)
+    fp = np.cumsum(~matched)
+
+    rc = tp / NP
+    pr = tp / (tp + fp)
+
+    # make precision monotonically decreasing
+    i_pr = np.maximum.accumulate(pr[::-1])[::-1]
+
+    rec_idx = np.searchsorted(rc, recall_thresholds, side="left")
+
+    # get interpolated precision values at the evaluation thresholds
+    i_pr = np.array([i_pr[r] if r < len(i_pr) else 0 for r in rec_idx])
+
+    return {
+        "precision": pr,
+        "recall": rc,
+        "AP": np.mean(i_pr),
+        "interpolated precision": i_pr,
+        "interpolated recall": recall_thresholds,
+        "total positives": NP,
+        "TP": tp[-1] if len(tp) != 0 else 0,
+        "FP": fp[-1] if len(fp) != 0 else 0,
+    }
 
 
 class DetectronAttackWrapper:
@@ -32,9 +104,19 @@ class DetectronAttackWrapper:
         attack_config: Dict,
         model: torch.nn.Module,
         dataloader: Any,
-        class_names: List,
+        class_names: List[str],
+        iou_thres: float = 0.5,
     ) -> None:
-        """Attack wrapper for detectron model"""
+        """Attack wrapper for detectron model.
+
+        Args:
+            cfg (CfgNode): Detectron model config.
+            args (Namespace): All command line args.
+            attack_config (Dict): Dictionary containing attack parameters.
+            model (torch.nn.Module): Target model.
+            dataloader (Any): Dataset to run attack on.
+            class_names (List[str]): List of class names in string.
+        """
         self.args = args
         self.verbose = args.verbose
         self.debug = args.debug
@@ -57,9 +139,15 @@ class DetectronAttackWrapper:
         self.input_format = cfg.INPUT.FORMAT
         assert self.input_format == "BGR", "Only allow BGR input format for now"
 
+        self.num_test = args.num_test if not self.debug else 20
         self.data_loader = dataloader
         self.device = self.model.device
+        self.conf_thres = args.conf_thres
         self.metadata = MetadataCatalog.get(self.cfg.DATASETS.TEST[0])
+        self.interp = args.interp
+
+        # Load annotation DataFrame. "Other" signs are discarded.
+        self.df = load_annotation_df(args.tgt_csv_filepath)
 
         # Attack params
         if attack_config is None:
@@ -70,31 +158,50 @@ class DetectronAttackWrapper:
                 None,
                 None,
                 rescaling=False,
-                interp=args.interp,
+                interp=self.interp,
                 verbose=self.verbose,
             )
         else:
             self.attack = None
         self.attack_type = args.attack_type
         self.use_attack = self.attack_type != "none"
-        self.adv_sign_class = args.obj_class
-        self.df = pd.read_csv(args.tgt_csv_filepath)
+        self.adv_sign_class_id = args.obj_class
         self.class_names = class_names
         self.other_sign_class = len(self.class_names) - 1
         self.synthetic = args.synthetic
+        self.annotated_signs_only = args.annotated_signs_only
         self.transform_params = {
             "transform_mode": args.transform_mode,
             "use_relight": not args.no_patch_relight,
-            "interp": args.interp,
+            "interp": self.interp,
         }
-        self.evaluator = build_evaluator(
-            cfg, cfg.DATASETS.TEST[0], synthetic=self.synthetic
-        )
+        self.fixed_input_size = False  # TODO: Make this an option
+
         if self.synthetic:
-            # TODO: self.syn_sign_class is not really used now.
+            # TODO: (DEPRECATED)
             # self.syn_sign_class = self.other_sign_class + 1
-            # self.metadata.thing_classes.append('synthetic')
-            self.syn_sign_class = self.other_sign_class
+            # self.metadata.thing_classes.append("synthetic")
+            # self.syn_sign_class = self.other_sign_class
+
+            # Compute obj_size
+            obj_size = args.obj_size
+            obj_class_name = class_names[self.adv_sign_class_id]
+            obj_class_name_list = obj_class_name.split("-")
+            sign_width_in_mm = float(obj_class_name_list[1])
+            if len(obj_class_name_list) == 3 and sign_width_in_mm != 0:
+                sign_height_in_mm = float(obj_class_name_list[2])
+                hw_ratio = sign_height_in_mm / sign_width_in_mm
+            else:
+                hw_ratio = 1
+            if isinstance(obj_size, int):
+                obj_size = (round(obj_size * hw_ratio), obj_size)
+
+            assert isinstance(obj_size, tuple) and all(
+                [isinstance(s, int) for s in obj_size]
+            ), f"obj_size is {obj_size}. It must be int or tuple of two ints!"
+            self.obj_size = obj_size
+        else:
+            self.obj_size = None
 
         # Loading file names from the specified text file
         self.skipped_filename_list = []
@@ -102,6 +209,17 @@ class DetectronAttackWrapper:
             img_txt_path = os.path.join(SAVE_DIR_DETECTRON, args.img_txt_path)
             with open(img_txt_path, "r") as f:
                 self.skipped_filename_list = f.read().splitlines()
+
+        self.evaluator = build_evaluator(
+            cfg, cfg.DATASETS.TEST[0], synthetic=self.synthetic
+        )
+
+        # Set up list of IoU thresholds to consider
+        all_iou_thres = np.linspace(
+            0.5, 0.95, int(np.round((0.95 - 0.5) / 0.05)) + 1, endpoint=True
+        )
+        self.iou_thres_idx = int(np.where(all_iou_thres == iou_thres)[0])
+        self.all_iou_thres = torch.from_numpy(all_iou_thres).to(self.device)
 
     @staticmethod
     def clone_metadata(imgs, metadata):
@@ -124,7 +242,7 @@ class DetectronAttackWrapper:
         self,
         vis_save_dir: str = None,
         vis_conf_thresh: float = 0.5,
-    ) -> List:
+    ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
         """Runs the DAG algorithm and saves the prediction results.
 
         Args:
@@ -141,25 +259,49 @@ class DetectronAttackWrapper:
         coco_instances_results = []
 
         # Prepare attack data
+        adv_patch, patch_mask = None, None
         if self.use_attack:
-            _, adv_patch, patch_mask = prep_attack(
-                self.args, self.img_size, self.device
+            adv_patch, patch_mask = prep_adv_patch(
+                img_size=self.img_size,
+                adv_patch_path=self.args.adv_patch_path,
+                attack_type=self.attack_type,
+                synthetic=self.synthetic,
+                obj_size=self.obj_size,
+                interp=self.interp,
+                device=self.device,
             )
 
+        if self.synthetic:
+            # Prepare evaluation with synthetic signs, syn_data: (syn_obj,
+            # syn_obj_mask, obj_transforms, mask_transforms, syn_sign_class)
+            syn_data = prep_synthetic_eval(
+                self.args.syn_obj_path,
+                syn_use_scale=self.args.syn_use_scale,
+                syn_use_colorjitter=self.args.syn_use_colorjitter,
+                img_size=self.img_size,
+                obj_size=self.obj_size,
+                transform_prob=1.0,
+                interp=self.interp,
+                device=self.device,
+            )
+            # Append with synthetic sign class
+            syn_obj, syn_obj_mask = syn_data[:2]
+            syn_data = [*syn_data[2:], self.adv_sign_class_id]
+            syn_scores = torch.zeros(
+                (len(self.all_iou_thres), self.num_test), device=self.device
+            )
+            syn_matches = torch.zeros_like(syn_scores)
+
         total_num_images, total_num_patches, num_vis = 0, 0, 0
-        syn_is_detected = []
-        syn_tp, syn_total = 0, 0
         self.evaluator.reset()
 
         for i, batch in tqdm(enumerate(self.data_loader)):
-            if self.debug and total_num_patches >= 20:
-                break
-            if total_num_images >= self.args.num_test:
+
+            if total_num_images >= self.num_test:
                 break
 
             file_name = batch[0]["file_name"]
             filename = file_name.split("/")[-1]
-            # basename = os.path.basename(file_name)
             image_id = batch[0]["image_id"]
             h0, w0 = batch[0]["height"], batch[0]["width"]
             img_df = self.df[self.df["filename"] == filename]
@@ -179,57 +321,99 @@ class DetectronAttackWrapper:
 
             # Image from dataloader is 'BGR' and has shape [C, H, W]
             images = batch[0]["image"].float().to(self.device)
+            new_gt = batch[0]
             if self.input_format == "BGR":
                 images = images.flip(0)
             perturbed_image = images.clone()
             _, h, w = images.shape
-            img_data = (h0, w0, h / h0, w / w0, 0, 0)
 
-            is_included = False
+            if self.fixed_input_size or w < self.img_size[1]:
+                # TODO: This code does not work correctly because gt is not
+                # adjusted in the same way (still requires padding).
+                # Resize and pad perturbed_image to self.img_size preseving
+                # aspect ratio. This also handles images whose width is the
+                # shorter side in the varying input size case.
+                if w < self.img_size[1]:
+                    # If real width is smaller than desired one, then height
+                    # must be longer than width so we scale down by height ratio
+                    scale = self.img_size[0] / h
+                else:
+                    scale = 1
+                resized_size = (int(h * scale), int(w * scale))
+                perturbed_image = resize_and_center(
+                    perturbed_image,
+                    img_size=self.img_size,
+                    obj_size=resized_size,
+                    interp=self.interp,
+                )
+                h, w = self.img_size
+                h_pad = h - resized_size[0]  # TODO: divided by 2?
+                w_pad = w - resized_size[1]
+            else:
+                h_pad, w_pad = 0, 0
+
+            # NOTE: w_pad, h_pad is not typo!
+            img_dim_data = (h0, w0, h / h0, w / w0, w_pad, h_pad)
+
+            # Include all images if annotated_signs_only is False
+            is_included = not self.annotated_signs_only
+
             if self.synthetic:
+                # Attacking synthetic signs
                 self.log(f"Attacking {file_name} ...")
-                _, adv_patch, patch_mask = prep_attack(
-                    self.args, (h, w), self.device
-                )
-                # Prepare evaluation with synthetic signs, syn_data: (syn_obj,
-                # syn_obj_mask, obj_transforms, mask_transforms, syn_sign_class)
-                syn_data = list(
-                    prep_synthetic_eval(
-                        self.args,
-                        (h, w),
-                        self.class_names,
-                        transform_prob=1.0,
-                        device=self.device,
+
+                if not self.fixed_input_size:
+                    # When image size is not fixed, other objects (sign, patch,
+                    # masks) have to be resized instead.
+                    cur_adv_patch, cur_patch_mask, cur_syn_obj, cur_obj_mask = [
+                        _pad_or_crop_height(p, (h, w))
+                        for p in [adv_patch, patch_mask, syn_obj, syn_obj_mask]
+                    ]
+                else:
+                    # Otherwise, sizes should already match
+                    cur_adv_patch, cur_patch_mask, cur_syn_obj, cur_obj_mask = (
+                        adv_patch,
+                        patch_mask,
+                        syn_obj,
+                        syn_obj_mask,
                     )
-                )
-                syn_data[-1] = self.adv_sign_class  # TODO(clean)
+
                 # Apply synthetic sign and patch to image
                 perturbed_image, new_gt = apply_synthetic_sign(
-                    images,
+                    perturbed_image,
                     batch[0],
                     None,
-                    adv_patch,
-                    patch_mask,
+                    cur_adv_patch,
+                    cur_patch_mask,
+                    cur_syn_obj,
+                    cur_obj_mask,
                     *syn_data,
                     use_attack=self.use_attack,
                     return_target=True,
                     is_detectron=True,
                     other_sign_class=self.other_sign_class,
                 )
+                # Image is used as background only so we can include any of
+                # them when evaluating synthetic signs.
                 is_included = True
                 total_num_patches += 1
+
             elif len(img_df) > 0:
-                new_gt = batch[0]
-                # Iterate through objects in the current image
+                # Attacking real signs
+
+                # Iterate through annotated objects in the current image
                 for obj_idx, obj in img_df.iterrows():
+
                     obj_classname = obj["final_shape"]
-                    obj_class = self.class_names.index(obj_classname)
-                    if (
-                        obj_class != self.adv_sign_class
-                        and self.adv_sign_class != -1
+                    obj_class_id = self.class_names.index(obj_classname)
+
+                    # Skip if it is "other" class or not from desired class
+                    if obj_class_id == self.other_sign_class or (
+                        obj_class_id != self.adv_sign_class_id
+                        and self.adv_sign_class_id != -1
                     ):
-                        # Skip if object is not from desired class
                         continue
+
                     is_included = True
                     total_num_patches += 1
                     if not self.use_attack:
@@ -237,7 +421,7 @@ class DetectronAttackWrapper:
 
                     # Run attack for each sign to get a new `adv_patch`
                     if self.attack_type == "per-sign":
-                        data = [obj_classname, obj, *img_data]
+                        data = [obj_classname, obj, *img_dim_data]
                         attack_images = [[images, data, str(file_name)]]
                         cloned_metadata = self.clone_metadata(
                             [obj[0] for obj in attack_images], batch
@@ -246,7 +430,7 @@ class DetectronAttackWrapper:
                             adv_patch = self.attack.attack_real(
                                 attack_images,
                                 patch_mask,
-                                obj_class,
+                                obj_class_id,
                                 metadata=cloned_metadata,
                             )
 
@@ -255,65 +439,60 @@ class DetectronAttackWrapper:
                     self.log(f"Attacking {file_name} on obj {obj_idx}...")
 
                     # Transform and apply patch on the image
-                    adv_patch_clone = adv_patch.clone().to(self.device)
                     img = perturbed_image.clone().to(self.device)
                     perturbed_image, _ = transform_and_apply_patch(
                         img,
-                        adv_patch_clone,
+                        adv_patch,
                         patch_mask,
                         obj_classname,
                         obj,
-                        img_data,
+                        img_dim_data,
                         **self.transform_params,
                     )
 
             if not is_included:
                 # Skip image without any adversarial patch when attacking
                 continue
-            total_num_images += 1
 
             # Perform inference on perturbed image
             # perturbed_image = self._post_process_image(perturbed_image)
-            if perturbed_image.ndim == 4:
-                # TODO: Remove batch dim
-                perturbed_image = perturbed_image[0]
+            perturbed_image = coerce_rank(perturbed_image, 3)
+            outputs = self(perturbed_image, (h0, w0))
 
-            outputs = self(perturbed_image)
-            new_outputs = deepcopy(outputs)
-            new_instances = new_outputs["instances"]
-            new_instances._image_size = (h0, w0)
-            # Set predicted class of any object that overlaps with the gt bbox
-            # of the synthetic sign to a new syn_sign_class
             if self.synthetic:
+                instances = outputs["instances"]
                 ious = pairwise_iou(
-                    new_instances.pred_boxes.to("cpu"),
-                    new_gt["instances"].gt_boxes[-1],
+                    instances.pred_boxes,
+                    new_gt["instances"].gt_boxes[-1].to(self.device),
                 )[:, 0]
-                idx = (
-                    (ious >= 0.5)
-                    & (new_instances.scores.to("cpu") >= self.args.conf_thres)
-                    & (
-                        new_instances.pred_classes.to("cpu")
-                        == self.adv_sign_class
-                    )
-                )
-                is_detected = idx.any().item()
-                syn_is_detected.append(is_detected)
-                syn_tp += is_detected
-                syn_total += 1
-                new_instances.pred_classes[idx] = self.syn_sign_class
-            # Scale output to match original input size for evaluator
-            h_ratio, w_ratio = h / h0, w / w0
-            new_instances.pred_boxes.tensor[:, 0] /= h_ratio
-            new_instances.pred_boxes.tensor[:, 1] /= w_ratio
-            new_instances.pred_boxes.tensor[:, 2] /= h_ratio
-            new_instances.pred_boxes.tensor[:, 3] /= w_ratio
-
-            self.evaluator.process([new_gt], [new_outputs])
+                # Skip empty ious (no overlap)
+                if len(ious) == 0:
+                    continue
+                # Save scores and gt-dt matches at each level of IoU thresholds
+                # Find the match with highest IoU and has correct class
+                ious *= instances.pred_classes == self.adv_sign_class_id
+                max_idx = ious.argmax()
+                # Compute matches at different values of IoU threshold
+                matches = ious[max_idx] >= self.all_iou_thres
+                syn_matches[:, total_num_images] = matches
+                scores = instances.scores[max_idx] * matches
+                syn_scores[:, total_num_images] = scores
+            else:
+                new_outputs = deepcopy(outputs)
+                # new_instances = new_outputs["instances"]
+                # new_instances._image_size = (h0, w0)
+                # # Scale output to match original input size for evaluator
+                # h_ratio, w_ratio = h / h0, w / w0
+                # new_instances.pred_boxes.tensor[:, 0] /= h_ratio
+                # new_instances.pred_boxes.tensor[:, 1] /= w_ratio
+                # new_instances.pred_boxes.tensor[:, 2] /= h_ratio
+                # new_instances.pred_boxes.tensor[:, 3] /= w_ratio
+                self.evaluator.process([new_gt], [new_outputs])
 
             # Convert to coco predictions format
             instance_dicts = self._create_instance_dicts(outputs, image_id)
             coco_instances_results.extend(instance_dicts)
+            total_num_images += 1
 
             if vis_save_dir and num_vis < self.num_vis and is_included:
                 # Visualize ground truth
@@ -341,7 +520,7 @@ class DetectronAttackWrapper:
 
                 if self.use_attack:
                     # Save original predictions
-                    outputs = self(original_image)
+                    outputs = self(original_image, (h0, w0))  # FIXME
                     instances = outputs["instances"]
                     mask = instances.scores > vis_conf_thresh
                     instances = instances[mask]
@@ -362,23 +541,45 @@ class DetectronAttackWrapper:
                 self.log(f"Saved visualization to {save_adv_path}")
                 num_vis += 1
 
-        metrics = self.evaluator.evaluate()
-        metrics["bbox"]["total_num_patches"] = total_num_patches
         if self.synthetic:
-            metrics["bbox"]["syn_tp"] = syn_tp
-            metrics["bbox"]["syn_total"] = syn_total
-            metrics["bbox"]["syn_is_detected"] = syn_is_detected
+            metrics = {"bbox": {}}
+            syn_scores = syn_scores.cpu().numpy()
+            syn_matches = syn_matches.float().cpu().numpy()
+
+            # Iterate over each IoU threshold
+            # ap_t = np.zeros(len(self.all_iou_thres))
+            # for t, (scores, matches) in enumerate(zip(syn_scores, syn_matches)):
+            #     results = _compute_ap_recall(scores, matches, total_num_images)
+            #     ap_t[t] = results["AP"]
+            # metrics["bbox"]["syn_ap"] = ap_t.mean()
+            # metrics["bbox"]["syn_ap50"] = ap_t[0]
+
+            # Get detection for desired score and for all IoU thresholds
+            detected = (syn_scores >= self.conf_thres) * syn_matches
+            # Select desired IoU threshold
+            tp = detected[self.iou_thres_idx].sum()
+            fn = total_num_images - tp
+            metrics["bbox"]["syn_total"] = total_num_images
+            metrics["bbox"]["syn_tp"] = int(tp)
+            metrics["bbox"]["syn_fn"] = int(fn)
+            metrics["bbox"]["syn_tpr"] = tp / total_num_images
+            metrics["bbox"]["syn_fnr"] = fn / total_num_images
+            metrics["bbox"]["syn_scores"] = syn_scores
+            metrics["bbox"]["syn_matches"] = syn_matches
+        else:
+            metrics = self.evaluator.evaluate()
+            metrics["bbox"]["total_num_patches"] = total_num_patches
+
         return coco_instances_results, metrics
 
     def _create_instance_dicts(
         self, outputs: Dict[str, Any], image_id: int
     ) -> List[Dict[str, Any]]:
-        """Convert model outputs to coco predictions format
+        """Convert model outputs to coco predictions format.
 
         Args:
-            outputs : Dict[str, Any]
-                Output dictionary from model output
-            image_id : int
+            outputs (Dict[str, Any]): Output dictionary from model output
+            image_id (int): Image ID
 
         Returns:
             List[Dict[str, Any]]: List of per instance predictions
@@ -404,10 +605,10 @@ class DetectronAttackWrapper:
 
     @torch.no_grad()
     def _post_process_image(self, image: torch.Tensor) -> torch.Tensor:
-        """Process image back to [0, 255] range, i.e. undo the normalization
+        """Process image back to [0, 255] range, i.e. undo the normalization.
 
         Args:
-            image : torch.Tensor [C, H, W]
+            image: torch.Tensor [C, H, W]
 
         Returns:
             torch.Tensor [C, H, W]
@@ -420,16 +621,16 @@ class DetectronAttackWrapper:
     def __call__(
         self,
         original_image: Union[np.ndarray, torch.Tensor],
-    ) -> Dict:
+        height_width,
+    ) -> Dict[str, Any]:
         """Simple inference on a single image
 
         Args:
             original_image (np.ndarray): an image of shape (H, W, C) (in RGB order).
                 or (torch.Tensor): an image of shape (C, H, W) (in RGB order).
-                
+
         Returns:
-            predictions (dict):
-                the output of the model for one image only.
+            predictions (dict): the output of the model for one image only.
                 See :doc:`/tutorials/models` for details about the format.
         """
         with torch.no_grad():  # https://github.com/sphinx-doc/sphinx/issues/4258
@@ -439,8 +640,7 @@ class DetectronAttackWrapper:
                     # whether the model expects BGR inputs or RGB
                     original_image = original_image[:, :, ::-1]
                 height, width = original_image.shape[:2]
-                # image = self.aug.get_transform(original_image).apply_image(original_image)
-                image = torch.as_tensor(
+                image = torch.from_numpy(
                     original_image.astype("float32").transpose(2, 0, 1)
                 )
             else:
@@ -450,7 +650,9 @@ class DetectronAttackWrapper:
                 if self.input_format == "BGR":
                     image = image.flip(0)
 
-            inputs = {"image": image, "height": height, "width": width}
             # inputs = {"image": image, "height": size[0], "width": size[1]}
+            height, width = height_width
+            inputs = {"image": image, "height": height, "width": width}
+
             predictions = self.model([inputs])[0]
             return predictions

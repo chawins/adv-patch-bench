@@ -18,19 +18,17 @@ from detectron2.config import get_cfg
 from detectron2.data import (build_detection_train_loader,
                              get_detection_dataset_dicts)
 from detectron2.engine import (DefaultTrainer, default_argument_parser,
-                               default_setup, hooks, launch)
-from detectron2.evaluation import COCOEvaluator, verify_results
+                               default_setup, launch)
+from detectron2.evaluation import verify_results
 
 # Import this file to register MTSD for detectron
 from adv_patch_bench.dataloaders.detectron.mtsd import register_mtsd
 from adv_patch_bench.utils.detectron import build_evaluator
-from adv_patch_bench.utils.detectron.custom_best_checkpointer import \
-    BestCheckpointer
 from adv_patch_bench.utils.detectron.custom_sampler import \
     RepeatFactorTrainingSampler
 from hparams import DATASETS, OTHER_SIGN_CLASS
 
-torch.multiprocessing.set_sharing_strategy('file_system')
+torch.multiprocessing.set_sharing_strategy("file_system")
 
 
 class Trainer(DefaultTrainer):
@@ -44,23 +42,6 @@ class Trainer(DefaultTrainer):
     @classmethod
     def build_evaluator(cls, cfg, dataset_name, output_folder=None):
         return build_evaluator(cfg, dataset_name, output_folder)
-
-    # @classmethod
-    # def test_with_TTA(cls, cfg, model):
-    #     logger = logging.getLogger("detectron2.trainer")
-    #     # In the end of training, run an evaluation with TTA
-    #     # Only support some R-CNN models.
-    #     logger.info("Running inference with test-time augmentation ...")
-    #     model = GeneralizedRCNNWithTTA(cfg, model)
-    #     evaluators = [
-    #         cls.build_evaluator(
-    #             cfg, name, output_folder=os.path.join(cfg.OUTPUT_DIR, "inference_TTA")
-    #         )
-    #         for name in cfg.DATASETS.TEST
-    #     ]
-    #     res = cls.test(cfg, model, evaluators)
-    #     res = OrderedDict({k + "_TTA": v for k, v in res.items()})
-    #     return res
 
     @classmethod
     def build_train_loader(cls, cfg):
@@ -77,12 +58,18 @@ class Trainer(DefaultTrainer):
             min_keypoints=cfg.MODEL.ROI_KEYPOINT_HEAD.MIN_KEYPOINTS_PER_IMAGE
             if cfg.MODEL.KEYPOINT_ON
             else 0,
-            proposal_files=cfg.DATASETS.PROPOSAL_FILES_TRAIN if cfg.MODEL.LOAD_PROPOSALS else None,
+            proposal_files=cfg.DATASETS.PROPOSAL_FILES_TRAIN
+            if cfg.MODEL.LOAD_PROPOSALS
+            else None,
         )
-        repeat_factors = RepeatFactorTrainingSampler.repeat_factors_from_category_frequency(
-            dataset, cfg.DATALOADER.REPEAT_THRESHOLD
+        repeat_factors = (
+            RepeatFactorTrainingSampler.repeat_factors_from_category_frequency(
+                dataset, cfg.DATALOADER.REPEAT_THRESHOLD
+            )
         )
-        return build_detection_train_loader(cfg, sampler=RepeatFactorTrainingSampler(repeat_factors))
+        return build_detection_train_loader(
+            cfg, sampler=RepeatFactorTrainingSampler(repeat_factors)
+        )
 
 
 def setup(args):
@@ -105,10 +92,12 @@ def setup(args):
 def main(args):
 
     register_mtsd(
-        use_mtsd_original_labels='orig' in args.dataset,
-        use_color='no_color' not in args.dataset,
+        use_mtsd_original_labels="orig" in args.dataset,
+        use_color="no_color" not in args.dataset,
         ignore_other=args.data_no_other,
     )
+
+    # TODO: Need to register Mapillary here?
 
     cfg = setup(args)
 
@@ -131,26 +120,21 @@ def main(args):
     """
     trainer = Trainer(cfg)
     trainer.resume_or_load(resume=args.resume)
-    # Register hook for our custom checkpointer every `eval_period` steps
-    # trainer.register_hooks([
-    #     BestCheckpointer(cfg.TEST.EVAL_PERIOD, trainer.checkpointer),
-    # ])
-    # if cfg.TEST.AUG.ENABLED:
-    #     trainer.register_hooks(
-    #         [hooks.EvalHook(0, lambda: trainer.test_with_TTA(cfg, trainer.model))]
-    #     )
     return trainer.train()
 
 
 if __name__ == "__main__":
     parser = default_argument_parser()
-    parser.add_argument('--dataset', type=str, required=True)
-    parser.add_argument('--data-no-other', action='store_true',
-                        help='If True, do not load "other" or "background" class to the dataset.')
-    parser.add_argument('--eval-mode', type=str, default='default')
+    parser.add_argument("--dataset", type=str, required=True)
+    parser.add_argument(
+        "--data-no-other",
+        action="store_true",
+        help='If True, do not load "other" or "background" class to the dataset.',
+    )
+    parser.add_argument("--eval-mode", type=str, default="default")
     args = parser.parse_args()
 
-    print('Command Line Args: ', args)
+    print("Command Line Args: ", args)
     assert args.dataset in DATASETS
 
     launch(

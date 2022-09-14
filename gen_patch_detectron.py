@@ -38,7 +38,9 @@ from adv_patch_bench.utils.argparse import (
     eval_args_parser,
     setup_detectron_test_args,
 )
-from adv_patch_bench.utils.detectron import ShuffleInferenceSampler
+from adv_patch_bench.utils.detectron.custom_sampler import (
+    ShuffleInferenceSampler,
+)
 from adv_patch_bench.utils.image import get_obj_width, resize_and_center
 from gen_mask import generate_mask
 from hparams import (

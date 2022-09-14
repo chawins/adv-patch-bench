@@ -5,13 +5,13 @@ from .image_only_dataset import ImageOnlyFolder
 from .mtsd import MTSD
 
 DATASET_DICT = {
-    'mtsd': MTSD,
-    # TODO: quick fix
-    'mapillary_no_color': MTSD,
-    'mapillary_color': MTSD,
+    "mtsd": MTSD,
+    # TODO: Clean up. This is not a bug. Only used to get normalization.
+    "mapillary_no_color": MTSD,
+    "mapillary_color": MTSD,
 }
 
 
 def load_dataset(args):
-    loader = DATASET_DICT[args.dataset]['loader']
+    loader = DATASET_DICT[args.dataset]["loader"]
     return loader(args)

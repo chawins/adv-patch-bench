@@ -26,10 +26,7 @@ from detectron2.utils.logger import create_small_table
 from pycocotools.coco import COCO
 from tabulate import tabulate
 
-# from pycocotools.cocoeval import COCOeval
 from .custom_cocoeval import COCOeval
-
-# from .custom_cocoeval_2 import COCOeval
 
 
 class CustomCOCOEvaluator(DatasetEvaluator):
@@ -128,7 +125,7 @@ class CustomCOCOEvaluator(DatasetEvaluator):
         # Test set json files do not contain annotations (evaluation must be
         # performed using the COCO evaluation server).
         self._do_evaluation = "annotations" in self._coco_api.dataset
-        # EDIT:
+        # EDIT: Add other_catId (ID for "other" class)
         self.cocoeval_args = {
             "eval_mode": cfg.eval_mode,
             "other_catId": cfg.other_catId,
@@ -383,7 +380,7 @@ class CustomCOCOEvaluator(DatasetEvaluator):
         # from https://github.com/facebookresearch/Detectron/blob/a6a835f5b8208c45d0dce217ce9bbda915f44df7/detectron/datasets/json_dataset_evaluator.py#L222-L252 # noqa
         precisions = coco_eval.eval["precision"]
         # precision has dims (iou, recall, cls, area range, max dets)
-        assert len(class_names) == precisions.shape[2]
+        # assert len(class_names) == precisions.shape[2]  # FIXME
 
         results_per_category = []
         ap_50_95, ap_50 = [], []
@@ -415,11 +412,15 @@ class CustomCOCOEvaluator(DatasetEvaluator):
             numalign="left",
         )
         self._logger.info("Per-category {} AP: \n".format(iou_type) + table)
-        rc = coco_eval.eval["recall_cmb"] * 100
-        self._logger.info(f"recall_cmb: {rc:.4f}, fnr_cmb: {100 - rc:.4f}")
+        # EDIT: add some more metrics to collect
+        # rc = coco_eval.eval["recall_cmb"] * 100
+        # self._logger.info(f"recall_cmb: {rc:.4f}, fnr_cmb: {100 - rc:.4f}")
 
         results.update({"AP-" + name: ap for name, ap in results_per_category})
-        results["dumped_metrics"] = coco_eval.eval["dumped_metrics"]
+        results["scores_full"] = coco_eval.eval["scores_full"]
+        results["num_gts_per_class"] = coco_eval.eval["num_gts_per_class"]
+        results["detected"] = coco_eval.eval["detected"]
+        results["gtScores"] = coco_eval.eval["gtScores"]
         return results
 
 
