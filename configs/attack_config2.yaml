@@ -1,5 +1,5 @@
 rp2:
-  num_steps: 1000
+  num_steps: 10
   step_size: 0.01
   num_eot: 1
   optimizer: 'adam'  # 'adam', 'sgd', 'pgd'
@@ -9,7 +9,7 @@ rp2:
   augment_prob_relight: 0
   use_patch_relight: True
   patch_dim: 64
-  num_bg: 50  # Number of backgrounds attacker uses to generate patch
+  num_bg: 1  # Number of backgrounds attacker uses to generate patch
   use_lr_schedule: False
   transform_mode: 'perspective'
   # var_change_ab: Use variable change on alpha, beta 

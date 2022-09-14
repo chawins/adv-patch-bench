@@ -280,4 +280,5 @@ def resize_and_center(
 
 
 def get_obj_width(obj_class, class_names):
+    # mm to inch
     return float(class_names[obj_class].split("-")[1]) * 0.0393701
