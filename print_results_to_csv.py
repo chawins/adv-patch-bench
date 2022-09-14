@@ -4,6 +4,8 @@ import pickle
 import numpy as np
 import pandas as pd
 
+from hparams import TS_NO_COLOR_LABEL_LIST
+
 
 def _compute_ap_recall(scores, matched, NP, recall_thresholds=None):
     """
@@ -53,8 +55,8 @@ def _compute_ap_recall(scores, matched, NP, recall_thresholds=None):
 
 BASE_PATH = "./detectron_output/"
 CLEAN_EXP_NAME = "no_patch"
-ATTACK_EXP_NAME = "synthetic-10x20"
-CONF_THRES = 0.792
+ATTACK_EXP_NAME = "synthetic-10x20-obj64-pd64-ld0.001"
+CONF_THRES = 0.634
 iou_idx = 0  # 0.5
 
 clean_exp_path = pathlib.Path(BASE_PATH) / CLEAN_EXP_NAME
@@ -65,6 +67,7 @@ exp_paths.extend(list(attack_exp_path.iterdir()))
 df_rows = {}
 gt_scores = [{}, {}]
 results_all_classes = {}
+print_df_rows = {}
 
 # Iterate over sign classes
 for sign_path in exp_paths:
@@ -83,17 +86,15 @@ for sign_path in exp_paths:
             with open(result_path, "rb") as f:
                 results = pickle.load(f)
 
-            # if "bbox" not in results:
-            #     import pdb
-
-            #     pdb.set_trace()
-
             if "dumped_metrics" in results["bbox"]:
                 # Skip deprecated version
                 continue
             if "obj_class" not in results:
                 continue
+            if results["name"] not in (CLEAN_EXP_NAME, ATTACK_EXP_NAME):
+                continue
             conf_thres = results["conf_thres"]
+            print_df = {}
 
             # Add timestamp
             time = result_path.split("_")[-1].split(".pkl")[0]
@@ -106,30 +107,76 @@ for sign_path in exp_paths:
             synthetic = int(results["synthetic"])
             syn_use_scale = int(results["syn_use_scale"])
             syn_use_colorjitter = int(results["syn_use_colorjitter"])
-            if obj_class == -1 and not synthetic:
-                clean_setting_id = "all_clean_real"
-            else:
-                clean_setting_id = f"{obj_class}_{obj_size}_{synthetic}_{syn_use_scale}_{syn_use_colorjitter}"
 
             is_attack = int(results["attack_type"] != "none")
             scores_dict = gt_scores[is_attack]
-            if not is_attack and clean_setting_id in scores_dict:
-                raise ValueError(
-                    "There are multiple results on clean data. Check result at"
-                    f"{result_path}."
-                )
 
-            if "syn_scores" in metrics:
+            if synthetic:
                 # Synthetic sign
-                scores_dict[clean_setting_id] = (
-                    time,
-                    metrics["syn_scores"] * metrics["syn_matches"],
-                )
+                cls_scores = {
+                    obj_class: metrics["syn_scores"] * metrics["syn_matches"]
+                }
+                base_sid = f"syn_size{obj_size}_{syn_use_scale}_{syn_use_colorjitter}_atk{int(is_attack)}"
             else:
                 # Real signs
                 if "gtScores" not in metrics:
                     continue
-                scores_dict[clean_setting_id] = (time, metrics["gtScores"])
+                cls_scores = metrics["gtScores"]
+                base_sid = f"real_atk{int(is_attack)}"
+
+            if obj_class == -1:
+                obj_classes = metrics["gtScores"].keys()
+            else:
+                obj_classes = [obj_class]
+
+            for oc in obj_classes:
+                # TODO: skip other class
+                if oc == 11:
+                    continue
+                scores = cls_scores[oc]
+                sid = f"{base_sid}_{oc:02d}"
+                if sid in scores_dict:
+                    # There should only be one clean setting
+                    raise ValueError(
+                        f"There are multiple results under same setting "
+                        f"({sid}). Check result at {result_path}."
+                    )
+                scores_dict[sid] = (time, scores)
+
+                tp = np.sum(scores[iou_idx] >= CONF_THRES)
+                tpr = tp / scores.shape[1]
+                class_name = TS_NO_COLOR_LABEL_LIST[oc]
+                metrics[f"FNR-{class_name}"] = 1 - tpr
+
+                print_df_rows[sid] = {
+                    "id": sid,
+                    "atk": is_attack,
+                    "FNR": (1 - tpr) * 100,
+                }
+                if not synthetic:
+                    print_df_rows[sid]["AP"] = metrics[f"AP-{class_name}"]
+
+            # Create DF row for all classes
+            all_class_sid = f"{base_sid}_all"
+            print_df_rows[all_class_sid] = {
+                "id": all_class_sid,
+                "atk": is_attack,
+            }
+            if not is_attack and not synthetic:
+                print_df_rows[all_class_sid]["FNR"] = np.mean(
+                    [
+                        print_df_rows[f"{base_sid}_{x:02d}"]["FNR"]
+                        for x in obj_classes
+                        if x != 11
+                    ]
+                )
+                print_df_rows[all_class_sid]["AP"] = np.mean(
+                    [
+                        print_df_rows[f"{base_sid}_{x:02d}"]["AP"]
+                        for x in obj_classes
+                        if x != 11
+                    ]
+                )
 
             # Print result as one row in df
             df_row = {}
@@ -137,37 +184,53 @@ for sign_path in exp_paths:
                 if isinstance(v, (float, int, str, bool)):
                     df_row[k] = v
             for k, v in metrics.items():
-                if isinstance(v, float):
+                if isinstance(v, (float, int, str, bool)):
                     df_row[k] = v
             df_rows[time] = df_row
 
+
 # Iterate through all attack experiments
-for clean_setting_id, (time, scores) in gt_scores[1].items():
+for sid, (time, adv_scores) in gt_scores[1].items():
 
-    adv_scores = scores
-    if not df_rows[time]["synthetic"]:
-        obj_class = df_rows[time]["obj_class"]
-        clean_scores = gt_scores[0]["all_clean_real"][1]
-        clean_scores = clean_scores[obj_class]
-        adv_scores = adv_scores[obj_class]
-    else:
-        clean_scores = gt_scores[0][clean_setting_id][1]
-
+    split_sid = sid.split("_")
+    clean_sid = "_".join([*split_sid[:-2], "atk0", split_sid[-1]])
+    if clean_sid not in gt_scores[0]:
+        print(clean_sid)
+        print(gt_scores[0].keys())
+    clean_scores = gt_scores[0][clean_sid][1]
     clean_detected = clean_scores[iou_idx] >= CONF_THRES
     adv_detected = adv_scores[iou_idx] >= CONF_THRES
     num_succeed = np.sum(~adv_detected & clean_detected)
     num_clean = np.sum(clean_detected)
-    attack_success_rate = num_succeed / (num_clean + 1e-9)
+    num_missed = np.sum(~adv_detected)
+    attack_success_rate = num_succeed / (num_clean + 1e-9) * 100
     df_rows[time]["ASR"] = attack_success_rate
-    setting_id_no_class = "_".join(clean_setting_id.split("_")[1:])
+    print_df_rows[sid]["ASR"] = attack_success_rate
 
-    if setting_id_no_class in results_all_classes:
-        results_all_classes[setting_id_no_class]["num_succeed"] += num_succeed
-        results_all_classes[setting_id_no_class]["num_clean"] += num_clean
+    sid_no_class = "_".join(split_sid[:-1])
+    fnr = print_df_rows[sid]["FNR"]
+    if "real" in sid_no_class:
+        ap = print_df_rows[sid]["AP"]
     else:
-        results_all_classes[setting_id_no_class] = {
+        ap = ""
+
+    if sid_no_class in results_all_classes:
+        results_all_classes[sid_no_class]["num_succeed"] += num_succeed
+        results_all_classes[sid_no_class]["num_clean"] += num_clean
+        results_all_classes[sid_no_class]["num_missed"] += num_missed
+        results_all_classes[sid_no_class]["num_total"] += len(adv_detected)
+        results_all_classes[sid_no_class]["asr"].append(attack_success_rate)
+        results_all_classes[sid_no_class]["fnr"].append(fnr)
+        results_all_classes[sid_no_class]["ap"].append(ap)
+    else:
+        results_all_classes[sid_no_class] = {
             "num_succeed": num_succeed,
             "num_clean": num_clean,
+            "num_missed": num_missed,
+            "num_total": len(adv_detected),
+            "asr": [attack_success_rate],
+            "fnr": [fnr],
+            "ap": [ap],
         }
 
 df_rows = list(df_rows.values())
@@ -175,9 +238,35 @@ df = pd.DataFrame.from_records(df_rows)
 df = df.sort_index(axis=1)
 df.to_csv(attack_exp_path / "results.csv")
 
+print(ATTACK_EXP_NAME, CLEAN_EXP_NAME, CONF_THRES)
 print("All-class ASR")
 for sid in results_all_classes:
-    asr = results_all_classes[sid]["num_succeed"] / (
-        results_all_classes[sid]["num_clean"] + 1e-9
+    num_succeed = results_all_classes[sid]["num_succeed"]
+    num_clean = results_all_classes[sid]["num_clean"]
+    num_missed = results_all_classes[sid]["num_missed"]
+    total = results_all_classes[sid]["num_total"]
+    asr = num_succeed / (num_clean + 1e-9) * 100
+
+    # Average metrics over classes instead of counting all as one
+    all_class_sid = f"{sid}_all"
+    avg_asr = np.mean(results_all_classes[sid]["asr"])
+    print_df_rows[all_class_sid]["ASR"] = avg_asr
+    avg_fnr = np.mean(results_all_classes[sid]["fnr"])
+    print_df_rows[all_class_sid]["FNR"] = avg_fnr
+    if "real" in all_class_sid:
+        mAP = np.mean(results_all_classes[sid]["ap"])
+        print_df_rows[all_class_sid]["AP"] = mAP
+
+    print(
+        f"{sid}: combined {asr:.2f} ({num_succeed}/{num_clean}), "
+        f"average {avg_asr:.2f}, total {total}"
     )
-    print(f"{sid}: {asr:.4f}")
+
+print_df_rows = list(print_df_rows.values())
+df = pd.DataFrame.from_records(print_df_rows)
+df = df.sort_values(["id", "atk"])
+print(df.to_csv(float_format="%0.6f", index=False))
+
+# import pdb
+
+# pdb.set_trace()

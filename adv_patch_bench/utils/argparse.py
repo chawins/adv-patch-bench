@@ -6,6 +6,8 @@ from detectron2.config import get_cfg
 from detectron2.engine import default_argument_parser, default_setup
 from hparams import LABEL_LIST, NUM_CLASSES, PATH_SYN_OBJ, SAVE_DIR_DETECTRON
 
+# _TEST_PARAMS = ['interp', 'synthetic', 'obj_size', 'syn_use_scale', 'syn_use_colorjitter']
+# _ATK_PARAMS = ['attack_type', 'mask_name', 'transform_mode']
 
 def eval_args_parser(is_detectron, root=None):
 
@@ -403,6 +405,9 @@ def get_save_dir(args):
                 f"Must be between -1 and {len(class_names) - 1}."
             )
         )
+    # test_name = ''
+    # for param in _TEST_PARAMS:
+    #     test_name += f'_{getattr(args, param)}'
     save_dir = os.path.join(SAVE_DIR_DETECTRON, args.name, class_name)
     os.makedirs(save_dir, exist_ok=True)
     return save_dir
