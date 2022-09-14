@@ -22,6 +22,7 @@ import pandas as pd
 import torch
 import yaml
 from tqdm import tqdm
+from PIL import Image
 
 from adv_patch_bench.attacks.rp2.rp2_yolo import RP2AttackYOLO
 from adv_patch_bench.attacks.utils import (
@@ -420,17 +421,6 @@ def run(
         else:
             adv_patch_path = args.adv_patch_path
 
-    #     df, adv_patch, patch_mask = prep_attack(args, img_size, device)
-    # else:
-    #     adv_patch = None
-    #     patch_mask = None
-
-        # adv_patch_dir = os.path.join(
-        #     SAVE_DIR_YOLO, args.name, names[adv_sign_class]
-        # )
-        # adv_patch_path = os.path.join(adv_patch_dir, "adv_patch.pkl")
-
-
         adv_patch, patch_mask = prep_adv_patch(
             img_size=img_size,
             adv_patch_path=adv_patch_path,
@@ -445,15 +435,13 @@ def run(
     if synthetic:
         # Prepare evaluation with synthetic signs. syn_data: syn_obj, obj_mask,
         # obj_transforms, mask_transforms, syn_sign_class
-        from PIL import Image
+        
         obj_numpy = np.array(Image.open(args.syn_obj_path).convert("RGBA"))
         h_w_ratio = obj_numpy.shape[0] / obj_numpy.shape[1]
 
         obj_size = args.obj_size
         if isinstance(obj_size, int):
             obj_size = (round(obj_size * h_w_ratio), obj_size)
-        # print(obj_size)
-        # qqq
 
         syn_data = prep_synthetic_eval(
             args.syn_obj_path,
@@ -545,13 +533,7 @@ def run(
         if num_apply_imgs >= len(filename_list) and args.run_only_img_txt:
             break
         # ======================= BEGIN: apply patch ======================== #
-        for image_i, path in enumerate(paths):
-            # filename = path.split('/')[-1]
-            # if filename != '-8EClSWhRM4FuiWdu-kbQg.jpg':
-            #     continue
-            # print(filename)
-            # print(im[image_i].shape)
-            
+        for image_i, path in enumerate(paths):            
             if use_attack and not synthetic:
                 filename = path.split("/")[-1]
                 img_df = df[df["filename"] == filename]
