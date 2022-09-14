@@ -457,7 +457,7 @@ class DetectronAttackWrapper:
             # Perform inference on perturbed image
             # perturbed_image = self._post_process_image(perturbed_image)
             perturbed_image = coerce_rank(perturbed_image, 3)
-            outputs = self(perturbed_image, (h0, w0))
+            outputs = self(perturbed_image)
 
             if self.synthetic:
                 instances = outputs["instances"]
@@ -479,14 +479,14 @@ class DetectronAttackWrapper:
                 syn_scores[:, total_num_images] = scores
             else:
                 new_outputs = deepcopy(outputs)
-                # new_instances = new_outputs["instances"]
-                # new_instances._image_size = (h0, w0)
-                # # Scale output to match original input size for evaluator
-                # h_ratio, w_ratio = h / h0, w / w0
-                # new_instances.pred_boxes.tensor[:, 0] /= h_ratio
-                # new_instances.pred_boxes.tensor[:, 1] /= w_ratio
-                # new_instances.pred_boxes.tensor[:, 2] /= h_ratio
-                # new_instances.pred_boxes.tensor[:, 3] /= w_ratio
+                new_instances = new_outputs["instances"]
+                new_instances._image_size = (h0, w0)
+                # Scale output to match original input size for evaluator
+                h_ratio, w_ratio = h / h0, w / w0
+                new_instances.pred_boxes.tensor[:, 0] /= h_ratio
+                new_instances.pred_boxes.tensor[:, 1] /= w_ratio
+                new_instances.pred_boxes.tensor[:, 2] /= h_ratio
+                new_instances.pred_boxes.tensor[:, 3] /= w_ratio
                 self.evaluator.process([new_gt], [new_outputs])
 
             # Convert to coco predictions format
@@ -520,7 +520,7 @@ class DetectronAttackWrapper:
 
                 if self.use_attack:
                     # Save original predictions
-                    outputs = self(original_image, (h0, w0))  # FIXME
+                    outputs = self(original_image)
                     instances = outputs["instances"]
                     mask = instances.scores > vis_conf_thresh
                     instances = instances[mask]
@@ -621,7 +621,6 @@ class DetectronAttackWrapper:
     def __call__(
         self,
         original_image: Union[np.ndarray, torch.Tensor],
-        height_width,
     ) -> Dict[str, Any]:
         """Simple inference on a single image
 
@@ -651,7 +650,7 @@ class DetectronAttackWrapper:
                     image = image.flip(0)
 
             # inputs = {"image": image, "height": size[0], "width": size[1]}
-            height, width = height_width
+            # height, width = height_width
             inputs = {"image": image, "height": height, "width": width}
 
             predictions = self.model([inputs])[0]

@@ -3,24 +3,22 @@ import logging
 import os
 import pickle
 import random
-import time
+from collections.abc import MutableMapping
 from typing import Optional
 
-import cv2
 import numpy as np
+import pandas as pd
 import torch
 import yaml
 from detectron2.data import build_detection_test_loader
 from detectron2.engine import DefaultPredictor
 from detectron2.evaluation import inference_on_dataset
-from tqdm import tqdm
 
 from adv_patch_bench.attacks.detectron_attack_wrapper import (
     DetectronAttackWrapper,
 )
 from adv_patch_bench.dataloaders import (
     BenignMapper,
-    get_mapillary_dict,
     register_mapillary,
     register_mtsd,
 )
@@ -33,12 +31,17 @@ from hparams import (
     DATASETS,
     LABEL_LIST,
     OTHER_SIGN_CLASS,
-    SAVE_DIR_DETECTRON,
     TS_NO_COLOR_LABEL_LIST,
 )
 
 log = logging.getLogger(__name__)
 formatter = logging.Formatter("[%(levelname)s] %(asctime)s: %(message)s")
+
+
+def normalize_dict(d: MutableMapping, sep: str = ".") -> MutableMapping:
+    [flat_dict] = pd.json_normalize(d, sep=sep).to_dict(orient="records")
+    flat_dict = {key: flat_dict[key] for key in sorted(flat_dict.keys())}
+    return flat_dict
 
 
 def _compute_metrics(
@@ -158,40 +161,7 @@ def main(cfg, args):
     print(inference_on_dataset(predictor.model, val_loader, evaluator))
 
 
-def main_single(cfg, dataset_params):
-    from detectron2.utils.visualizer import Visualizer
-
-    # Build model
-    model = DefaultPredictor(cfg)
-    # Build dataloader
-    split = cfg.DATASETS.TEST[0].split("_")[1]
-    val_loader = get_mapillary_dict(split, *dataset_params)
-    for i, inpt in enumerate(val_loader):
-
-        img = cv2.imread(inpt["file_name"])
-
-        # DEBUG
-        if args.debug:
-            print(inpt["file_name"])
-        if i == 10:
-            break
-            # import pdb
-            # pdb.set_trace()
-        # img = inpt[0]['image'].permute(1, 2, 0).numpy()
-        # prediction = model(img)
-        # visualizer = Visualizer(img[:, :, ::-1], metadata=metadata, scale=0.5)
-        # out_gt = visualizer.draw_dataset_dict(inpt[0])
-
-        # visualizer = Visualizer(img[:, :, ::-1], metadata=metadata, scale=0.5)
-        # out_gt = visualizer.draw_dataset_dict(inpt)
-        # out_gt.save('gt.png')
-        # visualizer = Visualizer(img[:, :, ::-1], metadata=metadata, scale=0.5)
-        # prediction = model(img)
-        # out_pred = visualizer.draw_instance_predictions(prediction['instances'].to('cpu'))
-        # out_pred.save('pred.png')
-
-
-def main_attack(cfg, args, dataset_params):
+def main_attack(cfg, args):
 
     vis_dir = os.path.join(args.result_dir, "vis")
     os.makedirs(vis_dir, exist_ok=True)
@@ -229,13 +199,25 @@ def main_attack(cfg, args, dataset_params):
         class_names=LABEL_LIST[args.dataset],
     )
     log.info("=> Running attack...")
-    coco_instances_results, metrics = attack.run(
-        vis_save_dir=vis_dir, vis_conf_thresh=0.5
-    )
+    _, metrics = attack.run(vis_save_dir=vis_dir, vis_conf_thresh=0.5)
 
-    t = int(time.time())
-    with open(os.path.join(args.result_dir, f"results_{t}.pkl"), "wb") as f:
-        results = {**metrics, **vars(args)}
+    test_cfg = vars(args)
+    test_cfg = normalize_dict(test_cfg)
+    test_cfg_hash = abs(hash(json.dumps(test_cfg, sort_keys=True)))
+
+    if attack_config is None:
+        atk_cfg_hash = None
+        results = {**metrics, **test_cfg}
+    else:
+        attack_config = normalize_dict(attack_config)
+        atk_cfg_hash = abs(hash(json.dumps(attack_config, sort_keys=True)))
+        results = {**metrics, **test_cfg, **attack_config}
+
+    # FIXME result_path = os.path.join(
+    #     args.result_dir, f"results_test{test_cfg_hash}_atk{atk_cfg_hash}.pkl"
+    # )
+    result_path = os.path.join(args.result_dir, f"results_{test_cfg_hash}.pkl")
+    with open(result_path, "wb") as f:
         pickle.dump(results, f)
 
     # Logging results
@@ -282,60 +264,8 @@ def main_attack(cfg, args, dataset_params):
         metrics[f"FPR-all"] = fp_all / total
         log.info(f'Total num patches: {metrics["total_num_patches"]}')
 
-        with open(os.path.join(args.result_dir, f"results_{t}.pkl"), "wb") as f:
+        with open(result_path, "wb") as f:
             pickle.dump(results, f)
-
-
-def compute_metrics(cfg, args):
-
-    dataset_name = cfg.DATASETS.TEST[0]
-    print(f"=> Creating a custom evaluator on {dataset_name}...")
-    evaluator = build_evaluator(cfg, dataset_name)
-
-    # Load results from coco_instances.json
-    save_dir = os.path.join(SAVE_DIR_DETECTRON, args.name)
-    with open(os.path.join(save_dir, f"coco_instances_results.json")) as f:
-        coco_results = json.load(f)
-    img_ids = None  # Set to None to evaluate the entire dataset
-
-    val_loader = build_detection_test_loader(
-        cfg,
-        cfg.DATASETS.TEST[0],
-        mapper=BenignMapper(cfg, is_train=False),
-        batch_size=1,
-        num_workers=cfg.DATALOADER.NUM_WORKERS,
-    )
-    coco_results = [
-        [r for r in coco_results if r["image_id"] == i]
-        for i in range(len(val_loader))
-    ]
-
-    evaluator.reset()
-    for i, batch in tqdm(enumerate(val_loader)):
-        evaluator.process(batch, [coco_results[i]], outputs_are_json=True)
-    results = evaluator.evaluate()
-
-    # coco_eval = (
-    #     cocoeval._evaluate_predictions_on_coco(
-    #         evaluator._coco_api,
-    #         coco_results,
-    #         'bbox',
-    #         kpt_oks_sigmas=evaluator._kpt_oks_sigmas,
-    #         use_fast_impl=evaluator._use_fast_impl,
-    #         img_ids=img_ids,
-    #         eval_mode=evaluator.eval_mode,
-    #         other_catId=evaluator.other_catId,
-    #     )
-    #     if len(coco_results) > 0
-    #     else None  # cocoapi does not handle empty results very well
-    # )
-
-    # res = evaluator._derive_coco_results(
-    #     coco_eval, 'bbox', class_names=evaluator._metadata.get('thing_classes')
-    # )
-
-    print("Done")
-    return
 
 
 if __name__ == "__main__":
@@ -378,10 +308,4 @@ if __name__ == "__main__":
             only_annotated=args.annotated_signs_only,
         )
 
-    if args.compute_metrics:
-        compute_metrics(cfg, args)
-    elif args.single_image:
-        main_single(cfg, dataset_params)
-    else:
-        main_attack(cfg, args, dataset_params)
-        # main(cfg, args)
+    main_attack(cfg, args)
