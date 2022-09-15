@@ -203,7 +203,10 @@ def main(args):
     for sid, (time, adv_scores) in gt_scores[1].items():
 
         split_sid = sid.split("_")
-        clean_sid = "_".join([*split_sid[:-2], "atk0", split_sid[-1]])
+        if "real" in split_sid:
+            clean_sid = "real_atk0"
+        else:
+            clean_sid = "_".join([*split_sid[:-2], "atk0", split_sid[-1]])
         if clean_sid not in gt_scores[0]:
             print(clean_sid)
             print(gt_scores[0].keys())
