@@ -213,10 +213,9 @@ def main_attack(cfg, args):
         atk_cfg_hash = abs(hash(json.dumps(attack_config, sort_keys=True)))
         results = {**metrics, **test_cfg, **attack_config}
 
-    # FIXME result_path = os.path.join(
-    #     args.result_dir, f"results_test{test_cfg_hash}_atk{atk_cfg_hash}.pkl"
-    # )
-    result_path = os.path.join(args.result_dir, f"results_{test_cfg_hash}.pkl")
+    result_path = os.path.join(
+        args.result_dir, f"results_test{test_cfg_hash}_atk{atk_cfg_hash}.pkl"
+    )
     with open(result_path, "wb") as f:
         pickle.dump(results, f)
 
