@@ -16,6 +16,7 @@ PATH_DEBUG_ADV_PATCH = f"{PATH_SYN_OBJ}/debug.png"
 # TODO: move to args in the future
 SAVE_DIR_DETECTRON = "./detectron_output/"
 SAVE_DIR_YOLO = "./runs/val/"
+PATH_BG_TXT_FILE = "./bg_txt_files/"
 
 MTSD_VAL_LABEL_COUNTS_DICT = {
     "circle-750.0": 2999,

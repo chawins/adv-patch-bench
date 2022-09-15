@@ -24,7 +24,7 @@ from detectron2.config import CfgNode
 from detectron2.data import MetadataCatalog
 from detectron2.structures.boxes import pairwise_iou
 from detectron2.utils.visualizer import Visualizer
-from hparams import SAVE_DIR_DETECTRON
+from hparams import PATH_BG_TXT_FILE
 from tqdm import tqdm
 
 
@@ -206,7 +206,7 @@ class DetectronAttackWrapper:
         # Loading file names from the specified text file
         self.skipped_filename_list = []
         if args.img_txt_path != "":
-            img_txt_path = os.path.join(SAVE_DIR_DETECTRON, args.img_txt_path)
+            img_txt_path = os.path.join(PATH_BG_TXT_FILE, args.img_txt_path)
             with open(img_txt_path, "r") as f:
                 self.skipped_filename_list = f.read().splitlines()
 
