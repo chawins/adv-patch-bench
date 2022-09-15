@@ -204,7 +204,7 @@ def main(args):
 
         split_sid = sid.split("_")
         if "real" in split_sid:
-            clean_sid = "real_atk0"
+            clean_sid = f"real_atk0_{split_sid[-1]}"
         else:
             clean_sid = "_".join([*split_sid[:-2], "atk0", split_sid[-1]])
         if clean_sid not in gt_scores[0]:
