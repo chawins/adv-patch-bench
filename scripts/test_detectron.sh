@@ -27,7 +27,6 @@ SYN_OBJ_SIZE=64
 CLEAN_EXP_NAME=no_patch_syn_${TF_MODE}_${SYN_OBJ_SIZE}
 
 # Temp
-EXP_NAME=debug
 BG_FILES=bg_filenames_octagon-915.0.txt
 
 # Evaluate on MTSD validation set and compute score thres.
