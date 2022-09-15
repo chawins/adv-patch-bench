@@ -110,9 +110,6 @@ def main(args):
                 obj_class = results["obj_class"]
                 obj_size = results["obj_size"]
                 synthetic = int(results["synthetic"])
-                syn_use_scale = int(results["syn_use_scale"])
-                syn_use_colorjitter = int(results["syn_use_colorjitter"])
-
                 is_attack = int(results["attack_type"] != "none")
                 scores_dict = gt_scores[is_attack]
 
@@ -122,13 +119,18 @@ def main(args):
                         obj_class: metrics["syn_scores"]
                         * metrics["syn_matches"]
                     }
+                    syn_use_scale = int(results["syn_use_scale"])
+                    syn_use_colorjitter = int(results["syn_use_colorjitter"])
                     base_sid = f"syn_size{obj_size}_{syn_use_scale}_{syn_use_colorjitter}_atk{int(is_attack)}"
                 else:
                     # Real signs
                     if "gtScores" not in metrics:
                         continue
                     cls_scores = metrics["gtScores"]
-                    base_sid = f"real_atk{int(is_attack)}"
+                    tf_mode = results["transform_mode"]
+                    base_sid = f"real_atk{int(is_attack)}_{tf_mode}"
+                    if results["no_patch_relight"]:
+                        base_sid += "_nolight"
 
                 if obj_class == -1:
                     obj_classes = metrics["gtScores"].keys()
