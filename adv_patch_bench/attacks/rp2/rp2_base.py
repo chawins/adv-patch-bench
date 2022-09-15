@@ -73,7 +73,7 @@ class RP2AttackModule(DetectorAttackModule):
 
         # Define EoT augmentation for attacking synthetic signs
         p_geo = float(rp2_config["augment_prob_geometric"])
-        intensity_geo = rp2_config.get("augment_intensity_geometric", 1)
+        rotate_degrees = float(rp2_config.get("augment_rotate_degree", 15))
         p_light = float(rp2_config["augment_prob_relight"])
         intensity_light = float(rp2_config.get("augment_intensity_relight", 0.3))
         bg_size = self.input_size
@@ -81,7 +81,7 @@ class RP2AttackModule(DetectorAttackModule):
             bg_size, scale=(0.8, 1), p=p_geo, resample=self.interp
         )
         self.obj_transforms = K.RandomAffine(
-            degrees=15,
+            degrees=rotate_degrees,
             translate=(0.4, 0.4),
             p=p_geo,
             return_transform=True,
