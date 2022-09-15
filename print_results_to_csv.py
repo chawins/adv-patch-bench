@@ -128,9 +128,10 @@ def main(args):
                         continue
                     cls_scores = metrics["gtScores"]
                     tf_mode = results["transform_mode"]
-                    base_sid = f"real_atk{int(is_attack)}_{tf_mode}"
+                    base_sid = f"real_{tf_mode}"
                     if results["no_patch_relight"]:
                         base_sid += "_nolight"
+                    base_sid += f"_atk{int(is_attack)}"
 
                 if obj_class == -1:
                     obj_classes = metrics["gtScores"].keys()
