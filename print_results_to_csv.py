@@ -62,6 +62,7 @@ iou_idx = 0  # 0.5
 
 
 def main(args):
+    exp_type = args.exp_type
     clean_exp_name = args.clean_exp_name
     attack_exp_name = args.attack_exp_name
     # clean_exp_path = pathlib.Path(BASE_PATH) / CLEAN_EXP_NAME
@@ -115,6 +116,8 @@ def main(args):
 
                 if synthetic:
                     # Synthetic sign
+                    if exp_type is not None and exp_type != "syn":
+                        continue
                     cls_scores = {
                         obj_class: metrics["syn_scores"]
                         * metrics["syn_matches"]
@@ -124,6 +127,8 @@ def main(args):
                     base_sid = f"syn_size{obj_size}_{syn_use_scale}_{syn_use_colorjitter}_atk{int(is_attack)}"
                 else:
                     # Real signs
+                    if exp_type is not None and exp_type != "real":
+                        continue
                     if "gtScores" not in metrics:
                         continue
                     cls_scores = metrics["gtScores"]
@@ -287,5 +292,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("clean_exp_name", type=str, help="clean_exp_name")
     parser.add_argument("attack_exp_name", type=str, help="attack_exp_name")
+    parser.add_argument("exp_type", type=str, default=None, help="real or syn (default is both)")
     args = parser.parse_args()
     main(args)
