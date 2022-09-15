@@ -1,5 +1,4 @@
 import ast
-import os
 import pickle
 from copy import deepcopy
 from typing import Any, Optional, Tuple, Union
@@ -8,8 +7,12 @@ import numpy as np
 import pandas as pd
 import torch
 import torchvision
-from adv_patch_bench.utils.image import (coerce_rank, mask_to_box, prepare_obj,
-                                         resize_and_center)
+from adv_patch_bench.utils.image import (
+    coerce_rank,
+    mask_to_box,
+    prepare_obj,
+    resize_and_center,
+)
 from detectron2.structures.boxes import Boxes
 from detectron2.structures.instances import Instances
 from hparams import PATH_DEBUG_ADV_PATCH
@@ -38,13 +41,14 @@ def prep_synthetic_eval(
     # TODO: needed?
     # syn_sign_class = len(label_names)
     # label_names[syn_sign_class] = 'synthetic'
-    # TODO: We want to do an experiment with these
+    # TODO: This depends on our experiment and maybe we want to make it easily
+    # adjsutable.
     transform_params = {
         "degrees": 15,
         "translate": (0.4, 0.4),
         "scale": (0.5, 2) if syn_use_scale else None,
     }
-    
+
     if syn_3d_transform:
         transform_params = {
             "distortion_scale": 0.25,
@@ -163,7 +167,9 @@ def prep_adv_patch(
             obj_size_px = (round(obj_size * h_w_ratio), obj_size)
         else:
             obj_size_px = obj_size
-        assert isinstance(obj_size, tuple) or isinstance(obj_size, int), f"obj_size is {obj_size}. It must be int or tuple of two ints!"
+        assert isinstance(obj_size, tuple) or isinstance(
+            obj_size, int
+        ), f"obj_size is {obj_size}. It must be int or tuple of two ints!"
 
         # Resize patch_mask and adv_patch to obj_size_px and place them in
         # middle of image by padding to image_size.

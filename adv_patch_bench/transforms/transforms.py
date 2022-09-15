@@ -157,7 +157,7 @@ def get_sign_canonical(
     patch_size_in_pixel: int = None,
     patch_size_in_mm: float = None,
     sign_size_in_pixel: int = None,
-) -> Tuple:
+) -> Tuple[torch.Tensor, torch.Tensor, List[float]]:
     """Generate the canonical mask of a sign with a specific shape.
     Args:
         predicted_class (str): Sign class in format 'shape-width-height' or

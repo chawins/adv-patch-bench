@@ -73,8 +73,9 @@ class RP2AttackModule(DetectorAttackModule):
 
         # Define EoT augmentation for attacking synthetic signs
         p_geo = float(rp2_config["augment_prob_geometric"])
+        intensity_geo = rp2_config.get("augment_intensity_geometric", 1)
         p_light = float(rp2_config["augment_prob_relight"])
-        # bg_size = (self.input_size[0] - 32, self.input_size[1] - 32)
+        intensity_light = float(rp2_config.get("augment_intensity_relight", 0.3))
         bg_size = self.input_size
         self.bg_transforms = K.RandomResizedCrop(
             bg_size, scale=(0.8, 1), p=p_geo, resample=self.interp
@@ -93,7 +94,7 @@ class RP2AttackModule(DetectorAttackModule):
             15, translate=(0.40, 0.40), p=p_geo, resample=Resample.NEAREST
         )
         self.jitter_transform = K.ColorJitter(
-            brightness=0.3, contrast=0.3, p=p_light
+            brightness=intensity_light, contrast=intensity_light, p=p_light
         )
 
         # Define EoT augmentation for attacking real signs

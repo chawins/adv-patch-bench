@@ -9,9 +9,9 @@
 # Processors per task (please always specify the total number of processors twice the number of GPUs):
 #SBATCH --cpus-per-task=2
 #Number of GPUs, this can be in the format of "gpu:[1-4]", or "gpu:K80:[1-4] with the type included
-#SBATCH --gres=gpu:GTX2080TI:1
-#SBATCH --time=48:00:00
-#SBATCH --output slurm-%j-synthetic-10x20-obj64-pd64-ld0.1.out
+#SBATCH --gres=gpu:GTX2080TI:2
+#SBATCH --time=24:00:00
+#SBATCH --output slurm-%j-synthetic-10x20-obj64-pd64-ld0.00001-auglight0.3.out  # TODO
 ## Command(s) to run:
 source /global/home/users/$USER/.bash_profile
 module purge
@@ -27,31 +27,31 @@ DATASET=mapillary-combined-no_color # Options: mapillary-combined-no_color, mtsd
 MODEL=faster_rcnn_R_50_FPN_mtsd_no_color_2
 MODEL_PATH=~/adv-patch-bench/detectron_output/$MODEL/model_best.pth
 DETECTRON_CONFIG_PATH=./configs/faster_rcnn_R_50_FPN_3x.yaml
+CSV_PATH=mapillary_vistas_final_merged.csv
+BG_PATH=~/data/mtsd_v2_fully_annotated/test/
 CONF_THRES=0.634
 IMG_SIZE=1536,2048 # sizes: (1536,2048), (3040,4032)
 NUM_TEST_SYN=5000
 
 # Attack params
-EXP_NAME=synthetic-10x20-obj64-pd64-ld0.1
 MASK_SIZE=10x20
-ATK_CONFIG_PATH=./configs/attack_config3.yaml
-CSV_PATH=mapillary_vistas_final_merged.csv
-BG_PATH=~/data/mtsd_v2_fully_annotated/test/
+SYN_OBJ_SIZE=64
+ATK_CONFIG_PATH=./configs/attack_config_savio1.yaml
 
 INTERP=bilinear
 TF_MODE=perspective
-SYN_OBJ_SIZE=64
+EXP_NAME=synthetic-${MASK_SIZE}-obj${SYN_OBJ_SIZE}-pd64-ld0.00001-auglight0.3  # TODO: rename
 CLEAN_EXP_NAME=no_patch_syn_${TF_MODE}_${SYN_OBJ_SIZE}
 
 # Evaluate on all annotated Mapillary Vistas signs and compute score thres
-rm ./detectron_output/mapillary_combined_coco_format.json
-DATASET=mapillary-combined-no_color
-python -u test_detectron.py \
-    --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --name no_patch \
-    --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH --dataset $DATASET \
-    --attack-config-path $ATK_CONFIG_PATH --workers $NUM_WORKERS \
-    --weights $MODEL_PATH --img-txt-path "$BG_FILES" --eval-mode drop --obj-class -1 \
-    --annotated-signs-only --conf-thres $CONF_THRES
+# rm ./detectron_output/mapillary_combined_coco_format.json
+# DATASET=mapillary-combined-no_color
+# python -u test_detectron.py \
+#     --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --name no_patch \
+#     --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH --dataset $DATASET \
+#     --attack-config-path $ATK_CONFIG_PATH --workers $NUM_WORKERS \
+#     --weights $MODEL_PATH --img-txt-path "$BG_FILES" --eval-mode drop --obj-class -1 \
+#     --annotated-signs-only --conf-thres $CONF_THRES
 
 function syn_attack {
 
@@ -123,15 +123,3 @@ function syn_attack_all {
 syn_attack_all
 
 exit 0
-
-# =========================================================================== #
-#                                Extra Commands                               #
-# =========================================================================== #
-# Evaluate on all Mapillary Vistas signs
-rm ./detectron_output/mapillary_combined_coco_format.json
-DATASET=mapillary-combined-no_color
-python -u test_detectron.py \
-    --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --name no_patch \
-    --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH --dataset $DATASET \
-    --attack-config-path $ATTACK_CONFIG_PATH --workers $NUM_WORKERS \
-    --weights $MODEL_PATH --img-txt-path $BG_FILES --eval-mode drop --obj-class -1
