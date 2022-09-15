@@ -96,21 +96,11 @@ def generate_adv_patch(
         [type]: [description]
     """
 
-    # Randomly select backgrounds from `bg_dir` and resize them
-    all_bgs = os.listdir(os.path.expanduser(bg_dir))
-    print(f'There are {len(all_bgs)} background images in {bg_dir}.')
-    idx = np.arange(len(all_bgs))
-    np.random.shuffle(idx)
+    
     # FIXME: does this break anything?
     # bg_size = (img_size[0] - 32, img_size[1] - 32)
     bg_size = img_size
-
-    backgrounds = torch.zeros((num_bg, 3) + bg_size, )
-
-    for i, index in enumerate(idx[:num_bg]):
-        bg = torchvision.io.read_image(join(bg_dir, all_bgs[index])) / 255
-        backgrounds[i] = T.resize(bg, bg_size, antialias=True)
-
+    
     # getting object classes names
     # names = {k: v for k, v in enumerate(model.names if hasattr(model, 'names') else model.module.names)}
     class_names = LABEL_LIST[args.dataset]
@@ -123,6 +113,18 @@ def generate_adv_patch(
 
     # Generate an adversarial patch
     if synthetic:
+        # Randomly select backgrounds from `bg_dir` and resize them
+        all_bgs = os.listdir(os.path.expanduser(bg_dir))
+        print(f'There are {len(all_bgs)} background images in {bg_dir}.')
+        idx = np.arange(len(all_bgs))
+        np.random.shuffle(idx)
+        backgrounds = torch.zeros((num_bg, 3) + bg_size, )
+        
+        for i, index in enumerate(idx[:num_bg]):
+            bg = torchvision.io.read_image(join(bg_dir, all_bgs[index])) / 255
+            backgrounds[i] = T.resize(bg, bg_size, antialias=True)
+            
+
         print('=> Generating adversarial patch on synthetic signs...')
         obj_mask = torch.from_numpy(obj_numpy[:, :, -1] == 1).float().unsqueeze(0)
         obj = torch.from_numpy(obj_numpy[:, :, :-1]).float().permute(2, 0, 1)
@@ -148,17 +150,22 @@ def generate_adv_patch(
             torchvision.utils.save_image(backgrounds, join(save_dir, 'backgrounds.png'))
 
     else:
+
+        with open(bg_dir) as f:
+            filenames = f.readlines()
+        filenames = [fn.strip('\n') for fn in filenames]
+        num_bg = len(filenames)
+
         print('=> Generating adversarial patch on real signs...')
         df = pd.read_csv(tgt_csv_filepath)
         df['tgt_final'] = df['tgt_final'].apply(literal_eval)
         df = df[df['final_shape'] != 'other-0.0-0.0']
+        df = df[df['filename'].isin(filenames)]
 
         attack_images = []
         print('=> Collecting background images...')
 
-        from tqdm import tqdm
-        for batch_i, (im, targets, paths, shapes) in tqdm(enumerate(dataloader)):
-
+        for batch_i, (im, targets, paths, shapes) in enumerate(dataloader):
             for image_i, path in enumerate(paths):
                 filename = path.split('/')[-1]
 
@@ -273,7 +280,9 @@ def main(
     attack_config['input_size'] = img_size
 
     num_bg = attack_config['rp2']['num_bg']  # TODO(clean)
+    
     class_name = list(MAPILLARY_IMG_COUNTS_DICT.keys())[int(obj_class)]
+
     if num_bg < 1:
         assert class_name is not None
         print(f'num_bg is a fraction ({num_bg}).')
@@ -293,7 +302,7 @@ def main(
     if obj_size is None:
         obj_size = int(min(img_size) * 0.1)
     if isinstance(obj_size, int):
-        obj_size = (round(obj_size * h_w_ratio), obj_size)
+        obj_size = (round(obj_size * h_w_ratio), obj_size)   
 
     if mask_dir is not None:
         # Load path mask from file if specified (gen_mask.py)
@@ -305,6 +314,8 @@ def main(
         # Otherwise, generate a new mask here
         # Get size in inch from sign class
         obj_width_inch = get_obj_width(obj_class, class_names)
+        # patch_mask = generate_mask(obj_numpy, obj_size, obj_width_inch)
+    
         patch_mask = generate_mask(
             mask_name, obj_numpy, obj_size, obj_width_inch)
 
@@ -338,5 +349,5 @@ def main(
 if __name__ == "__main__":
     args = eval_args_parser(False, root=ROOT)
     setup_yolo_test_args(args, OTHER_SIGN_CLASS)
-    print(args)
+    print(args.mask_name)
     main(**vars(args))

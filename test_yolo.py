@@ -22,6 +22,7 @@ import pandas as pd
 import torch
 import yaml
 from tqdm import tqdm
+from PIL import Image
 
 from adv_patch_bench.attacks.rp2.rp2_yolo import RP2AttackYOLO
 from adv_patch_bench.attacks.utils import (
@@ -413,10 +414,13 @@ def run(
 
     if use_attack:
         # Prepare attack data
-        adv_patch_dir = os.path.join(
-            SAVE_DIR_YOLO, args.name, names[adv_sign_class]
-        )
-        adv_patch_path = os.path.join(adv_patch_dir, "adv_patch.pkl")
+        if args.adv_patch_path is None:
+            adv_patch_dir = os.path.join(
+                SAVE_DIR_YOLO, args.name, names[adv_sign_class])
+            adv_patch_path = os.path.join(adv_patch_dir, 'adv_patch.pkl')
+        else:
+            adv_patch_path = args.adv_patch_path
+
         adv_patch, patch_mask = prep_adv_patch(
             img_size=img_size,
             adv_patch_path=adv_patch_path,
@@ -431,12 +435,21 @@ def run(
     if synthetic:
         # Prepare evaluation with synthetic signs. syn_data: syn_obj, obj_mask,
         # obj_transforms, mask_transforms, syn_sign_class
+        
+        obj_numpy = np.array(Image.open(args.syn_obj_path).convert("RGBA"))
+        h_w_ratio = obj_numpy.shape[0] / obj_numpy.shape[1]
+
+        obj_size = args.obj_size
+        if isinstance(obj_size, int):
+            obj_size = (round(obj_size * h_w_ratio), obj_size)
+
         syn_data = prep_synthetic_eval(
             args.syn_obj_path,
             syn_use_scale=args.syn_use_scale,
+            syn_3d_transform=args.syn_3d_transform,
             syn_use_colorjitter=args.syn_use_colorjitter,
             img_size=img_size,
-            objh_size=args.obj_size,
+            obj_size=obj_size,
             transform_prob=1.0,
             interp=args.interp,
             device=device,
@@ -449,7 +462,6 @@ def run(
         names[nc] = "synthetic"
         syn_sign_class = syn_data[-1]
         nc += 1
-
     # Initialize attack
     if attack_type == "per-sign":
         with open(attack_config_path) as file:
@@ -515,13 +527,13 @@ def run(
         # if model_trained_without_other:
         #     targets = targets[targets[:, 1] != other_class_label]
 
-        if args.debug and batch_i == 100:
+        if args.debug and batch_i == 625:
             break
 
         if num_apply_imgs >= len(filename_list) and args.run_only_img_txt:
             break
         # ======================= BEGIN: apply patch ======================== #
-        for image_i, path in enumerate(paths):
+        for image_i, path in enumerate(paths):            
             if use_attack and not synthetic:
                 filename = path.split("/")[-1]
                 img_df = df[df["filename"] == filename]
@@ -583,7 +595,10 @@ def run(
 
             elif synthetic:
                 img = im[image_i].clone().to(device)
-                adv_patch_clone = adv_patch.clone().to(device)
+                if adv_patch is not None:
+                    adv_patch_clone = adv_patch.clone().to(device)
+                else:
+                    adv_patch_clone = None
                 im[image_i], targets = apply_synthetic_sign(
                     img,
                     targets,
@@ -716,15 +731,8 @@ def run(
                     if lbl[0] != syn_sign_class:
                         continue
                     for pi, prd in enumerate(predn):
-                        # [x1, y1, x2, y2] where xy1=top-left, xy2=bottom-right
-                        x1 = 0.9 * lbl[1] if 0.9 * lbl[1] > 5 else -20
-                        y1 = 0.9 * lbl[2] if 0.9 * lbl[2] > 5 else -20
-                        if (
-                            prd[0] >= x1
-                            and prd[1] >= y1
-                            and prd[2] <= 1.1 * lbl[3]
-                            and prd[3] <= 1.1 * lbl[4]
-                        ):
+                        iou = box_iou(torch.unsqueeze(torch.tensor(lbl[1:5]), 0), torch.unsqueeze(prd[:4].cpu(), 0))
+                        if iou > 0.25:
                             if prd[5] == adv_sign_class:
                                 predn[pi, 5] = syn_sign_class
                                 pred[pi, 5] = syn_sign_class
@@ -1076,6 +1084,8 @@ def run(
         # metrics = ap_per_class_custom(
         #     *stats, plot=plots, save_dir=save_dir, names=names,
         #     metrics_conf_thres=None, other_class_label=other_class_label)
+                
+        # save ap array
         (
             tp,
             p,
@@ -1089,6 +1099,8 @@ def run(
             fnr_cmb,
             fp,
         ) = metrics
+        with open(f'{save_dir}/ap.npy', 'wb') as f:
+            np.save(f, ap)
         ap50, ap = ap[:, 0], ap.mean(1)  # AP@0.5, AP@0.5:0.95
         mp, mr, map50, map = p.mean(), r.mean(), ap50.mean(), ap.mean()
         nt = np.bincount(

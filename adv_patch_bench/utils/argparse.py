@@ -106,6 +106,11 @@ def eval_args_parser(is_detectron, root=None):
         help="Use scaling transform when evaluating on synthetic signs.",
     )
     parser.add_argument(
+        "--syn-3d-transform",
+        action="store_true",
+        help="Use 3d transform when evaluating on synthetic signs.",
+    )
+    parser.add_argument(
         "--syn-use-colorjitter",
         action="store_true",
         help="Use colorjitter transform when evaluating on synthetic signs.",
