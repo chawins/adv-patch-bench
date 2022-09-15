@@ -75,7 +75,9 @@ class RP2AttackModule(DetectorAttackModule):
         p_geo = float(rp2_config["augment_prob_geometric"])
         rotate_degrees = float(rp2_config.get("augment_rotate_degree", 15))
         p_light = float(rp2_config["augment_prob_relight"])
-        intensity_light = float(rp2_config.get("augment_intensity_relight", 0.3))
+        intensity_light = float(
+            rp2_config.get("augment_intensity_relight", 0.3)
+        )
         bg_size = self.input_size
         self.bg_transforms = K.RandomResizedCrop(
             bg_size, scale=(0.8, 1), p=p_geo, resample=self.interp
@@ -91,7 +93,10 @@ class RP2AttackModule(DetectorAttackModule):
         # Args to mask_transforms can be set to anything because it will use
         # the same params as obj_transforms anyway (via apply_transform).
         self.mask_transforms = K.RandomAffine(
-            15, translate=(0.40, 0.40), p=p_geo, resample=Resample.NEAREST
+            rotate_degrees,
+            translate=(0.40, 0.40),
+            p=p_geo,
+            resample=Resample.NEAREST,
         )
         self.jitter_transform = K.ColorJitter(
             brightness=intensity_light, contrast=intensity_light, p=p_light

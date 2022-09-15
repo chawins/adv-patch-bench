@@ -1,3 +1,4 @@
+import argparse
 import pathlib
 import pickle
 
@@ -54,15 +55,19 @@ def _compute_ap_recall(scores, matched, NP, recall_thresholds=None):
 
 
 BASE_PATH = "./detectron_output/"
-CLEAN_EXP_NAME = "no_patch"
-ATTACK_EXP_NAME = "synthetic-10x20-obj64-pd64-ld0.1"
+# CLEAN_EXP_NAME = "no_patch"
+# ATTACK_EXP_NAME = "synthetic-10x20-obj64-pd64-ld0.00001"
 CONF_THRES = 0.634
 iou_idx = 0  # 0.5
 
 
-def main():
-    clean_exp_path = pathlib.Path(BASE_PATH) / CLEAN_EXP_NAME
-    attack_exp_path = pathlib.Path(BASE_PATH) / ATTACK_EXP_NAME
+def main(args):
+    clean_exp_name = args.clean_exp_name
+    attack_exp_name = args.attack_exp_name
+    # clean_exp_path = pathlib.Path(BASE_PATH) / CLEAN_EXP_NAME
+    # attack_exp_path = pathlib.Path(BASE_PATH) / ATTACK_EXP_NAME
+    clean_exp_path = pathlib.Path(BASE_PATH) / clean_exp_name
+    attack_exp_path = pathlib.Path(BASE_PATH) / attack_exp_name
     exp_paths = list(clean_exp_path.iterdir())
     exp_paths.extend(list(attack_exp_path.iterdir()))
 
@@ -93,7 +98,7 @@ def main():
                     continue
                 if "obj_class" not in results:
                     continue
-                if results["name"] not in (CLEAN_EXP_NAME, ATTACK_EXP_NAME):
+                if results["name"] not in (clean_exp_name, attack_exp_name):
                     continue
 
                 # Add timestamp
@@ -238,7 +243,7 @@ def main():
     df = df.sort_index(axis=1)
     df.to_csv(attack_exp_path / "results.csv")
 
-    print(ATTACK_EXP_NAME, CLEAN_EXP_NAME, CONF_THRES)
+    print(attack_exp_name, clean_exp_name, CONF_THRES)
     print("All-class ASR")
     for sid in results_all_classes:
         num_succeed = results_all_classes[sid]["num_succeed"]
@@ -271,4 +276,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("clean_exp_name", type=str, help="clean_exp_name")
+    parser.add_argument("attack_exp_name", type=str, help="attack_exp_name")
+    args = parser.parse_args()
+    main(args)

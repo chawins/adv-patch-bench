@@ -283,9 +283,9 @@ if __name__ == "__main__":
 
     log.info(args)
     args.img_size = args.padded_imgsz
-    torch.random.manual_seed(cfg.SEED)
-    np.random.seed(cfg.SEED)
-    random.seed(cfg.SEED)
+    torch.random.manual_seed(args.seed)
+    np.random.seed(args.seed)
+    random.seed(args.seed)
 
     # Register dataset
     if "mtsd" in args.dataset:

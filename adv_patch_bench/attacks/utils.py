@@ -34,44 +34,38 @@ def prep_synthetic_eval(
 ):
     if not (isinstance(obj_size, tuple) or isinstance(obj_size, int)):
         raise ValueError(
-            f"obj_size must be tuple of two ints, but it is {obj_size}"
+            f"obj_size must be tuple of two ints, but it is {obj_size}."
         )
 
     # Add synthetic label to the label names at the last position
     # TODO: needed?
     # syn_sign_class = len(label_names)
     # label_names[syn_sign_class] = 'synthetic'
-    # TODO: This depends on our experiment and maybe we want to make it easily
-    # adjsutable.
-    transform_params = {
-        "degrees": 15,
-        "translate": (0.4, 0.4),
-        "scale": (0.5, 2) if syn_use_scale else None,
-    }
-
+    
     if syn_3d_transform:
         transform_params = {
             "distortion_scale": 0.25,
         }
-        obj_transforms = K.RandomPerspective(
-            p=transform_prob,
-            return_transform=True,
-            resample=interp,
-            **transform_params,
-        )
-        mask_transforms = K.RandomPerspective(
-            p=transform_prob, resample=Resample.NEAREST, **transform_params
-        )
+        tf_func = K.RandomPerspective
     else:
-        obj_transforms = K.RandomAffine(
-            p=transform_prob,
-            return_transform=True,
-            resample=interp,
-            **transform_params,
-        )
-        mask_transforms = K.RandomAffine(
-            p=transform_prob, resample=Resample.NEAREST, **transform_params
-        )
+        # TODO: This depends on our experiment and maybe we want to make it easily
+        # adjsutable.
+        transform_params = {
+            "degrees": 15,
+            "translate": (0.4, 0.4),
+            "scale": (0.5, 2) if syn_use_scale else None,
+        }
+        tf_func = K.RandomAffine
+        
+    obj_transforms = tf_func(
+        p=transform_prob,
+        return_transform=True,
+        resample=interp,
+        **transform_params,
+    )
+    mask_transforms = tf_func(
+        p=transform_prob, resample=Resample.NEAREST, **transform_params
+    )
 
     if syn_use_colorjitter:
         jitter_transform = K.ColorJitter(
