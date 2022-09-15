@@ -55,7 +55,7 @@ def _compute_ap_recall(scores, matched, NP, recall_thresholds=None):
 
 BASE_PATH = "./detectron_output/"
 CLEAN_EXP_NAME = "no_patch"
-ATTACK_EXP_NAME = "synthetic-10x20-obj64-pd64-ld0.00001"
+ATTACK_EXP_NAME = "synthetic-10x20-obj64-pd64-ld0.1"
 CONF_THRES = 0.634
 iou_idx = 0  # 0.5
 
