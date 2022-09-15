@@ -48,7 +48,7 @@ from hparams import (
     LABEL_LIST,
     MAPILLARY_IMG_COUNTS_DICT,
     OTHER_SIGN_CLASS,
-    SAVE_DIR_DETECTRON,
+    PATH_BG_TXT_FILE,
 )
 
 
@@ -97,7 +97,7 @@ def collect_backgrounds(
     filename_list = None
     # Load list of desired file names
     if img_txt_path:
-        img_txt_path = os.path.join(SAVE_DIR_DETECTRON, img_txt_path)
+        img_txt_path = os.path.join(PATH_BG_TXT_FILE, img_txt_path)
         with open(img_txt_path, "r") as f:
             filename_list = set(f.read().splitlines())
 

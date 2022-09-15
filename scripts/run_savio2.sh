@@ -7,10 +7,10 @@
 # Number of tasks (one for each GPU desired for use case) (example):
 #SBATCH --ntasks=1
 # Processors per task (please always specify the total number of processors twice the number of GPUs):
-#SBATCH --cpus-per-task=4
+#SBATCH --cpus-per-task=2
 #Number of GPUs, this can be in the format of "gpu:[1-4]", or "gpu:K80:[1-4] with the type included
-#SBATCH --gres=gpu:V100:1
-#SBATCH --time=24:00:00
+#SBATCH --gres=gpu:GTX2080TI:2
+#SBATCH --time=36:00:00
 #SBATCH --output slurm-%j-synthetic-10x20-obj64-pd64-ld0.00001-rt30.out  # TODO
 ## Command(s) to run:
 source /global/home/users/$USER/.bash_profile
