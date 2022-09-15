@@ -13,6 +13,8 @@ from kornia.geometry.transform import (
     warp_perspective,
 )
 
+_VALID_TRANSFORM_MODE = ("perspective", "translate_scale")
+
 
 def gen_rect_mask(size, ratio=None):
     height = round(ratio * size) if ratio > 1 else size
@@ -230,6 +232,12 @@ def get_transform(
     """
     alpha = torch.tensor(row["alpha"])
     beta = torch.tensor(row["beta"])
+
+    if transform_mode not in _VALID_TRANSFORM_MODE:
+        raise NotImplementedError(
+            f"transform_mode {transform_mode} is not implemented. "
+            f"Only supports {_VALID_TRANSFORM_MODE}"
+        )
 
     # Get target points from dataframe
     # TODO: Fix this after unifying csv
