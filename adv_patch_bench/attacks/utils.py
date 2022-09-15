@@ -21,6 +21,7 @@ from kornia.geometry.transform import resize
 def prep_synthetic_eval(
     syn_obj_path: str,
     syn_use_scale: bool = True,
+    syn_3d_transform: bool = False,
     syn_use_colorjitter: bool = False,
     img_size: Tuple[int, int] = (1536, 2048),
     obj_size: Tuple[int, int] = (128, 128),
@@ -28,7 +29,7 @@ def prep_synthetic_eval(
     interp: str = "bilinear",
     device: str = "cuda",
 ):
-    if not isinstance(obj_size, tuple):
+    if not (isinstance(obj_size, tuple) or isinstance(obj_size, int)):
         raise ValueError(
             f"obj_size must be tuple of two ints, but it is {obj_size}"
         )
@@ -43,15 +44,31 @@ def prep_synthetic_eval(
         "translate": (0.4, 0.4),
         "scale": (0.5, 2) if syn_use_scale else None,
     }
-    obj_transforms = K.RandomAffine(
-        p=transform_prob,
-        return_transform=True,
-        resample=interp,
-        **transform_params,
-    )
-    mask_transforms = K.RandomAffine(
-        p=transform_prob, resample=Resample.NEAREST, **transform_params
-    )
+    
+    if syn_3d_transform:
+        transform_params = {
+            "distortion_scale": 0.25,
+        }
+        obj_transforms = K.RandomPerspective(
+            p=transform_prob,
+            return_transform=True,
+            resample=interp,
+            **transform_params,
+        )
+        mask_transforms = K.RandomPerspective(
+            p=transform_prob, resample=Resample.NEAREST, **transform_params
+        )
+    else:
+        obj_transforms = K.RandomAffine(
+            p=transform_prob,
+            return_transform=True,
+            resample=interp,
+            **transform_params,
+        )
+        mask_transforms = K.RandomAffine(
+            p=transform_prob, resample=Resample.NEAREST, **transform_params
+        )
+
     if syn_use_colorjitter:
         jitter_transform = K.ColorJitter(
             brightness=0.3,
@@ -146,9 +163,7 @@ def prep_adv_patch(
             obj_size_px = (round(obj_size * h_w_ratio), obj_size)
         else:
             obj_size_px = obj_size
-        assert isinstance(
-            obj_size, tuple
-        ), f"obj_size is {obj_size}. It must be int or tuple of two ints!"
+        assert isinstance(obj_size, tuple) or isinstance(obj_size, int), f"obj_size is {obj_size}. It must be int or tuple of two ints!"
 
         # Resize patch_mask and adv_patch to obj_size_px and place them in
         # middle of image by padding to image_size.

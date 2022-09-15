@@ -174,11 +174,14 @@ class RP2AttackModule(DetectorAttackModule):
 
         obj.detach_()
         obj_mask.detach_()
+
         patch_mask.detach_()
         backgrounds.detach_()
         _, _, obj_height, obj_width = mask_to_box(obj_mask)
+        obj_mask = coerce_rank(obj_mask, 3)
         all_bg_idx = np.arange(len(backgrounds))
 
+        # obj_mask_eot = obj_mask.expand(self.num_eot, -1, -1)
         obj_mask = coerce_rank(obj_mask, 4)
         patch_mask = coerce_rank(patch_mask, 4)
         obj = coerce_rank(obj, 4)
