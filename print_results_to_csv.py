@@ -7,6 +7,11 @@ import pandas as pd
 
 from hparams import TS_NO_COLOR_LABEL_LIST
 
+_NUM_SIGNS_PER_CLASS = np.array(
+    [7971, 636, 824, 317, 1435, 1075, 715, 544, 361, 133, 637]
+)
+_NUM_IOU_THRES = 10
+
 
 def _compute_ap_recall(scores, matched, NP, recall_thresholds=None):
     """
@@ -76,6 +81,8 @@ def main(args):
     gt_scores = [{}, {}]
     results_all_classes = {}
     print_df_rows = {}
+    tp_scores = {}
+    fp_scores = {}
 
     # Iterate over sign classes
     for sign_path in exp_paths:
@@ -141,14 +148,15 @@ def main(args):
                         base_sid = "real_atk0"
 
                 if obj_class == -1:
-                    obj_classes = metrics["gtScores"].keys()
+                    obj_classes = range(len(_NUM_SIGNS_PER_CLASS))
                 else:
                     obj_classes = [obj_class]
 
+                if base_sid not in tp_scores:
+                    tp_scores[base_sid] = {t: [] for t in range(10)}
+                    fp_scores[base_sid] = {t: [] for t in range(10)}
+
                 for oc in obj_classes:
-                    # TODO: skip other class
-                    if oc == 11:
-                        continue
                     scores = cls_scores[oc]
                     sid = f"{base_sid}_{oc:02d}"
                     if sid in scores_dict:
@@ -157,6 +165,9 @@ def main(args):
                             f"There are multiple results under same setting "
                             f"({sid}). Check result at {result_path}."
                         )
+                    # if not is_attack and synthetic:
+                    #     import pdb
+                    #     pdb.set_trace()
                     scores_dict[sid] = (time, scores)
 
                     tp = np.sum(scores[iou_idx] >= CONF_THRES)
@@ -171,6 +182,11 @@ def main(args):
                     }
                     if not synthetic:
                         print_df_rows[sid]["AP"] = metrics[f"AP-{class_name}"]
+                        for t in range(10):
+                            tp_score = results["bbox"]["scores_full"][oc][t][0]
+                            tp_scores[base_sid][t].extend(tp_score)
+                            fp_score = results["bbox"]["scores_full"][oc][t][1]
+                            fp_scores[base_sid][t].extend(fp_score)
 
                 # Create DF row for all classes
                 all_class_sid = f"{base_sid}_all"
@@ -178,20 +194,26 @@ def main(args):
                     "id": all_class_sid,
                     "atk": is_attack,
                 }
+                # Weighted
+                allw_class_sid = f"{base_sid}_allw"
+                print_df_rows[allw_class_sid] = {
+                    "id": allw_class_sid,
+                    "atk": is_attack,
+                }
+
                 if not is_attack and not synthetic:
-                    print_df_rows[all_class_sid]["FNR"] = np.mean(
-                        [
-                            print_df_rows[f"{base_sid}_{x:02d}"]["FNR"]
-                            for x in obj_classes
-                            if x != 11
-                        ]
-                    )
-                    print_df_rows[all_class_sid]["AP"] = np.mean(
-                        [
-                            print_df_rows[f"{base_sid}_{x:02d}"]["AP"]
-                            for x in obj_classes
-                            if x != 11
-                        ]
+                    fnrs = np.zeros(len(_NUM_SIGNS_PER_CLASS))
+                    aps = np.zeros_like(fnrs)
+                    for i in range(len(_NUM_SIGNS_PER_CLASS)):
+                        fnrs[i] = print_df_rows[f"{base_sid}_{i:02d}"]["FNR"]
+                        aps[i] = print_df_rows[f"{base_sid}_{i:02d}"]["AP"]
+
+                    print_df_rows[all_class_sid]["FNR"] = np.mean(fnrs)
+                    print_df_rows[all_class_sid]["AP"] = np.mean(aps)
+                    print_df_rows[allw_class_sid]["FNR"] = np.sum(
+                        fnrs
+                        * _NUM_SIGNS_PER_CLASS
+                        / np.sum(_NUM_SIGNS_PER_CLASS)
                     )
 
                 # Print result as one row in df
@@ -204,10 +226,25 @@ def main(args):
                         df_row[k] = v
                 df_rows[time] = df_row
 
+    # FNR for clean syn
+    fnrs = np.zeros(len(_NUM_SIGNS_PER_CLASS))
+    sid_no_class = None
+    for sid, data in print_df_rows.items():
+        if "syn" in sid and "atk0" in sid and "all" not in sid:
+            sid_no_class = "_".join(sid.split("_")[:-1])
+            k = int(sid.split("_")[-1])
+            fnrs[k] = data["FNR"]
+    if sid_no_class is not None:
+        print_df_rows[sid_no_class + "_all"]["FNR"] = np.mean(fnrs)
+        print_df_rows[sid_no_class + "_allw"]["FNR"] = np.sum(
+            fnrs * _NUM_SIGNS_PER_CLASS / np.sum(_NUM_SIGNS_PER_CLASS)
+        )
+
     # Iterate through all attack experiments
     for sid, (time, adv_scores) in gt_scores[1].items():
 
         split_sid = sid.split("_")
+        k = int(split_sid[-1])
         if "real" in split_sid:
             clean_sid = f"real_atk0_{split_sid[-1]}"
         else:
@@ -230,25 +267,31 @@ def main(args):
         if "real" in sid_no_class:
             ap = print_df_rows[sid]["AP"]
         else:
-            ap = ""
+            ap = -1e9
 
         if sid_no_class in results_all_classes:
             results_all_classes[sid_no_class]["num_succeed"] += num_succeed
             results_all_classes[sid_no_class]["num_clean"] += num_clean
             results_all_classes[sid_no_class]["num_missed"] += num_missed
             results_all_classes[sid_no_class]["num_total"] += len(adv_detected)
-            results_all_classes[sid_no_class]["asr"].append(attack_success_rate)
-            results_all_classes[sid_no_class]["fnr"].append(fnr)
-            results_all_classes[sid_no_class]["ap"].append(ap)
+            results_all_classes[sid_no_class]["asr"][k] = attack_success_rate
+            results_all_classes[sid_no_class]["fnr"][k] = fnr
+            results_all_classes[sid_no_class]["ap"][k] = ap
         else:
+            asrs = np.zeros(len(_NUM_SIGNS_PER_CLASS))
+            asrs[k] = attack_success_rate
+            fnrs = np.zeros_like(asrs)
+            fnrs[k] = fnr
+            aps = np.zeros_like(asrs)
+            aps[k] = ap
             results_all_classes[sid_no_class] = {
                 "num_succeed": num_succeed,
                 "num_clean": num_clean,
                 "num_missed": num_missed,
                 "num_total": len(adv_detected),
-                "asr": [attack_success_rate],
-                "fnr": [fnr],
-                "ap": [ap],
+                "asr": asrs,
+                "fnr": fnrs,
+                "ap": aps,
             }
 
     df_rows = list(df_rows.values())
@@ -259,6 +302,7 @@ def main(args):
     print(attack_exp_name, clean_exp_name, CONF_THRES)
     print("All-class ASR")
     for sid in results_all_classes:
+
         num_succeed = results_all_classes[sid]["num_succeed"]
         num_clean = results_all_classes[sid]["num_clean"]
         num_missed = results_all_classes[sid]["num_missed"]
@@ -267,18 +311,66 @@ def main(args):
 
         # Average metrics over classes instead of counting all as one
         all_class_sid = f"{sid}_all"
-        avg_asr = np.mean(results_all_classes[sid]["asr"])
+        asrs = results_all_classes[sid]["asr"]
+        fnrs = results_all_classes[sid]["fnr"]
+        avg_asr = np.mean(asrs)
         print_df_rows[all_class_sid]["ASR"] = avg_asr
-        avg_fnr = np.mean(results_all_classes[sid]["fnr"])
+        avg_fnr = np.mean(fnrs)
         print_df_rows[all_class_sid]["FNR"] = avg_fnr
-        if "real" in all_class_sid:
+
+        # Weighted average by number of real sign distribution
+        allw_class_sid = f"{sid}_allw"
+        print_df_rows[allw_class_sid]["ASR"] = np.sum(
+            asrs * _NUM_SIGNS_PER_CLASS / np.sum(_NUM_SIGNS_PER_CLASS)
+        )
+        print_df_rows[allw_class_sid]["FNR"] = np.sum(
+            fnrs * _NUM_SIGNS_PER_CLASS / np.sum(_NUM_SIGNS_PER_CLASS)
+        )
+
+        if "real" in sid:
+            # This is the correct (or commonly used) definition of mAP
             mAP = np.mean(results_all_classes[sid]["ap"])
             print_df_rows[all_class_sid]["AP"] = mAP
+
+            aps = np.zeros(_NUM_IOU_THRES)
+            num_dts = None
+            for t in range(_NUM_IOU_THRES):
+                matched_len = len(tp_scores[sid][t])
+                unmatched_len = len(fp_scores[sid][t])
+                if num_dts is not None:
+                    assert num_dts == matched_len + unmatched_len
+                num_dts = matched_len + unmatched_len
+                scores = np.zeros(num_dts)
+                matches = np.zeros_like(scores, dtype=bool)
+                scores[:matched_len] = tp_scores[sid][t]
+                scores[matched_len:] = fp_scores[sid][t]
+                matches[:matched_len] = 1
+                aps[t] = _compute_ap_recall(scores, matches, total)["AP"]
+
+            print_df_rows[allw_class_sid]["AP"] = np.mean(aps) * 100
 
         print(
             f"{sid}: combined {asr:.2f} ({num_succeed}/{num_clean}), "
             f"average {avg_asr:.2f}, total {total}"
         )
+
+    for sid in tp_scores:
+        if "real" in sid and "atk0" in sid:
+            aps = np.zeros(_NUM_IOU_THRES)
+            num_dts = None
+            for t in range(_NUM_IOU_THRES):
+                matched_len = len(tp_scores[sid][t])
+                unmatched_len = len(fp_scores[sid][t])
+                if num_dts is not None:
+                    assert num_dts == matched_len + unmatched_len
+                num_dts = matched_len + unmatched_len
+                scores = np.zeros(num_dts)
+                matches = np.zeros_like(scores, dtype=bool)
+                scores[:matched_len] = tp_scores[sid][t]
+                scores[matched_len:] = fp_scores[sid][t]
+                matches[:matched_len] = 1
+                aps[t] = _compute_ap_recall(scores, matches, total)["AP"]
+            print_df_rows[sid + "_allw"]["AP"] = np.mean(aps) * 100
 
     print_df_rows = list(print_df_rows.values())
     df = pd.DataFrame.from_records(print_df_rows)
@@ -292,6 +384,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("clean_exp_name", type=str, help="clean_exp_name")
     parser.add_argument("attack_exp_name", type=str, help="attack_exp_name")
-    parser.add_argument("exp_type", type=str, default=None, help="real or syn (default is both)")
+    parser.add_argument(
+        "--exp_type",
+        type=str,
+        default=None,
+        required=False,
+        help="real or syn (default is both)",
+    )
     args = parser.parse_args()
     main(args)
