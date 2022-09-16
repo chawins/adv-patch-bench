@@ -269,10 +269,10 @@ def resize_and_center(
         left = torch.div(img_size[1] - obj_size[1], 2, rounding_mode="trunc")
         top = torch.div(img_size[0] - obj_size[0], 2, rounding_mode="trunc")
         pad_size = [
-            left,  # left
-            top,  # top
-            img_size[1] - obj_size[1] - left,  # right
-            img_size[0] - obj_size[0] - top,  # bottom
+            max(0, left),  # left
+            max(0, top),  # top
+            max(0, img_size[1] - obj_size[1] - left),  # right
+            max(0, img_size[0] - obj_size[0] - top),  # bottom
         ]
         obj = T.pad(obj, pad_size)
 

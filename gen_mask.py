@@ -63,11 +63,9 @@ def gen_mask_10x20(obj_h_inch, obj_w_inch, obj_h_px, obj_w_px, num_patches=1):
     if num_patches == 2:
         # Top patch
         patch_y_pos = mid_height - patch_y_shift
-        top_edge = min(patch_y_pos + hh, obj_h_px)
-        bot_edge = obj_h_px - patch_h_px
         patch_mask[
             :,
-            bot_edge:top_edge,
+            patch_y_pos - hh : patch_y_pos + hh,
             max(0, patch_x_pos - hw) : patch_x_pos + hw,
         ] = 1
 

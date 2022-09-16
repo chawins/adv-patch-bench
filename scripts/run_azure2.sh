@@ -3,7 +3,7 @@
 # Detector test script
 GPU=1
 NUM_GPU=1
-NUM_WORKERS=4
+NUM_WORKERS=12
 
 # Dataset and model params
 DATASET=mapillary-combined-no_color # Options: mapillary-combined-no_color, mtsd-no_color
@@ -17,13 +17,14 @@ IMG_SIZE=1536,2048 # sizes: (1536,2048), (3040,4032)
 NUM_TEST_SYN=5000
 
 # Attack params
-MASK_SIZE=10x10
+MASK_SIZE=10x20
 SYN_OBJ_SIZE=64
 ATK_CONFIG_PATH=./configs/attack_config_azure2.yaml
 
 INTERP=bilinear
 TF_MODE=perspective
-EXP_NAME=synthetic-${MASK_SIZE}-obj${SYN_OBJ_SIZE}-pd64-ld0.001  # TODO: rename
+# synthetic-10x20-obj64-pd64-ld0.00001-light0.3.out
+EXP_NAME=synthetic-${MASK_SIZE}-obj${SYN_OBJ_SIZE}-pd64-ld0.00001-light0.3  # TODO: rename
 CLEAN_EXP_NAME=no_patch_syn_${TF_MODE}_${SYN_OBJ_SIZE}
 
 # Temp
@@ -181,7 +182,7 @@ function syn_attack {
         --mask-name "$MASK_SIZE" --weights $MODEL_PATH --workers $NUM_WORKERS \
         --transform-mode $TF_MODE --img-txt-path $BG_FILES --attack-type load \
         --annotated-signs-only --synthetic --obj-size $SYN_OBJ_SIZE \
-        --num-test $NUM_TEST_SYN --debug &&
+        --num-test $NUM_TEST_SYN &&
 
     # Test patch on real signs
     CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
@@ -191,16 +192,15 @@ function syn_attack {
         --name "$EXP_NAME" --obj-class "$OBJ_CLASS" --conf-thres $CONF_THRES \
         --mask-name "$MASK_SIZE" --weights $MODEL_PATH --workers $NUM_WORKERS \
         --transform-mode $TF_MODE --img-txt-path $BG_FILES --attack-type load \
-        --annotated-signs-only --debug &&
+        --annotated-signs-only &&
 
     echo "Done with $OBJ_CLASS."
 }
 
 function syn_attack_all {
-    # for i in {0..10}; do
-    #     syn_attack "$i"
-    # done
-    syn_attack 0
+    for i in {0..10}; do
+        syn_attack "$i"
+    done
 }
 
 syn_attack_all

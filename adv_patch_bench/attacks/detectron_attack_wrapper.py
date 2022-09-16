@@ -35,17 +35,32 @@ def _pad_or_crop_height(
         return None
     cur_h, cur_w = img.shape[-2:]
     h, w = size
-    assert (
-        w == cur_w
-    ), f"Width should already match ({img.shape[-2:]} vs {size})!"
-    if h > cur_h:
-        # Pad to adv_patch/patch_mask to match cur image height
+    # assert (
+    #     w == cur_w
+    # ), f"Width should already match ({img.shape[-2:]} vs {size})!"
+    # if h > cur_h:
+    #     # Pad to adv_patch/patch_mask to match cur image height
+    #     img = resize_and_center(img, img_size=size)
+    # elif h < cur_h:
+    #     # Crop adv_patch/patch_mask to match cur image height
+    #     top_crop = (cur_h - h) // 2
+    #     bot_crop = cur_h - h - top_crop
+    #     img = img[..., top_crop:-bot_crop, :]
+
+    if cur_h < h or cur_w < w:
+        # Pad if too small in either dimension
         img = resize_and_center(img, img_size=size)
-    elif h < cur_h:
-        # Crop adv_patch/patch_mask to match cur image height
-        top_crop = (cur_h - h) // 2
-        bot_crop = cur_h - h - top_crop
-        img = img[..., top_crop:-bot_crop, :]
+
+    cur_h, cur_w = img.shape[-2:]
+    assert cur_h >= h and cur_w >= w, f"{(cur_h, cur_w)} vs {size}"
+
+    # Crop if too large
+    top_crop = (cur_h - h) // 2
+    bot_crop = h + top_crop
+    left_crop = (cur_w - w) // 2
+    right_crop = w + left_crop
+    img = img[..., top_crop:bot_crop, left_crop:right_crop]
+
     assert img.shape[-2:] == size
     return img
 
@@ -132,9 +147,6 @@ class DetectronAttackWrapper:
 
         # Modify config
         self.cfg = cfg.clone()  # cfg can be modified by model
-        # TODO: To generate more dense proposals
-        # self.cfg.MODEL.RPN.NMS_THRESH = nms_thresh
-        # self.cfg.MODEL.RPN.POST_NMS_TOPK_TEST = 5000
 
         self.input_format = cfg.INPUT.FORMAT
         assert self.input_format == "BGR", "Only allow BGR input format for now"
@@ -327,7 +339,8 @@ class DetectronAttackWrapper:
             perturbed_image = images.clone()
             _, h, w = images.shape
 
-            if self.fixed_input_size or w < self.img_size[1]:
+            # if self.fixed_input_size or w < self.img_size[1]:
+            if self.fixed_input_size:
                 # TODO: This code does not work correctly because gt is not
                 # adjusted in the same way (still requires padding).
                 # Resize and pad perturbed_image to self.img_size preseving
@@ -461,9 +474,12 @@ class DetectronAttackWrapper:
 
             if self.synthetic:
                 instances = outputs["instances"]
+                # ious has shape [num_dts,]
                 ious = pairwise_iou(
                     instances.pred_boxes,
-                    new_gt["instances"].gt_boxes[-1].to(self.device),
+                    new_gt["instances"]
+                    .gt_boxes[-1]
+                    .to(self.device),  # Last new gt bbox is synthetic sign
                 )[:, 0]
                 # Skip empty ious (no overlap)
                 if len(ious) == 0:
@@ -471,12 +487,16 @@ class DetectronAttackWrapper:
                 # Save scores and gt-dt matches at each level of IoU thresholds
                 # Find the match with highest IoU and has correct class
                 ious *= instances.pred_classes == self.adv_sign_class_id
-                max_idx = ious.argmax()
-                # Compute matches at different values of IoU threshold
-                matches = ious[max_idx] >= self.all_iou_thres
-                syn_matches[:, total_num_images] = matches
-                scores = instances.scores[max_idx] * matches
-                syn_scores[:, total_num_images] = scores
+                matches = ious[None, :] >= self.all_iou_thres[:, None]
+                # Zero out scores that have lowe IoU than threshold
+                scores = instances.scores[None, :] * matches
+                # Select matched dt with highest score
+                idx_max_score = scores.argmax(-1)
+                tmp_idx = torch.arange(10)
+                syn_matches[:, total_num_images] = matches[
+                    tmp_idx, idx_max_score
+                ]
+                syn_scores[:, total_num_images] = scores[tmp_idx, idx_max_score]
             else:
                 new_outputs = deepcopy(outputs)
                 new_instances = new_outputs["instances"]
@@ -649,9 +669,6 @@ class DetectronAttackWrapper:
                 if self.input_format == "BGR":
                     image = image.flip(0)
 
-            # inputs = {"image": image, "height": size[0], "width": size[1]}
-            # height, width = height_width
             inputs = {"image": image, "height": height, "width": width}
-
             predictions = self.model([inputs])[0]
             return predictions

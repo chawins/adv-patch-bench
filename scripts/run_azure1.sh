@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Detector test script
-GPU=2
+GPU=0
 NUM_GPU=1
 NUM_WORKERS=12
 
@@ -15,16 +15,17 @@ IMG_SIZE=1536,2048 # sizes: (1536,2048), (3040,4032)
 NUM_TEST_SYN=5000
 
 # Attack params
-MASK_SIZE=10x10
+MASK_SIZE=10x20
 SYN_OBJ_SIZE=64
-ATK_CONFIG_PATH=./configs/attack_config3.yaml
+ATK_CONFIG_PATH=./configs/attack_config_azure1.yaml
 CSV_PATH=mapillary_vistas_final_merged.csv
 BG_PATH=~/data/mtsd_v2_fully_annotated/test/
 
 INTERP=bilinear
 TF_MODE=perspective
-EXP_NAME=synthetic-${MASK_SIZE}-obj${SYN_OBJ_SIZE}-pd64-ld0.00001  # TODO: rename
-CLEAN_EXP_NAME=no_patch_syn_${TF_MODE}_${SYN_OBJ_SIZE}
+# synthetic-10x20-obj64-pd128-ld0.1.out
+EXP_NAME=synthetic-${MASK_SIZE}-obj${SYN_OBJ_SIZE}-pd128-ld0.1  # TODO: rename
+CLEAN_EXP_NAME=no_patch_syn_${SYN_OBJ_SIZE}
 
 # Temp
 BG_FILES=bg_filenames_octagon-915.0.txt

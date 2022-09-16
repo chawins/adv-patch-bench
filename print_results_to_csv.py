@@ -60,8 +60,6 @@ def _compute_ap_recall(scores, matched, NP, recall_thresholds=None):
 
 
 BASE_PATH = "./detectron_output/"
-# CLEAN_EXP_NAME = "no_patch"
-# ATTACK_EXP_NAME = "synthetic-10x20-obj64-pd64-ld0.00001"
 CONF_THRES = 0.634
 iou_idx = 0  # 0.5
 
@@ -70,8 +68,6 @@ def main(args):
     exp_type = args.exp_type
     clean_exp_name = args.clean_exp_name
     attack_exp_name = args.attack_exp_name
-    # clean_exp_path = pathlib.Path(BASE_PATH) / CLEAN_EXP_NAME
-    # attack_exp_path = pathlib.Path(BASE_PATH) / ATTACK_EXP_NAME
     clean_exp_path = pathlib.Path(BASE_PATH) / clean_exp_name
     attack_exp_path = pathlib.Path(BASE_PATH) / attack_exp_name
     exp_paths = list(clean_exp_path.iterdir())
@@ -250,8 +246,7 @@ def main(args):
         else:
             clean_sid = "_".join([*split_sid[:-2], "atk0", split_sid[-1]])
         if clean_sid not in gt_scores[0]:
-            print(clean_sid)
-            print(gt_scores[0].keys())
+            continue
         clean_scores = gt_scores[0][clean_sid][1]
         clean_detected = clean_scores[iou_idx] >= CONF_THRES
         adv_detected = adv_scores[iou_idx] >= CONF_THRES

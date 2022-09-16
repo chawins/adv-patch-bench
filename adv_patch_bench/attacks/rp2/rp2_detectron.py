@@ -21,8 +21,6 @@ class RP2AttackDetectron(RP2AttackModule):
         self.detectron_obj_const = detectron_config["obj_loss_const"]
         self.detectron_iou_thres = detectron_config["iou_thres"]
 
-        # self.cfg.MODEL.RPN.NMS_THRESH = nms_thresh
-        # self.cfg.MODEL.RPN.POST_NMS_TOPK_TEST = 5000
         self.nms_thresh_orig = deepcopy(
             core_model.proposal_generator.nms_thresh
         )
@@ -114,6 +112,7 @@ class RP2AttackDetectron(RP2AttackModule):
         ):
             # Filter obj_class
             if "obj_class_only" in self.attack_mode:
+                # Focus attack on prediction of `obj_class` only
                 idx = obj_class == tgt_lb
                 tgt_lb, tgt_log, obj_log = (
                     tgt_lb[idx],
