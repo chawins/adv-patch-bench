@@ -11,7 +11,7 @@
 #Number of GPUs, this can be in the format of "gpu:[1-4]", or "gpu:K80:[1-4] with the type included
 #SBATCH --gres=gpu:GTX2080TI:2
 #SBATCH --time=36:00:00
-#SBATCH --output slurm-%j-synthetic-10x20-obj64-pd128-ld0.00001.out  # TODO
+#SBATCH --output slurm-%j-synthetic-10x20-obj128-pd128-ld0.00001.out  # TODO
 ## Command(s) to run:
 source /global/home/users/$USER/.bash_profile
 module purge
@@ -35,13 +35,14 @@ NUM_TEST_SYN=5000
 
 # Attack params
 MASK_SIZE=10x20
-SYN_OBJ_SIZE=64
-ATK_CONFIG_PATH=./configs/attack_config_savio4.yaml
+SYN_OBJ_SIZE=128
+ATK_CONFIG_PATH=./configs/attack_config_savio7.yaml
 
 INTERP=bilinear
 TF_MODE=perspective
+# EXP_NAME=synthetic-${MASK_SIZE}-obj64-pd64-ld0.00001
 EXP_NAME=synthetic-${MASK_SIZE}-obj${SYN_OBJ_SIZE}-pd128-ld0.00001 # TODO: rename
-CLEAN_EXP_NAME=no_patch_syn_${TF_MODE}_${SYN_OBJ_SIZE}
+CLEAN_EXP_NAME=no_patch_syn_${SYN_OBJ_SIZE}
 
 # Evaluate on all annotated Mapillary Vistas signs and compute score thres
 # rm ./detectron_output/mapillary_combined_coco_format.json
@@ -49,8 +50,8 @@ CLEAN_EXP_NAME=no_patch_syn_${TF_MODE}_${SYN_OBJ_SIZE}
 # python -u test_detectron.py \
 #     --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --name no_patch \
 #     --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH --dataset $DATASET \
-#     --attack-config-path $ATK_CONFIG_PATH --workers $NUM_WORKERS \
-#     --weights $MODEL_PATH --img-txt-path "$BG_FILES" --eval-mode drop --obj-class -1 \
+#     --attack-config-path $ATK_CONFIG_PATH --workers $NUM_WORKERS --obj-class -1 \
+#     --weights $MODEL_PATH --img-txt-path "$BG_FILES" --eval-mode drop \
 #     --annotated-signs-only --conf-thres $CONF_THRES
 
 function syn_attack {

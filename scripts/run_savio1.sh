@@ -40,7 +40,7 @@ ATK_CONFIG_PATH=./configs/attack_config_savio1.yaml
 
 INTERP=bilinear
 TF_MODE=perspective
-EXP_NAME=synthetic-${MASK_SIZE}-obj${SYN_OBJ_SIZE}-pd64-ld0.00001-auglight0.3  # TODO: rename
+EXP_NAME=synthetic-${MASK_SIZE}-obj${SYN_OBJ_SIZE}-pd64-ld0.00001-light0.3  # TODO: rename
 CLEAN_EXP_NAME=no_patch_syn_${TF_MODE}_${SYN_OBJ_SIZE}
 
 # Evaluate on all annotated Mapillary Vistas signs and compute score thres
@@ -72,13 +72,13 @@ function syn_attack {
     esac
 
     # Test on synthetic clean samples (should only be done once per aug method)
-    python -u test_detectron.py \
-        --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --name $CLEAN_EXP_NAME \
-        --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH --dataset $DATASET \
-        --attack-config-path "$ATK_CONFIG_PATH" --workers $NUM_WORKERS --interp $INTERP \
-        --weights $MODEL_PATH --eval-mode drop --annotated-signs-only \
-        --obj-class "$OBJ_CLASS" --obj-size $SYN_OBJ_SIZE --conf-thres $CONF_THRES \
-        --img-txt-path $BG_FILES --num-test $NUM_TEST_SYN --synthetic &&
+    # python -u test_detectron.py \
+    #     --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --name $CLEAN_EXP_NAME \
+    #     --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH --dataset $DATASET \
+    #     --attack-config-path "$ATK_CONFIG_PATH" --workers $NUM_WORKERS --interp $INTERP \
+    #     --weights $MODEL_PATH --eval-mode drop --annotated-signs-only \
+    #     --obj-class "$OBJ_CLASS" --obj-size $SYN_OBJ_SIZE --conf-thres $CONF_THRES \
+    #     --img-txt-path $BG_FILES --num-test $NUM_TEST_SYN --synthetic &&
 
     # Generate adversarial patch
     python -u gen_patch_detectron.py \

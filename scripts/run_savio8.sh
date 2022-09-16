@@ -11,7 +11,7 @@
 #Number of GPUs, this can be in the format of "gpu:[1-4]", or "gpu:K80:[1-4] with the type included
 #SBATCH --gres=gpu:GTX2080TI:2
 #SBATCH --time=36:00:00
-#SBATCH --output slurm-%j-synthetic-10x20-obj64-pd128-ld0.00001.out  # TODO
+#SBATCH --output slurm-%j-synthetic-10x10-obj64-pd64-ld0.00001-relight0.3-rt30.out  # TODO
 ## Command(s) to run:
 source /global/home/users/$USER/.bash_profile
 module purge
@@ -34,13 +34,13 @@ IMG_SIZE=1536,2048 # sizes: (1536,2048), (3040,4032)
 NUM_TEST_SYN=5000
 
 # Attack params
-MASK_SIZE=10x20
+MASK_SIZE=10x10
 SYN_OBJ_SIZE=64
-ATK_CONFIG_PATH=./configs/attack_config_savio4.yaml
+ATK_CONFIG_PATH=./configs/attack_config_savio7.yaml
 
 INTERP=bilinear
 TF_MODE=perspective
-EXP_NAME=synthetic-${MASK_SIZE}-obj${SYN_OBJ_SIZE}-pd128-ld0.00001 # TODO: rename
+EXP_NAME=synthetic-${MASK_SIZE}-obj${SYN_OBJ_SIZE}-pd64-ld0.00001-light0.3-rt30 # TODO: rename
 CLEAN_EXP_NAME=no_patch_syn_${TF_MODE}_${SYN_OBJ_SIZE}
 
 # Evaluate on all annotated Mapillary Vistas signs and compute score thres

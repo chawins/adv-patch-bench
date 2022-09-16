@@ -253,8 +253,9 @@ def main(args):
         else:
             clean_sid = "_".join([*split_sid[:-2], "atk0", split_sid[-1]])
         if clean_sid not in gt_scores[0]:
-            print(clean_sid)
-            print(gt_scores[0].keys())
+            #print(clean_sid)
+            #print(gt_scores[0].keys())
+            continue
         clean_scores = gt_scores[0][clean_sid][1]
         clean_detected = clean_scores[iou_idx] >= CONF_THRES
         adv_detected = adv_scores[iou_idx] >= CONF_THRES
