@@ -113,7 +113,10 @@ def main(args):
                 synthetic = int(results["synthetic"])
                 is_attack = int(results["attack_type"] != "none")
                 scores_dict = gt_scores[is_attack]
-
+                #if obj_size == 64:
+                #    # FIXME
+                #    continue
+                
                 if synthetic:
                     # Synthetic sign
                     if exp_type is not None and exp_type != "syn":
