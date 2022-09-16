@@ -23,8 +23,8 @@ BG_PATH=~/data/mtsd_v2_fully_annotated/test/
 
 INTERP=bilinear
 TF_MODE=perspective
-# synthetic-10x20-obj64-pd128-ld0.001.out
-EXP_NAME=synthetic-${MASK_SIZE}-obj${SYN_OBJ_SIZE}-pd128-ld0.001  # TODO: rename
+# synthetic-10x20-h14-obj64-pd64-ld0.00001.out
+EXP_NAME=synthetic-${MASK_SIZE}-h14-obj${SYN_OBJ_SIZE}-pd164-ld0.00001  # TODO: rename
 CLEAN_EXP_NAME=no_patch_syn_${SYN_OBJ_SIZE}
 
 function syn_attack {
@@ -62,7 +62,8 @@ function syn_attack {
         --name "$EXP_NAME" --bg-dir $BG_PATH --transform-mode $TF_MODE \
         --weights $MODEL_PATH --workers $NUM_WORKERS --mask-name "$MASK_SIZE" \
         --img-txt-path $BG_FILES --save-images --obj-size $SYN_OBJ_SIZE \
-        --annotated-signs-only --synthetic --verbose &&
+        --annotated-signs-only --synthetic --verbose \
+        --custom-patch-size 14 &&
 
     # Test patch on synthetic signs
     CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \

@@ -1,6 +1,6 @@
 import argparse
 import os
-from typing import Tuple, Union
+from typing import Optional, Tuple, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -14,8 +14,20 @@ from adv_patch_bench.utils.image import get_obj_width
 from hparams import LABEL_LIST
 
 
-def gen_mask_10x10(obj_h_inch, obj_w_inch, obj_h_px, obj_w_px):
-    patch_size_inch = (10, 10)
+def gen_mask_10x10(
+    obj_h_inch: int,
+    obj_w_inch: int,
+    obj_h_px: int,
+    obj_w_px: int,
+    custom_patch_size: Optional[int] = None,
+) -> torch.Tensor:
+
+    # TODO: Clean up this logic
+    if custom_patch_size is not None:
+        patch_size_inch = (10, custom_patch_size)
+    else:
+        patch_size_inch = (10, 10)
+
     patch_mask = torch.zeros((1, obj_h_px, obj_w_px))
     patch_h_inch, patch_w_inch = patch_size_inch
     patch_h_px = round(patch_h_inch / obj_h_inch * obj_h_px)
@@ -39,8 +51,21 @@ def gen_mask_10x10(obj_h_inch, obj_w_inch, obj_h_px, obj_w_px):
     return patch_mask
 
 
-def gen_mask_10x20(obj_h_inch, obj_w_inch, obj_h_px, obj_w_px, num_patches=1):
-    patch_size_inch = (10, 20)
+def gen_mask_10x20(
+    obj_h_inch: int,
+    obj_w_inch: int,
+    obj_h_px: int,
+    obj_w_px: int,
+    num_patches: int = 1,
+    custom_patch_size: Optional[int] = None,
+) -> torch.Tensor:
+
+    # TODO: Clean up this logic
+    if custom_patch_size is not None:
+        patch_size_inch = (custom_patch_size, 20)
+    else:
+        patch_size_inch = (10, 20)
+
     patch_mask = torch.zeros((1, obj_h_px, obj_w_px))
     patch_h_inch, patch_w_inch = patch_size_inch
     patch_h_px = round(patch_h_inch / obj_h_inch * obj_h_px)
@@ -77,6 +102,7 @@ def generate_mask(
     obj_numpy: np.ndarray,
     obj_size_px: Union[int, Tuple[int, int]],
     obj_width_inch: float,
+    custom_patch_size: Optional[int] = None,
 ) -> torch.Tensor:
     assert mask_name in ("10x10", "10x20", "2_10x20")
 
@@ -93,7 +119,12 @@ def generate_mask(
     elif "10x20" in mask_name:
         num_patches = 2 if "2_" in mask_name else 1
         patch_mask = gen_mask_10x20(
-            obj_h_inch, obj_w_inch, obj_h_px, obj_w_px, num_patches=num_patches
+            obj_h_inch,
+            obj_w_inch,
+            obj_h_px,
+            obj_w_px,
+            num_patches=num_patches,
+            custom_patch_size=custom_patch_size,
         )
 
     # (3) cover the whole sign
