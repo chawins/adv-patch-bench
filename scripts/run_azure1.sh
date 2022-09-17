@@ -15,7 +15,7 @@ IMG_SIZE=1536,2048 # sizes: (1536,2048), (3040,4032)
 NUM_TEST_SYN=5000
 
 # Attack params
-MASK_SIZE=10x20
+MASK_SIZE=10x10
 SYN_OBJ_SIZE=64
 ATK_CONFIG_PATH=./configs/attack_config_azure1.yaml
 CSV_PATH=mapillary_vistas_final_merged.csv
@@ -23,12 +23,9 @@ BG_PATH=~/data/mtsd_v2_fully_annotated/test/
 
 INTERP=bilinear
 TF_MODE=perspective
-# synthetic-10x20-h12-obj64-pd64-ld0.00001.out
-EXP_NAME=synthetic-${MASK_SIZE}-h12-obj${SYN_OBJ_SIZE}-pd64-ld0.00001  # TODO: rename
+# synthetic-10x10-obj64-pd64-ld0.00001-2rt0.out
+EXP_NAME=synthetic-${MASK_SIZE}-obj${SYN_OBJ_SIZE}-pd64-ld0.00001-2rt0  # TODO: rename
 CLEAN_EXP_NAME=no_patch_syn_${SYN_OBJ_SIZE}
-
-# Temp
-BG_FILES=bg_filenames_octagon-915.0.txt
 
 function syn_attack {
 
@@ -65,8 +62,7 @@ function syn_attack {
         --name "$EXP_NAME" --bg-dir $BG_PATH --transform-mode $TF_MODE \
         --weights $MODEL_PATH --workers $NUM_WORKERS --mask-name "$MASK_SIZE" \
         --img-txt-path $BG_FILES --save-images --obj-size $SYN_OBJ_SIZE \
-        --annotated-signs-only --synthetic --verbose \
-        --custom-patch-size 12 &&
+        --annotated-signs-only --synthetic --verbose &&
 
     # Test patch on synthetic signs
     CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
@@ -77,7 +73,7 @@ function syn_attack {
         --mask-name "$MASK_SIZE" --weights $MODEL_PATH --workers $NUM_WORKERS \
         --transform-mode $TF_MODE --img-txt-path $BG_FILES --attack-type load \
         --annotated-signs-only --synthetic --obj-size $SYN_OBJ_SIZE \
-        --num-test $NUM_TEST_SYN &&
+        --num-test $NUM_TEST_SYN --syn-rotate-degree 0 &&
 
     # Test patch on real signs
     CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \

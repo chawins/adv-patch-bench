@@ -65,52 +65,6 @@ def _pad_or_crop_height(
     return img
 
 
-def _compute_ap_recall(scores, matched, NP, recall_thresholds=None):
-    """
-    (DEPRECATED) This curve tracing method has some quirks that do not appear
-    when only unique confidence thresholds are used (i.e. Scikit-learn's
-    implementation), however, in order to be consistent, the COCO's method is
-    reproduced.
-    """
-
-    # by default evaluate on 101 recall levels
-    if recall_thresholds is None:
-        recall_thresholds = np.linspace(
-            0.0, 1.00, int(np.round((1.00 - 0.0) / 0.01)) + 1, endpoint=True
-        )
-
-    # sort in descending score order
-    inds = np.argsort(-scores, kind="stable")
-
-    scores = scores[inds]
-    matched = matched[inds]
-
-    tp = np.cumsum(matched)
-    fp = np.cumsum(~matched)
-
-    rc = tp / NP
-    pr = tp / (tp + fp)
-
-    # make precision monotonically decreasing
-    i_pr = np.maximum.accumulate(pr[::-1])[::-1]
-
-    rec_idx = np.searchsorted(rc, recall_thresholds, side="left")
-
-    # get interpolated precision values at the evaluation thresholds
-    i_pr = np.array([i_pr[r] if r < len(i_pr) else 0 for r in rec_idx])
-
-    return {
-        "precision": pr,
-        "recall": rc,
-        "AP": np.mean(i_pr),
-        "interpolated precision": i_pr,
-        "interpolated recall": recall_thresholds,
-        "total positives": NP,
-        "TP": tp[-1] if len(tp) != 0 else 0,
-        "FP": fp[-1] if len(fp) != 0 else 0,
-    }
-
-
 class DetectronAttackWrapper:
     def __init__(
         self,
@@ -194,6 +148,15 @@ class DetectronAttackWrapper:
             # self.syn_sign_class = self.other_sign_class + 1
             # self.metadata.thing_classes.append("synthetic")
             # self.syn_sign_class = self.other_sign_class
+
+            self.syn_transform_params = {
+                "syn_rotate_degree": self.args.syn_rotate_degree,
+                "syn_use_scale": self.args.syn_use_scale,
+                "syn_use_colorjitter": self.args.syn_use_colorjitter,
+                "syn_colorjitter_intensity": self.args.syn_colorjitter_intensity,
+                "syn_3d_transform": self.args.syn_3d_transform,
+                "syn_3d_distortion": self.args.syn_3d_distortion,
+            }
 
             # Compute obj_size
             obj_size = args.obj_size
@@ -288,13 +251,12 @@ class DetectronAttackWrapper:
             # syn_obj_mask, obj_transforms, mask_transforms, syn_sign_class)
             syn_data = prep_synthetic_eval(
                 self.args.syn_obj_path,
-                syn_use_scale=self.args.syn_use_scale,
-                syn_use_colorjitter=self.args.syn_use_colorjitter,
                 img_size=self.img_size,
                 obj_size=self.obj_size,
                 transform_prob=1.0,
                 interp=self.interp,
                 device=self.device,
+                **self.syn_transform_params,
             )
             # Append with synthetic sign class
             syn_obj, syn_obj_mask = syn_data[:2]

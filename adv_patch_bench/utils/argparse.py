@@ -90,7 +90,12 @@ def eval_args_parser(is_detectron, root=None):
         default=8,
         help="Number of dataloader workers (per RANK in DDP mode).",
     )
-
+    # syn_rotate_degree: float = 15,
+    # syn_use_scale: bool = True,
+    # syn_3d_transform: bool = False,
+    # syn_3d_distortion: float = 0.25,
+    # syn_use_colorjitter: bool = False,
+    # syn_colorjitter_intensity: float = 0.3,
     # Specific to synthetic signs
     parser.add_argument(
         "--obj-size",
@@ -100,6 +105,12 @@ def eval_args_parser(is_detectron, root=None):
             "Object width in pixels (default: 0.1 * img_size)."
             "Only used by gen_patch in for synthetic signs."
         ),
+    )
+    parser.add_argument(
+        "--syn-rotate-degree",
+        type=float,
+        default=15,
+        help="Max rotation degrees for synthetic sign (default: 15).",
     )
     parser.add_argument(
         "--syn-use-scale",
@@ -112,9 +123,27 @@ def eval_args_parser(is_detectron, root=None):
         help="Use 3d transform when evaluating on synthetic signs.",
     )
     parser.add_argument(
+        "--syn-3d-distortion",
+        type=float,
+        default=0.25,
+        help=(
+            "Perspective transform distortion for synthetic sign "
+            "(default: 0.25)."
+        ),
+    )
+    parser.add_argument(
         "--syn-use-colorjitter",
         action="store_true",
         help="Use colorjitter transform when evaluating on synthetic signs.",
+    )
+    parser.add_argument(
+        "--syn-colorjitter-intensity",
+        type=float,
+        default=0.3,
+        help=(
+            "Color jitter intensity for brightness, contrast, saturation "
+            "(default: 0.3)."
+        ),
     )
 
     # =========================== Attack arguments ========================== #

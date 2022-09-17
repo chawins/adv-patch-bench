@@ -23,13 +23,16 @@ from kornia.geometry.transform import resize
 
 def prep_synthetic_eval(
     syn_obj_path: str,
-    syn_use_scale: bool = True,
-    syn_3d_transform: bool = False,
-    syn_use_colorjitter: bool = False,
     img_size: Tuple[int, int] = (1536, 2048),
     obj_size: Tuple[int, int] = (128, 128),
     transform_prob: float = 1.0,
     interp: str = "bilinear",
+    syn_rotate_degree: float = 15,
+    syn_use_scale: bool = True,
+    syn_3d_transform: bool = False,
+    syn_3d_distortion: float = 0.25,
+    syn_use_colorjitter: bool = False,
+    syn_colorjitter_intensity: float = 0.3,
     device: str = "cuda",
 ):
     if not (isinstance(obj_size, tuple) or isinstance(obj_size, int)):
@@ -41,22 +44,22 @@ def prep_synthetic_eval(
     # TODO: needed?
     # syn_sign_class = len(label_names)
     # label_names[syn_sign_class] = 'synthetic'
-    
+
     if syn_3d_transform:
         transform_params = {
-            "distortion_scale": 0.25,
+            "distortion_scale": syn_3d_distortion,
         }
         tf_func = K.RandomPerspective
     else:
         # TODO: This depends on our experiment and maybe we want to make it easily
         # adjsutable.
         transform_params = {
-            "degrees": 15,
+            "degrees": syn_rotate_degree,
             "translate": (0.4, 0.4),
             "scale": (0.5, 2) if syn_use_scale else None,
         }
         tf_func = K.RandomAffine
-        
+
     obj_transforms = tf_func(
         p=transform_prob,
         return_transform=True,
@@ -69,10 +72,10 @@ def prep_synthetic_eval(
 
     if syn_use_colorjitter:
         jitter_transform = K.ColorJitter(
-            brightness=0.3,
-            contrast=0.3,
-            saturation=0.3,
-            hue=0.05,
+            brightness=syn_colorjitter_intensity,
+            contrast=syn_colorjitter_intensity,
+            saturation=syn_colorjitter_intensity,
+            hue=0.05,  # Hue can't be change much
             p=transform_prob,
         )
     else:
