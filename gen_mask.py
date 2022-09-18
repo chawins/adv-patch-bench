@@ -1,6 +1,6 @@
 import argparse
 import os
-from typing import Optional, Tuple, Union
+from typing import Tuple, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -14,60 +14,17 @@ from adv_patch_bench.utils.image import get_obj_width
 from hparams import LABEL_LIST
 
 
-def gen_mask_10x10(
-    obj_h_inch: int,
-    obj_w_inch: int,
-    obj_h_px: int,
-    obj_w_px: int,
-    custom_patch_size: Optional[int] = None,
-) -> torch.Tensor:
-
-    # TODO: Clean up this logic
-    if custom_patch_size is not None:
-        patch_size_inch = (10, custom_patch_size)
-    else:
-        patch_size_inch = (10, 10)
-
-    patch_mask = torch.zeros((1, obj_h_px, obj_w_px))
-    patch_h_inch, patch_w_inch = patch_size_inch
-    patch_h_px = round(patch_h_inch / obj_h_inch * obj_h_px)
-    patch_w_px = round(patch_w_inch / obj_w_inch * obj_w_px)
-
-    # Define patch location and size
-    # Example: 10x10-inch patch in the middle of 36x36-inch sign
-    # (1) 1 square (bottom)
-    mid_height, mid_width = obj_h_px // 2, obj_w_px // 2
-    patch_x_shift = 0
-    shift_inch = (obj_h_inch - patch_h_inch) / 2
-    patch_y_shift = round(shift_inch / obj_h_inch * obj_h_px)
-    patch_x_pos = mid_width + patch_x_shift
-    patch_y_pos = mid_height + patch_y_shift
-    hh, hw = patch_h_px // 2, patch_w_px // 2
-    patch_mask[
-        :,
-        patch_y_pos - hh : patch_y_pos + hh,
-        max(0, patch_x_pos - hw) : patch_x_pos + hw,
-    ] = 1
-    return patch_mask
-
-
-def gen_mask_10x20(
+def gen_mask_rect(
+    patch_h_inch: int,
+    patch_w_inch: int,
     obj_h_inch: int,
     obj_w_inch: int,
     obj_h_px: int,
     obj_w_px: int,
     num_patches: int = 1,
-    custom_patch_size: Optional[int] = None,
 ) -> torch.Tensor:
 
-    # TODO: Clean up this logic
-    if custom_patch_size is not None:
-        patch_size_inch = (custom_patch_size, 20)
-    else:
-        patch_size_inch = (10, 20)
-
     patch_mask = torch.zeros((1, obj_h_px, obj_w_px))
-    patch_h_inch, patch_w_inch = patch_size_inch
     patch_h_px = round(patch_h_inch / obj_h_inch * obj_h_px)
     patch_w_px = round(patch_w_inch / obj_w_inch * obj_w_px)
 
@@ -102,10 +59,7 @@ def generate_mask(
     obj_numpy: np.ndarray,
     obj_size_px: Union[int, Tuple[int, int]],
     obj_width_inch: float,
-    custom_patch_size: Optional[int] = None,
 ) -> torch.Tensor:
-    assert mask_name in ("10x10", "10x20", "2_10x20")
-
     # Get height to width ratio of the object
     h_w_ratio = obj_numpy.shape[0] / obj_numpy.shape[1]
     if isinstance(obj_size_px, int):
@@ -114,21 +68,17 @@ def generate_mask(
     obj_h_inch = h_w_ratio * obj_w_inch
     obj_h_px, obj_w_px = obj_size_px
 
-    if mask_name == "10x10":
-        patch_mask = gen_mask_10x10(obj_h_inch, obj_w_inch, obj_h_px, obj_w_px)
-    elif "10x20" in mask_name:
-        num_patches = 2 if "2_" in mask_name else 1
-        patch_mask = gen_mask_10x20(
-            obj_h_inch,
-            obj_w_inch,
-            obj_h_px,
-            obj_w_px,
-            num_patches=num_patches,
-            custom_patch_size=custom_patch_size,
-        )
-
-    # (3) cover the whole sign
-    # patch_mask = torch.ones_like(patch_mask)
+    num_patches = 2 if "2_" in mask_name else 1
+    patch_h_inch, patch_w_inch = [int(s) for s in mask_name.split("x")]
+    patch_mask = gen_mask_rect(
+        patch_h_inch,
+        patch_w_inch,
+        obj_h_inch,
+        obj_w_inch,
+        obj_h_px,
+        obj_w_px,
+        num_patches=num_patches,
+    )
 
     return patch_mask
 

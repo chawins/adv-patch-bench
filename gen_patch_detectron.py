@@ -312,7 +312,6 @@ def main(
     attack_config_path: str = None,
     num_samples: int = 0,
     mask_name: str = "10x10",
-    custom_patch_size: Optional[int] = None,
     **kwargs,
 ):
     cudnn.benchmark = True
@@ -357,7 +356,6 @@ def main(
         obj_numpy,
         obj_size,
         obj_width_inch,
-        custom_patch_size=custom_patch_size,
     )
 
     # Build dataloader

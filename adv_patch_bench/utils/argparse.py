@@ -165,11 +165,12 @@ def eval_args_parser(is_detectron, root=None):
     parser.add_argument(
         "--mask-name", type=str, default="10x10", help="Specify mask shape."
     )
+    # TODO: remove
     parser.add_argument(
         "--custom-patch-size",
         type=float,
         default=None,
-        help="Set custom patch size that modifies from pre-defined mask_name.",
+        help="(DEPRECATED) Set custom patch size that modifies from pre-defined mask_name.",
     )
     parser.add_argument(
         "--mask-dir",
