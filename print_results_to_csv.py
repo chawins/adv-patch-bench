@@ -79,6 +79,7 @@ def main(args):
     print_df_rows = {}
     tp_scores = {}
     fp_scores = {}
+    repeated_results = []
 
     # Iterate over sign classes
     for sign_path in exp_paths:
@@ -116,10 +117,10 @@ def main(args):
                 synthetic = int(results["synthetic"])
                 is_attack = int(results["attack_type"] != "none")
                 scores_dict = gt_scores[is_attack]
-                #if obj_size == 64:
+                # if obj_size == 64:
                 #    # FIXME
                 #    continue
-                
+
                 if synthetic:
                     # Synthetic sign
                     if exp_type is not None and exp_type != "syn":
@@ -160,10 +161,12 @@ def main(args):
                     sid = f"{base_sid}_{oc:02d}"
                     if sid in scores_dict:
                         # There should only be one clean setting
-                        raise ValueError(
-                            f"There are multiple results under same setting "
-                            f"({sid}). Check result at {result_path}."
-                        )
+                        # raise ValueError(
+                        #     f"There are multiple results under same setting "
+                        #     f"({sid}). Check result at {result_path}."
+                        # )
+                        repeated_results.append(result_path)
+                        continue
                     # if not is_attack and synthetic:
                     #     import pdb
                     #     pdb.set_trace()
@@ -376,6 +379,7 @@ def main(args):
     df = df.drop(columns=["atk"])
     df = df.reindex(columns=["id", "FNR", "ASR", "AP"])
     print(df.to_csv(float_format="%0.2f", index=False))
+    print("Repeated results:", repeated_results)
 
 
 if __name__ == "__main__":
