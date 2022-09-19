@@ -96,17 +96,21 @@ def gen_circle_mask(size, ratio=None):
 
 
 def gen_triangle_mask(size, ratio=None):
+    # width: 1168, height: 1024
+    height = int(1024 / 1168 * size)
     mid = round(size / 2)
-    Y, X = np.ogrid[:size, :size]
-    mask = (Y + 2 * X >= size) * (Y - 2 * X >= -size)
-    return mask, [[mid, 0], [size - 1, size - 1], [0, size - 1]]
+    Y, X = np.ogrid[:height, :size]
+    mask = (Y / height + 2 * X / size >= 1) * (Y / height - 2 * X / size >= -1)
+    return mask, [[mid, 0], [size - 1, height - 1], [0, height - 1]]
 
 
 def gen_triangle_inverted_mask(size, ratio=None):
+    # width: 1024, height: 900
+    height = int(900 / 1024 * size)
     mid = round(size / 2)
-    Y, X = np.ogrid[:size, :size]
-    mask = (Y - 2 * X <= 0) * (Y + 2 * X <= 2 * size)
-    return mask, [[0, 0], [size - 1, 0], [mid, size - 1]]
+    Y, X = np.ogrid[:height, :size]
+    mask = (Y / height - 2 * X / size <= 0) * (Y / height + 2 * X / size <= 2)
+    return mask, [[0, 0], [size - 1, 0], [mid, height - 1]]
 
 
 def gen_pentagon_mask(size, ratio=None):

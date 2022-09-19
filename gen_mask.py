@@ -1,6 +1,6 @@
 import argparse
 import os
-from typing import Tuple, Union
+from typing import Any, Optional, Tuple, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -14,21 +14,29 @@ from adv_patch_bench.utils.image import get_obj_width
 from hparams import LABEL_LIST
 
 
+def verify_obj_size(
+    obj_size: Any,
+    hw_ratio: Optional[float] = None,
+    img_size: Optional[Tuple[int, int]] = None,
+):
+    # Deterimine object size in pixels
+    if obj_size is None:
+        obj_size = int(min(img_size) * 0.1)
+    if isinstance(obj_size, int):
+        obj_size = (round(obj_size * hw_ratio), obj_size)
+    assert isinstance(obj_size, tuple) and all(
+        [isinstance(o, int) for o in obj_size]
+    )
+    return obj_size
+
+
 def get_mask_from_syn_image(
     obj_class, syn_obj_path, obj_size, img_size, mask_name, class_names
 ):
     # TODO: Clean
     obj_numpy = np.array(Image.open(syn_obj_path).convert("RGBA")) / 255
-    h_w_ratio = obj_numpy.shape[0] / obj_numpy.shape[1]
-
-    # Deterimine object size in pixels
-    if obj_size is None:
-        obj_size = int(min(img_size) * 0.1)
-    if isinstance(obj_size, int):
-        obj_size = (round(obj_size * h_w_ratio), obj_size)
-    assert isinstance(obj_size, tuple) and all(
-        [isinstance(o, int) for o in obj_size]
-    )
+    hw_ratio = obj_numpy.shape[0] / obj_numpy.shape[1]
+    obj_size = verify_obj_size(obj_size, hw_ratio=hw_ratio, img_size=img_size)
 
     # Get object width in inch
     obj_width_inch = get_obj_width(obj_class, class_names)
@@ -39,7 +47,7 @@ def get_mask_from_syn_image(
         obj_size,
         obj_width_inch,
     )
-    return patch_mask
+    return obj_numpy, patch_mask, obj_size
 
 
 def gen_mask_rect(

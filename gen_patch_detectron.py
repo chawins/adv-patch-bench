@@ -204,7 +204,7 @@ def generate_adv_patch(
     attack_config: Dict = {},
     **kwargs,
 ):
-    """Generate adversarial patch"""
+    """Generate adversarial patch."""
     del kwargs  # Unused
     print(f"=> Initializing attack...")
     num_bg = attack_config["rp2"]["num_bg"]  # TODO: decouple from rp2
@@ -357,7 +357,7 @@ def main(
     #     obj_size,
     #     obj_width_inch,
     # )
-    obj_numpy, patch_mask = get_mask_from_syn_image(
+    obj_numpy, patch_mask, obj_size = get_mask_from_syn_image(
         obj_class, syn_obj_path, obj_size, img_size, mask_name, class_names
     )
 
