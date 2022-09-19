@@ -424,7 +424,10 @@ def apply_transform(
     patch_mask = coerce_rank(patch_mask, 4)
     sign_canonical = coerce_rank(sign_canonical, 4)
     obj_size = patch_mask.shape[-2:]
-    assert adv_patch.shape[-2:] == sign_canonical.shape[-2:] == obj_size
+    assert adv_patch.shape[-2:] == sign_canonical.shape[-2:] == obj_size, (
+        f"adv_patch: {adv_patch.shape}, sign_canonical: {sign_canonical.shape},"
+        f" obj_size: {obj_size}."
+    )
 
     # ymin, xmin, height, width = patch_loc
     if use_relight:

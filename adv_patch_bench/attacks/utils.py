@@ -117,6 +117,7 @@ def prep_adv_patch(
     obj_size: Optional[Union[int, Tuple[int, int]]] = None,
     interp: str = "bilinear",
     device: str = "cuda",
+    
 ) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor]]:
     """Load and prepare adversarial patch along with its mask.
 
@@ -140,8 +141,11 @@ def prep_adv_patch(
         return None, None
 
     # Load patch from a pickle file if specified
+    # if attack_type == 'per-sign':
     # TODO: make script to generate dummy patch for per-sign attack
+    # adv_patch = torch.zeros((3, obj_size, obj_size))
     adv_patch, patch_mask = pickle.load(open(adv_patch_path, "rb"))
+        
     adv_patch = coerce_rank(adv_patch, 3)
     patch_mask = coerce_rank(patch_mask, 3)
     patch_mask = patch_mask.to(device)

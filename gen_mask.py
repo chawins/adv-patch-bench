@@ -14,6 +14,34 @@ from adv_patch_bench.utils.image import get_obj_width
 from hparams import LABEL_LIST
 
 
+def get_mask_from_syn_image(
+    obj_class, syn_obj_path, obj_size, img_size, mask_name, class_names
+):
+    # TODO: Clean
+    obj_numpy = np.array(Image.open(syn_obj_path).convert("RGBA")) / 255
+    h_w_ratio = obj_numpy.shape[0] / obj_numpy.shape[1]
+
+    # Deterimine object size in pixels
+    if obj_size is None:
+        obj_size = int(min(img_size) * 0.1)
+    if isinstance(obj_size, int):
+        obj_size = (round(obj_size * h_w_ratio), obj_size)
+    assert isinstance(obj_size, tuple) and all(
+        [isinstance(o, int) for o in obj_size]
+    )
+
+    # Get object width in inch
+    obj_width_inch = get_obj_width(obj_class, class_names)
+    # TODO: why don't we include mask_name in attack config?
+    patch_mask = generate_mask(
+        mask_name,
+        obj_numpy,
+        obj_size,
+        obj_width_inch,
+    )
+    return patch_mask
+
+
 def gen_mask_rect(
     patch_h_inch: int,
     patch_w_inch: int,

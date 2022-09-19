@@ -90,12 +90,6 @@ def eval_args_parser(is_detectron, root=None):
         default=8,
         help="Number of dataloader workers (per RANK in DDP mode).",
     )
-    # syn_rotate_degree: float = 15,
-    # syn_use_scale: bool = True,
-    # syn_3d_transform: bool = False,
-    # syn_3d_distortion: float = 0.25,
-    # syn_use_colorjitter: bool = False,
-    # syn_colorjitter_intensity: float = 0.3,
     # Specific to synthetic signs
     parser.add_argument(
         "--obj-size",
@@ -120,15 +114,15 @@ def eval_args_parser(is_detectron, root=None):
     parser.add_argument(
         "--syn-3d-transform",
         action="store_true",
-        help="Use 3d transform when evaluating on synthetic signs.",
+        help="(DEPRECATED) Use 3d transform when evaluating on synthetic signs.",
     )
     parser.add_argument(
         "--syn-3d-distortion",
         type=float,
-        default=0.25,
+        default=None,
         help=(
             "Perspective transform distortion for synthetic sign "
-            "(default: 0.25)."
+            "(default: None)."
         ),
     )
     parser.add_argument(

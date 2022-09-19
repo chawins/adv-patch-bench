@@ -187,7 +187,6 @@ class RP2AttackModule(DetectorAttackModule):
         obj_mask = coerce_rank(obj_mask, 3)
         all_bg_idx = np.arange(len(backgrounds))
 
-        # obj_mask_eot = obj_mask.expand(self.num_eot, -1, -1)
         obj_mask = coerce_rank(obj_mask, 4)
         patch_mask = coerce_rank(patch_mask, 4)
         obj = coerce_rank(obj, 4)
@@ -355,8 +354,10 @@ class RP2AttackModule(DetectorAttackModule):
 
         for _ in range(self.num_restarts):
             # Initialize adversarial perturbation
+            # TODO: check if this is not buggy and works as expected
             z_delta = torch.zeros(
-                (1, 3, self.patch_dim, self.patch_dim),
+                (1, 3) + patch_mask.shape[-2:],
+                # (1, 3, self.patch_dim, self.patch_dim),
                 device=device,
                 dtype=torch.float32,
             )
@@ -390,8 +391,8 @@ class RP2AttackModule(DetectorAttackModule):
                         delta = self._to_model_space(z_delta, 0, 1)
                     delta_resized = resize_and_center(
                         delta,
-                        None,
-                        obj_size,
+                        img_size=None,
+                        obj_size=obj_size,
                         is_binary=False,
                         interp=self.interp,
                     )

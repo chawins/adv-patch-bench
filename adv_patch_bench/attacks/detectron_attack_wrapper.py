@@ -19,7 +19,10 @@ from adv_patch_bench.attacks.utils import (
 )
 from adv_patch_bench.transforms import transform_and_apply_patch
 from adv_patch_bench.utils.detectron import build_evaluator
-from adv_patch_bench.utils.image import coerce_rank, resize_and_center
+from adv_patch_bench.utils.image import (
+    coerce_rank,
+    resize_and_center,
+)
 from detectron2.config import CfgNode
 from detectron2.data import MetadataCatalog
 from detectron2.structures.boxes import pairwise_iou
@@ -116,7 +119,7 @@ class DetectronAttackWrapper:
         self.df = load_annotation_df(args.tgt_csv_filepath)
 
         # Attack params
-        if attack_config is None:
+        if attack_config is not None:
             self.attack = RP2AttackDetectron(
                 attack_config,
                 model,

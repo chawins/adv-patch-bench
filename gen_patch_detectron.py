@@ -42,7 +42,7 @@ from adv_patch_bench.utils.detectron.custom_sampler import (
     ShuffleInferenceSampler,
 )
 from adv_patch_bench.utils.image import get_obj_width, resize_and_center
-from gen_mask import generate_mask
+from gen_mask import generate_mask, get_mask_from_syn_image
 from hparams import (
     DATASETS,
     LABEL_LIST,
@@ -336,26 +336,29 @@ def main(
     # that we generate canonical masks (e.g., largest inscribed circle, octagon,
     # etc. in a square). Patch and patch mask are defined with respect to this
     # object tensor, and they should all have the same width and height.
-    obj_numpy = np.array(Image.open(syn_obj_path).convert("RGBA")) / 255
-    h_w_ratio = obj_numpy.shape[0] / obj_numpy.shape[1]
+    # obj_numpy = np.array(Image.open(syn_obj_path).convert("RGBA")) / 255
+    # h_w_ratio = obj_numpy.shape[0] / obj_numpy.shape[1]
 
-    # Deterimine object size in pixels
-    if obj_size is None:
-        obj_size = int(min(img_size) * 0.1)
-    if isinstance(obj_size, int):
-        obj_size = (round(obj_size * h_w_ratio), obj_size)
-    assert isinstance(obj_size, tuple) and all(
-        [isinstance(o, int) for o in obj_size]
-    )
+    # # Deterimine object size in pixels
+    # if obj_size is None:
+    #     obj_size = int(min(img_size) * 0.1)
+    # if isinstance(obj_size, int):
+    #     obj_size = (round(obj_size * h_w_ratio), obj_size)
+    # assert isinstance(obj_size, tuple) and all(
+    #     [isinstance(o, int) for o in obj_size]
+    # )
 
-    # Get object width in inch
-    obj_width_inch = get_obj_width(obj_class, class_names)
-    # TODO: why don't we include mask_name in attack config?
-    patch_mask = generate_mask(
-        mask_name,
-        obj_numpy,
-        obj_size,
-        obj_width_inch,
+    # # Get object width in inch
+    # obj_width_inch = get_obj_width(obj_class, class_names)
+    # # TODO: why don't we include mask_name in attack config?
+    # patch_mask = generate_mask(
+    #     mask_name,
+    #     obj_numpy,
+    #     obj_size,
+    #     obj_width_inch,
+    # )
+    obj_numpy, patch_mask = get_mask_from_syn_image(
+        obj_class, syn_obj_path, obj_size, img_size, mask_name, class_names
     )
 
     # Build dataloader
