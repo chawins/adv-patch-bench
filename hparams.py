@@ -142,3 +142,18 @@ NUM_CLASSES = {
     "mapillary_no_color": len(TS_NO_COLOR_LABEL_LIST),
     "mapillary_color": len(TS_COLOR_LABEL_LIST),
 }
+
+HW_RATIO_DICT = {
+    "circle-750.0": 1,
+    "triangle-900.0": 1024 / 1168,
+    "triangle_inverted-1220.0": 900 / 1024,
+    "diamond-600.0": 1,
+    "diamond-915.0": 1,
+    "square-600.0": 1,
+    "rect-458.0-610.0": 610 / 458,
+    "rect-762.0-915.0": 915 / 762,
+    "rect-915.0-1220.0": 1220 / 915,
+    "pentagon-915.0": 1,
+    "octagon-915.0": 1,
+}
+HW_RATIO_LIST = list(HW_RATIO_DICT.values())

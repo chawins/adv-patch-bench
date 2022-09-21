@@ -117,7 +117,6 @@ def prep_adv_patch(
     obj_size: Optional[Union[int, Tuple[int, int]]] = None,
     interp: str = "bilinear",
     device: str = "cuda",
-    
 ) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor]]:
     """Load and prepare adversarial patch along with its mask.
 
@@ -145,7 +144,7 @@ def prep_adv_patch(
     # TODO: make script to generate dummy patch for per-sign attack
     # adv_patch = torch.zeros((3, obj_size, obj_size))
     adv_patch, patch_mask = pickle.load(open(adv_patch_path, "rb"))
-        
+
     adv_patch = coerce_rank(adv_patch, 3)
     patch_mask = coerce_rank(patch_mask, 3)
     patch_mask = patch_mask.to(device)
@@ -163,9 +162,9 @@ def prep_adv_patch(
     if synthetic:
         # Adv patch and mask have to be made compatible with random
         # transformation for synthetic signs
-        h_w_ratio = patch_mask.shape[-2] / patch_mask.shape[-1]
+        hw_ratio = patch_mask.shape[-2] / patch_mask.shape[-1]
         if isinstance(obj_size, int):
-            obj_size_px = (round(obj_size * h_w_ratio), obj_size)
+            obj_size_px = (round(obj_size * hw_ratio), obj_size)
         else:
             obj_size_px = obj_size
         assert isinstance(obj_size, tuple) or isinstance(
@@ -301,15 +300,22 @@ def apply_synthetic_sign(
 
 def get_object_and_mask_from_numpy(
     obj_numpy: np.ndarray,
-    obj_size: Tuple[int, int],
-    img_size: Tuple[int, int] = None,
+    obj_size: Optional[Tuple[int, int]] = None,
+    img_size: Optional[Tuple[int, int]] = None,
+    interp: str = "bicubic",
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """Get object and its mask and resize to obj_size."""
     obj_mask = torch.from_numpy(obj_numpy[:, :, -1] == 1).float().unsqueeze(0)
     obj = torch.from_numpy(obj_numpy[:, :, :-1]).float().permute(2, 0, 1)
-    if img_size is not None:
-        obj = resize_and_center(obj, img_size, obj_size, is_binary=False)
+    if img_size is not None or obj_size is not None:
+        obj = resize_and_center(
+            obj,
+            img_size=img_size,
+            obj_size=obj_size,
+            is_binary=False,
+            interp=interp,
+        )
         obj_mask = resize_and_center(
-            obj_mask, img_size, obj_size, is_binary=True
+            obj_mask, img_size=img_size, obj_size=obj_size, is_binary=True
         )
     return obj, obj_mask

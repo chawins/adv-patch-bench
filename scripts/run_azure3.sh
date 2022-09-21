@@ -25,13 +25,16 @@ INTERP=bilinear
 TF_MODE=perspective
 # per-sign-10x10-obj64-pd64-ld0.out
 # synthetic-10x10-obj64-pd64-ld0.00001-2rt30.out
-EXP_NAME=synthetic-${MASK_SIZE}-obj${SYN_OBJ_SIZE}-pd64-ld0.00001-2rt30  # TODO: rename
+EXP_NAME=synthetic-${MASK_SIZE}-obj${SYN_OBJ_SIZE}-pd64-ld0.00001  # TODO: rename
 CLEAN_EXP_NAME=no_patch_syn_${SYN_OBJ_SIZE}
 # --syn-rotate-degree 0 
 
 function syn_attack {
 
     OBJ_CLASS=$1
+    SYN_OBJ_SIZE=$2
+    CLEAN_EXP_NAME=no_patch_syn_${SYN_OBJ_SIZE}
+    EXP_NAME=synthetic-${MASK_SIZE}-obj${SYN_OBJ_SIZE}-pd${SYN_OBJ_SIZE}-ld0.00001
 
     case $OBJ_CLASS in
     0) BG_FILES=bg_filenames_circle-750.0.txt ;;
@@ -67,15 +70,14 @@ function syn_attack {
     #     --annotated-signs-only --synthetic --verbose &&
 
     # Test patch on synthetic signs
-    # CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
-    #     --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
-    #     --dataset $DATASET --padded-imgsz $IMG_SIZE --eval-mode drop \
-    #     --tgt-csv-filepath $CSV_PATH --attack-config-path "$ATK_CONFIG_PATH" \
-    #     --name "$EXP_NAME" --obj-class "$OBJ_CLASS" --conf-thres $CONF_THRES \
-    #     --mask-name "$MASK_SIZE" --weights $MODEL_PATH --workers $NUM_WORKERS \
-    #     --transform-mode $TF_MODE --img-txt-path $BG_FILES --attack-type load \
-    #     --annotated-signs-only --synthetic --obj-size $SYN_OBJ_SIZE \
-    #     --num-test $NUM_TEST_SYN --syn-rotate-degree 5 &&
+    CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
+        --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
+        --dataset $DATASET --padded-imgsz $IMG_SIZE --eval-mode drop \
+        --tgt-csv-filepath $CSV_PATH --attack-config-path "$ATK_CONFIG_PATH" \
+        --name "$EXP_NAME" --obj-class "$OBJ_CLASS" --conf-thres $CONF_THRES \
+        --mask-name "$MASK_SIZE" --weights $MODEL_PATH --workers $NUM_WORKERS \
+        --img-txt-path $BG_FILES --attack-type load --annotated-signs-only \
+        --synthetic --obj-size $SYN_OBJ_SIZE --num-test $NUM_TEST_SYN &&
 
     # Test patch on real signs
     # CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
@@ -94,8 +96,10 @@ function syn_attack_all {
     # for i in {0..10}; do
     #     syn_attack "$i"
     # done
-    syn_attack 6 &&
-    syn_attack 7
+    syn_attack 1 32 &&
+    syn_attack 2 32 &&
+    syn_attack 1 48 &&
+    syn_attack 2 48
 }
 
 syn_attack_all

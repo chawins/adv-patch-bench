@@ -90,6 +90,19 @@ def main(args):
         # Iterate over attack_type (none, load, syn_none, syn_load, etc.)
         for setting_path in sign_path.iterdir():
             result_paths = setting_path.glob("*.pkl")
+            result_paths = list(result_paths)
+            if not result_paths:
+                continue
+
+            # Select latest result only
+            mtimes = np.array(
+                [
+                    float(pathlib.Path(result_path).stat().st_mtime)
+                    for result_path in result_paths
+                ]
+            )
+            latest_idx = np.argmax(mtimes)
+            result_paths = [result_paths[latest_idx]]
 
             # Iterate over result pickle files
             for result_path in result_paths:

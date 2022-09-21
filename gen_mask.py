@@ -10,24 +10,8 @@ from PIL import Image
 
 from adv_patch_bench.attacks.utils import get_object_and_mask_from_numpy
 from adv_patch_bench.utils.argparse import parse_dataset_name
-from adv_patch_bench.utils.image import get_obj_width
+from adv_patch_bench.utils.image import get_obj_width, verify_obj_size
 from hparams import LABEL_LIST
-
-
-def verify_obj_size(
-    obj_size: Any,
-    hw_ratio: Optional[float] = None,
-    img_size: Optional[Tuple[int, int]] = None,
-):
-    # Deterimine object size in pixels
-    if obj_size is None:
-        obj_size = int(min(img_size) * 0.1)
-    if isinstance(obj_size, int):
-        obj_size = (round(obj_size * hw_ratio), obj_size)
-    assert isinstance(obj_size, tuple) and all(
-        [isinstance(o, int) for o in obj_size]
-    )
-    return obj_size
 
 
 def get_mask_from_syn_image(
@@ -96,12 +80,13 @@ def generate_mask(
     obj_size_px: Union[int, Tuple[int, int]],
     obj_width_inch: float,
 ) -> torch.Tensor:
+    # TODO: pass obj_size_px and obj_size_inch directly here
     # Get height to width ratio of the object
-    h_w_ratio = obj_numpy.shape[0] / obj_numpy.shape[1]
+    hw_ratio = obj_numpy.shape[0] / obj_numpy.shape[1]
     if isinstance(obj_size_px, int):
-        obj_size_px = (round(obj_size_px * h_w_ratio), obj_size_px)
+        obj_size_px = (round(obj_size_px * hw_ratio), obj_size_px)
     obj_w_inch = obj_width_inch
-    obj_h_inch = h_w_ratio * obj_w_inch
+    obj_h_inch = hw_ratio * obj_w_inch
     obj_h_px, obj_w_px = obj_size_px
 
     num_patches = 2 if "2_" in mask_name else 1

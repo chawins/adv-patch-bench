@@ -13,6 +13,8 @@ from kornia.geometry.transform import (
     warp_perspective,
 )
 
+from hparams import HW_RATIO_DICT
+
 _VALID_TRANSFORM_MODE = ("perspective", "translate_scale")
 
 
@@ -162,7 +164,7 @@ def get_sign_canonical(
     predicted_class: str,
     patch_size_in_pixel: int = None,
     patch_size_in_mm: float = None,
-    sign_size_in_pixel: int = None,
+    sign_size_px: int = None,
 ) -> Tuple[torch.Tensor, torch.Tensor, List[float]]:
     """Generate the canonical mask of a sign with a specific shape.
     Args:
@@ -179,36 +181,37 @@ def get_sign_canonical(
         sign_mask (torch.Tensor): sign mask
         src (list): List that specifies 4 key points of the canonical sign
     """
-    assert sign_size_in_pixel is not None or patch_size_in_pixel is not None
+    assert sign_size_px is not None or patch_size_in_pixel is not None
     class_name_split = predicted_class.split("-")
     shape = class_name_split[0]
     sign_width_in_mm = float(class_name_split[1])
     
-    if len(class_name_split) == 3:
-        # Get hw_ratio for rectangular signs
-        sign_height_in_mm = float(class_name_split[2])
-        hw_ratio = sign_height_in_mm / sign_width_in_mm
-    elif class_name_split[0] == 'triangle':
-        hw_ratio = 1024 / 1168
-    elif class_name_split[0] == 'triangle_inverted':
-        hw_ratio = 900 / 1024
-    else:
-        hw_ratio = 1
+    # if len(class_name_split) == 3:
+    #     # Get hw_ratio for rectangular signs
+    #     sign_height_in_mm = float(class_name_split[2])
+    #     hw_ratio = sign_height_in_mm / sign_width_in_mm
+    # elif class_name_split[0] == 'triangle':
+    #     hw_ratio = 1024 / 1168
+    # elif class_name_split[0] == 'triangle_inverted':
+    #     hw_ratio = 900 / 1024
+    # else:
+    #     hw_ratio = 1
+    hw_ratio = HW_RATIO_DICT[predicted_class]
         
-    if sign_size_in_pixel is None:
+    if sign_size_px is None:
         if len(class_name_split) == 3:
+            sign_height_in_mm = float(class_name_split[2])
             sign_size_in_mm = max(sign_width_in_mm, sign_height_in_mm)
         else:
             sign_size_in_mm = float(sign_width_in_mm)
         pixel_mm_ratio = patch_size_in_pixel / patch_size_in_mm
-        sign_size_in_pixel = round(sign_size_in_mm * pixel_mm_ratio)
+        sign_size_px = round(sign_size_in_mm * pixel_mm_ratio)
 
-    # sign_canonical = torch.zeros((4, sign_size_in_pixel, sign_size_in_pixel))
     sign_canonical = torch.zeros(
-        (4, round(hw_ratio * sign_size_in_pixel), sign_size_in_pixel)
+        (4, round(hw_ratio * sign_size_px), sign_size_px)
     )
 
-    sign_mask, src = gen_sign_mask(shape, sign_size_in_pixel, ratio=hw_ratio)
+    sign_mask, src = gen_sign_mask(shape, sign_size_px, ratio=hw_ratio)
     sign_mask = torch.from_numpy(sign_mask).float()[None, :, :]
     return sign_canonical, sign_mask, src
 
@@ -299,7 +302,7 @@ def get_transform(
             predicted_class = f'square-{predicted_class.split("-")[1]}'
 
     sign_canonical, sign_mask, src = get_sign_canonical(
-        predicted_class, sign_size_in_pixel=sign_size_in_pixel
+        predicted_class, sign_size_px=sign_size_in_pixel
     )
     src = np.array(src, dtype=np.float32)
 

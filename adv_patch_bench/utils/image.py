@@ -1,14 +1,14 @@
 import json
 import os
 from os.path import join
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union
 
 import numpy as np
 import torch
 import torchvision.transforms.functional as T
 from PIL import Image
 
-    
+
 def coerce_rank(x: torch.Tensor, ndim: int) -> torch.Tensor:
     """Reshape x *in-place* to ndim rank by adding/removing first singleton dim.
 
@@ -24,7 +24,7 @@ def coerce_rank(x: torch.Tensor, ndim: int) -> torch.Tensor:
     """
     if x is None:
         return x
-        
+
     if x.ndim == ndim:
         return x
 
@@ -204,6 +204,22 @@ def mask_to_box(mask):
     return y_min, x_min, y.max() - y_min, x.max() - x_min
 
 
+def verify_obj_size(
+    obj_size: Union[int, Tuple[int, int]],
+    hw_ratio: Optional[float] = None,
+    img_size: Optional[Tuple[int, int]] = None,
+):
+    # Deterimine object size in pixels
+    if obj_size is None and img_size is not None:
+        obj_size = int(min(img_size) * 0.1)
+    if isinstance(obj_size, int):
+        obj_size = (round(obj_size * hw_ratio), obj_size)
+    assert isinstance(obj_size, tuple) and all(
+        [isinstance(o, int) for o in obj_size]
+    ), f"obj_size is {obj_size}."
+    return obj_size
+
+
 def prepare_obj(
     obj_path: str,
     img_size: Tuple[int, int],
@@ -221,18 +237,16 @@ def prepare_obj(
     Returns:
         torch.Tensor, torch.Tensor: Object and its mask
     """
+    # TODO: refactor to fix circular import
+    from adv_patch_bench.attacks import utils
+
     obj_numpy = np.array(Image.open(obj_path).convert("RGBA")) / 255
-    assert obj_numpy.ndim == 3 and obj_numpy.shape[-1] == 4
-
-    # Separate RGB object from alpha channel. Convert the latter to mask, and
-    # convert both to pytorch tensor.
-    obj_mask = torch.from_numpy(obj_numpy[:, :, -1] == 1).float().unsqueeze(0)
-    obj = torch.from_numpy(obj_numpy[:, :, :-1]).float().permute(2, 0, 1)
-
-    obj = resize_and_center(
-        obj, img_size, obj_size, is_binary=False, interp=interp
+    assert (
+        obj_numpy.ndim == 3 and obj_numpy.shape[-1] == 4
+    ), f"obj_numpy shape: {obj_numpy.shape}."
+    obj, obj_mask = utils.get_object_and_mask_from_numpy(
+        obj_numpy, img_size=img_size, obj_size=obj_size, interp=interp
     )
-    obj_mask = resize_and_center(obj_mask, img_size, obj_size, is_binary=True)
     obj.unsqueeze_(0)
     obj_mask.unsqueeze_(0)
     assert obj.ndim == obj_mask.ndim == 4

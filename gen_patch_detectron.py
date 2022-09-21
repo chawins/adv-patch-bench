@@ -246,10 +246,10 @@ def generate_adv_patch(
         # Resize object to the specify size and pad obj and masks to image size
         # left, top, right, bottom
         obj, obj_mask = get_object_and_mask_from_numpy(
-            obj_numpy, obj_size, img_size=img_size
+            obj_numpy, obj_size=obj_size, img_size=img_size, interp=interp
         )
         patch_mask_padded = resize_and_center(
-            patch_mask, img_size, obj_size, is_binary=True
+            patch_mask, img_size=img_size, obj_size=obj_size, is_binary=True
         )
 
         metadata = DetectronAttackWrapper.clone_metadata(backgrounds, metadata)

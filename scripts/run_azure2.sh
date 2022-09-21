@@ -58,14 +58,14 @@ function syn_attack {
     #     --img-txt-path $BG_FILES --num-test $NUM_TEST_SYN --synthetic &&
 
     # Generate adversarial patch
-    CUDA_VISIBLE_DEVICES=$GPU python -u gen_patch_detectron.py \
-        --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
-        --dataset $DATASET --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH \
-        --attack-config-path "$ATK_CONFIG_PATH" --obj-class "$OBJ_CLASS" \
-        --name "$EXP_NAME" --bg-dir $BG_PATH --transform-mode $TF_MODE \
-        --weights $MODEL_PATH --workers $NUM_WORKERS --mask-name "$MS" \
-        --img-txt-path $BG_FILES --save-images --obj-size $SYN_OBJ_SIZE \
-        --annotated-signs-only --synthetic --verbose &&
+    # CUDA_VISIBLE_DEVICES=$GPU python -u gen_patch_detectron.py \
+    #     --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
+    #     --dataset $DATASET --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH \
+    #     --attack-config-path "$ATK_CONFIG_PATH" --obj-class "$OBJ_CLASS" \
+    #     --name "$EXP_NAME" --bg-dir $BG_PATH --transform-mode $TF_MODE \
+    #     --weights $MODEL_PATH --workers $NUM_WORKERS --mask-name "$MS" \
+    #     --img-txt-path $BG_FILES --save-images --obj-size $SYN_OBJ_SIZE \
+    #     --annotated-signs-only --synthetic --verbose &&
 
     # Test patch on synthetic signs
     CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
@@ -79,14 +79,14 @@ function syn_attack {
         --num-test $NUM_TEST_SYN &&
 
     # Test patch on real signs
-    CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
-        --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
-        --dataset $DATASET --padded-imgsz $IMG_SIZE --eval-mode drop \
-        --tgt-csv-filepath $CSV_PATH --attack-config-path "$ATK_CONFIG_PATH" \
-        --name "$EXP_NAME" --obj-class "$OBJ_CLASS" --conf-thres $CONF_THRES \
-        --mask-name "$MS" --weights $MODEL_PATH --workers $NUM_WORKERS \
-        --transform-mode $TF_MODE --img-txt-path $BG_FILES --attack-type load \
-        --annotated-signs-only &&
+    # CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
+    #     --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
+    #     --dataset $DATASET --padded-imgsz $IMG_SIZE --eval-mode drop \
+    #     --tgt-csv-filepath $CSV_PATH --attack-config-path "$ATK_CONFIG_PATH" \
+    #     --name "$EXP_NAME" --obj-class "$OBJ_CLASS" --conf-thres $CONF_THRES \
+    #     --mask-name "$MS" --weights $MODEL_PATH --workers $NUM_WORKERS \
+    #     --transform-mode $TF_MODE --img-txt-path $BG_FILES --attack-type load \
+    #     --annotated-signs-only &&
 
     echo "Done with $OBJ_CLASS."
 }

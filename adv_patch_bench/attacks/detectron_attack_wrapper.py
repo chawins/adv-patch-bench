@@ -22,12 +22,13 @@ from adv_patch_bench.utils.detectron import build_evaluator
 from adv_patch_bench.utils.image import (
     coerce_rank,
     resize_and_center,
+    verify_obj_size,
 )
 from detectron2.config import CfgNode
 from detectron2.data import MetadataCatalog
 from detectron2.structures.boxes import pairwise_iou
 from detectron2.utils.visualizer import Visualizer
-from hparams import PATH_BG_TXT_FILE
+from hparams import HW_RATIO_LIST, PATH_BG_TXT_FILE
 from tqdm import tqdm
 
 
@@ -162,22 +163,11 @@ class DetectronAttackWrapper:
             }
 
             # Compute obj_size
-            obj_size = args.obj_size
-            obj_class_name = class_names[self.adv_sign_class_id]
-            obj_class_name_list = obj_class_name.split("-")
-            sign_width_in_mm = float(obj_class_name_list[1])
-            if len(obj_class_name_list) == 3 and sign_width_in_mm != 0:
-                sign_height_in_mm = float(obj_class_name_list[2])
-                hw_ratio = sign_height_in_mm / sign_width_in_mm
-            else:
-                hw_ratio = 1
-            if isinstance(obj_size, int):
-                obj_size = (round(obj_size * hw_ratio), obj_size)
-
-            assert isinstance(obj_size, tuple) and all(
-                [isinstance(s, int) for s in obj_size]
-            ), f"obj_size is {obj_size}. It must be int or tuple of two ints!"
-            self.obj_size = obj_size
+            self.obj_size = verify_obj_size(
+                args.obj_size,
+                HW_RATIO_LIST[self.adv_sign_class_id],
+                img_size=self.img_size,
+            )
         else:
             self.obj_size = None
 
@@ -306,7 +296,7 @@ class DetectronAttackWrapper:
 
             # if self.fixed_input_size or w < self.img_size[1]:
             if self.fixed_input_size:
-                # TODO: This code does not work correctly because gt is not
+                # FIXME: This code does not work correctly because gt is not
                 # adjusted in the same way (still requires padding).
                 # Resize and pad perturbed_image to self.img_size preseving
                 # aspect ratio. This also handles images whose width is the

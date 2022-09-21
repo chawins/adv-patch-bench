@@ -44,7 +44,7 @@ class RP2AttackModule(DetectorAttackModule):
         self.num_eot = rp2_config["num_eot"]
         self.lmbda = rp2_config["lambda"]
         self.min_conf = rp2_config["min_conf"]
-        self.patch_dim = rp2_config["patch_dim"]
+        self.patch_dim = rp2_config.get("patch_dim", None)
         self.attack_mode = rp2_config["attack_mode"].split("-")
         self.transform_mode = rp2_config["transform_mode"]
         self.use_relight = rp2_config["use_patch_relight"]
@@ -164,12 +164,11 @@ class RP2AttackModule(DetectorAttackModule):
         """Run RP2 Attack.
 
         Args:
-            obj (torch.Tesnor): Object to place the adversarial patch on,
-                shape [C, H, W]
-            obj_mask (torch.Tesnor): Mask of object, must have shape [1, H, W]
-            patch_mask (torch.Tesnor): Mask of the patch, must have shape
-                [1, H, W]
-            backgrounds (torch.Tesnor): Background images, shape [N, C, H, W]
+            obj (torch.Tesnor): Object to place the adversarial patch on
+                (shape: [C, H, W])
+            obj_mask (torch.Tesnor): Mask of object (shape: [1, H, W])
+            patch_mask (torch.Tesnor): Mask of the patch (shape: [1, H, W])
+            backgrounds (torch.Tesnor): Background images (shape: [N, C, H, W])
 
         Returns:
             torch.Tensor: Adversarial patch with shape [C, H, W]
@@ -184,6 +183,11 @@ class RP2AttackModule(DetectorAttackModule):
         patch_mask.detach_()
         backgrounds.detach_()
         _, _, obj_height, obj_width = mask_to_box(obj_mask)
+        # TODO: Allow patch to be non-square
+        if self.patch_dim is not None:
+            patch_dim = self.patch_dim
+        else:
+            patch_dim = max(obj_height, obj_width)
         obj_mask = coerce_rank(obj_mask, 3)
         all_bg_idx = np.arange(len(backgrounds))
 
@@ -194,13 +198,10 @@ class RP2AttackModule(DetectorAttackModule):
         patch_mask_eot = patch_mask.expand(self.num_eot, -1, -1, -1)
         obj_eot = obj.expand(self.num_eot, -1, -1, -1)
 
-        # TODO: Initialize worst-case inputs
-        # x_adv_worst = x.clone().detach()
-
         for _ in range(self.num_restarts):
             # Initialize adversarial perturbation
             z_delta = torch.zeros(
-                (1, 3, self.patch_dim, self.patch_dim),
+                (1, 3, patch_dim, patch_dim),
                 device=device,
                 dtype=dtype,
             )
@@ -251,8 +252,8 @@ class RP2AttackModule(DetectorAttackModule):
                     delta = self._to_model_space(z_delta, 0, 1)
                     delta_padded = resize_and_center(
                         delta,
-                        self.input_size,
-                        (obj_height, obj_width),
+                        img_size=self.input_size,
+                        obj_size=(obj_height, obj_width),
                         is_binary=False,
                         interp=self.interp,
                     )
