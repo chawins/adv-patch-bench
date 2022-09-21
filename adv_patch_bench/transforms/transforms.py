@@ -180,15 +180,23 @@ def get_sign_canonical(
         src (list): List that specifies 4 key points of the canonical sign
     """
     assert sign_size_in_pixel is not None or patch_size_in_pixel is not None
-    shape = predicted_class.split("-")[0]
-    sign_width_in_mm = float(predicted_class.split("-")[1])
-    if len(predicted_class.split("-")) == 3:
-        sign_height_in_mm = float(predicted_class.split("-")[2])
+    class_name_split = predicted_class.split("-")
+    shape = class_name_split[0]
+    sign_width_in_mm = float(class_name_split[1])
+    
+    if len(class_name_split) == 3:
+        # Get hw_ratio for rectangular signs
+        sign_height_in_mm = float(class_name_split[2])
         hw_ratio = sign_height_in_mm / sign_width_in_mm
+    elif class_name_split[0] == 'triangle':
+        hw_ratio = 1024 / 1168
+    elif class_name_split[0] == 'triangle_inverted':
+        hw_ratio = 900 / 1024
     else:
         hw_ratio = 1
+        
     if sign_size_in_pixel is None:
-        if len(predicted_class.split("-")) == 3:
+        if len(class_name_split) == 3:
             sign_size_in_mm = max(sign_width_in_mm, sign_height_in_mm)
         else:
             sign_size_in_mm = float(sign_width_in_mm)

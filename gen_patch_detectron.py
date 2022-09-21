@@ -17,7 +17,7 @@ import torch.backends.cudnn as cudnn
 import torchvision
 import torchvision.transforms.functional as T
 import yaml
-from detectron2.data import build_detection_test_loader
+from adv_patch_bench.dataloaders.detectron import custom_build
 from detectron2.engine import DefaultPredictor
 from PIL import Image
 from tqdm import tqdm
@@ -41,8 +41,8 @@ from adv_patch_bench.utils.argparse import (
 from adv_patch_bench.utils.detectron.custom_sampler import (
     ShuffleInferenceSampler,
 )
-from adv_patch_bench.utils.image import get_obj_width, resize_and_center
-from gen_mask import generate_mask, get_mask_from_syn_image
+from adv_patch_bench.utils.image import resize_and_center
+from gen_mask import get_mask_from_syn_image
 from hparams import (
     DATASETS,
     LABEL_LIST,
@@ -59,7 +59,7 @@ def collect_backgrounds(
     device: str,
     df: Optional[pd.DataFrame] = None,
     class_name: Optional[str] = None,
-    img_txt_path: Optional[str] = None,
+    filter_file_names: Optional[List[str]] = None,
 ) -> Tuple[List[Any], List[Any], np.ndarray]:
     """Collect background images to be used by the attack.
 
@@ -70,11 +70,10 @@ def collect_backgrounds(
         device (str): Device to store background images.
         df (pd.DataFrame, optional): Our annotation DataFrame. If specified,
             only select images belong to df. Defaults to None.
-        class_name (Optional[str], optional): Desired class. If specified, only
+        class_name (str, optional): Desired class. If specified, only
             select images from class class_name. Defaults to None.
-        img_txt_path (Optional[str], optional): Path to txt file containing
-            a list of image file names. If specified, only select images present
-            in this list. Defaults to None.
+        filter_file_names (List[str], optional): List of image file names to use
+            as backgrounds.
 
     Returns:
         attack_images: List of background images and their metadata, used by the
@@ -94,13 +93,6 @@ def collect_backgrounds(
     backgrounds = torch.zeros((num_bg, 3) + img_size)
     num_collected = 0
 
-    filename_list = None
-    # Load list of desired file names
-    if img_txt_path:
-        img_txt_path = os.path.join(PATH_BG_TXT_FILE, img_txt_path)
-        with open(img_txt_path, "r") as f:
-            filename_list = set(f.read().splitlines())
-
     print("=> Collecting background images...")
 
     # DEBUG: count images
@@ -112,9 +104,8 @@ def collect_backgrounds(
         filename = file_name.split("/")[-1]
 
         # If img_txt_path is specified, ignore other file names
-        if filename_list is not None:
-            if filename not in filename_list:
-                continue
+        if filter_file_names is not None and filename not in filter_file_names:
+            continue
 
         # If df is specified, ignore images that are not in df
         if df is not None:
@@ -202,6 +193,7 @@ def generate_adv_patch(
     debug: bool = False,
     dataset: str = None,
     attack_config: Dict = {},
+    filter_file_names: Optional[List[str]] = None,
     **kwargs,
 ):
     """Generate adversarial patch."""
@@ -231,7 +223,7 @@ def generate_adv_patch(
         device,
         df=df,
         class_name=class_name,
-        img_txt_path=args.img_txt_path,
+        filter_file_names=filter_file_names,
     )
 
     # Save background filenames in txt file
@@ -301,8 +293,9 @@ def generate_adv_patch(
 
 
 def main(
+    dataset: str = "mapillary_no_color",
     padded_imgsz: str = "992,1312",
-    save_dir=Path(""),
+    save_dir: Path = Path(""),
     name: str = "exp",  # save to project/name
     obj_class: int = None,
     obj_size: int = None,
@@ -312,6 +305,7 @@ def main(
     attack_config_path: str = None,
     num_samples: int = 0,
     mask_name: str = "10x10",
+    img_txt_path: str = "",
     **kwargs,
 ):
     cudnn.benchmark = True
@@ -326,7 +320,7 @@ def main(
             "padded_imgsz must be two numbers separated by a comma, but it is "
             f"{padded_imgsz}."
         )
-    class_names = LABEL_LIST[args.dataset]
+    class_names = LABEL_LIST[dataset]
 
     # Set up model from config
     model = DefaultPredictor(cfg).model
@@ -361,14 +355,26 @@ def main(
         obj_class, syn_obj_path, obj_size, img_size, mask_name, class_names
     )
 
+    if img_txt_path:
+        img_txt_path = os.path.join(PATH_BG_TXT_FILE, img_txt_path)
+        with open(img_txt_path, "r") as f:
+            filter_file_names = set(f.read().splitlines())
+    else:
+        filter_file_names = None
+
     # Build dataloader
-    dataloader = build_detection_test_loader(
+    # dataloader = build_detection_test_loader(
+    dataloader = custom_build.build_detection_test_loader(
         cfg,
         cfg.DATASETS.TEST[0],
         mapper=BenignMapper(cfg, is_train=False),
         batch_size=1,
         num_workers=cfg.DATALOADER.NUM_WORKERS,
-        sampler=ShuffleInferenceSampler(num_samples),
+        sampler=ShuffleInferenceSampler(
+            num_samples if filter_file_names is None else len(filter_file_names)
+        ),
+        pin_memory=True,
+        filter_file_names=filter_file_names,
     )
 
     # Load attack config from a separate YAML file
@@ -380,6 +386,7 @@ def main(
         model,
         obj_numpy,
         patch_mask,
+        dataset=dataset,
         img_size=img_size,
         obj_size=obj_size,
         save_dir=save_dir,
@@ -388,6 +395,7 @@ def main(
         obj_class=obj_class,
         name=name,
         attack_config=attack_config,
+        filter_file_names=filter_file_names,
         **kwargs,
     )
 
@@ -438,4 +446,6 @@ if __name__ == "__main__":
     num_samples = len(data_list)
 
     print(args)
-    main(**vars(args), num_samples=num_samples)
+    args_dict = vars(args)
+    del args
+    main(**args_dict, num_samples=num_samples)
