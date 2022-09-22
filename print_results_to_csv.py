@@ -392,7 +392,6 @@ def main(args):
                 scores[matched_len:] = fp_scores[sid][t]
                 matches[:matched_len] = 1
                 aps[t] = _compute_ap_recall(scores, matches, total)["AP"]
-            print(aps)
             print_df_rows[allw_class_sid]["AP"] = np.mean(aps) * 100
 
         print(

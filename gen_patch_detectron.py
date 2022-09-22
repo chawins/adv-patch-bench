@@ -110,7 +110,7 @@ def collect_backgrounds(
         # If df is specified, ignore images that are not in df
         if df is not None:
             img_df = df[df["filename"] == filename]
-            if not img_df:
+            if img_df.empty:
                 continue
 
         found = False
