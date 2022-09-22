@@ -5,12 +5,16 @@ import pickle
 import numpy as np
 import pandas as pd
 
-from hparams import TS_NO_COLOR_LABEL_LIST
-
-_NUM_SIGNS_PER_CLASS = np.array(
-    [7971, 636, 824, 317, 1435, 1075, 715, 544, 361, 133, 637]
+from hparams import (
+    TS_NO_COLOR_LABEL_LIST,
+    ANNO_LABEL_COUNTS_DICT,
+    ANNO_NOBG_LABEL_COUNTS_DICT,
 )
+
+_NUM_SIGNS_PER_CLASS = np.array(list(ANNO_NOBG_LABEL_COUNTS_DICT.values()))
 _NUM_IOU_THRES = 10
+_NUM_SIGNS_PER_CLASS_BG = np.array(list(ANNO_LABEL_COUNTS_DICT.values()))
+_BG_DIFF = _NUM_SIGNS_PER_CLASS_BG - _NUM_SIGNS_PER_CLASS
 
 
 def _compute_ap_recall(scores, matched, NP, recall_thresholds=None):
@@ -131,7 +135,6 @@ def main(args):
                 is_attack = int(results["attack_type"] != "none")
                 scores_dict = gt_scores[is_attack]
                 # if obj_size == 64:
-                #    # FIXME
                 #    continue
 
                 if synthetic:
@@ -186,8 +189,12 @@ def main(args):
                     scores_dict[sid] = (time, scores)
 
                     tp = np.sum(scores[iou_idx] >= CONF_THRES)
-                    tpr = tp / scores.shape[1]
                     class_name = TS_NO_COLOR_LABEL_LIST[oc]
+                    tpr = tp / (
+                        scores.shape[1]
+                        if synthetic
+                        else _NUM_SIGNS_PER_CLASS[oc]
+                    )
                     metrics[f"FNR-{class_name}"] = 1 - tpr
 
                     print_df_rows[sid] = {
@@ -196,7 +203,26 @@ def main(args):
                         "FNR": (1 - tpr) * 100,
                     }
                     if not synthetic:
-                        print_df_rows[sid]["AP"] = metrics[f"AP-{class_name}"]
+                        # print_df_rows[sid]["AP"] = metrics[f"AP-{class_name}"]
+
+                        # TODO: Recompute AP by ignoring bg signs
+                        aps = np.zeros(_NUM_IOU_THRES)
+                        for t in range(_NUM_IOU_THRES):
+                            scores = np.concatenate(
+                                [
+                                    results["bbox"]["scores_full"][oc][t][0],
+                                    results["bbox"]["scores_full"][oc][t][1],
+                                ],
+                                axis=0,
+                            )
+                            matches = np.zeros_like(scores, dtype=bool)
+                            nm = len(results["bbox"]["scores_full"][oc][t][0])
+                            matches[:nm] = 1
+                            aps[t] = _compute_ap_recall(
+                                scores, matches, _NUM_SIGNS_PER_CLASS[oc]
+                            )["AP"]
+                        print_df_rows[sid]["AP"] = aps.mean() * 100
+
                         for t in range(10):
                             tp_score = results["bbox"]["scores_full"][oc][t][0]
                             tp_scores[base_sid][t].extend(tp_score)
@@ -269,9 +295,15 @@ def main(args):
         clean_scores = gt_scores[0][clean_sid][1]
         clean_detected = clean_scores[iou_idx] >= CONF_THRES
         adv_detected = adv_scores[iou_idx] >= CONF_THRES
+        total = _NUM_SIGNS_PER_CLASS[k]
+
         num_succeed = np.sum(~adv_detected & clean_detected)
         num_clean = np.sum(clean_detected)
-        num_missed = np.sum(~adv_detected)
+        # Account for misses caused by signs that are supposed to be in bg
+        num_missed = (
+            np.sum(~adv_detected) - _BG_DIFF[k] if "real" in split_sid else 0
+        )
+
         attack_success_rate = num_succeed / (num_clean + 1e-9) * 100
         df_rows[time]["ASR"] = attack_success_rate
         print_df_rows[sid]["ASR"] = attack_success_rate
@@ -287,7 +319,7 @@ def main(args):
             results_all_classes[sid_no_class]["num_succeed"] += num_succeed
             results_all_classes[sid_no_class]["num_clean"] += num_clean
             results_all_classes[sid_no_class]["num_missed"] += num_missed
-            results_all_classes[sid_no_class]["num_total"] += len(adv_detected)
+            results_all_classes[sid_no_class]["num_total"] += total
             results_all_classes[sid_no_class]["asr"][k] = attack_success_rate
             results_all_classes[sid_no_class]["fnr"][k] = fnr
             results_all_classes[sid_no_class]["ap"][k] = ap
@@ -302,7 +334,7 @@ def main(args):
                 "num_succeed": num_succeed,
                 "num_clean": num_clean,
                 "num_missed": num_missed,
-                "num_total": len(adv_detected),
+                "num_total": total,
                 "asr": asrs,
                 "fnr": fnrs,
                 "ap": aps,
@@ -360,7 +392,7 @@ def main(args):
                 scores[matched_len:] = fp_scores[sid][t]
                 matches[:matched_len] = 1
                 aps[t] = _compute_ap_recall(scores, matches, total)["AP"]
-
+            print(aps)
             print_df_rows[allw_class_sid]["AP"] = np.mean(aps) * 100
 
         print(
@@ -383,7 +415,9 @@ def main(args):
                 scores[:matched_len] = tp_scores[sid][t]
                 scores[matched_len:] = fp_scores[sid][t]
                 matches[:matched_len] = 1
-                aps[t] = _compute_ap_recall(scores, matches, total)["AP"]
+                aps[t] = _compute_ap_recall(
+                    scores, matches, _NUM_SIGNS_PER_CLASS.sum()
+                )["AP"]
             print_df_rows[sid + "_allw"]["AP"] = np.mean(aps) * 100
 
     print_df_rows = list(print_df_rows.values())

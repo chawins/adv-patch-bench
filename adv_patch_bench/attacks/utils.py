@@ -45,6 +45,7 @@ def prep_synthetic_eval(
     # syn_sign_class = len(label_names)
     # label_names[syn_sign_class] = 'synthetic'
 
+    # TODO: remove syn_3d_transform
     if syn_3d_transform:
         transform_params = {
             "p": transform_prob,

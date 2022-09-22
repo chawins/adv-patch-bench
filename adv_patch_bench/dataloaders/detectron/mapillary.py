@@ -65,7 +65,7 @@ def get_mapillary_dict(
         width = float(anno[0].split(",")[5])
         height = float(anno[0].split(",")[6])
         record = {
-            "file_name": f"{img_path}/{jpg_filename}",
+            "file_name": os.path.join(img_path, jpg_filename),
             "image_id": idx,
             "width": width,
             "height": height,

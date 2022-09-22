@@ -7,13 +7,12 @@ import torch
 from adv_patch_bench.attacks.utils import coerce_rank
 from adv_patch_bench.transforms.verifier import sort_polygon_vertices
 from cv2 import getAffineTransform
+from hparams import HW_RATIO_DICT
 from kornia.geometry.transform import (
     get_perspective_transform,
     warp_affine,
     warp_perspective,
 )
-
-from hparams import HW_RATIO_DICT
 
 _VALID_TRANSFORM_MODE = ("perspective", "translate_scale")
 
@@ -185,7 +184,7 @@ def get_sign_canonical(
     class_name_split = predicted_class.split("-")
     shape = class_name_split[0]
     sign_width_in_mm = float(class_name_split[1])
-    
+
     # if len(class_name_split) == 3:
     #     # Get hw_ratio for rectangular signs
     #     sign_height_in_mm = float(class_name_split[2])
@@ -197,7 +196,7 @@ def get_sign_canonical(
     # else:
     #     hw_ratio = 1
     hw_ratio = HW_RATIO_DICT[predicted_class]
-        
+
     if sign_size_px is None:
         if len(class_name_split) == 3:
             sign_height_in_mm = float(class_name_split[2])
@@ -299,7 +298,7 @@ def get_transform(
         angle32 = np.arctan2(y, x)
         mean_angle = (angle10 + angle32) / 2
         if mean_angle < np.pi / 180 * 15:
-            predicted_class = f'square-{predicted_class.split("-")[1]}'
+            predicted_class = "square-600.0"
 
     sign_canonical, sign_mask, src = get_sign_canonical(
         predicted_class, sign_size_px=sign_size_in_pixel

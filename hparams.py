@@ -157,3 +157,31 @@ HW_RATIO_DICT = {
     "octagon-915.0": 1,
 }
 HW_RATIO_LIST = list(HW_RATIO_DICT.values())
+
+# Compute results
+ANNO_LABEL_COUNTS_DICT = {
+    "circle-750.0": 7971,
+    "triangle-900.0": 636,
+    "triangle_inverted-1220.0": 824,
+    "diamond-600.0": 317,
+    "diamond-915.0": 1435,
+    "square-600.0": 1075,
+    "rect-458.0-610.0": 715,
+    "rect-762.0-915.0": 544,
+    "rect-915.0-1220.0": 361,
+    "pentagon-915.0": 133,
+    "octagon-915.0": 637,
+}
+ANNO_NOBG_LABEL_COUNTS_DICT = {
+    "circle-750.0": 7902,
+    "triangle-900.0": 578,
+    "triangle_inverted-1220.0": 764,
+    "diamond-600.0": 263,
+    "diamond-915.0": 1376,
+    "square-600.0": 997,
+    "rect-458.0-610.0": 646,
+    "rect-762.0-915.0": 482,
+    "rect-915.0-1220.0": 308,
+    "pentagon-915.0": 78,
+    "octagon-915.0": 585,
+}

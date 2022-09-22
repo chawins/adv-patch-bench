@@ -7,9 +7,9 @@ rp2:
   min_conf: 0
   augment_prob_geometric: 1
   augment_rotate_degree: 15
-  augment_3d_distortion: 0.1
-  augment_prob_relight: 0
-  augment_intensity_relight: 0.3
+  # augment_3d_distortion: 0.1
+  augment_prob_relight: 1
+  augment_intensity_relight: 0.1
   use_patch_relight: True
   patch_dim: 64
   num_bg: 50  # Number of backgrounds attacker uses to generate patch
