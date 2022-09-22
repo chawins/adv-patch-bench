@@ -18,14 +18,14 @@ NUM_TEST_SYN=5000
 
 # Attack params
 MASK_SIZE=10x10
-SYN_OBJ_SIZE=96
+SYN_OBJ_SIZE=64
 ATK_CONFIG_PATH=./configs/attack_config_azure4.yaml
 
 INTERP=bilinear
 TF_MODE=perspective
-# synthetic-10x10-obj32-pd32-ld0.00001.out
-EXP_NAME=synthetic-${MASK_SIZE}-obj${SYN_OBJ_SIZE}-pd96-ld0.00001  # TODO: rename
-CLEAN_EXP_NAME=no_patch_syn_${SYN_OBJ_SIZE}
+# synthetic-10x10-obj64-pd64-ld0.00001-3d0.15.out
+EXP_NAME=synthetic-${MASK_SIZE}-obj${SYN_OBJ_SIZE}-pd64-3d0.15  # TODO: rename
+CLEAN_EXP_NAME=no_patch_syn_${SYN_OBJ_SIZE}_3d0.15
 
 
 function syn_attack {
@@ -53,7 +53,8 @@ function syn_attack {
         --attack-config-path "$ATK_CONFIG_PATH" --workers $NUM_WORKERS --interp $INTERP \
         --weights $MODEL_PATH --eval-mode drop --annotated-signs-only \
         --obj-class "$OBJ_CLASS" --obj-size $SYN_OBJ_SIZE --conf-thres $CONF_THRES \
-        --img-txt-path $BG_FILES --num-test $NUM_TEST_SYN --synthetic &&
+        --img-txt-path $BG_FILES --num-test $NUM_TEST_SYN --synthetic \
+        --syn-3d-distortion 0.15 &&
 
     # Generate adversarial patch
     CUDA_VISIBLE_DEVICES=$GPU python -u gen_patch_detectron.py \
@@ -73,7 +74,8 @@ function syn_attack {
         --name "$EXP_NAME" --obj-class "$OBJ_CLASS" --conf-thres $CONF_THRES \
         --mask-name "$MASK_SIZE" --weights $MODEL_PATH --workers $NUM_WORKERS \
         --img-txt-path $BG_FILES --annotated-signs-only --synthetic \
-        --attack-type load --obj-size $SYN_OBJ_SIZE --num-test $NUM_TEST_SYN &&
+        --attack-type load --obj-size $SYN_OBJ_SIZE --num-test $NUM_TEST_SYN \
+        --syn-3d-distortion 0.15 &&
 
     # Test patch on real signs
     CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
@@ -89,11 +91,9 @@ function syn_attack {
 }
 
 function syn_attack_all {
-    # for i in {0..10}; do
-    #     syn_attack "$i"
-    # done
-    syn_attack 1 &&
-    syn_attack 2
+    for i in {0..10}; do
+        syn_attack "$i"
+    done
 }
 
 syn_attack_all

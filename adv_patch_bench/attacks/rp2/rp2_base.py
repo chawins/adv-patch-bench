@@ -74,29 +74,35 @@ class RP2AttackModule(DetectorAttackModule):
         # Define EoT augmentation for attacking synthetic signs
         p_geo = float(rp2_config["augment_prob_geometric"])
         rotate_degrees = float(rp2_config.get("augment_rotate_degree", 15))
-        p_light = float(rp2_config["augment_prob_relight"])
-        intensity_light = float(
-            rp2_config.get("augment_intensity_relight", 0.3)
-        )
+        scale = float(rp2_config.get("augment_scale", 0))
+        dist_3d = rp2_config.get("augment_3d_distortion", None)
         bg_size = self.input_size
         self.bg_transforms = K.RandomResizedCrop(
             bg_size, scale=(0.8, 1), p=p_geo, resample=self.interp
         )
-        self.obj_transforms = K.RandomAffine(
-            degrees=rotate_degrees,
-            translate=(0.4, 0.4),
-            p=p_geo,
-            return_transform=True,
-            resample=self.interp,
-            # TODO: add scaling
+        if dist_3d is None:
+            tf_func = K.RandomAffine
+            tf_params = {
+                "p": p_geo,
+                "degrees": rotate_degrees,
+                "translate": (0.4, 0.4),
+                "scale": (1 - scale, 1 + scale) if scale > 0 else None,
+            }
+        else:
+            tf_func = K.RandomPerspective
+            tf_params = {"p": p_geo, "distortion_scale": dist_3d}
+
+        self.obj_transforms = tf_func(
+            **tf_params, return_transform=True, resample=self.interp
         )
         # Args to mask_transforms can be set to anything because it will use
         # the same params as obj_transforms anyway (via apply_transform).
-        self.mask_transforms = K.RandomAffine(
-            rotate_degrees,
-            translate=(0.40, 0.40),
-            p=p_geo,
-            resample=Resample.NEAREST,
+        self.mask_transforms = tf_func(**tf_params, resample=Resample.NEAREST)
+
+        # Color jitter and lighting transform
+        p_light = float(rp2_config["augment_prob_relight"])
+        intensity_light = float(
+            rp2_config.get("augment_intensity_relight", 0.3)
         )
         self.jitter_transform = K.ColorJitter(
             brightness=intensity_light, contrast=intensity_light, p=p_light

@@ -23,16 +23,16 @@ ATK_CONFIG_PATH=./configs/attack_config_azure2.yaml
 
 INTERP=bilinear
 TF_MODE=perspective
-# synthetic-10x10-obj64-pd64-ld0.00001-2rt0.out
-EXP_NAME=synthetic-${MASK_SIZE}-obj${SYN_OBJ_SIZE}-pd64-ld0.00001  # TODO: rename
-CLEAN_EXP_NAME=no_patch_syn_${SYN_OBJ_SIZE}
+# synthetic-10x10-obj64-pd64-ld0.00001-3d0.05.out
+EXP_NAME=synthetic-${MASK_SIZE}-obj${SYN_OBJ_SIZE}-pd64-ld0.00001-3d0.05  # TODO: rename
+CLEAN_EXP_NAME=no_patch_syn_${SYN_OBJ_SIZE}_3d0.05
 
 
 function syn_attack {
 
     OBJ_CLASS=$1
-    MS=$2
-    EXP_NAME=synthetic-${MS}-obj${SYN_OBJ_SIZE}-pd64-ld0.00001
+    # MS=$2
+    # EXP_NAME=synthetic-${MS}-obj${SYN_OBJ_SIZE}-pd64-ld0.00001
 
     case $OBJ_CLASS in
     0) BG_FILES=bg_filenames_circle-750.0.txt ;;
@@ -49,23 +49,24 @@ function syn_attack {
     esac
 
     # Test on synthetic clean samples (should only be done once per aug method)
-    # CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
-    #     --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --name $CLEAN_EXP_NAME \
-    #     --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH --dataset $DATASET \
-    #     --attack-config-path "$ATK_CONFIG_PATH" --workers $NUM_WORKERS --interp $INTERP \
-    #     --weights $MODEL_PATH --eval-mode drop --annotated-signs-only \
-    #     --obj-class "$OBJ_CLASS" --obj-size $SYN_OBJ_SIZE --conf-thres $CONF_THRES \
-    #     --img-txt-path $BG_FILES --num-test $NUM_TEST_SYN --synthetic &&
+    CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
+        --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --name $CLEAN_EXP_NAME \
+        --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH --dataset $DATASET \
+        --attack-config-path "$ATK_CONFIG_PATH" --workers $NUM_WORKERS --interp $INTERP \
+        --weights $MODEL_PATH --eval-mode drop --annotated-signs-only \
+        --obj-class "$OBJ_CLASS" --obj-size $SYN_OBJ_SIZE --conf-thres $CONF_THRES \
+        --img-txt-path $BG_FILES --num-test $NUM_TEST_SYN --synthetic \
+        --syn-3d-distortion 0.05 &&
 
     # Generate adversarial patch
-    # CUDA_VISIBLE_DEVICES=$GPU python -u gen_patch_detectron.py \
-    #     --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
-    #     --dataset $DATASET --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH \
-    #     --attack-config-path "$ATK_CONFIG_PATH" --obj-class "$OBJ_CLASS" \
-    #     --name "$EXP_NAME" --bg-dir $BG_PATH --transform-mode $TF_MODE \
-    #     --weights $MODEL_PATH --workers $NUM_WORKERS --mask-name "$MS" \
-    #     --img-txt-path $BG_FILES --save-images --obj-size $SYN_OBJ_SIZE \
-    #     --annotated-signs-only --synthetic --verbose &&
+    CUDA_VISIBLE_DEVICES=$GPU python -u gen_patch_detectron.py \
+        --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
+        --dataset $DATASET --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH \
+        --attack-config-path "$ATK_CONFIG_PATH" --obj-class "$OBJ_CLASS" \
+        --name "$EXP_NAME" --bg-dir $BG_PATH --transform-mode $TF_MODE \
+        --weights $MODEL_PATH --workers $NUM_WORKERS --mask-name "$MASK_SIZE" \
+        --img-txt-path $BG_FILES --save-images --obj-size $SYN_OBJ_SIZE \
+        --annotated-signs-only --synthetic --verbose &&
 
     # Test patch on synthetic signs
     CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
@@ -73,42 +74,28 @@ function syn_attack {
         --dataset $DATASET --padded-imgsz $IMG_SIZE --eval-mode drop \
         --tgt-csv-filepath $CSV_PATH --attack-config-path "$ATK_CONFIG_PATH" \
         --name "$EXP_NAME" --obj-class "$OBJ_CLASS" --conf-thres $CONF_THRES \
-        --mask-name "$MS" --weights $MODEL_PATH --workers $NUM_WORKERS \
-        --transform-mode $TF_MODE --img-txt-path $BG_FILES --attack-type load \
-        --annotated-signs-only --synthetic --obj-size $SYN_OBJ_SIZE \
-        --num-test $NUM_TEST_SYN &&
+        --mask-name "$MASK_SIZE" --weights $MODEL_PATH --workers $NUM_WORKERS \
+        --img-txt-path $BG_FILES --attack-type load --annotated-signs-only \
+        --synthetic --obj-size $SYN_OBJ_SIZE --num-test $NUM_TEST_SYN \
+        --syn-3d-distortion 0.05 &&
 
     # Test patch on real signs
-    # CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
-    #     --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
-    #     --dataset $DATASET --padded-imgsz $IMG_SIZE --eval-mode drop \
-    #     --tgt-csv-filepath $CSV_PATH --attack-config-path "$ATK_CONFIG_PATH" \
-    #     --name "$EXP_NAME" --obj-class "$OBJ_CLASS" --conf-thres $CONF_THRES \
-    #     --mask-name "$MS" --weights $MODEL_PATH --workers $NUM_WORKERS \
-    #     --transform-mode $TF_MODE --img-txt-path $BG_FILES --attack-type load \
-    #     --annotated-signs-only &&
+    CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
+        --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
+        --dataset $DATASET --padded-imgsz $IMG_SIZE --eval-mode drop \
+        --tgt-csv-filepath $CSV_PATH --attack-config-path "$ATK_CONFIG_PATH" \
+        --name "$EXP_NAME" --obj-class "$OBJ_CLASS" --conf-thres $CONF_THRES \
+        --mask-name "$MASK_SIZE" --weights $MODEL_PATH --workers $NUM_WORKERS \
+        --transform-mode $TF_MODE --img-txt-path $BG_FILES --attack-type load \
+        --annotated-signs-only &&
 
     echo "Done with $OBJ_CLASS."
 }
 
 function syn_attack_all {
-    # for i in {0..10}; do
-    #     syn_attack "$i"
-    # done
-    syn_attack 1 10x10 &&
-    syn_attack 2 10x10 &&
-    syn_attack 1 10x20 &&
-    syn_attack 2 10x20 &&
-    syn_attack 1 10x2 &&
-    syn_attack 2 10x2 &&
-    syn_attack 1 10x4 &&
-    syn_attack 2 10x4 &&
-    syn_attack 1 10x6 &&
-    syn_attack 2 10x6 &&
-    syn_attack 1 10x8 &&
-    syn_attack 2 10x8 &&
-    syn_attack 1 2_10x20 &&
-    syn_attack 2 2_10x20
+    for i in {0..10}; do
+        syn_attack "$i"
+    done
 }
 
 syn_attack_all
@@ -126,13 +113,3 @@ CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
     --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH --dataset $DATASET \
     --attack-config-path $ATK_CONFIG_PATH --workers $NUM_WORKERS \
     --weights $MODEL_PATH --img-txt-path $BG_FILES --eval-mode drop --obj-class -1
-
-# 10x10-obj32-pd32
-# ./synthetic-10x2-obj64-pd64-ld0.00001
-# ./synthetic-10x20-obj64-pd64-ld0.00001
-# ./synthetic-10x4-obj64-pd64-ld0.00001
-# ./synthetic-10x6-obj64-pd64-ld0.00001
-
-# probs fine
-# ./synthetic-10x10-obj48-pd48-ld0.00001
-# 10x10-obj64-pd64-ld0.00001-2rt5

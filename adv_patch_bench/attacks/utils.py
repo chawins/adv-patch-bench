@@ -47,6 +47,7 @@ def prep_synthetic_eval(
 
     if syn_3d_transform:
         transform_params = {
+            "p": transform_prob,
             "distortion_scale": syn_3d_distortion,
         }
         tf_func = K.RandomPerspective
@@ -54,6 +55,7 @@ def prep_synthetic_eval(
         # TODO: This depends on our experiment and maybe we want to make it easily
         # adjsutable.
         transform_params = {
+            "p": transform_prob,
             "degrees": syn_rotate_degree,
             "translate": (0.4, 0.4),
             "scale": (0.5, 2) if syn_use_scale else None,
@@ -61,14 +63,11 @@ def prep_synthetic_eval(
         tf_func = K.RandomAffine
 
     obj_transforms = tf_func(
-        p=transform_prob,
         return_transform=True,
         resample=interp,
         **transform_params,
     )
-    mask_transforms = tf_func(
-        p=transform_prob, resample=Resample.NEAREST, **transform_params
-    )
+    mask_transforms = tf_func(resample=Resample.NEAREST, **transform_params)
 
     if syn_use_colorjitter:
         jitter_transform = K.ColorJitter(
