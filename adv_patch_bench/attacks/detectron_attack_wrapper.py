@@ -94,7 +94,7 @@ class DetectronAttackWrapper:
         self.verbose = args.verbose
         self.debug = args.debug
         self.model = model
-        self.num_vis = 25
+        self.num_vis = 10
         if isinstance(args.img_size, str):
             self.img_size = tuple(
                 [int(size) for size in args.img_size.split(",")]
