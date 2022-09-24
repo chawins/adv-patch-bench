@@ -1,5 +1,5 @@
 from ast import literal_eval
-from typing import Any, List, Tuple
+from typing import Any, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -407,8 +407,8 @@ def apply_transform(
     patch_mask: torch.FloatTensor,
     transform_func: Any,
     tf_data: Tuple[Any],
-    tf_patch: Any = None,
-    tf_bg: Any = None,
+    tf_patch: Optional[Any] = None,
+    tf_bg: Optional[Any] = None,
     interp: str = "bilinear",
     use_relight: bool = False,
 ) -> torch.Tensor:

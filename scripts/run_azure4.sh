@@ -40,7 +40,7 @@ CLEAN_EXP_NAME=no_patch_syn_${SYN_OBJ_SIZE}_2cj0.15
 function syn_attack {
 
     OBJ_CLASS=$1
-    SYN_OBJ_SIZE=$2
+    RT=$2
 
     case $OBJ_CLASS in
     0) BG_FILES=bg_filenames_circle-750.0.txt ;;
@@ -84,7 +84,8 @@ function syn_attack {
         --name "$EXP_NAME" --obj-class "$OBJ_CLASS" --conf-thres $CONF_THRES \
         --mask-name "$MASK_SIZE" --weights $MODEL_PATH --workers $NUM_WORKERS \
         --img-txt-path $BG_FILES --annotated-signs-only --synthetic \
-        --attack-type load --obj-size $SYN_OBJ_SIZE --num-test $NUM_TEST_SYN &&
+        --attack-type load --obj-size $SYN_OBJ_SIZE --num-test $NUM_TEST_SYN \
+        --syn-rotate-degree $RT &&
 
     # Test patch on real signs
     # CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
@@ -100,7 +101,7 @@ function syn_attack {
 }
 
 function syn_attack_all {
-    for s in 32 48 64 96 128; do
+    for s in 0 5 10 20 25 30; do
         for i in {0..10}; do
             syn_attack "$i" $s
         done

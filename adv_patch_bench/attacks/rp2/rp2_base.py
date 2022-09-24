@@ -109,12 +109,12 @@ class RP2AttackModule(DetectorAttackModule):
         )
 
         # Define EoT augmentation for attacking real signs
-        # Transforms patch and background when attacking real signs
+        # Transforms patch when attacking real signs
         self.real_transform = {
             "tf_patch": K.RandomAffine(
-                15,
-                translate=(0.1, 0.1),
-                scale=(0.9, 1.1),
+                degrees=rotate_degrees,
+                translate=(0.1, 0.1),  # Translation here is on patch only so it has to be small
+                scale=(1 - scale, 1 + scale) if scale > 0 else None,
                 p=p_geo,
                 resample=self.interp,
             )

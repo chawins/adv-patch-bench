@@ -1,9 +1,9 @@
 rp2:
-  num_steps: 1000
+  num_steps: 200
   step_size: 0.01
   num_eot: 1
   optimizer: 'adam'  # 'adam', 'sgd', 'pgd'
-  lambda: 1.0e-5
+  lambda: 0
   min_conf: 0
   augment_prob_geometric: 1
   augment_rotate_degree: 5
