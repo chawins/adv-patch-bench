@@ -134,7 +134,7 @@ MNIST
 results
 .fuse_hidde*
 mapillaryvistas_plots/
-figures/
+# figures/
 *.jpg
 runs/*
 tmp*
