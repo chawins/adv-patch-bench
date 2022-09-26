@@ -174,7 +174,7 @@ ANNO_LABEL_COUNTS_DICT = {
 }
 ANNO_NOBG_LABEL_COUNTS_DICT = {
     "circle-750.0": 7902,
-    "triangle-900.0": 578,
+    "triangle-900.0": 578, 
     "triangle_inverted-1220.0": 764,
     "diamond-600.0": 263,
     "diamond-915.0": 1376,
@@ -184,4 +184,17 @@ ANNO_NOBG_LABEL_COUNTS_DICT = {
     "rect-915.0-1220.0": 308,
     "pentagon-915.0": 78,
     "octagon-915.0": 585,
+}
+ANNO_NOBG_LABEL_COUNTS_DICT_200 = {
+    "circle-750.0": 7669,
+    "triangle-900.0": 405, 
+    "triangle_inverted-1220.0": 584,
+    "diamond-600.0": 0,
+    "diamond-915.0": 1201,
+    "square-600.0": 788,
+    "rect-458.0-610.0": 412,
+    "rect-762.0-915.0": 275,
+    "rect-915.0-1220.0": 150,
+    "pentagon-915.0": 0,
+    "octagon-915.0": 405,
 }

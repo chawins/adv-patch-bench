@@ -135,7 +135,7 @@ def collect_backgrounds(
 
         if found:
             # Flip BGR to RGB and then flip back when feeding to model
-            image = batch[0]["image"].float().to(device).flip(0)
+            image = batch[0]["image"].float().flip(0)
             h0, w0 = batch[0]["height"], batch[0]["width"]
             _, h, w = image.shape
 

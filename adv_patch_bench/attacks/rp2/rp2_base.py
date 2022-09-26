@@ -55,7 +55,7 @@ class RP2AttackModule(DetectorAttackModule):
         self.ema_const = 0.9
 
         # Use change of variable on delta with alpha and beta.
-        # Mostly used with per-sign attack.
+        # Mostly used with per-sign or real attack.
         self.use_var_change_ab = "var_change_ab" in self.attack_mode
         if not self.use_relight:
             self.use_var_change_ab = False
@@ -357,7 +357,7 @@ class RP2AttackModule(DetectorAttackModule):
         all_bg_idx = np.arange(len(tf_data_temp))
         backgrounds = torch.cat(
             [obj[0].unsqueeze(0) for obj in objs], dim=0
-        ).to(device)
+        )
 
         for _ in range(self.num_restarts):
             # Initialize adversarial perturbation
@@ -382,7 +382,7 @@ class RP2AttackModule(DetectorAttackModule):
                 np.random.shuffle(all_bg_idx)
                 bg_idx = all_bg_idx[: self.num_eot]
                 curr_tf_data = [data[bg_idx] for data in tf_data]
-                bgs = backgrounds[bg_idx].clone()
+                bgs = backgrounds[bg_idx].to(device)
 
                 metadata = self._on_real_attack_step(metadata)
                 with torch.enable_grad():

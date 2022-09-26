@@ -62,7 +62,7 @@ function syn_attack {
 
     # Test on synthetic clean samples (should only be done once per aug method)
     # CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
-    #     --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --name "$CLEAN_EXP_NAME" \
+    #     --seed 0 --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --name "$CLEAN_EXP_NAME" \
     #     --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH --dataset $DATASET \
     #     --attack-config-path "$ATK_CONFIG_PATH" --workers $NUM_WORKERS --interp $INTERP \
     #     --weights $MODEL_PATH --eval-mode drop --annotated-signs-only \
@@ -72,7 +72,7 @@ function syn_attack {
 
     # Generate adversarial patch
     # CUDA_VISIBLE_DEVICES=$GPU python -u gen_patch_detectron.py \
-    #     --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
+    #     --seed 0 --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
     #     --dataset $DATASET --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH \
     #     --attack-config-path "$ATK_CONFIG_PATH" --obj-class "$OBJ_CLASS" \
     #     --name "$EXP_NAME" --bg-dir $BG_PATH --transform-mode $TF_MODE \
@@ -82,7 +82,7 @@ function syn_attack {
 
     # Test patch on synthetic signs
     # CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
-    #     --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
+    #     --seed 0 --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
     #     --dataset $DATASET --padded-imgsz $IMG_SIZE --eval-mode drop \
     #     --tgt-csv-filepath $CSV_PATH --attack-config-path "$ATK_CONFIG_PATH" \
     #     --name "$EXP_NAME" --obj-class "$OBJ_CLASS" --conf-thres $CONF_THRES \
@@ -92,7 +92,7 @@ function syn_attack {
 
     # Test patch on real signs
     CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
-        --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
+        --seed 0 --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
         --dataset $DATASET --padded-imgsz $IMG_SIZE --eval-mode drop \
         --tgt-csv-filepath $CSV_PATH --attack-config-path "$ATK_CONFIG_PATH" \
         --name "$EXP_NAME" --obj-class "$OBJ_CLASS" --conf-thres $CONF_THRES \

@@ -443,7 +443,7 @@ def apply_transform(
         f" obj_size: {obj_size}."
     )
 
-    # ymin, xmin, height, width = patch_loc
+    # Apply relighting transform (brightness and contrast)
     if use_relight:
         adv_patch.mul_(alpha).add_(beta)
     adv_patch.clamp_(0, 1)
@@ -458,6 +458,7 @@ def apply_transform(
     # Apply augmentation on the patch
     if tf_patch is not None:
         patch_on_obj = tf_patch(patch_on_obj)
+        
     warped_patch = transform_func(
         patch_on_obj, M, image.shape[2:], mode=interp, padding_mode="zeros"
     )

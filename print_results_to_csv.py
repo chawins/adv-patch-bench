@@ -9,12 +9,27 @@ from hparams import (
     TS_NO_COLOR_LABEL_LIST,
     ANNO_LABEL_COUNTS_DICT,
     ANNO_NOBG_LABEL_COUNTS_DICT,
+    MAPILLARY_LABEL_COUNTS_DICT,
 )
-
-_NUM_SIGNS_PER_CLASS = np.array(list(ANNO_NOBG_LABEL_COUNTS_DICT.values()))
+# from hparams import ANNO_NOBG_LABEL_COUNTS_DICT_200 as ANNO_NOBG_LABEL_COUNTS_DICT
 _NUM_IOU_THRES = 10
+
+# Mapillary annotated
+_NUM_SIGNS_PER_CLASS = np.array(list(ANNO_NOBG_LABEL_COUNTS_DICT.values()))
 _NUM_SIGNS_PER_CLASS_BG = np.array(list(ANNO_LABEL_COUNTS_DICT.values()))
 _BG_DIFF = _NUM_SIGNS_PER_CLASS_BG - _NUM_SIGNS_PER_CLASS
+
+# MTSD
+# _NUM_SIGNS_PER_CLASS = np.array([2999, 711, 347, 176, 1278, 287, 585, 117, 135, 30, 181])
+# _BG_DIFF = np.zeros_like(_NUM_SIGNS_PER_CLASS)
+
+# Mapillary
+# _NUM_SIGNS_PER_CLASS = np.array(list(MAPILLARY_LABEL_COUNTS_DICT.values())[:-1])
+# _BG_DIFF = np.zeros_like(_NUM_SIGNS_PER_CLASS)
+
+BASE_PATH = "./detectron_output/"
+CONF_THRES = 0.634
+iou_idx = 0  # 0.5
 
 
 def _compute_ap_recall(scores, matched, NP, recall_thresholds=None):
@@ -51,9 +66,11 @@ def _compute_ap_recall(scores, matched, NP, recall_thresholds=None):
     # get interpolated precision values at the evaluation thresholds
     i_pr = np.array([i_pr[r] if r < len(i_pr) else 0 for r in rec_idx])
 
+    score_idx = np.where(scores >= CONF_THRES)[0][-1]
+    
     return {
-        "precision": pr,
-        "recall": rc,
+        "precision": pr[score_idx],
+        "recall": rc[score_idx],
         "AP": np.mean(i_pr),
         "interpolated precision": i_pr,
         "interpolated recall": recall_thresholds,
@@ -63,9 +80,16 @@ def _compute_ap_recall(scores, matched, NP, recall_thresholds=None):
     }
 
 
-BASE_PATH = "./detectron_output/"
-CONF_THRES = 0.634
-iou_idx = 0  # 0.5
+def _average(print_df_rows, base_sid, all_class_sid, metric_name):
+    metrics = np.zeros(len(_NUM_SIGNS_PER_CLASS))
+    for i in range(len(_NUM_SIGNS_PER_CLASS)):
+        # if metric_name == "Precision":
+        #     import pdb
+        #     pdb.set_trace()
+        # print(metric_name, print_df_rows[f"{base_sid}_{i:02d}"][metric_name])
+        metrics[i] = print_df_rows[f"{base_sid}_{i:02d}"][metric_name]
+    print_df_rows[all_class_sid][metric_name] = np.mean(metrics)
+    return metrics
 
 
 def main(args):
@@ -74,8 +98,11 @@ def main(args):
     attack_exp_name = args.attack_exp_name
     clean_exp_path = pathlib.Path(BASE_PATH) / clean_exp_name
     attack_exp_path = pathlib.Path(BASE_PATH) / attack_exp_name
-    exp_paths = list(clean_exp_path.iterdir())
-    exp_paths.extend(list(attack_exp_path.iterdir()))
+    exp_paths = []
+    if clean_exp_path.is_dir():
+        exp_paths.extend(list(clean_exp_path.iterdir()))
+    if attack_exp_path.is_dir():
+        exp_paths.extend(list(attack_exp_path.iterdir()))
 
     df_rows = {}
     gt_scores = [{}, {}]
@@ -99,14 +126,14 @@ def main(args):
                 continue
 
             # Select latest result only
-            # mtimes = np.array(
-            #     [
-            #         float(pathlib.Path(result_path).stat().st_mtime)
-            #         for result_path in result_paths
-            #     ]
-            # )
-            # latest_idx = np.argmax(mtimes)
-            # result_paths = [result_paths[latest_idx]]
+            mtimes = np.array(
+                [
+                    float(pathlib.Path(result_path).stat().st_mtime)
+                    for result_path in result_paths
+                ]
+            )
+            latest_idx = np.argmax(mtimes)
+            result_paths = [result_paths[latest_idx]]
 
             # Iterate over result pickle files
             for result_path in result_paths:
@@ -131,6 +158,7 @@ def main(args):
                 # Experiment setting identifier for matching clean and attack
                 obj_class = results["obj_class"]
                 obj_size = results["obj_size"]
+                syn_rotate = int(results.get("syn_rotate_degree", 15.0))
                 synthetic = int(results["synthetic"])
                 is_attack = int(results["attack_type"] != "none")
                 scores_dict = gt_scores[is_attack]
@@ -147,7 +175,7 @@ def main(args):
                     }
                     syn_use_scale = int(results["syn_use_scale"])
                     syn_use_colorjitter = int(results["syn_use_colorjitter"])
-                    base_sid = f"syn_size{obj_size}_{syn_use_scale}_{syn_use_colorjitter}_atk{int(is_attack)}"
+                    base_sid = f"syn_size{obj_size}_rt{syn_rotate}_{syn_use_scale}_{syn_use_colorjitter}_atk{int(is_attack)}"
                 else:
                     # Real signs
                     if exp_type is not None and exp_type != "real":
@@ -218,9 +246,15 @@ def main(args):
                             matches = np.zeros_like(scores, dtype=bool)
                             nm = len(results["bbox"]["scores_full"][oc][t][0])
                             matches[:nm] = 1
-                            aps[t] = _compute_ap_recall(
+                            outputs = _compute_ap_recall(
                                 scores, matches, _NUM_SIGNS_PER_CLASS[oc]
-                            )["AP"]
+                            )
+                            aps[t] = outputs["AP"]
+                            if t == iou_idx:
+                                # FIXME: precision can't be weighted average
+                                print_df_rows[sid]["Precision"] = outputs["precision"] * 100
+                                print_df_rows[sid]["Recall"] = outputs["recall"] * 100
+                            
                         print_df_rows[sid]["AP"] = aps.mean() * 100
 
                         for t in range(10):
@@ -242,21 +276,6 @@ def main(args):
                     "atk": is_attack,
                 }
 
-                if not is_attack and not synthetic:
-                    fnrs = np.zeros(len(_NUM_SIGNS_PER_CLASS))
-                    aps = np.zeros_like(fnrs)
-                    for i in range(len(_NUM_SIGNS_PER_CLASS)):
-                        fnrs[i] = print_df_rows[f"{base_sid}_{i:02d}"]["FNR"]
-                        aps[i] = print_df_rows[f"{base_sid}_{i:02d}"]["AP"]
-
-                    print_df_rows[all_class_sid]["FNR"] = np.mean(fnrs)
-                    print_df_rows[all_class_sid]["AP"] = np.mean(aps)
-                    print_df_rows[allw_class_sid]["FNR"] = np.sum(
-                        fnrs
-                        * _NUM_SIGNS_PER_CLASS
-                        / np.sum(_NUM_SIGNS_PER_CLASS)
-                    )
-
                 # Print result as one row in df
                 df_row = {}
                 for k, v in results.items():
@@ -271,15 +290,32 @@ def main(args):
     fnrs = np.zeros(len(_NUM_SIGNS_PER_CLASS))
     sid_no_class = None
     for sid, data in print_df_rows.items():
-        if "syn" in sid and "atk0" in sid and "all" not in sid:
-            sid_no_class = "_".join(sid.split("_")[:-1])
-            k = int(sid.split("_")[-1])
-            fnrs[k] = data["FNR"]
-    if sid_no_class is not None:
-        print_df_rows[sid_no_class + "_all"]["FNR"] = np.mean(fnrs)
-        print_df_rows[sid_no_class + "_allw"]["FNR"] = np.sum(
-            fnrs * _NUM_SIGNS_PER_CLASS / np.sum(_NUM_SIGNS_PER_CLASS)
+        is_attack = "atk1" in sid
+        if is_attack:
+            continue
+        base_sid = "_".join(sid.split("_")[:-1])
+        all_class_sid = f"{base_sid}_all"
+        allw_class_sid = f"{base_sid}_allw"
+        
+        if 'real' in sid:
+            _average(print_df_rows, base_sid, all_class_sid, "Precision")
+            _average(print_df_rows, base_sid, all_class_sid, "Recall")
+            _average(print_df_rows, base_sid, all_class_sid, "AP")
+        fnrs = _average(print_df_rows, base_sid, all_class_sid, "FNR")
+        print_df_rows[allw_class_sid]["FNR"] = np.sum(
+            fnrs
+            * _NUM_SIGNS_PER_CLASS
+            / np.sum(_NUM_SIGNS_PER_CLASS)
         )
+        # if "syn" in sid and "atk0" in sid and "all" not in sid:
+        #     sid_no_class = "_".join(sid.split("_")[:-1])
+        #     k = int(sid.split("_")[-1])
+        #     fnrs[k] = data["FNR"]
+    # if sid_no_class is not None:
+    #     print_df_rows[sid_no_class + "_all"]["FNR"] = np.mean(fnrs)
+    #     print_df_rows[sid_no_class + "_allw"]["FNR"] = np.sum(
+    #         fnrs * _NUM_SIGNS_PER_CLASS / np.sum(_NUM_SIGNS_PER_CLASS)
+    #     )
 
     # Iterate through all attack experiments
     for sid, (time, adv_scores) in gt_scores[1].items():
@@ -295,13 +331,13 @@ def main(args):
         clean_scores = gt_scores[0][clean_sid][1]
         clean_detected = clean_scores[iou_idx] >= CONF_THRES
         adv_detected = adv_scores[iou_idx] >= CONF_THRES
-        total = _NUM_SIGNS_PER_CLASS[k]
+        total = _NUM_SIGNS_PER_CLASS[k] if "real" in split_sid else 5000
 
         num_succeed = np.sum(~adv_detected & clean_detected)
         num_clean = np.sum(clean_detected)
         # Account for misses caused by signs that are supposed to be in bg
         num_missed = (
-            np.sum(~adv_detected) - _BG_DIFF[k] if "real" in split_sid else 0
+            np.sum(~adv_detected) - (_BG_DIFF[k] if "real" in split_sid else 0)
         )
 
         attack_success_rate = num_succeed / (num_clean + 1e-9) * 100
@@ -315,9 +351,16 @@ def main(args):
         else:
             ap = -1e9
 
+        # if "syn_size64_rt15_0_0_atk1_00" in sid:
+        #     print(sid)
+        #     print(num_succeed, num_missed, num_clean, total, attack_success_rate)
+        #     import pdb
+        #     pdb.set_trace()
+        #     print()
+
         if sid_no_class in results_all_classes:
             results_all_classes[sid_no_class]["num_succeed"] += num_succeed
-            results_all_classes[sid_no_class]["num_clean"] += num_clean
+            results_all_classes[sid_no_class]["num_clean"][k] = num_clean
             results_all_classes[sid_no_class]["num_missed"] += num_missed
             results_all_classes[sid_no_class]["num_total"] += total
             results_all_classes[sid_no_class]["asr"][k] = attack_success_rate
@@ -330,9 +373,11 @@ def main(args):
             fnrs[k] = fnr
             aps = np.zeros_like(asrs)
             aps[k] = ap
+            num_cleans = np.zeros_like(asrs)
+            num_cleans[k] = num_clean
             results_all_classes[sid_no_class] = {
                 "num_succeed": num_succeed,
-                "num_clean": num_clean,
+                "num_clean": num_cleans,
                 "num_missed": num_missed,
                 "num_total": total,
                 "asr": asrs,
@@ -343,7 +388,7 @@ def main(args):
     df_rows = list(df_rows.values())
     df = pd.DataFrame.from_records(df_rows)
     df = df.sort_index(axis=1)
-    df.to_csv(attack_exp_path / "results.csv")
+    # df.to_csv(attack_exp_path / "results.csv")
 
     print(attack_exp_name, clean_exp_name, CONF_THRES)
     print("All-class ASR")
@@ -353,7 +398,7 @@ def main(args):
         num_clean = results_all_classes[sid]["num_clean"]
         num_missed = results_all_classes[sid]["num_missed"]
         total = results_all_classes[sid]["num_total"]
-        asr = num_succeed / (num_clean + 1e-9) * 100
+        asr = num_succeed / (num_clean.sum() + 1e-9) * 100
 
         # Average metrics over classes instead of counting all as one
         all_class_sid = f"{sid}_all"
@@ -372,6 +417,13 @@ def main(args):
         print_df_rows[allw_class_sid]["FNR"] = np.sum(
             fnrs * _NUM_SIGNS_PER_CLASS / np.sum(_NUM_SIGNS_PER_CLASS)
         )
+
+        # if "syn_size64_rt15_0_0" in sid:
+        #     print(sid)
+        #     print(num_succeed, num_missed, num_clean, total, asr)
+        #     import pdb
+        #     pdb.set_trace()
+        #     print(num_missed / total)
 
         if "real" in sid:
             # This is the correct (or commonly used) definition of mAP
@@ -395,7 +447,7 @@ def main(args):
             print_df_rows[allw_class_sid]["AP"] = np.mean(aps) * 100
 
         print(
-            f"{sid}: combined {asr:.2f} ({num_succeed}/{num_clean}), "
+            f"{sid}: combined {asr:.2f} ({num_succeed}/{num_clean.sum()}), "
             f"average {avg_asr:.2f}, total {total}"
         )
 
@@ -423,6 +475,7 @@ def main(args):
     df = pd.DataFrame.from_records(print_df_rows)
     df = df.sort_values(["id", "atk"])
     df = df.drop(columns=["atk"])
+    # df = df.reindex(columns=["id", "FNR", "ASR", "AP", "Precision", "Recall"])
     df = df.reindex(columns=["id", "FNR", "ASR", "AP"])
     print(df.to_csv(float_format="%0.2f", index=False))
     print("Repeated results:", repeated_results)

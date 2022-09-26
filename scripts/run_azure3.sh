@@ -23,90 +23,119 @@ ATK_CONFIG_PATH=./configs/attack_config_azure3.yaml
 
 INTERP=bilinear
 TF_MODE=perspective
-# per-sign-10x10-obj64-pd64-ld0.out
-# synthetic-10x10-obj64-pd64-ld0.00001-2cj0.1.out
-EXP_NAME=synthetic-${MASK_SIZE}-obj${SYN_OBJ_SIZE}-pd64-ld0.00001-2cj0.2  # TODO: rename
-# EXP_NAME=real-${MASK_SIZE}-pd64-ld0.00001
-CLEAN_EXP_NAME=no_patch_syn_${SYN_OBJ_SIZE}_2cj0.2
-# --syn-rotate-degree 0 
+# synthetic-10x10-obj64-pd64-ld0.00001-2cj0.05.out
+# EXP_NAME=synthetic-${MASK_SIZE}-obj${SYN_OBJ_SIZE}-pd64-ld0.00001-2cj0.05  # TODO: rename
+# EXP_NAME=real-${MASK_SIZE}-pd64-ld0.00001-rt15-sc0-var
+CLEAN_EXP_NAME=no_patch_syn_${SYN_OBJ_SIZE}_2cj0.05
 
 function syn_attack {
 
     OBJ_CLASS=$1
-    # MASK_SIZE=$2
-    # EXP_NAME=real-${MASK_SIZE}-pd64-ld0.00001
-    CJ=$2
-    EXP_NAME=synthetic-${MASK_SIZE}-obj${SYN_OBJ_SIZE}-pd64-ld0.00001-2cj$CJ
-    CLEAN_EXP_NAME=no_patch_syn_${SYN_OBJ_SIZE}_2cj$CJ
+    MASK_SIZE=$2
+    # NUM_BG=200
+    RT=$3
+    EXP_NAME=synthetic-${MASK_SIZE}-obj${SYN_OBJ_SIZE}-pd64-ld0.00001-2rt$RT
 
     case $OBJ_CLASS in
-    0) BG_FILES=bg_filenames_circle-750.0.txt ;;
-    1) BG_FILES=bg_filenames_triangle-900.0.txt ;;
-    2) BG_FILES=bg_filenames_triangle_inverted-1220.0.txt ;;
-    3) BG_FILES=bg_filenames_diamond-600.0.txt ;;
-    4) BG_FILES=bg_filenames_diamond-915.0.txt ;;
-    5) BG_FILES=bg_filenames_square-600.0.txt ;;
-    6) BG_FILES=bg_filenames_rect-458.0-610.0.txt ;;
-    7) BG_FILES=bg_filenames_rect-762.0-915.0.txt ;;
-    8) BG_FILES=bg_filenames_rect-915.0-1220.0.txt ;;
-    9) BG_FILES=bg_filenames_pentagon-915.0.txt ;;
-    10) BG_FILES=bg_filenames_octagon-915.0.txt ;;
+    0) OBJ_CLASS_NAME=circle-750.0 ;;
+    1) OBJ_CLASS_NAME=triangle-900.0 ;;
+    2) OBJ_CLASS_NAME=triangle_inverted-1220.0 ;;
+    3) OBJ_CLASS_NAME=diamond-600.0 ;;
+    4) OBJ_CLASS_NAME=diamond-915.0 ;;
+    5) OBJ_CLASS_NAME=square-600.0 ;;
+    6) OBJ_CLASS_NAME=rect-458.0-610.0 ;;
+    7) OBJ_CLASS_NAME=rect-762.0-915.0 ;;
+    8) OBJ_CLASS_NAME=rect-915.0-1220.0 ;;
+    9) OBJ_CLASS_NAME=pentagon-915.0 ;;
+    10) OBJ_CLASS_NAME=octagon-915.0 ;;
     esac
 
+    BG_FILES=bg_filenames_"$OBJ_CLASS_NAME".txt
+
+    # CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
+    #     --seed 0 --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
+    #     --dataset $DATASET --padded-imgsz $IMG_SIZE --eval-mode drop \
+    #     --tgt-csv-filepath $CSV_PATH --attack-config-path "$ATK_CONFIG_PATH" \
+    #     --name no_patch_bg200 --obj-class "$OBJ_CLASS" --conf-thres $CONF_THRES \
+    #     --mask-name "$MASK_SIZE" --weights $MODEL_PATH --workers $NUM_WORKERS \
+    #     --transform-mode $TF_MODE --img-txt-path $BG_FILES --attack-type none \
+    #     --annotated-signs-only &&
+
     # Test on synthetic clean samples (should only be done once per aug method)
-    CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
-        --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --name $CLEAN_EXP_NAME \
-        --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH --dataset $DATASET \
-        --attack-config-path "$ATK_CONFIG_PATH" --workers $NUM_WORKERS --interp $INTERP \
-        --weights $MODEL_PATH --eval-mode drop --annotated-signs-only \
-        --obj-class "$OBJ_CLASS" --obj-size $SYN_OBJ_SIZE --conf-thres $CONF_THRES \
-        --img-txt-path $BG_FILES --num-test $NUM_TEST_SYN --synthetic \
-        --syn-use-colorjitter --syn-colorjitter-intensity 0.2 &&
+    # CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
+    #     --seed 0 --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --name $CLEAN_EXP_NAME \
+    #     --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH --dataset $DATASET \
+    #     --attack-config-path "$ATK_CONFIG_PATH" --workers $NUM_WORKERS --interp $INTERP \
+    #     --weights $MODEL_PATH --eval-mode drop --annotated-signs-only \
+    #     --obj-class "$OBJ_CLASS" --obj-size $SYN_OBJ_SIZE --conf-thres $CONF_THRES \
+    #     --img-txt-path $BG_FILES --num-test $NUM_TEST_SYN --synthetic \
+    #     --syn-use-colorjitter --syn-colorjitter-intensity 0.05 &&
 
     # Generate adversarial patch
-    CUDA_VISIBLE_DEVICES=$GPU python -u gen_patch_detectron.py \
-        --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
-        --dataset $DATASET --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH \
-        --attack-config-path "$ATK_CONFIG_PATH" --obj-class "$OBJ_CLASS" \
-        --name "$EXP_NAME" --bg-dir $BG_PATH --transform-mode $TF_MODE \
-        --weights $MODEL_PATH --workers $NUM_WORKERS --mask-name "$MASK_SIZE" \
-        --img-txt-path $BG_FILES --save-images --obj-size $SYN_OBJ_SIZE \
-        --annotated-signs-only --verbose --synthetic &&
+    # CUDA_VISIBLE_DEVICES=$GPU python -u gen_patch_detectron.py \
+    #     --seed 0 --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
+    #     --dataset $DATASET --padded-imgsz $IMG_SIZE --tgt-csv-filepath $CSV_PATH \
+    #     --attack-config-path "$ATK_CONFIG_PATH" --obj-class "$OBJ_CLASS" \
+    #     --name "$EXP_NAME" --bg-dir $BG_PATH --transform-mode $TF_MODE \
+    #     --weights $MODEL_PATH --workers $NUM_WORKERS --mask-name "$MASK_SIZE" \
+    #     --save-images --obj-size $SYN_OBJ_SIZE \
+    #     --annotated-signs-only --verbose &&
+    # --synthetic --img-txt-path $BG_FILES
+
+    # BG_FILES=bg_filenames_"$OBJ_CLASS_NAME"_"$NUM_BG".txt
+    # cp detectron_output/"$EXP_NAME"/"$OBJ_CLASS_NAME"/bg_filenames-"$NUM_BG".txt bg_txt_files/$BG_FILES
 
     # Test patch on synthetic signs
     CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
-        --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
+        --seed 0 --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
         --dataset $DATASET --padded-imgsz $IMG_SIZE --eval-mode drop \
         --tgt-csv-filepath $CSV_PATH --attack-config-path "$ATK_CONFIG_PATH" \
         --name "$EXP_NAME" --obj-class "$OBJ_CLASS" --conf-thres $CONF_THRES \
         --mask-name "$MASK_SIZE" --weights $MODEL_PATH --workers $NUM_WORKERS \
         --img-txt-path $BG_FILES --attack-type load --annotated-signs-only \
-        --synthetic --obj-size $SYN_OBJ_SIZE --num-test $NUM_TEST_SYN \
-        --syn-use-colorjitter --syn-colorjitter-intensity 0.2 &&
+        --synthetic --obj-size $SYN_OBJ_SIZE --num-test $NUM_TEST_SYN &&
 
     # Test patch on real signs
-    CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
-        --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
-        --dataset $DATASET --padded-imgsz $IMG_SIZE --eval-mode drop \
-        --tgt-csv-filepath $CSV_PATH --attack-config-path "$ATK_CONFIG_PATH" \
-        --name "$EXP_NAME" --obj-class "$OBJ_CLASS" --conf-thres $CONF_THRES \
-        --mask-name "$MASK_SIZE" --weights $MODEL_PATH --workers $NUM_WORKERS \
-        --transform-mode $TF_MODE --img-txt-path $BG_FILES --attack-type load \
-        --annotated-signs-only &&
+    # CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
+    #     --seed 0 --num-gpus $NUM_GPU --config-file $DETECTRON_CONFIG_PATH --interp $INTERP \
+    #     --dataset $DATASET --padded-imgsz $IMG_SIZE --eval-mode drop \
+    #     --tgt-csv-filepath $CSV_PATH --attack-config-path "$ATK_CONFIG_PATH" \
+    #     --name "$EXP_NAME" --obj-class "$OBJ_CLASS" --conf-thres $CONF_THRES \
+    #     --mask-name "$MASK_SIZE" --weights $MODEL_PATH --workers $NUM_WORKERS \
+    #     --transform-mode $TF_MODE --img-txt-path $BG_FILES --attack-type load \
+    #     --annotated-signs-only &&
 
     echo "Done with $OBJ_CLASS."
 }
 
 function syn_attack_all {
-    # syn_attack 5 0.15
+    # syn_attack 1 10x10
+    # for i in 0 1 2 3 4 5 6 7 8 10; do
+    #     syn_attack "$i" 10x10
+    # done
     for i in {0..10}; do
-        syn_attack "$i" 0.2
+        syn_attack "$i" 10x10 0
+    done
+    for i in {0..10}; do
+        syn_attack "$i" 10x10 5
+    done
+    for i in {0..10}; do
+        syn_attack "$i" 10x10 10
+    done
+    for i in {0..10}; do
+        syn_attack "$i" 10x10 20
+    done
+    for i in {0..10}; do
+        syn_attack "$i" 10x10 25
+    done
+    for i in {0..10}; do
+        syn_attack "$i" 10x10 30
     done
     # for i in {0..10}; do
-    #     syn_attack "$i" 0.25
+    #     syn_attack "$i" 10x4
     # done
     # for i in {0..10}; do
-    #     syn_attack "$i" 0.3
+    #     syn_attack "$i" 10x2
     # done
 }
 
