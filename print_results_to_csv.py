@@ -126,14 +126,14 @@ def main(args):
                 continue
 
             # Select latest result only
-            mtimes = np.array(
-                [
-                    float(pathlib.Path(result_path).stat().st_mtime)
-                    for result_path in result_paths
-                ]
-            )
-            latest_idx = np.argmax(mtimes)
-            result_paths = [result_paths[latest_idx]]
+            # mtimes = np.array(
+            #     [
+            #         float(pathlib.Path(result_path).stat().st_mtime)
+            #         for result_path in result_paths
+            #     ]
+            # )
+            # latest_idx = np.argmax(mtimes)
+            # result_paths = [result_paths[latest_idx]]
 
             # Iterate over result pickle files
             for result_path in result_paths:

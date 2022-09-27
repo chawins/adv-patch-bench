@@ -216,8 +216,9 @@ def main_attack(cfg, args):
     result_path = os.path.join(
         args.result_dir, f"results_test{test_cfg_hash}_atk{atk_cfg_hash}.pkl"
     )
-    with open(result_path, "wb") as f:
-        pickle.dump(results, f)
+    if not args.debug:
+        with open(result_path, "wb") as f:
+            pickle.dump(results, f)
 
     # Logging results
     metrics = results["bbox"]
@@ -263,8 +264,9 @@ def main_attack(cfg, args):
         metrics[f"FPR-all"] = fp_all / total
         log.info(f'Total num patches: {metrics["total_num_patches"]}')
 
-        with open(result_path, "wb") as f:
-            pickle.dump(results, f)
+        if not args.debug:
+            with open(result_path, "wb") as f:
+                pickle.dump(results, f)
 
 
 if __name__ == "__main__":

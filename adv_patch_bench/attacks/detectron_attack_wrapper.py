@@ -478,6 +478,7 @@ class DetectronAttackWrapper:
                     original_image, self.metadata, scale=0.5
                 )
                 vis_gt = visualizer.draw_dataset_dict(batch[0])
+                # vis_gt = visualizer.get_output()
                 vis_gt.save(os.path.join(vis_save_dir, f"gt_{i}.jpg"))
 
                 # Save adv predictions
@@ -489,9 +490,10 @@ class DetectronAttackWrapper:
                 perturbed_image = perturbed_image.permute(1, 2, 0)
                 perturbed_image = perturbed_image.cpu().numpy().astype(np.uint8)
                 v = Visualizer(perturbed_image, self.metadata, scale=0.5)
-                vis = v.draw_instance_predictions(
-                    instances.to("cpu")
-                ).get_image()
+                # vis = v.draw_instance_predictions(
+                #     instances.to("cpu")
+                # ).get_image()
+                vis = v.get_output().get_image()
 
                 if self.use_attack:
                     # Save original predictions
