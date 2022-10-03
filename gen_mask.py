@@ -1,6 +1,6 @@
 import argparse
 import os
-from typing import Any, Optional, Tuple, Union
+from typing import Tuple, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -90,7 +90,9 @@ def generate_mask(
     obj_h_px, obj_w_px = obj_size_px
 
     num_patches = 2 if "2_" in mask_name else 1
-    patch_h_inch, patch_w_inch = [int(s) for s in mask_name.split("x")]
+    mask_sizes = mask_name.split("_")[-1].split("x")
+    assert all([s.isnumeric() for s in mask_sizes])
+    patch_h_inch, patch_w_inch = [int(s) for s in mask_sizes]
     patch_mask = gen_mask_rect(
         patch_h_inch,
         patch_w_inch,
