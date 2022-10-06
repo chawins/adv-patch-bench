@@ -245,7 +245,7 @@ def run(
 
     dataset_name = "mapillary" if "mapillary" in data else "mtsd"
     try:
-        metrics_df = pd.read_csv("runs/results.csv")
+        metrics_df = pd.read_csv(f"{project}/results.csv")
         metrics_df = metrics_df.replace(
             {"apply_patch": "True", "random_patch": "True"}, 1
         )
@@ -412,6 +412,7 @@ def run(
     #     f = os.path.join(save_dir, 'adversarial_patch.png')
     #     torchvision.utils.save_image(demo_patch, f)
 
+    adv_patch, patch_mask = None, None
     if use_attack:
         # Prepare attack data
         if args.adv_patch_path is None:
@@ -448,6 +449,8 @@ def run(
             syn_use_scale=args.syn_use_scale,
             syn_3d_transform=args.syn_3d_transform,
             syn_use_colorjitter=args.syn_use_colorjitter,
+            syn_rotate_degree=args.syn_rotate_degree,
+            syn_colorjitter_intensity=args.syn_colorjitter_intensity,
             img_size=img_size,
             obj_size=obj_size,
             transform_prob=1.0,
@@ -925,7 +928,7 @@ def run(
             predictions_kept += pred_index_to_keep.sum()
             labels_removed += (~lbl_index_to_keep).sum()
             predictions_removed += (~pred_index_to_keep).sum()
-
+            
             # (correct, conf, pcls, tcls)
             stats.append(
                 (correct.cpu(), pred[:, 4].cpu(), pred[:, 5].cpu(), tcls)
@@ -948,7 +951,7 @@ def run(
             for class_index in labels[:, 0]:
                 if class_index in plot_class_examples:
                     class_name = names[int(class_index.item())]
-                    if len(shape_to_plot_data[class_name]) < 20:
+                    if len(shape_to_plot_data[class_name]) < 30:
                         fn = str(path).split("/")[-1]
                         plot_data = [
                             im[si : si + 1],
@@ -1187,7 +1190,7 @@ def run(
 
     if save_exp_metrics:
         try:
-            metrics_df = pd.read_csv("runs/results.csv")
+            metrics_df = pd.read_csv(f"{project}/results.csv")
         except FileNotFoundError:
             metrics_df = pd.DataFrame(columns=metrics_df_column_names)
             metrics_df = pd.DataFrame()
@@ -1222,7 +1225,7 @@ def run(
             pass
 
         metrics_df = metrics_df.append(current_exp_metrics, ignore_index=True)
-        metrics_df.to_csv("runs/results.csv", index=False)
+        metrics_df.to_csv(f"{project}/results.csv", index=False)
 
     # Print speeds
     t = tuple(x / seen * 1e3 for x in dt)  # speeds per image
@@ -1292,7 +1295,6 @@ def parse_opt():
     opt = eval_args_parser(False, root=ROOT)
     setup_yolo_test_args(opt, OTHER_SIGN_CLASS)
     opt.data = check_yaml(opt.data)  # check YAML
-
     opt.save_json |= opt.data.endswith("coco.yaml")
     opt.save_txt |= opt.save_hybrid
     print_args(FILE.stem, opt)
