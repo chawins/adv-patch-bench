@@ -7,11 +7,8 @@ from detectron2.data import DatasetCatalog, MetadataCatalog
 from detectron2.structures import BoxMode
 from hparams import (
     MIN_OBJ_AREA,
-    OTHER_SIGN_CLASS,
     PATH_MAPILLARY_ANNO,
-    PATH_MAPILLARY_BASE,
-    TS_COLOR_LABEL_LIST,
-    TS_NO_COLOR_LABEL_LIST,
+    LABEL_LIST,
 )
 from tqdm import tqdm
 
@@ -116,15 +113,16 @@ def get_mapillary_dict(
 
 
 def register_mapillary(
+    base_path: str = "~/data/",
     use_color: bool = False,
     ignore_other: bool = False,
     only_annotated: bool = True,
 ) -> Tuple[Any, ...]:
-    base_path = PATH_MAPILLARY_BASE
     dataset = "mapillary_color" if use_color else "mapillary_no_color"
-    bg_idx = OTHER_SIGN_CLASS[dataset]
+    class_names = LABEL_LIST[dataset]
+    bg_idx = len(class_names) - 1
 
-    thing_classes = TS_COLOR_LABEL_LIST if use_color else TS_NO_COLOR_LABEL_LIST
+    thing_classes = class_names
     if ignore_other:
         thing_classes = thing_classes[:-1]
 

@@ -4,7 +4,7 @@ import os
 import pickle
 import random
 from collections.abc import MutableMapping
-from typing import Optional
+from typing import Any, Dict, Optional
 
 import numpy as np
 import pandas as pd
@@ -12,33 +12,41 @@ import torch
 import yaml
 from detectron2.data import build_detection_test_loader
 from detectron2.engine import DefaultPredictor
-from detectron2.evaluation import inference_on_dataset
 
-from adv_patch_bench.attacks.detectron_attack_wrapper import (
-    DetectronAttackWrapper,
-)
-from adv_patch_bench.dataloaders import (
-    BenignMapper,
-    register_mapillary,
-    register_mtsd,
-)
+from adv_patch_bench.dataloaders import BenignMapper, dataloaders
+from adv_patch_bench.evaluators.detectron_evaluator import DetectronEvaluator
 from adv_patch_bench.utils.argparse import (
     eval_args_parser,
     setup_detectron_test_args,
 )
-from adv_patch_bench.utils.detectron import build_evaluator
-from hparams import (
-    DATASETS,
-    LABEL_LIST,
-    OTHER_SIGN_CLASS,
-    TS_NO_COLOR_LABEL_LIST,
-)
+from hparams import LABEL_LIST
 
 log = logging.getLogger(__name__)
 formatter = logging.Formatter("[%(levelname)s] %(asctime)s: %(message)s")
 
+_EVAL_PARAMS = [
+    "adv_patch_path",
+    "attack_type",
+    "conf_thres",
+    "config_file",
+    "dataset",
+    "debug",
+    "obj_class",
+    "padded_imgsz",
+    "patch_size_inch",
+    "reap_transform_mode",
+    "reap_use_relight",
+    "seed",
+    "syn_3d_dist",
+    "syn_colorjitter",
+    "syn_obj_size",
+    "syn_obj_width_px",
+    "syn_rotate",
+    "syn_scale",
+]
 
-def normalize_dict(d: MutableMapping, sep: str = ".") -> MutableMapping:
+
+def _normalize_dict(d: MutableMapping, sep: str = ".") -> MutableMapping:
     [flat_dict] = pd.json_normalize(d, sep=sep).to_dict(orient="records")
     flat_dict = {key: flat_dict[key] for key in sorted(flat_dict.keys())}
     return flat_dict
@@ -62,7 +70,7 @@ def _compute_metrics(
     iou_idx = int(iou_idx)
 
     # Find score threshold that maximizes F1 score
-    EPS = np.spacing(1)
+    eps = np.spacing(1)
     num_classes = len(scores_full)
     num_ious = len(scores_full[0])
 
@@ -82,9 +90,9 @@ def _compute_metrics(
                         np.array(scores_full[k][t][1]) >= s
                     )
 
-        rc = tp_full / (num_gts_per_class[None, :, None] + EPS)
-        pr = tp_full / (tp_full + fp_full + EPS)
-        f1 = 2 * pr * rc / (pr + rc + EPS)
+        rc = tp_full / (num_gts_per_class[None, :, None] + eps)
+        pr = tp_full / (tp_full + fp_full + eps)
+        f1 = 2 * pr * rc / (pr + rc + eps)
         assert np.all(f1 >= 0) and not np.any(np.isnan(f1))
 
         # Remove 'other' class from f1 and average over remaining classes
@@ -117,11 +125,11 @@ def _compute_metrics(
         tp = tp_full[iou_idx]
         fp = fp_full[iou_idx]
 
-    rc = tp / (num_gts_per_class + EPS)
-    pr = tp / (tp + fp + EPS)
+    rc = tp / (num_gts_per_class + eps)
+    pr = tp / (tp + fp + eps)
 
     # Compute combined metrics, ignoring class
-    recall_cmb = tp.sum() / (num_gts_per_class.sum() + EPS)
+    recall_cmb = tp.sum() / (num_gts_per_class.sum() + eps)
 
     print(f"[DEBUG] num_gts_per_class: {num_gts_per_class}")
     print(f"[DEBUG] tp: {tp}")
@@ -133,50 +141,61 @@ def _compute_metrics(
     return tp, fp, conf_thres
 
 
-def main(cfg, args):
+def _dump_results(
+    results: Dict[str, Any],
+    config_eval: Dict[str, Any],
+    config_attack: Dict[str, Any],
+) -> None:
+    """Dump result dict to pickle file.
 
-    # NOTE: distributed is set to False
-    dataset_name = cfg.DATASETS.TEST[0]
-    log.info(f"=> Creating a custom evaluator on {dataset_name}...")
-    evaluator = build_evaluator(cfg, dataset_name)
-    if args.debug:
-        log.info(f"=> Running debug mode...")
-        sampler = list(range(20))
-    else:
-        sampler = None
-    log.info(f"=> Building {dataset_name} dataloader...")
-    val_loader = build_detection_test_loader(
-        cfg,
-        dataset_name,
-        # batch_size=cfg.SOLVER.IMS_PER_BATCH,
-        batch_size=1,
-        num_workers=cfg.DATALOADER.NUM_WORKERS,
-        sampler=sampler,
+    Use hash of eval and attack configs for naming so only one result is saved
+    per setting.
+
+    Args:
+        results: Result dict.
+        config_eval: Evaluation config dict.
+        config_attack: Attack config dict.
+    """
+    result_dir = config_eval["result_dir"]
+    debug = config_eval["debug"]
+    if debug:
+        return
+    # Keep only eval params that matter (uniquely identifies evaluation setting)
+    cfg_eval = {}
+    for param in _EVAL_PARAMS:
+        cfg_eval[param] = config_eval[param]
+
+    # Flatten attack config
+    attack_name = config_attack["common"]["attack_name"]
+    cfg_attack = {**config_attack["common"], **config_attack[attack_name]}
+    cfg_attack = _normalize_dict(cfg_attack)
+
+    # Compute hash of both dicts to use as naming so we only keep one copy of
+    # result in the exact same setting.
+    config_eval_hash = abs(hash(json.dumps(cfg_eval, sort_keys=True)))
+    config_attack_hash = abs(hash(json.dumps(cfg_attack, sort_keys=True)))
+    result_path = os.path.join(
+        result_dir,
+        f"results_eval{config_eval_hash}_atk{config_attack_hash}.pkl",
     )
-    # val_iter = iter(val_loader)
-    # print(max([next(val_iter)[0]['image'].shape[0] for _ in range(5000)]))
-    # import pdb
-    # pdb.set_trace()
-    predictor = DefaultPredictor(cfg)
-    print(inference_on_dataset(predictor.model, val_loader, evaluator))
+    with open(result_path, "wb") as f:
+        pickle.dump(results, f)
 
 
-def main_attack(cfg, args):
+def main(cfg, config):
 
-    vis_dir = os.path.join(args.result_dir, "vis")
-    os.makedirs(vis_dir, exist_ok=True)
+    config_eval = config["eval"]
+    dataset = config_eval["dataset"]
+    attack_config_path = config_eval["attack_config_path"]
+    class_names = LABEL_LIST[dataset]
 
     # Load adversarial patch and config
-    args.adv_patch_path = os.path.join(args.save_dir, "adv_patch.pkl")
-    if os.path.isfile(args.attack_config_path):
-        with open(args.attack_config_path) as file:
-            attack_config = yaml.load(file, Loader=yaml.FullLoader)
-            # `input_size` should be used for background size in synthetic
-            # attack only
-            width = cfg.INPUT.MAX_SIZE_TEST
-            attack_config["input_size"] = (int(3 / 4 * width), width)
+    if os.path.isfile(attack_config_path):
+        log.info(f"Loading saved attack config from {attack_config_path}...")
+        with open(attack_config_path) as f:
+            config_attack = yaml.safe_load(f, Loader=yaml.FullLoader)
     else:
-        attack_config = None
+        config_attack = config["attack"]
 
     # Build model
     model = DefaultPredictor(cfg).model
@@ -190,57 +209,40 @@ def main_attack(cfg, args):
         num_workers=cfg.DATALOADER.NUM_WORKERS,
     )
 
-    attack = DetectronAttackWrapper(
+    attack = DetectronEvaluator(
         cfg,
-        args,
-        attack_config,
+        config_eval,
+        config_attack,
         model,
         val_loader,
-        class_names=LABEL_LIST[args.dataset],
+        class_names=class_names,
     )
     log.info("=> Running attack...")
-    _, metrics = attack.run(vis_save_dir=vis_dir, vis_conf_thresh=0.5)
+    _, metrics = attack.run()
 
-    test_cfg = vars(args)
-    test_cfg = normalize_dict(test_cfg)
-    test_cfg_hash = abs(hash(json.dumps(test_cfg, sort_keys=True)))
-
-    if attack_config is None:
-        atk_cfg_hash = None
-        results = {**metrics, **test_cfg}
-    else:
-        attack_config = normalize_dict(attack_config)
-        atk_cfg_hash = abs(hash(json.dumps(attack_config, sort_keys=True)))
-        results = {**metrics, **test_cfg, **attack_config}
-
-    result_path = os.path.join(
-        args.result_dir, f"results_test{test_cfg_hash}_atk{atk_cfg_hash}.pkl"
-    )
-    if not args.debug:
-        with open(result_path, "wb") as f:
-            pickle.dump(results, f)
+    eval_cfg = _normalize_dict(config_eval)
+    results = {**metrics, **eval_cfg, **config_attack}
+    _dump_results(results, config_eval, config_attack)
 
     # Logging results
     metrics = results["bbox"]
-    if args.synthetic:
+    if config_eval["synthetic"]:
         log.info(
             f'[Synthetic] Total: {metrics["syn_total"]:4d}\n'
             f'            TP: {metrics["syn_tp"]:4d} ({metrics["syn_tpr"]:.4f})\n'
             f'            FN: {metrics["syn_fn"]:4d} ({metrics["syn_fnr"]:.4f})\n'
-            # f'            AP: {metrics["syn_ap"]:4f}'
-            # f'            AP@0.5: {metrics["syn_ap50"]:4f}'
         )
     else:
-
+        conf_thres = config_eval["conf_thres"]
         num_gts_per_class = metrics["num_gts_per_class"]
         tp, fp, conf_thres = _compute_metrics(
             metrics["scores_full"],
             num_gts_per_class,
-            OTHER_SIGN_CLASS[args.dataset],
-            args.conf_thres,
-            args.dt_iou_thres,
+            config_eval["other_sign_class"],
+            conf_thres,
+            config_eval["iou_thres"],
         )
-        if args.conf_thres is None:
+        if config_eval["conf_thres"] is None:
             # Update with new conf_thres
             metrics["conf_thres"] = conf_thres
 
@@ -255,58 +257,37 @@ def main_attack(cfg, args):
         total = 0
         for i, (t, f, n) in enumerate(zip(tp, fp, num_gts_per_class)):
             log.info(f"Class {i:2d}: {int(t):4d} {int(f):4d} {int(n):4d}")
-            metrics[f"TP-{TS_NO_COLOR_LABEL_LIST[i]}"] = t
-            metrics[f"FP-{TS_NO_COLOR_LABEL_LIST[i]}"] = f
+            metrics[f"TP-{class_names[i]}"] = t
+            metrics[f"FP-{class_names[i]}"] = f
             tp_all += t
             fp_all += f
             total += n
         metrics[f"TPR-all"] = tp_all / total
         metrics[f"FPR-all"] = fp_all / total
         log.info(f'Total num patches: {metrics["total_num_patches"]}')
-
-        if not args.debug:
-            with open(result_path, "wb") as f:
-                pickle.dump(results, f)
+        _dump_results(results, config_eval, config_attack)
 
 
 if __name__ == "__main__":
-    args = eval_args_parser(True)
-    # Verify some args
-    cfg = setup_detectron_test_args(args, OTHER_SIGN_CLASS)
-    assert args.dataset in DATASETS
+    config = eval_args_parser(True)
+    cfg = setup_detectron_test_args(config)
+    config_eval = config["eval"]
+    seed = config_eval["seed"]
 
     # Set up logger
-    log.setLevel(logging.DEBUG if args.debug else logging.INFO)
+    log.setLevel(logging.DEBUG if config_eval["debug"] else logging.INFO)
     file_handler = logging.FileHandler(
-        os.path.join(args.result_dir, "results.log"), mode="a"
+        os.path.join(config_eval["result_dir"], "results.log"), mode="a"
     )
     file_handler.setFormatter(formatter)
     log.addHandler(file_handler)
+    log.info(config)
 
-    log.info(args)
-    args.img_size = args.padded_imgsz
-    torch.random.manual_seed(args.seed)
-    np.random.seed(args.seed)
-    random.seed(args.seed)
+    # Set random seeds
+    torch.random.manual_seed(seed)
+    np.random.seed(seed)
+    random.seed(seed)
 
-    # Register dataset
-    if "mtsd" in args.dataset:
-        assert (
-            "mtsd" in cfg.DATASETS.TEST[0]
-        ), "MTSD is specified as dataset in args but not config file"
-        dataset_params = register_mtsd(
-            use_mtsd_original_labels="orig" in args.dataset,
-            use_color=args.use_color,
-            ignore_other=args.data_no_other,
-        )
-    else:
-        assert (
-            "mapillary" in cfg.DATASETS.TEST[0]
-        ), "Mapillary is specified as dataset in args but not config file"
-        dataset_params = register_mapillary(
-            use_color=args.use_color,
-            ignore_other=args.data_no_other,
-            only_annotated=args.annotated_signs_only,
-        )
+    dataloaders.setup_dataloader(config_eval, cfg)
 
-    main_attack(cfg, args)
+    main(cfg, config)

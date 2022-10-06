@@ -112,7 +112,9 @@ function syn_attack_all {
     # syn_attack 0
 }
 
-syn_attack_all
+# syn_attack_all
+
+CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py -e configs/config_reap_1.yaml
 
 exit 0
 

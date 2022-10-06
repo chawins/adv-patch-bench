@@ -1,4 +1,5 @@
 from os.path import expanduser
+import numpy as np
 
 # Set paths
 PATH_MAPILLARY_ANNO = {
@@ -6,17 +7,26 @@ PATH_MAPILLARY_ANNO = {
     "val": "./mapillary_vistas_validation_final_merged.csv",
     "combined": "./mapillary_vistas_final_merged.csv",
 }
-PATH_MTSD_BASE = expanduser("~/data/mtsd_v2_fully_annotated/")
-PATH_MAPILLARY_BASE = expanduser("~/data/mapillary_vistas/")
+
+DEFAULT_DATA_PATHS = {
+    "mtsd": "~/data/mtsd_v2_fully_annotated/",
+    "mapillary": "~/data/mapillary_vistas/",
+}
+DEFAULT_DATA_PATHS["reap"] = DEFAULT_DATA_PATHS["mapillary"]
+DEFAULT_DATA_PATHS["synthetic"] = DEFAULT_DATA_PATHS["mapillary"]
+
 PATH_APB_ANNO = expanduser("./traffic_sign_dimension_v6.csv")
 PATH_SIMILAR_FILES = "./similar_files_df.csv"
-PATH_SYN_OBJ = "./attack_assets/"
-PATH_DEBUG_ADV_PATCH = f"{PATH_SYN_OBJ}/debug.png"
+DEFAULT_PATH_SYN_OBJ = "./attack_assets/"
+DEFAULT_PATH_BG_FILE_NAMES = "./bg_txt_files/"
+PATH_DEBUG_ADV_PATCH = f"{DEFAULT_PATH_SYN_OBJ}/debug.png"
 
 # TODO: move to args in the future
-SAVE_DIR_DETECTRON = "./detectron_output/"
 SAVE_DIR_YOLO = "./runs/val/"
-PATH_BG_TXT_FILE = "./bg_txt_files/"
+
+DEFAULT_IOU_THRESHOLDS = np.linspace(
+    0.5, 0.95, int(np.round((0.95 - 0.5) / 0.05)) + 1, endpoint=True
+)
 
 MTSD_VAL_LABEL_COUNTS_DICT = {
     "circle-750.0": 2999,
@@ -113,6 +123,8 @@ LABEL_LIST = {
     "mtsd_no_color": TS_NO_COLOR_LABEL_LIST,
     "mapillary_no_color": TS_NO_COLOR_LABEL_LIST,
 }
+LABEL_LIST["reap"] = LABEL_LIST["mapillary_no_color"]
+LABEL_LIST["synthetic"] = LABEL_LIST["mapillary_no_color"]
 
 # Get list of shape (no size, no color)
 TS_SHAPE_LIST = list(set([l.split("-")[0] for l in TS_NO_COLOR_LABEL_LIST]))
@@ -127,13 +139,13 @@ DATASETS = (
     "mapillary_no_color",
     "mapillary_color",
 )
-OTHER_SIGN_CLASS = {
-    "mtsd_orig": 89,
-    "mtsd_no_color": len(TS_NO_COLOR_LABEL_LIST) - 1,
-    "mtsd_color": len(TS_COLOR_LABEL_LIST) - 1,
-    "mapillary_no_color": len(TS_NO_COLOR_LABEL_LIST) - 1,
-    "mapillary_color": len(TS_COLOR_LABEL_LIST) - 1,
-}
+# OTHER_SIGN_CLASS = {
+#     "mtsd_orig": 89,
+#     "mtsd_no_color": len(TS_NO_COLOR_LABEL_LIST) - 1,
+#     "mtsd_color": len(TS_COLOR_LABEL_LIST) - 1,
+#     "mapillary_no_color": len(TS_NO_COLOR_LABEL_LIST) - 1,
+#     "mapillary_color": len(TS_COLOR_LABEL_LIST) - 1,
+# }
 
 NUM_CLASSES = {
     "mtsd_orig": 401,
@@ -142,6 +154,8 @@ NUM_CLASSES = {
     "mapillary_no_color": len(TS_NO_COLOR_LABEL_LIST),
     "mapillary_color": len(TS_COLOR_LABEL_LIST),
 }
+NUM_CLASSES["reap"] = NUM_CLASSES["mapillary_no_color"]
+NUM_CLASSES["synthetic"] = NUM_CLASSES["mapillary_no_color"]
 
 HW_RATIO_DICT = {
     "circle-750.0": 1,
@@ -174,7 +188,7 @@ ANNO_LABEL_COUNTS_DICT = {
 }
 ANNO_NOBG_LABEL_COUNTS_DICT = {
     "circle-750.0": 7902,
-    "triangle-900.0": 578, 
+    "triangle-900.0": 578,
     "triangle_inverted-1220.0": 764,
     "diamond-600.0": 263,
     "diamond-915.0": 1376,
@@ -187,7 +201,7 @@ ANNO_NOBG_LABEL_COUNTS_DICT = {
 }
 ANNO_NOBG_LABEL_COUNTS_DICT_200 = {
     "circle-750.0": 7669,
-    "triangle-900.0": 405, 
+    "triangle-900.0": 405,
     "triangle_inverted-1220.0": 584,
     "diamond-600.0": 0,
     "diamond-915.0": 1201,

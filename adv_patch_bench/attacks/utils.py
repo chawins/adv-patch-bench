@@ -27,12 +27,10 @@ def prep_synthetic_eval(
     obj_size: Tuple[int, int] = (128, 128),
     transform_prob: float = 1.0,
     interp: str = "bilinear",
-    syn_rotate_degree: float = 15,
-    syn_use_scale: bool = True,
-    syn_3d_transform: bool = False,
-    syn_3d_distortion: float = 0.25,
-    syn_use_colorjitter: bool = False,
-    syn_colorjitter_intensity: float = 0.3,
+    syn_rotate: Optional[float] = None,
+    syn_scale: Optional[float] = None,
+    syn_3d_dist: Optional[float] = None,
+    syn_colorjitter: Optional[float] = None,
     device: str = "cuda",
 ):
     if not (isinstance(obj_size, tuple) or isinstance(obj_size, int)):
@@ -45,21 +43,18 @@ def prep_synthetic_eval(
     # syn_sign_class = len(label_names)
     # label_names[syn_sign_class] = 'synthetic'
 
-    # TODO: remove syn_3d_transform
-    if syn_3d_transform:
+    if syn_3d_dist is not None and syn_3d_dist > 0:
         transform_params = {
             "p": transform_prob,
-            "distortion_scale": syn_3d_distortion,
+            "distortion_scale": syn_3d_dist,
         }
         tf_func = K.RandomPerspective
     else:
-        # TODO: This depends on our experiment and maybe we want to make it easily
-        # adjsutable.
         transform_params = {
             "p": transform_prob,
-            "degrees": syn_rotate_degree,
+            "degrees": syn_rotate,
             "translate": (0.4, 0.4),
-            "scale": (0.5, 2) if syn_use_scale else None,
+            "scale": None if syn_scale is None else (1 / syn_scale, syn_scale),
         }
         tf_func = K.RandomAffine
 
@@ -70,11 +65,11 @@ def prep_synthetic_eval(
     )
     mask_transforms = tf_func(resample=Resample.NEAREST, **transform_params)
 
-    if syn_use_colorjitter:
+    if syn_colorjitter is not None:
         jitter_transform = K.ColorJitter(
-            brightness=syn_colorjitter_intensity,
-            contrast=syn_colorjitter_intensity,
-            saturation=syn_colorjitter_intensity,
+            brightness=syn_colorjitter,
+            contrast=syn_colorjitter,
+            saturation=syn_colorjitter,
             hue=0.05,  # Hue can't be change much
             p=transform_prob,
         )

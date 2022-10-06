@@ -8,14 +8,11 @@ from detectron2.data import DatasetCatalog, MetadataCatalog
 from detectron2.structures import BoxMode
 from hparams import (
     MIN_OBJ_AREA,
-    OTHER_SIGN_CLASS,
     PATH_APB_ANNO,
-    PATH_MTSD_BASE,
     PATH_SIMILAR_FILES,
     TS_COLOR_DICT,
-    TS_COLOR_LABEL_LIST,
     TS_COLOR_OFFSET_DICT,
-    TS_NO_COLOR_LABEL_LIST,
+    LABEL_LIST,
 )
 from tqdm import tqdm
 
@@ -96,11 +93,12 @@ def get_mtsd_dict(
 
 
 def register_mtsd(
+    base_path: str = "~/data/",
     use_mtsd_original_labels: bool = False,
     use_color: bool = False,
     ignore_other: bool = False,
 ) -> Tuple[Any, ...]:
-    path = PATH_MTSD_BASE
+    path = base_path
     csv_path = PATH_APB_ANNO
     similarity_df_csv_path = PATH_SIMILAR_FILES
 
@@ -112,27 +110,25 @@ def register_mtsd(
         dataset = "mtsd_original"
     else:
         if use_color:
-            label_dict = TS_COLOR_OFFSET_DICT
             dataset = "mtsd_color"
         else:
-            label_dict = TS_COLOR_DICT
             dataset = "mtsd_no_color"
-        selected_labels = list(label_dict.keys())
+        class_names = LABEL_LIST[dataset]
 
     mtsd_label_to_class_index = {}
     for idx, row in data.iterrows():
         if use_mtsd_original_labels:
             mtsd_label_to_class_index[row["sign"]] = idx
-        elif row["target"] in label_dict:
+        elif any([row["target"] in c for c in class_names]):
             if use_color:
                 cat_idx = TS_COLOR_OFFSET_DICT[row["target"]]
                 color_list = TS_COLOR_DICT[row["target"]]
                 if len(color_list) > 0:
                     cat_idx += color_list.index(row["color"])
             else:
-                cat_idx = selected_labels.index(row["target"])
+                cat_idx = class_names.index(row["target"])
             mtsd_label_to_class_index[row["sign"]] = cat_idx
-    bg_idx = OTHER_SIGN_CLASS[dataset]
+    bg_idx = len(class_names) - 1
 
     # Get all JSON files
     json_files = [
@@ -158,9 +154,7 @@ def register_mtsd(
         if use_mtsd_original_labels:
             thing_classes = data["sign"].tolist()
         else:
-            thing_classes = (
-                TS_COLOR_LABEL_LIST if use_color else TS_NO_COLOR_LABEL_LIST
-            )
+            thing_classes = class_names
             if ignore_other:
                 thing_classes = thing_classes[:-1]
         MetadataCatalog.get(f"mtsd_{split}").set(thing_classes=thing_classes)

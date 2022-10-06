@@ -1,3 +1,5 @@
+"""RP2 attack for Detectron2 models."""
+
 from copy import deepcopy
 
 import torch
@@ -6,16 +8,14 @@ from adv_patch_bench.attacks.detectron_utils import get_targets
 from adv_patch_bench.utils.image import mask_to_box
 from detectron2.structures import Boxes, Instances
 
-from .rp2_base import RP2AttackModule
+from adv_patch_bench.attacks.rp2 import rp2_base
 
 EPS = 1e-6
 
 
-class RP2AttackDetectron(RP2AttackModule):
-    def __init__(self, attack_config, core_model, loss_fn, norm, eps, **kwargs):
-        super().__init__(
-            attack_config, core_model, loss_fn, norm, eps, **kwargs
-        )
+class RP2AttackDetectron(rp2_base.RP2AttackModule):
+    def __init__(self, attack_config, core_model, **kwargs):
+        super().__init__(attack_config, core_model, **kwargs)
 
         detectron_config = attack_config["detectron"]
         self.detectron_obj_const = detectron_config["obj_loss_const"]

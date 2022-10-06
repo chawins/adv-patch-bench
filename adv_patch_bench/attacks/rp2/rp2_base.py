@@ -1,11 +1,11 @@
 import time
 from abc import abstractmethod
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import torch
 import torch.optim as optim
-from adv_patch_bench.attacks.base_detector import DetectorAttackModule
+from adv_patch_bench.attacks import base_attack
 from adv_patch_bench.transforms import apply_transform, get_transform
 from adv_patch_bench.utils.image import (
     coerce_rank,
@@ -18,39 +18,27 @@ from yolov5.utils.general import non_max_suppression
 from yolov5.utils.plots import output_to_target, plot_images
 
 
-class RP2AttackModule(DetectorAttackModule):
+class RP2AttackModule(base_attack.DetectorAttackModule):
     def __init__(
         self,
-        attack_config,
-        core_model,
-        loss_fn,
-        norm,
-        eps,
-        rescaling=False,
-        verbose=False,
-        interp=None,
+        attack_config: Dict[str, Any],
+        core_model: torch.nn.Module,
         **kwargs,
     ):
-        super(RP2AttackModule, self).__init__(
-            attack_config, core_model, loss_fn, norm, eps, **kwargs
-        )
-        self.input_size = attack_config["input_size"]
-
-        rp2_config = attack_config["rp2"]
-        self.num_steps = rp2_config["num_steps"]
-        self.step_size = rp2_config["step_size"]
-        self.optimizer = rp2_config["optimizer"]
-        self.use_lr_schedule = rp2_config["use_lr_schedule"]
-        self.num_eot = rp2_config["num_eot"]
-        self.lmbda = rp2_config["lambda"]
-        self.min_conf = rp2_config["min_conf"]
-        self.patch_dim = rp2_config.get("patch_dim", None)
-        self.attack_mode = rp2_config["attack_mode"].split("-")
-        self.transform_mode = rp2_config["transform_mode"]
-        self.use_relight = rp2_config["use_patch_relight"]
-        self.interp = interp
+        super().__init__(attack_config, core_model, **kwargs)
+        self.num_steps = attack_config["num_steps"]
+        self.step_size = attack_config["step_size"]
+        self.optimizer = attack_config["optimizer"]
+        self.use_lr_schedule = attack_config["use_lr_schedule"]
+        self.num_eot = attack_config["num_eot"]
+        self.lmbda = attack_config["lambda"]
+        self.min_conf = attack_config["min_conf"]
+        self.patch_dim = attack_config.get("patch_dim", None)
+        self.attack_mode = attack_config["attack_mode"].split("-")
+        self.transform_mode = attack_config["transform_mode"]
+        self.use_relight = attack_config["use_patch_relight"]
+        self.interp = attack_config["interp"]
         self.num_restarts = 1
-        self.verbose = verbose
         self.is_training = None
         self.ema_const = 0.9
 
@@ -67,16 +55,14 @@ class RP2AttackModule(DetectorAttackModule):
             # No need to relight further
             self.use_relight = False
 
-        # TODO: We probably don't need this now
-        # self.rescaling = rescaling
-        self.rescaling = False
-
         # Define EoT augmentation for attacking synthetic signs
-        p_geo = float(rp2_config["augment_prob_geometric"])
-        rotate_degrees = float(rp2_config.get("augment_rotate_degree", 15))
-        scale = float(rp2_config.get("augment_scale", 0))
-        dist_3d = rp2_config.get("augment_3d_distortion", None)
+        p_geo = float(attack_config["aug_prob_geo"])
+        rotate_degrees = float(attack_config.get("aug_rotate", 15))
+        scale = attack_config.get("aug_scale", 1)
+        scale = 1.0 if scale is None else scale
+        dist_3d = attack_config.get("aug_3d_dist", None)
         bg_size = self.input_size
+        # Transform for background alone; only used with synthetic data
         self.bg_transforms = K.RandomResizedCrop(
             bg_size, scale=(0.8, 1), p=p_geo, resample=self.interp
         )
@@ -86,7 +72,7 @@ class RP2AttackModule(DetectorAttackModule):
                 "p": p_geo,
                 "degrees": rotate_degrees,
                 "translate": (0.4, 0.4),
-                "scale": (1 - scale, 1 + scale) if scale > 0 else None,
+                "scale": (1 / scale, scale) if scale > 1 else None,
             }
         else:
             tf_func = K.RandomPerspective
@@ -100,9 +86,10 @@ class RP2AttackModule(DetectorAttackModule):
         self.mask_transforms = tf_func(**tf_params, resample=Resample.NEAREST)
 
         # Color jitter and lighting transform
-        p_light = float(rp2_config["augment_prob_relight"])
+        # TODO: can we apply colorjitter to REAP?
+        p_light = float(attack_config["aug_prob_colorjitter"])
         intensity_light = float(
-            rp2_config.get("augment_intensity_relight", 0.3)
+            attack_config.get("aug_colorjitter", 0.3)
         )
         self.jitter_transform = K.ColorJitter(
             brightness=intensity_light, contrast=intensity_light, p=p_light
@@ -113,13 +100,18 @@ class RP2AttackModule(DetectorAttackModule):
         self.real_transform = {
             "tf_patch": K.RandomAffine(
                 degrees=rotate_degrees,
-                translate=(0.1, 0.1),  # Translation here is on patch only so it has to be small
-                scale=(1 - scale, 1 + scale) if scale > 0 else None,
+                translate=(
+                    0.1,
+                    0.1,
+                ),  # Translation here is on patch only so it has to be small
+                scale=(1 / scale, scale) if scale > 1 else None,
                 p=p_geo,
                 resample=self.interp,
             )
         }
         # Background should move very little because gt annotation is fixed
+        # TODO(features): Allow whole image to transform. This would require
+        # modifying all annotations accordingly.
         # self.real_transform['tf_bg'] = self.bg_transforms
 
     @abstractmethod
@@ -355,9 +347,7 @@ class RP2AttackModule(DetectorAttackModule):
             tf_data.append(data_i)
 
         all_bg_idx = np.arange(len(tf_data_temp))
-        backgrounds = torch.cat(
-            [obj[0].unsqueeze(0) for obj in objs], dim=0
-        )
+        backgrounds = torch.cat([obj[0].unsqueeze(0) for obj in objs], dim=0)
 
         for _ in range(self.num_restarts):
             # Initialize adversarial perturbation

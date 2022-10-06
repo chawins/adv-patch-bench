@@ -22,7 +22,7 @@ from detectron2.engine import DefaultPredictor
 from PIL import Image
 from tqdm import tqdm
 
-from adv_patch_bench.attacks.detectron_attack_wrapper import (
+from adv_patch_bench.evaluators.detectron_evaluator import (
     DetectronAttackWrapper,
 )
 from adv_patch_bench.attacks.rp2.rp2_detectron import RP2AttackDetectron
@@ -363,7 +363,6 @@ def main(
         filter_file_names = None
 
     # Build dataloader
-    # dataloader = build_detection_test_loader(
     dataloader = custom_build.build_detection_test_loader(
         cfg,
         cfg.DATASETS.TEST[0],
@@ -443,6 +442,7 @@ if __name__ == "__main__":
             only_annotated=args.annotated_signs_only,
         )
         data_list = get_mapillary_dict(split, *dataset_params)
+    # TODO: cleaner way of getting num_samples?
     num_samples = len(data_list)
 
     print(args)
