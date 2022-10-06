@@ -24,10 +24,6 @@ PATH_DEBUG_ADV_PATCH = f"{DEFAULT_PATH_SYN_OBJ}/debug.png"
 # TODO: move to args in the future
 SAVE_DIR_YOLO = "./runs/val/"
 
-DEFAULT_IOU_THRESHOLDS = np.linspace(
-    0.5, 0.95, int(np.round((0.95 - 0.5) / 0.05)) + 1, endpoint=True
-)
-
 MTSD_VAL_LABEL_COUNTS_DICT = {
     "circle-750.0": 2999,
     "triangle-900.0": 711,

@@ -28,8 +28,11 @@ from detectron2.config import CfgNode
 from detectron2.data import MetadataCatalog
 from detectron2.structures.boxes import pairwise_iou
 from detectron2.utils.visualizer import Visualizer
-from hparams import DEFAULT_IOU_THRESHOLDS
 from tqdm import tqdm
+
+_DEFAULT_IOU_THRESHOLDS = np.linspace(
+    0.5, 0.95, int(np.round((0.95 - 0.5) / 0.05)) + 1, endpoint=True
+)
 
 
 def _pad_or_crop_height(
@@ -79,6 +82,7 @@ class DetectronEvaluator:
         dataloader: Any,
         class_names: List[str],
         iou_thres: float = 0.5,
+        all_iou_thres: np.ndarray = _DEFAULT_IOU_THRESHOLDS,
     ) -> None:
         """Evaluator wrapper for detectron model.
 
@@ -89,6 +93,7 @@ class DetectronEvaluator:
             model: Target model.
             dataloader: Dataset to run attack on.
             class_names: List of class names in string.
+            all_iou_thres: Array of IoU thresholds for computing score.
         """
         # cfg can be modified by model so we copy it first
         self.cfg = cfg.clone()
@@ -158,7 +163,6 @@ class DetectronEvaluator:
         )
 
         # Set up list of IoU thresholds to consider
-        all_iou_thres = DEFAULT_IOU_THRESHOLDS
         self.iou_thres_idx = int(np.where(all_iou_thres == iou_thres)[0])
         self.all_iou_thres = torch.from_numpy(all_iou_thres).to(self.device)
 

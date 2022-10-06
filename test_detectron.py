@@ -1,10 +1,11 @@
+import hashlib
 import json
 import logging
 import os
 import pickle
 import random
 from collections.abc import MutableMapping
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -46,6 +47,12 @@ _EVAL_PARAMS = [
 ]
 
 
+def _hash_dict(config_dict: Dict[str, Any]) -> str:
+    dict_str = json.dumps(config_dict, sort_keys=True).encode("utf-8")
+    # Take first 8 characters of the hash since we prefer short file name
+    return hashlib.sha512(dict_str).hexdigest()
+
+
 def _normalize_dict(d: MutableMapping, sep: str = ".") -> MutableMapping:
     [flat_dict] = pd.json_normalize(d, sep=sep).to_dict(orient="records")
     flat_dict = {key: flat_dict[key] for key in sorted(flat_dict.keys())}
@@ -58,7 +65,7 @@ def _compute_metrics(
     other_sign_class: int,
     conf_thres: Optional[float] = None,
     iou_thres: float = 0.5,
-) -> float:
+) -> Tuple[float, float, float]:
 
     all_iou_thres = np.linspace(
         0.5, 0.95, int(np.round((0.95 - 0.5) / 0.05)) + 1, endpoint=True
@@ -172,8 +179,8 @@ def _dump_results(
 
     # Compute hash of both dicts to use as naming so we only keep one copy of
     # result in the exact same setting.
-    config_eval_hash = abs(hash(json.dumps(cfg_eval, sort_keys=True)))
-    config_attack_hash = abs(hash(json.dumps(cfg_attack, sort_keys=True)))
+    config_eval_hash = _hash_dict(cfg_eval)
+    config_attack_hash = _hash_dict(cfg_attack)
     result_path = os.path.join(
         result_dir,
         f"results_eval{config_eval_hash}_atk{config_attack_hash}.pkl",
