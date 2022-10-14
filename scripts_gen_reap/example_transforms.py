@@ -31,28 +31,49 @@ from adv_patch_bench.transforms import (
     get_shape_from_vertices,
     relight_range,
 )
-from adv_patch_bench.transforms.transforms import get_sign_canonical
+from adv_patch_bench.transforms.util import get_sign_canonical
 from adv_patch_bench.utils import (
     draw_from_contours,
     img_numpy_to_torch,
     pad_image,
 )
 
-from .hparams import TS_NO_COLOR_LABEL_LIST, TS_SHAPE_LIST
-
-DATASET = "mapillaryvistas"
+DATASET = "mapillary_vistas"
 # DATASET = 'bdd100k'
 
-if DATASET == "mapillaryvistas":
+if DATASET == "mapillary_vistas":
     TRAFFIC_SIGN_LABEL = 95
 elif DATASET == "bdd100k":
     TRAFFIC_SIGN_LABEL = "traffic sign"
 
-CLASS_LIST = TS_NO_COLOR_LABEL_LIST
-SHAPE_LIST = TS_SHAPE_LIST
+CLASS_LIST = [
+    "circle-750.0",
+    "triangle-900.0",
+    "triangle_inverted-1220.0",
+    "diamond-600.0",
+    "diamond-915.0",
+    "square-600.0",
+    "rect-458.0-610.0",
+    "rect-762.0-915.0",
+    "rect-915.0-1220.0",
+    "pentagon-915.0",
+    "octagon-915.0",
+    "other-0.0-0.0",
+]
+
+SHAPE_LIST = [
+    "circle",
+    "triangle",
+    "triangle_inverted",
+    "diamond",
+    "square",
+    "rect",
+    "pentagon",
+    "octagon",
+    "other",
+]
 
 # PLOT_FOLDER = 'mapillaryvistas_plots_model_3_updated_optimized'
-split = "validation"
 PLOT_FOLDER = "delete_mapillaryvistas_plots_model_3_updated_optimized"
 NUM_IMGS_PER_PLOT = 100
 COLUMN_NAMES = "abcdefghijklmnopqrstuvwxyz"
@@ -129,6 +150,7 @@ def get_args_parser():
     parser.add_argument(
         "--resume", default="", type=str, help="path to latest checkpoint"
     )
+    parser.add_argument("--split", default="training", type=str)
     return parser
 
 
@@ -174,16 +196,12 @@ def compute_example_transform(
         / bool_mask.sum()
     )
 
-    # shape = get_shape_from_vertices(vertices)
-
-    shape = predicted_shape
-    print("shape", shape)
-    # tgt = get_box_vertices(vertices, shape).astype(np.int64)
-    # traffic_sign = draw_vertices(traffic_sign, tgt, color=[0, 0, 255])
-    group = 1
+    shape = get_shape_from_vertices(vertices)
+    tgt = get_box_vertices(vertices, shape).astype(np.int64)
+    traffic_sign = draw_vertices(traffic_sign, tgt, color=[0, 0, 255])
 
     # Determine polygon shape from vertices
-    # shape = get_shape_from_vertices(vertices)
+    shape = get_shape_from_vertices(vertices)
 
     if predicted_shape == "other":
         group = 3
@@ -207,94 +225,105 @@ def compute_example_transform(
             group = 2
 
     if shape != "other":
-        # tgt = get_box_vertices(vertices, shape).astype(np.int64)
+        print(shape)
+        tgt = get_box_vertices(vertices, shape).astype(np.int64)
         # Filter some vertices that might be out of bound
-        # if (tgt < 0).any() or (tgt >= size).any():
-        #     # TODO
-        #     # raise ValueError('Out-of-bound vertices')
-        #     pad_size = int(max((tgt - size + 1).max(), (- tgt).max()))
-        #     # Pad traffic_sign, bool_mask, tgt, size
-        #     traffic_sign = pad_image(traffic_sign, pad_size=pad_size)
-        #     bool_mask = pad_image(bool_mask, pad_size=pad_size)
-        #     tgt += pad_size
-        #     size = traffic_sign.size(-1)
-        # group = 2
-        # results.append([traffic_sign, shape, predicted_shape, predicted_class, 4])
+        if (tgt < 0).any() or (tgt >= size).any():
+            # TODO
+            # raise ValueError('Out-of-bound vertices')
+            pad_size = int(max((tgt - size + 1).max(), (-tgt).max()))
+            # Pad traffic_sign, bool_mask, tgt, size
+            traffic_sign = pad_image(traffic_sign, pad_size=pad_size)
+            bool_mask = pad_image(bool_mask, pad_size=pad_size)
+            tgt += pad_size
+            size = traffic_sign.size(-1)
+            # group = 2
+            # results.append([traffic_sign, shape, predicted_shape, predicted_class, 4])
 
         # If shape is not other, draw vertices
-        # traffic_sign = draw_vertices(traffic_sign, tgt)
+        traffic_sign = draw_vertices(traffic_sign, tgt)
 
         # Group 1: draw both vertices and patch
         if group == 1:
+            sign_canonical, sign_mask, src = get_sign_canonical(
+                predicted_class, patch_size_in_pixel, patch_size_in_mm
+            )
 
-            # torchvision.utils.save_image(traffic_sign, f'tmp/{random.randint()}.png')
-            bool_mask = (mask == 255).astype(np.uint8)
             old_patch = torch.masked_select(
                 traffic_sign, torch.from_numpy(bool_mask).bool()
             )
             alpha, beta = relight_range(old_patch.numpy().reshape(-1, 1))
-        return alpha, beta
-    else:
-        qqq
 
-    #         # TODO: run attack, optimize patch location, etc.
-    #         new_demo_patch = demo_patch.clone()
-    #         new_demo_patch.clamp_(0, 1).mul_(alpha).add_(beta).clamp_(0, 1)
-    #         sign_size_in_pixel = sign_canonical.size(-1)
-    #         begin = (sign_size_in_pixel - patch_size_in_pixel) // 2
-    #         end = begin + patch_size_in_pixel
-    #         sign_canonical[:-1, begin:end, begin:end] = new_demo_patch
-    #         sign_canonical[-1, begin:end, begin:end] = 1
-    #         # Crop patch that is not on the sign
-    #         sign_canonical *= sign_mask
-    #         patch_mask = torch.zeros((1, sign_size_in_pixel, sign_size_in_pixel))
-    #         patch_mask[:, begin:end, begin:end] = 1
+            # TODO: run attack, optimize patch location, etc.
+            new_demo_patch = demo_patch.clone()
+            new_demo_patch.clamp_(0, 1).mul_(alpha).add_(beta).clamp_(0, 1)
+            sign_size_in_pixel = sign_canonical.size(-1)
+            begin = (sign_size_in_pixel - patch_size_in_pixel) // 2
+            end = begin + patch_size_in_pixel
+            sign_canonical[:-1, begin:end, begin:end] = new_demo_patch
+            sign_canonical[-1, begin:end, begin:end] = 1
+            # Crop patch that is not on the sign
+            sign_canonical *= sign_mask
+            patch_mask = torch.zeros(
+                (1, sign_size_in_pixel, sign_size_in_pixel)
+            )
+            patch_mask[:, begin:end, begin:end] = 1
 
-    #         # Compute perspective transform
-    #         src = np.array(src).astype(np.float32)
-    #         tgt = tgt.astype(np.float32)
+            # Compute perspective transform
+            src = np.array(src).astype(np.float32)
+            tgt = tgt.astype(np.float32)
 
-    #         if len(src) == 3:
-    #             print(len(src))
-    #             print(len(tgt))
-    #             M = torch.from_numpy(cv.getAffineTransform(src, tgt)).unsqueeze(0).float()
-    #             transform_func = warp_affine
-    #         else:
-    #             src = torch.from_numpy(src).unsqueeze(0)
-    #             tgt = torch.from_numpy(tgt).unsqueeze(0)
-    #             M = get_perspective_transform(src, tgt)
+            if len(src) == 3:
+                print(len(src))
+                print(len(tgt))
+                print(predicted_class)
+                M = (
+                    torch.from_numpy(cv.getAffineTransform(src, tgt))
+                    .unsqueeze(0)
+                    .float()
+                )
+                transform_func = warp_affine
+            else:
+                src = torch.from_numpy(src).unsqueeze(0)
+                tgt = torch.from_numpy(tgt).unsqueeze(0)
+                M = get_perspective_transform(src, tgt)
 
-    #             transform_func = warp_perspective
+                transform_func = warp_perspective
 
-    #         warped_patch = transform_func(sign_canonical.unsqueeze(0),
-    #                                       M, (size, size),
-    #                                       mode='bicubic',
-    #                                       padding_mode='zeros')[0].clamp(0, 1)
+            warped_patch = transform_func(
+                sign_canonical.unsqueeze(0),
+                M,
+                (size, size),
+                mode="bicubic",
+                padding_mode="zeros",
+            )[0].clamp(0, 1)
 
-    #         alpha_mask = warped_patch[-1].unsqueeze(0)
-    #         traffic_sign = (1 - alpha_mask) * traffic_sign + alpha_mask * warped_patch[:-1]
+            alpha_mask = warped_patch[-1].unsqueeze(0)
+            traffic_sign = (
+                1 - alpha_mask
+            ) * traffic_sign + alpha_mask * warped_patch[:-1]
 
-    #         # DEBUG
-    #         # print(shape, predicted_class, group)
-    #         # save_image(traffic_sign, 'test.png')
-    #         # import pdb
-    #         # pdb.set_trace()
+            # DEBUG
+            # print(shape, predicted_class, group)
+            # save_image(traffic_sign, 'test.png')
+            # import pdb
+            # pdb.set_trace()
 
-    #     # DEBUG
-    #     # if group in (1, 2):
-    #     #     show_list.append(traffic_sign)
-    #     # if len(show_list) > 100:
-    #     #     save_image(show_list, 'test.png')
-    #     #     import pdb
-    #     #     pdb.set_trace()
+        # DEBUG
+        # if group in (1, 2):
+        #     show_list.append(traffic_sign)
+        # if len(show_list) > 100:
+        #     save_image(show_list, 'test.png')
+        #     import pdb
+        #     pdb.set_trace()
 
-    # # DEBUG
-    # # if 'triangle' in shape:
-    # #     save_image(cropped_sign, 'test.png')
-    # #     import pdb
-    # #     pdb.set_trace()
+    # DEBUG
+    # if 'triangle' in shape:
+    #     save_image(cropped_sign, 'test.png')
+    #     import pdb
+    #     pdb.set_trace()
 
-    # return traffic_sign, shape, group, tgt, alpha, beta
+    return traffic_sign, shape, group, tgt, alpha, beta
 
 
 def plot_subgroup(
@@ -399,16 +428,16 @@ def plot_subgroup(
 def main(args):
 
     # Arguments
+    min_area = 1600
     max_num_imgs = 200
-    DATA_DIR = "~/data/"
 
-    if DATASET == "mapillaryvistas":
-        if split == "train":
-            data_dir = f"{DATA_DIR}/mapillary_vistas/training/"
+    if DATASET == "mapillary_vistas":
+        if split == "training":
+            data_dir = "/data/shared/mapillary_vistas/training/"
         elif split == "validation":
-            data_dir = f"{DATA_DIR}/mapillary_vistas/validation/"
+            data_dir = "/data/shared/mapillary_vistas/validation/"
     elif DATASET == "bdd100k":
-        data_dir = f"{DATA_DIR}/bdd100k/images/10k/train/"
+        data_dir = "/data/shared/bdd100k/images/10k/train/"
 
     # data_dir = '/data/shared/mtsd_v2_fully_annotated/'
     # model_path = '/home/nab_126/adv-patch-bench/model_weights/resnet18_cropped_signs_good_resolution_and_not_edge_10_labels.pth'
@@ -423,7 +452,7 @@ def main(args):
     model = build_classifier(args)[0]
     model.eval()
 
-    if DATASET == "mapillaryvistas":
+    if DATASET == "mapillary_vistas":
         img_path = join(data_dir, "traffic_signs")
         img_files = sorted(
             [
@@ -443,7 +472,7 @@ def main(args):
     # TODO: Read in panoptic file
     elif DATASET == "bdd100k":
         panoptic_json_path = (
-            f"{DATA_DIR}/bdd100k/labels/pan_seg/polygons/pan_seg_train.json"
+            "/data/shared/bdd100k/labels/pan_seg/polygons/pan_seg_train.json"
         )
 
         with open(panoptic_json_path) as panoptic_file:
@@ -535,8 +564,8 @@ def main(args):
     df_alphas = []
     df_betas = []
 
+    subgroup_to_images = {}
     for img_file, mask_file, y in tqdm(zip(img_files, mask_files, y_hat)):
-
         filename = img_file.split("/")[-1]
 
         assert filename == mask_file.split("/")[-1]
@@ -558,12 +587,87 @@ def main(args):
         except ValueError:
             continue
 
+        output = compute_example_transform(
+            image,
+            mask,
+            CLASS_LIST[y],
+            demo_patch,
+            patch_size_in_mm=150,
+            patch_size_in_pixel=32,
+        )
+
+        predicted_class = CLASS_LIST[y]
+        predicted_shape = predicted_class.split("-")[0]
+        obj_id = filename.split("_")[-1].split(".")[0]
+
+        adv_image, shape, group, tgt, alpha, beta = output
+
+        if (shape, group) not in subgroup_to_images:
+            subgroup_to_images[(shape, group)] = []
+
+        adv_image = adv_image.permute(1, 2, 0).numpy()
+        subgroup_to_images[(shape, group)].append(
+            [adv_image, filename, obj_id, predicted_class, tgt, alpha, beta]
+        )
+
     missed_alpha_beta_df["filename"] = df_filenames
     missed_alpha_beta_df["alpha"] = df_alphas
     missed_alpha_beta_df["beta"] = df_betas
     missed_alpha_beta_df.to_csv(
-        f"mapillary_vistas_{split}_missed_alpha_beta.csv", index=False
+        f"mapillary_vistas_{split}_alpha_beta.csv", index=False
     )
+
+    column_names = [
+        "filename",
+        "object_id",
+        "shape",
+        "predicted_shape",
+        "predicted_class",
+        "group",
+        "batch_number",
+        "row",
+        "column",
+        "tgt",
+        "alpha",
+        "beta",
+    ]
+    csv_filename = f"{DATASET}_{split}_data.csv"
+
+    df = pd.DataFrame(columns=column_names)
+    for subgroup in tqdm(subgroup_to_images):
+        shape, group = subgroup
+        data = subgroup_to_images[(shape, group)]
+        data = np.array(data, dtype=object)
+        adversarial_images = data[:, 0]
+        metadata = data[:, 1:]
+        df_data_to_add = plot_subgroup(
+            adversarial_images,
+            metadata,
+            group,
+            shape,
+            plot_folder=PLOT_FOLDER,
+            num_imgs_per_plot=NUM_IMGS_PER_PLOT,
+        )
+        df_to_add = pd.DataFrame(df_data_to_add, columns=column_names)
+        df = pd.concat([df, df_to_add], axis=0)
+        df.to_csv(csv_filename, index=False)
+
+    offset_df = pd.read_csv(f"offset_{split}.csv")
+    df["filename_png"] = (
+        df["filename"].str.split("_").str[:-1].str.join("_") + ".png"
+    )
+    df["filename"] = (
+        df["filename"].str.split("_").str[:-1].str.join("_") + ".jpg"
+    )
+
+    df["object_id"] = df["object_id"].astype("int64")
+    offset_df["obj_id"] = offset_df["obj_id"].astype("int64")
+    df = df.merge(
+        right=offset_df,
+        left_on=["filename", "object_id"],
+        right_on=["filename", "obj_id"],
+    )
+    df.to_csv(csv_filename, index=False)
 
 
 if __name__ == "__main__":
@@ -571,4 +675,5 @@ if __name__ == "__main__":
         "Example Transform", parents=[get_args_parser()]
     )
     args = parser.parse_args()
+    split = args.split
     main(args)

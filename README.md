@@ -115,3 +115,7 @@ sh train_yolo.sh
 <!-- ## Other Tips -->
 
 - To run on annotated signs only (consistent with results in the paper), use flag `--annotated-signs-only`. For Detectron, the dataset cache has to be deleted before this option to really take effect.
+
+## TODOs
+
+- Change interpolation (`interp`) type to `Enum` instead of `str`.

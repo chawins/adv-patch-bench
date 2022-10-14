@@ -8,6 +8,12 @@ import torch
 import torchvision.transforms.functional as T
 from PIL import Image
 
+from adv_patch_bench.utils import types
+
+_ImageTensorGeneric = types.ImageTensorGeneric
+_SizePx = types.SizePx
+_PadSize = Tuple[int, int, int, int]
+
 
 def coerce_rank(x: torch.Tensor, ndim: int) -> torch.Tensor:
     """Reshape x *in-place* to ndim rank by adding/removing first singleton dim.
@@ -57,23 +63,6 @@ def get_image_files(path):
         ) and entry.is_file():
             image_keys.append(entry.name)
     return image_keys
-
-
-def pad_to_size(img: torch.Tensor, size: Tuple[int, int]):
-    img_size = img.shape[-2:]
-    pad_size = [
-        (size[1] - img_size[1]) // 2,  # left
-        (size[0] - img_size[0]) // 2,  # top
-        size[1] - img_size[1] - (size[1] - img_size[1]) // 2,  # right
-        size[0] - img_size[0] - (size[0] - img_size[0]) // 2,  # bottom
-    ]
-    bbox = [
-        pad_size[0],
-        pad_size[1],
-        size[1] - pad_size[2],
-        size[0] - pad_size[3],
-    ]
-    return pad_image(img, pad_size), bbox
 
 
 def pad_image(img, pad_size=0.1, pad_mode="constant", return_pad_size=False):
@@ -204,68 +193,34 @@ def mask_to_box(mask):
     return y_min, x_min, y.max() - y_min, x.max() - x_min
 
 
-def verify_obj_size(
-    obj_size: Union[int, Tuple[int, int]],
-    hw_ratio: Optional[float] = None,
-    img_size: Optional[Tuple[int, int]] = None,
-):
-    # Deterimine object size in pixels
-    if obj_size is None and img_size is not None:
-        obj_size = int(min(img_size) * 0.1)
-    if isinstance(obj_size, int):
-        obj_size = (round(obj_size * hw_ratio), obj_size)
-    assert isinstance(obj_size, tuple) and all(
-        [isinstance(o, int) for o in obj_size]
-    ), f"obj_size is {obj_size}."
-    return obj_size
-
-
-def prepare_obj(
-    obj_path: str,
-    img_size: Tuple[int, int],
-    obj_size: Tuple[int, int],
-    interp: str,
-) -> Tuple[torch.Tensor, torch.Tensor]:
-    """Load image of an object and place it in the middle of an image tensor of
-    size `img_size`. The object is also resized to `obj_size`.
+def resize_and_pad(
+    obj: _ImageTensorGeneric,
+    resize_size: Optional[_SizePx] = None,
+    pad_size: Optional[_SizePx] = None,
+    is_binary: bool = False,
+    interp: str = "bilinear",
+    return_padding: bool = False,
+) -> Union[_ImageTensorGeneric, Tuple[_ImageTensorGeneric, _PadSize]]:
+    """Resize obj to resize_size and then pad_size it to pad_size.
 
     Args:
-        obj_path (str): Path to image to load
-        img_size (tuple): Size of image to place object on: (height, width)
-        obj_size (tuple): Size of object in the image: (height, width)
+        obj: Object or image tensor to resize and pad.
+        resize_size: Size to resize obj to. Defaults to None (no resize).
+        pad_size: Size to pad resized obj to. Defaults to None (no pad).
+        is_binary: Whether to treat obj as binary values. If True, interp will 
+            be set to "nearest". Defaults to False.
+        interp: Interpolation method. Defaults to "bilinear".
+        return_padding: If True, return four padding sizes together with final
+            resized/padded object. Defaults to False.
+
+    Raises:
+        NotImplementedError: Invalid interpolation mode.
 
     Returns:
-        torch.Tensor, torch.Tensor: Object and its mask
+        Resized and padded obj. If return_padding is True, additionally return
+        padding size.
     """
-    # TODO: refactor to fix circular import
-    from adv_patch_bench.attacks import utils
-
-    obj_numpy = np.array(Image.open(obj_path).convert("RGBA")) / 255
-    assert (
-        obj_numpy.ndim == 3 and obj_numpy.shape[-1] == 4
-    ), f"obj_numpy shape: {obj_numpy.shape}."
-    obj, obj_mask = utils.get_object_and_mask_from_numpy(
-        obj_numpy, img_size=img_size, obj_size=obj_size, interp=interp
-    )
-    obj.unsqueeze_(0)
-    obj_mask.unsqueeze_(0)
-    assert obj.ndim == obj_mask.ndim == 4
-    assert obj.shape[-2:] == obj_mask.shape[-2:]
-    return obj, obj_mask
-
-
-def resize_and_center(
-    obj: torch.Tensor,
-    img_size: Optional[Tuple[int, int]] = None,
-    obj_size: Optional[Tuple[int, int]] = None,
-    is_binary: bool = False,
-    interp: str = "bicubic",
-):
-    """
-    Resize object to obj_size and then place it in the middle of zero
-    background.
-    """
-    if obj_size is not None:
+    if resize_size is not None and resize_size != obj.shape[-2:]:
         if is_binary or interp == "nearest":
             interp = T.InterpolationMode.NEAREST
         elif interp == "bicubic":
@@ -274,25 +229,24 @@ def resize_and_center(
             interp = T.InterpolationMode.BILINEAR
         else:
             raise NotImplementedError(f"Interp {interp} not supported!")
-        obj = T.resize(obj, obj_size, interpolation=interp)
+        obj = T.resize(obj, resize_size, interpolation=interp)
     else:
-        obj_size = obj.shape[-2:]
+        resize_size = obj.shape[-2:]
 
-    if img_size is not None:
-        # left, top, right, bottom
-        left = torch.div(img_size[1] - obj_size[1], 2, rounding_mode="trunc")
-        top = torch.div(img_size[0] - obj_size[0], 2, rounding_mode="trunc")
-        pad_size = [
+    if pad_size is not None and resize_size != pad_size:
+        # Compute pad size that centers obj
+        top: int = (pad_size[0] - resize_size[0]) // 2
+        left: int = (pad_size[1] - resize_size[1]) // 2
+        padding = (
             max(0, left),  # left
             max(0, top),  # top
-            max(0, img_size[1] - obj_size[1] - left),  # right
-            max(0, img_size[0] - obj_size[0] - top),  # bottom
-        ]
-        obj = T.pad(obj, pad_size)
+            max(0, pad_size[1] - resize_size[1] - left),  # right
+            max(0, pad_size[0] - resize_size[0] - top),  # bottom
+        )
+        obj = T.pad(obj, padding)
+    else:
+        padding = (0, 0, 0, 0)
 
+    if return_padding:
+        return obj, padding
     return obj
-
-
-def get_obj_width(obj_class, class_names):
-    # mm to inch
-    return float(class_names[obj_class].split("-")[1]) * 0.0393701

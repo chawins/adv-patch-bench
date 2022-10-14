@@ -25,7 +25,7 @@ from tqdm import tqdm
 from PIL import Image
 
 from adv_patch_bench.attacks.rp2.rp2_yolo import RP2AttackYOLO
-from adv_patch_bench.attacks.utils import (
+from adv_patch_bench.attacks.attack_util import (
     apply_synthetic_sign,
     load_annotation_df,
     prep_adv_patch,

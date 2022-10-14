@@ -106,15 +106,22 @@ function syn_attack {
 }
 
 function syn_attack_all {
-    for i in 0 1 2; do
-        syn_attack "$i"
+    for i in {0..10}; do
+        # CUDA_VISIBLE_DEVICES=$GPU python -u gen_patch_detectron.py \
+        #     -e configs/config_reap_1.yaml --obj-class $i
+        # CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
+        #     -e configs/config_reap_1.yaml --obj-class $i --attack-type none
+        CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
+            -e configs/config_reap_1.yaml --obj-class $i --attack-type load
     done
-    # syn_attack 0
 }
 
 # syn_attack_all
 
-CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py -e configs/config_reap_1.yaml
+# CUDA_VISIBLE_DEVICES=$GPU python -u gen_patch_detectron.py \
+#     -e configs/config_reap_1.yaml
+CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
+    -e configs/config_reap_1.yaml --attack-type load
 
 exit 0
 

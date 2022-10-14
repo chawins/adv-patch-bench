@@ -1,23 +1,46 @@
 """Define argument and config parsing."""
 
 import argparse
-import yaml
 import os
 import pathlib
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Union
 
 import detectron2.config as detectron2_config
+import yaml
 from detectron2.engine import default_argument_parser, default_setup
 from hparams import (
-    HW_RATIO_LIST,
+    DEFAULT_SYN_OBJ_DIR,
+    INTERPS,
     LABEL_LIST,
     NUM_CLASSES,
-    DEFAULT_PATH_SYN_OBJ,
+    OBJ_DIM_DICT,
 )
 
+_TRANSFORM_PARAMS: List[str] = [
+    "interp",
+    "reap_transform_mode",
+    "reap_use_relight",
+    "syn_obj_width_px",
+    "syn_rotate",
+    "syn_scale",
+    "syn_translate",
+    "syn_colorjitter",
+    "syn_3d_dist",
+]
 
-def eval_args_parser(is_detectron, root=None):
 
+def eval_args_parser(
+    is_detectron: bool, root: Optional[str] = None
+) -> Dict[str, Any]:
+    """Setup argparse for evaluation.
+
+    Args:
+        is_detectron: Whether we are evaluating dectectron model.`
+        root: Path to root or base directory. Defaults to None.
+
+    Returns:
+        Config dict containing two dicts, one for eval and the other for attack.
+    """
     if root is None:
         root = os.getcwd()
     root = pathlib.Path(root)
@@ -68,15 +91,20 @@ def eval_args_parser(is_detectron, root=None):
         "--interp",
         type=str,
         default="bilinear",
-        help="Interpolation method: 'nearest', 'bilinear', 'bicubic' (default)",
+        help=(
+            'Resample interpolation method: "nearest", "bilinear" (default), '
+            '"bicubic".'
+        ),
     )
     # TODO: DEPRECATE this for YOLO
+    # parser.add_argument(
+    #     "--synthetic",
+    #     action="store_true",
+    #     help="evaluate with pasted synthetic signs",
+    # )
     parser.add_argument(
-        "--synthetic",
-        action="store_true",
-        help="evaluate with pasted synthetic signs",
+        "--name", type=str, default=None, help="save to project/name"
     )
-    parser.add_argument("--name", default="exp", help="save to project/name")
     parser.add_argument("--verbose", action="store_true")
     parser.add_argument("--seed", type=int, default=0, help="set random seed")
     parser.add_argument(
@@ -129,7 +157,10 @@ def eval_args_parser(is_detectron, root=None):
         "--syn-obj-path",
         type=str,
         default=None,
-        help="path to image of synthetic sign (used when synthetic_eval is True)",
+        help=(
+            "Path to load image of synthetic object from (default: auto-"
+            "generated from dataset and obj_class)."
+        ),
     )
     parser.add_argument(
         "--syn-obj-width-px",
@@ -179,8 +210,8 @@ def eval_args_parser(is_detectron, root=None):
         type=str,
         default="none",
         help=(
-            "Attack evaluation to run: none (default), load, per-sign, random,"
-            " debug."
+            'Attack evaluation to run: "none" (default), "load", "per-sign", '
+            '"random", "debug".'
         ),
     )
     parser.add_argument(
@@ -197,13 +228,6 @@ def eval_args_parser(is_detectron, root=None):
             "Specify size of adversarial patch to generate in inches "
             "(HEIGHTxWIDTH); separated by 'x'."
         ),
-    )
-    # TODO: remove:
-    parser.add_argument(
-        "--custom-patch-size",
-        type=float,
-        default=None,
-        help="(DEPRECATED) Set custom patch size that modifies from pre-defined mask_name.",
     )
     parser.add_argument(
         "--mask-dir",
@@ -401,14 +425,20 @@ def eval_args_parser(is_detectron, root=None):
     parser.add_argument(
         "--plot-single-images",
         action="store_true",
-        help="save single images in a folder instead of batch images in a single plot",
+        help=(
+            "Save single images in a folder instead of batch images in a "
+            "single plot"
+        ),
     )
     parser.add_argument(
         "--plot-class-examples",
         type=str,
         default="",
         nargs="*",
-        help="save single images containing individual classes in different folders.",
+        help=(
+            "Save single images containing individual classes in different "
+            "folders."
+        ),
     )
     parser.add_argument(
         "--metrics-confidence-threshold",
@@ -460,7 +490,7 @@ def eval_args_parser(is_detectron, root=None):
         with open(args.exp_config_file, "r") as f:
             config = yaml.safe_load(f)
         parser.set_defaults(**config["eval"])
-        args = parser.parse_args()  # Overwrite arguments
+        args = parser.parse_args()  # TODO: Overwrite arguments
         attack_config = config["attack"]
         args = vars(args)
         config = {"eval": args, "attack": attack_config}
@@ -468,17 +498,21 @@ def eval_args_parser(is_detectron, root=None):
         args = vars(args)
         config = {"eval": args, "attack": {}}
 
+    # TODO(feature): Allow attack config through command line
+
     assert "eval" in config and "attack" in config
     _update_dataset_name(config)
     _verify_eval_config(config["eval"], is_detectron)
 
     # Update config and fill with auto-generated params
-    _update_save_dir(config)
-    _update_result_dir(config)
     _update_img_size(config)
     _update_img_txt_path(config)
+    _update_syn_obj_path(config)
     _update_syn_obj_size(config)
-    _update_attack_interp(config)
+    _update_patch_size(config)
+    _update_attack_transforms(config)
+    _update_save_dir(config)
+    _update_result_dir(config)
 
     return config
 
@@ -487,10 +521,10 @@ def _verify_eval_config(config_eval: Dict[str, Any], is_detectron: bool):
     """Some manual verifications of config.
 
     Args:
-        config: Config dict.
+        config_eval: Eval config dict.
         is_detectron: Whether detectron is used.
     """
-    allowed_interp = ("nearest", "bilinear", "bicubic")
+    allowed_interp = INTERPS
     allowed_attack_types = ("none", "load", "per-sign", "random", "debug")
     allowed_yolo_models = ("yolov5", "yolor")
     allowed_datasets = ("reap", "synthetic", "mtsd", "mapillary")
@@ -522,13 +556,6 @@ def _verify_eval_config(config_eval: Dict[str, Any], is_detectron: bool):
     if not (0 <= obj_class <= max_cls):
         raise ValueError(
             f"Target object class {obj_class} is not between 0 and {max_cls}!"
-        )
-
-    # Set path to synthetic object used by synthetic attack only
-    if config_eval["syn_obj_path"] is None:
-        config_eval["syn_obj_path"] = os.path.join(
-            DEFAULT_PATH_SYN_OBJ,
-            LABEL_LIST[dataset][config_eval["obj_class"]] + ".png",
         )
 
     if not is_detectron:
@@ -565,8 +592,9 @@ def _update_dataset_name(config: Dict[str, Dict[str, Any]]) -> List[str]:
 def _update_img_txt_path(config: Dict[str, Dict[str, Any]]) -> None:
     config_eval = config["eval"]
     img_txt_path = config_eval["img_txt_path"]
+    dataset = config_eval["dataset"]
     if img_txt_path is None:
-        print(f"img_txt_path is not specified.")
+        print("img_txt_path is not specified.")
         return
 
     if os.path.isfile(img_txt_path):
@@ -579,8 +607,8 @@ def _update_img_txt_path(config: Dict[str, Dict[str, Any]]) -> None:
     if not path.is_dir():
         raise ValueError(f"img_txt_path ({img_txt_path}) is not dir.")
 
-    class_name = LABEL_LIST[config_eval["dataset"]][config_eval["obj_class"]]
-    path = path / f"bg_filenames_{class_name}.txt"
+    class_name = LABEL_LIST[dataset][config_eval["obj_class"]]
+    path = path / dataset / f"bg_filenames_{class_name}.txt"
     if not path.is_file():
         raise ValueError(
             f"img_txt_path is dir, but default file name ({str(path)}) does "
@@ -590,6 +618,23 @@ def _update_img_txt_path(config: Dict[str, Dict[str, Any]]) -> None:
     img_txt_path = str(path)
     print(f"Using the default option based on obj_class: {img_txt_path}.")
     config_eval["img_txt_path"] = img_txt_path
+
+
+def _update_syn_obj_path(config: Dict[str, Dict[str, Any]]) -> None:
+    """Update path to load synthetic object from.
+
+    Args:
+        config: Config dict.
+    """
+    config_eval = config["eval"]
+    if config_eval["syn_obj_path"] is not None:
+        return
+    dataset = config_eval["dataset"]
+    obj_class = config_eval["obj_class"]
+    class_name = LABEL_LIST[dataset][obj_class]
+    config_eval["syn_obj_path"] = os.path.join(
+        DEFAULT_SYN_OBJ_DIR, dataset, f"{class_name}.png"
+    )
 
 
 def _update_img_size(config: Dict[str, Dict[str, Any]]) -> None:
@@ -604,7 +649,7 @@ def _update_img_size(config: Dict[str, Dict[str, Any]]) -> None:
 
 
 def _update_syn_obj_size(config: Dict[str, Dict[str, Any]]) -> None:
-    """Update syn_obj_size param in eval config.
+    """Update syn_obj_size_px and syn_obj_size_mm params in eval config.
 
     Args:
         config: Config dict.
@@ -613,15 +658,33 @@ def _update_syn_obj_size(config: Dict[str, Dict[str, Any]]) -> None:
         ValueError: syn_obj_width_px is not int.
     """
     config_eval = config["eval"]
+    # Get real object size of that class
+    dataset = config_eval["dataset"]
+    obj_dim_dict = OBJ_DIM_DICT[dataset]
+    obj_class = config_eval["obj_class"]
+    hw_ratio = obj_dim_dict["hw_ratio"][obj_class]
+    config_eval["obj_size_mm"] = obj_dim_dict["size_mm"][obj_class]
+
     if not config_eval["synthetic"]:
-        config_eval["syn_obj_size"] = None
+        # For attack using real images, we still need to specify obj_size_px to
+        # come up with the correctly-sized mask so obj_size is set to patch_dim
+        # from attack config.
+        if "attack" in config:
+            patch_dim = config["attack"]["common"]["patch_dim"]
+            config_eval["obj_size_px"] = (
+                round(patch_dim * hw_ratio),
+                patch_dim,
+            )
         return
 
-    obj_width = config_eval["syn_obj_width_px"]
-    if not isinstance(obj_width, int):
-        raise ValueError(f"obj_width must be int ({obj_width})!")
-    hw_ratio = HW_RATIO_LIST[config_eval["obj_class"]]
-    config_eval["syn_obj_size"] = (round(obj_width * hw_ratio), obj_width)
+    obj_width_px = config_eval["syn_obj_width_px"]
+    if not isinstance(obj_width_px, int):
+        raise ValueError(f"syn_obj_width_px must be int ({obj_width_px})!")
+
+    config_eval["obj_size_px"] = (
+        round(obj_width_px * hw_ratio),
+        obj_width_px,
+    )
 
 
 def _update_save_dir(config: Dict[str, Dict[str, Any]]) -> None:
@@ -634,57 +697,73 @@ def _update_save_dir(config: Dict[str, Dict[str, Any]]) -> None:
         ValueError: Invalid obj_class.
     """
     config_eval = config["eval"]
-    config_atk = config["attack"]
+    config_atk = config["attack"]["common"]
     synthetic = config_eval["synthetic"]
 
     # Automatically generate experiment name
-    exp_name = config_eval["name"]
+    exp_name: str = config_eval["name"]
     if config_eval["name"] is None:
-        token_list = []
-        token_list.append("synthetic" if synthetic else "reap")
+        token_list: List[str] = []
+        token_list.append(config_eval["dataset"])
         token_list.append(config_eval["attack_type"])
 
-        if config_eval["attack_type"] is not "none":
+        if config_eval["attack_type"] != "none":
 
+            # Gather dataset-specific transform params
             if synthetic:
-                # Object size used during attack
-                token_list.append(f"obj{config_eval['syn_obj_width_px']}")
+                for param in _TRANSFORM_PARAMS:
+                    if "syn" in param:
+                        token_list.append(str(config_atk[param]))
+            if not config_atk["reap_use_relight"]:
+                token_list.append("nolight")
+            if config_atk["reap_transform_mode"] != "perspective":
+                token_list.append(config_atk["reap_transform_mode"])
 
-            token_list.append(f"pd{config_atk['common']['patch_dim']}")
-            token_list.append(f"bg{config_atk['common']['num_bg']}")
+            token_list.append(f"pd{config_atk['patch_dim']}")
+            token_list.append(f"bg{config_atk['num_bg']}")
 
             # Geometric transform augmentation
-            if config_atk["common"]["augment_prob_geometric"] > 0:
-                geo = (
-                    f"auggeo{config_atk['common']['augment_prob_geometric']}_"
-                    f"{config_atk['common']['augment_rotate_degree']}"
-                )
-                token_list.append(geo)
+            if config_atk["aug_prob_geo"] > 0:
+                aug_3d_dist = config_atk["aug_3d_dist"]
+                if aug_3d_dist is not None and aug_3d_dist > 0:
+                    params = ["aug_prob_geo", "aug_3d_dist"]
+                else:
+                    params = [
+                        "aug_prob_geo",
+                        "aug_rotate",
+                        "aug_translate",
+                        "aug_scale",
+                    ]
+                aug_geo_tokens = []
+                for param in params:
+                    aug_geo_tokens.append(str(config_atk[param]))
+                token_list.append("auggeo" + "_".join(aug_geo_tokens))
 
             # Lighting augmentation (color jitter)
-            if config_atk["common"]["augment_prob_relight"] > 0:
+            aug_cj = config_atk["aug_prob_colorjitter"]
+            if aug_cj is not None and aug_cj > 0:
                 light = (
-                    f"augcj{config_atk['common']['augment_prob_relight']}_"
-                    f"{config_atk['common']['augment_intensity_relight']}"
+                    f"augcj{config_atk['aug_prob_colorjitter']}_"
+                    f"{config_atk['aug_colorjitter']}"
                 )
                 token_list.append(light)
 
-            if not config_atk["common"]["use_patch_relight"]:
-                token_list.append("nolight")
-            if config_atk["common"]["transform_mode"] is not "perspective":
-                token_list.append(config_atk["common"]["transform_mode"])
+            # Background image augmentation params
+            img_aug_prob_geo: Optional[float] = config_atk["img_aug_prob_geo"]
+            if img_aug_prob_geo is not None and img_aug_prob_geo > 0:
+                token_list.append(f"augimg{img_aug_prob_geo}")
 
-            attack_name = config_atk["common"]["attack_name"]
-            atk_params = config_atk[attack_name]
+            attack_name: str = config_atk["attack_name"]
+            atk_params: Dict[str, Any] = config["attack"][attack_name]
             # Sort attack-specific params so we can print all at once
             atk_params = dict(sorted(atk_params.items()))
-            atk_params = [
-                attack_name,
+            atk_params_list: List[str] = [
+                str(v) for v in atk_params.values() if not isinstance(v, dict)
             ]
-            atk_params.extend([str(v) for v in atk_params.values()])
-            token_list.append("_".join(atk_params))
+            token_list.append(attack_name + "_".join(atk_params_list))
 
         exp_name = "-".join(token_list)
+        config_eval["name"] = exp_name
 
     class_name = LABEL_LIST[config_eval["dataset"]][config_eval["obj_class"]]
     save_dir = os.path.join(config_eval["base_dir"], exp_name, class_name)
@@ -692,9 +771,39 @@ def _update_save_dir(config: Dict[str, Dict[str, Any]]) -> None:
     config_eval["save_dir"] = save_dir
 
 
-def _update_attack_interp(config: Dict[str, Dict[str, Any]]) -> None:
-    if config["attack"]["common"].get("interp") is None:
-        config["attack"]["common"]["interp"] = config["eval"]["interp"]
+def _inch_to_mm(length_in_inch: Union[int, float]) -> float:
+    return 25.4 * length_in_inch
+
+
+def _update_patch_size(config: Dict[str, Dict[str, Any]]) -> None:
+    config_eval = config["eval"]
+    patch_size_inch = config_eval["patch_size_inch"]
+
+    # patch_size has format <NUM_PATCH>_<HEIGHT>x<WIDTH>
+    if len(patch_size_inch.split("_")) == 2:
+        num_patches = patch_size_inch.split("_")[0]
+    else:
+        num_patches = 1
+    if num_patches not in (1, 2):
+        raise NotImplementedError(
+            f"Only num_patches of 1 or 2 for now, but {num_patches} is given "
+            f"({patch_size_inch})!"
+        )
+
+    patch_size = patch_size_inch.split("_")[-1].split("x")
+    if not all([s.isnumeric() for s in patch_size]):
+        raise ValueError(f"Invalid patch size: {patch_size_inch}!")
+    patch_size_inch = [int(s) for s in patch_size]
+    patch_size_mm = [_inch_to_mm(s) for s in patch_size_inch]
+    config_eval["patch_size_mm"] = (num_patches,) + tuple(patch_size_mm)
+
+
+def _update_attack_transforms(config: Dict[str, Dict[str, Any]]) -> None:
+    config_eval: Dict[str, Any] = config["eval"]
+    config_atk: Dict[str, Any] = config["attack"]["common"]
+    for param in _TRANSFORM_PARAMS:
+        if param not in config_atk or config_atk[param] is None:
+            config_atk[param] = config_eval[param]
 
 
 def _update_result_dir(config: Dict[str, Dict[str, Any]]) -> None:
@@ -711,7 +820,6 @@ def setup_detectron_test_args(
     config: Dict[str, Dict[str, Any]]
 ) -> detectron2_config.CfgNode:
     """Create configs and perform basic setups."""
-
     config_eval = config["eval"]
 
     # Set default path to load adversarial patch
@@ -761,7 +869,14 @@ def setup_detectron_test_args(
 
 
 def setup_yolo_test_args(config, other_sign_class):
+    """Set up config for YOLO.
+
     # FIXME: fix for yolo
+
+    Args:
+        config: Config dict.
+        other_sign_class: Class of "other" or background object.
+    """
     config_eval = config["eval"]
 
     # Set YOLO data yaml file

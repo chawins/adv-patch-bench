@@ -1,30 +1,39 @@
+"""Base class of RP2 Attack."""
+
 import time
 from abc import abstractmethod
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
 import torch.optim as optim
 from adv_patch_bench.attacks import base_attack
-from adv_patch_bench.transforms import apply_transform, get_transform
-from adv_patch_bench.utils.image import (
-    coerce_rank,
-    mask_to_box,
-    resize_and_center,
-)
-from kornia import augmentation as K
-from kornia.constants import Resample
-from yolov5.utils.general import non_max_suppression
-from yolov5.utils.plots import output_to_target, plot_images
+from adv_patch_bench.transforms import render_image
+from adv_patch_bench.utils.types import MaskTensor, ImageTensor, Target
+# from adv_patch_bench.utils.image import coerce_rank, mask_to_box, resize_and_pad
+
+# from yolov5.utils.general import non_max_suppression
+# from yolov5.utils.plots import output_to_target, plot_images
 
 
 class RP2AttackModule(base_attack.DetectorAttackModule):
+    """Base class of RP2 Attack."""
+
     def __init__(
         self,
         attack_config: Dict[str, Any],
         core_model: torch.nn.Module,
         **kwargs,
     ):
+        """RP2AttackModule is a base class for RP2 Attack.
+
+        Reference: Eykholt et al., "Robust Physical-World Attacks on Deep
+        Learning Models," 2018. (https://arxiv.org/abs/1707.08945)
+
+        Args:
+            attack_config: Config dict for attacks.
+            core_model: Target model to attack.
+        """
         super().__init__(attack_config, core_model, **kwargs)
         self.num_steps = attack_config["num_steps"]
         self.step_size = attack_config["step_size"]
@@ -33,283 +42,75 @@ class RP2AttackModule(base_attack.DetectorAttackModule):
         self.num_eot = attack_config["num_eot"]
         self.lmbda = attack_config["lambda"]
         self.min_conf = attack_config["min_conf"]
-        self.patch_dim = attack_config.get("patch_dim", None)
         self.attack_mode = attack_config["attack_mode"].split("-")
-        self.transform_mode = attack_config["transform_mode"]
-        self.use_relight = attack_config["use_patch_relight"]
-        self.interp = attack_config["interp"]
         self.num_restarts = 1
-        self.is_training = None
+        self.is_training: Optional[bool] = None  # Holding model training state
         self.ema_const = 0.9
+
+        # TODO(feature): Allow more threat models
+        self.targeted: bool = False
 
         # Use change of variable on delta with alpha and beta.
         # Mostly used with per-sign or real attack.
         self.use_var_change_ab = "var_change_ab" in self.attack_mode
-        if not self.use_relight:
-            self.use_var_change_ab = False
         if self.use_var_change_ab:
             # Does not work when num_eot > 1
             assert (
                 self.num_eot == 1
             ), "When use_var_change_ab is used, num_eot can only be set to 1."
-            # No need to relight further
-            self.use_relight = False
-
-        # Define EoT augmentation for attacking synthetic signs
-        p_geo = float(attack_config["aug_prob_geo"])
-        rotate_degrees = float(attack_config.get("aug_rotate", 15))
-        scale = attack_config.get("aug_scale", 1)
-        scale = 1.0 if scale is None else scale
-        dist_3d = attack_config.get("aug_3d_dist", None)
-        bg_size = self.input_size
-        # Transform for background alone; only used with synthetic data
-        self.bg_transforms = K.RandomResizedCrop(
-            bg_size, scale=(0.8, 1), p=p_geo, resample=self.interp
-        )
-        if dist_3d is None:
-            tf_func = K.RandomAffine
-            tf_params = {
-                "p": p_geo,
-                "degrees": rotate_degrees,
-                "translate": (0.4, 0.4),
-                "scale": (1 / scale, scale) if scale > 1 else None,
-            }
-        else:
-            tf_func = K.RandomPerspective
-            tf_params = {"p": p_geo, "distortion_scale": dist_3d}
-
-        self.obj_transforms = tf_func(
-            **tf_params, return_transform=True, resample=self.interp
-        )
-        # Args to mask_transforms can be set to anything because it will use
-        # the same params as obj_transforms anyway (via apply_transform).
-        self.mask_transforms = tf_func(**tf_params, resample=Resample.NEAREST)
-
-        # Color jitter and lighting transform
-        # TODO: can we apply colorjitter to REAP?
-        p_light = float(attack_config["aug_prob_colorjitter"])
-        intensity_light = float(
-            attack_config.get("aug_colorjitter", 0.3)
-        )
-        self.jitter_transform = K.ColorJitter(
-            brightness=intensity_light, contrast=intensity_light, p=p_light
-        )
-
-        # Define EoT augmentation for attacking real signs
-        # Transforms patch when attacking real signs
-        self.real_transform = {
-            "tf_patch": K.RandomAffine(
-                degrees=rotate_degrees,
-                translate=(
-                    0.1,
-                    0.1,
-                ),  # Translation here is on patch only so it has to be small
-                scale=(1 / scale, scale) if scale > 1 else None,
-                p=p_geo,
-                resample=self.interp,
-            )
-        }
-        # Background should move very little because gt annotation is fixed
-        # TODO(features): Allow whole image to transform. This would require
-        # modifying all annotations accordingly.
-        # self.real_transform['tf_bg'] = self.bg_transforms
 
     @abstractmethod
-    def _loss_func(self, delta, adv_img, obj_class, metadata):
-        raise NotImplementedError("_loss_func not implemented!")
+    def _loss_func(
+        self,
+        adv_img: ImageTensor,
+        adv_target: Target,
+        obj_class: int,
+    ) -> torch.Tensor:
+        """Implement loss function on perturbed image.
 
-    def _on_enter_attack(self, **kwargs):
-        """Method called at the begining of the attack call."""
-        self.is_training = self.core_model.training
-        self.core_model.eval()
+        Args:
+            adv_img: Image to compute loss on.
+            adv_target: Target label to compute loss on.
+            obj_class: Target object class. Usually ground-truth label for
+                untargeted attack, and target class for targeted attack.
 
-    def _on_exit_attack(self, **kwargs):
-        """Method called at the end of the attack call."""
-        self.core_model.train(self.is_training)
-
-    def _on_syn_attack_step(self, metadata, **kwargs):
+        Returns:
+            Loss for attacker to minimize.
         """
-        Method called at the begining of every step in synthetic attack.
-        Can be used to update metadata.
-        """
-        return metadata
+        raise NotImplementedError("self._loss_func() not implemented!")
 
-    def _on_real_attack_step(self, metadata, **kwargs):
-        """
-        Method called at the begining of every step in real attack.
-        Can be used to update metadata.
-        """
-        return metadata
+    def compute_loss(
+        self,
+        delta: ImageTensor,
+        adv_img: ImageTensor,
+        adv_target: Target,
+        obj_class: List[int],
+    ) -> torch.Tensor:
+        """Compute loss on perturbed image.
 
-    def compute_loss(self, delta, adv_img, obj_class, metadata):
-        loss = self._loss_func(adv_img, obj_class, metadata)
-        tv = (delta[:, :, :-1, :] - delta[:, :, 1:, :]).abs().mean() + (
-            delta[:, :, :, :-1] - delta[:, :, :, 1:]
+        Args:
+            delta: Adversarial patch.
+            adv_img: Perturbed image to compute loss on.
+            adv_target: Target label to compute loss on.
+            obj_class: Target object class. Usually ground-truth label for
+                untargeted attack, and target class for targeted attack.
+
+        Returns:
+            Loss for attacker to minimize.
+        """
+        loss: torch.Tensor = self._loss_func(adv_img, adv_target, obj_class)
+        tv: torch.Tensor = (delta[:, :-1, :] - delta[:, 1:, :]).abs().mean() + (
+            delta[:, :, :-1] - delta[:, :, 1:]
         ).abs().mean()
         loss += self.lmbda * tv
         return loss
 
     @torch.no_grad()
-    def attack_synthetic(
+    def run(
         self,
-        obj: torch.Tensor,
-        obj_mask: torch.Tensor,
-        patch_mask: torch.Tensor,
-        backgrounds: torch.Tensor,
-        obj_class: int = None,
-        metadata: Optional[List] = None,
-    ) -> torch.Tensor:
-        """Run RP2 Attack.
-
-        Args:
-            obj (torch.Tesnor): Object to place the adversarial patch on
-                (shape: [C, H, W])
-            obj_mask (torch.Tesnor): Mask of object (shape: [1, H, W])
-            patch_mask (torch.Tesnor): Mask of the patch (shape: [1, H, W])
-            backgrounds (torch.Tesnor): Background images (shape: [N, C, H, W])
-
-        Returns:
-            torch.Tensor: Adversarial patch with shape [C, H, W]
-        """
-        self._on_enter_attack()
-        device = obj.device
-        dtype = obj.dtype
-
-        obj.detach_()
-        obj_mask.detach_()
-
-        patch_mask.detach_()
-        backgrounds.detach_()
-        _, _, obj_height, obj_width = mask_to_box(obj_mask)
-        # TODO: Allow patch to be non-square
-        if self.patch_dim is not None:
-            patch_dim = self.patch_dim
-        else:
-            patch_dim = max(obj_height, obj_width)
-        obj_mask = coerce_rank(obj_mask, 3)
-        all_bg_idx = np.arange(len(backgrounds))
-
-        obj_mask = coerce_rank(obj_mask, 4)
-        patch_mask = coerce_rank(patch_mask, 4)
-        obj = coerce_rank(obj, 4)
-        obj_mask_eot = obj_mask.expand(self.num_eot, -1, -1, -1)
-        patch_mask_eot = patch_mask.expand(self.num_eot, -1, -1, -1)
-        obj_eot = obj.expand(self.num_eot, -1, -1, -1)
-
-        for _ in range(self.num_restarts):
-            # Initialize adversarial perturbation
-            z_delta = torch.zeros(
-                (1, 3, patch_dim, patch_dim),
-                device=device,
-                dtype=dtype,
-            )
-            z_delta.uniform_(0, 1)
-
-            opt, lr_schedule = self._setup_opt(z_delta)
-            self.start_time = time.time()
-            self.ema_loss = None
-            counter = 0
-
-            for step in range(self.num_steps):
-                # Randomly select background and apply transforms (crop and scale)
-                np.random.shuffle(all_bg_idx)
-                bg_idx = all_bg_idx[: self.num_eot]
-                bgs = backgrounds[bg_idx]
-                bgs = self.bg_transforms(bgs)
-
-                # UNUSED
-                # if self.rescaling:
-                #     synthetic_sign_size = obj_size[0]
-                #     old_ratio = synthetic_sign_size / self.input_size[0]
-                #     prob_array = [0.38879158, 0.26970227, 0.16462349, 0.07530647, 0.04378284,
-                #                   0.03327496, 0.01050788, 0.00700525, 0.00350263, 0.00350263]
-                #     new_possible_ratios = [0.05340427, 0.11785139, 0.18229851, 0.24674563,
-                #                            0.31119275, 0.3756399, 0.440087, 0.5045341, 0.56898123, 0.6334284, 0.6978755]
-                #     index_array = np.arange(0, len(new_possible_ratios) - 1)
-                #     sampled_index = np.random.choice(index_array, None, p=prob_array)
-                #     low_bin_edge, high_bin_edge = new_possible_ratios[sampled_index], new_possible_ratios[sampled_index+1]
-                #     self.obj_transforms = K.RandomAffine(
-                #         30, translate=(0.45, 0.45),
-                #         p=1.0, return_transform=True, scale=(low_bin_edge / old_ratio, high_bin_edge / old_ratio))
-
-                # Apply random transformations to synthetic sign and masks
-                adv_obj, tf_params = self.obj_transforms(obj_eot)
-                o_mask = self.mask_transforms.apply_transform(
-                    obj_mask_eot, None, transform=tf_params
-                )
-                p_mask = self.mask_transforms.apply_transform(
-                    patch_mask_eot, None, transform=tf_params
-                )
-
-                metadata = self._on_syn_attack_step(
-                    metadata, o_mask=o_mask, bg_idx=bg_idx, obj_class=obj_class
-                )
-
-                with torch.enable_grad():
-                    z_delta.requires_grad_()
-                    delta = self._to_model_space(z_delta, 0, 1)
-                    delta_padded = resize_and_center(
-                        delta,
-                        img_size=self.input_size,
-                        obj_size=(obj_height, obj_width),
-                        is_binary=False,
-                        interp=self.interp,
-                    )
-                    delta_eot = delta_padded.expand(self.num_eot, -1, -1, -1)
-                    delta_eot = self.obj_transforms.apply_transform(
-                        delta_eot, None, transform=tf_params
-                    )
-                    adv_obj = p_mask * delta_eot + (1 - p_mask) * adv_obj
-                    # Augment sign and patch with relighting
-                    adv_obj = self.jitter_transform(adv_obj)
-
-                    # Apply sign on background
-                    adv_img = o_mask * adv_obj + (1 - o_mask) * bgs
-                    adv_img = adv_img.clamp(0, 1)
-
-                    # DEBUG
-                    # if step % 100 == 0:
-                    #     torchvision.utils.save_image(
-                    #         adv_img[0], f'gen_adv_syn_{step}.png')
-
-                    mdata = None if metadata is None else metadata[bg_idx]
-                    loss = self.compute_loss(delta, adv_img, obj_class, mdata)
-                    loss.backward()
-                    z_delta = self._step_opt(z_delta, opt)
-
-                    # counter += 1
-                    # if counter < 5:
-                    #     continue
-
-                if lr_schedule is not None:
-                    lr_schedule.step(self.ema_loss)
-                self._print_loss(loss, step)
-
-            # if self.num_restarts == 1:
-            #     x_adv_worst = x_adv
-            # else:
-            #     # Update worst-case inputs with itemized final losses
-            #     fin_losses = self.loss_fn(self.core_model(x_adv), y).reshape(worst_losses.shape)
-            #     up_mask = (fin_losses >= worst_losses).float()
-            #     x_adv_worst = x_adv * up_mask + x_adv_worst * (1 - up_mask)
-            #     worst_losses = fin_losses * up_mask + worst_losses * (1 - up_mask)
-
-        # DEBUG: YOLO
-        # outt = non_max_suppression(out.detach(), conf_thres=0.25, iou_thres=0.6)
-        # plot_images(adv_img.clamp(0, 1).detach(), c)
-
-        self._on_exit_attack()
-        # Return worst-case perturbed input logits
-        return self._to_model_space(z_delta.detach(), 0, 1)
-
-    @torch.no_grad()
-    def attack_real(
-        self,
-        objs: List,
-        patch_mask: torch.Tensor,
-        obj_class: int,
-        metadata: Optional[List] = None,
-    ):
+        rimgs: List[render_image.RenderImage],
+        patch_mask: MaskTensor,
+    ) -> ImageTensor:
         """Run RP2 Attack.
 
         Args:
@@ -320,41 +121,16 @@ class RP2AttackModule(base_attack.DetectorAttackModule):
         self._on_enter_attack()
         device = patch_mask.device
 
-        # Process transform data and create batch tensors
-        obj_size = patch_mask.shape[-2:]
-        obj_width_px = obj_size[-1]
-
-        # TODO: Assume that every signs use the same transform function
-        # i.e., warp_perspetive. Have to fix this for triangles
-        tf_function = get_transform(
-            obj_width_px, *objs[0][1], self.transform_mode
-        )[0]
-        tf_data_temp = [
-            get_transform(obj_width_px, *obj[1], self.transform_mode)[1:-1]
-            for obj in objs
-        ]
-
-        # tf_data contains [sign_canonical, sign_mask, M, alpha, beta]
-        tf_data = []
-        for i in range(5):
-            data_i = []
-            for data in tf_data_temp:
-                data_i.append(data[i].unsqueeze(0))
-            data_i = torch.cat(data_i, dim=0).to(device)
-            # Add singletons for alpha and beta ([B, ] -> [B, 1, 1, 1])
-            if i in (3, 4):
-                data_i = data_i[:, None, None, None]
-            tf_data.append(data_i)
-
-        all_bg_idx = np.arange(len(tf_data_temp))
-        backgrounds = torch.cat([obj[0].unsqueeze(0) for obj in objs], dim=0)
+        all_bg_idx: np.ndarray = np.arange(len(rimgs))
+        # Load patch_mask to all RenderObject first. This should be done once.
+        for rimg in rimgs:
+            robj = rimg.get_object()
+            robj.load_adv_patch(patch_mask=patch_mask)
 
         for _ in range(self.num_restarts):
             # Initialize adversarial perturbation
-            # TODO: check if this is not buggy and works as expected
-            z_delta = torch.zeros(
-                (1, 3) + patch_mask.shape[-2:],
-                # (1, 3, self.patch_dim, self.patch_dim),
+            z_delta: ImageTensor = torch.zeros(
+                (3,) + patch_mask.shape[-2:],
                 device=device,
                 dtype=torch.float32,
             )
@@ -368,51 +144,44 @@ class RP2AttackModule(base_attack.DetectorAttackModule):
             # Run PGD on inputs for specified number of steps
             for step in range(self.num_steps):
 
-                # Randomly select background and place patch with transforms
+                # Randomly select RenderImages to attack this step
                 np.random.shuffle(all_bg_idx)
                 bg_idx = all_bg_idx[: self.num_eot]
-                curr_tf_data = [data[bg_idx] for data in tf_data]
-                bgs = backgrounds[bg_idx].to(device)
+                rimg_eot = [rimgs[i] for i in bg_idx]
 
-                metadata = self._on_real_attack_step(metadata)
+                # metadata = self._on_real_attack_step(metadata)
                 with torch.enable_grad():
                     z_delta.requires_grad_()
                     # Determine how perturbation is projected
                     if self.use_var_change_ab:
-                        # Does not work when num_eot > 1
-                        alpha, beta = curr_tf_data[-2:]
+                        # TODO(feature): Does not work when num_eot > 1
+                        robj = rimg_eot[0].get_object()
+                        alpha, beta = robj.alpha, robj.beta
                         delta = self._to_model_space(
                             z_delta, beta, alpha + beta
                         )
                     else:
                         delta = self._to_model_space(z_delta, 0, 1)
-                    delta_resized = resize_and_center(
-                        delta,
-                        img_size=None,
-                        obj_size=obj_size,
-                        is_binary=False,
-                        interp=self.interp,
-                    )
-                    delta_eot = delta_resized.repeat(self.num_eot, 1, 1, 1)
-                    adv_img, _ = apply_transform(
-                        bgs,
-                        delta_eot,
-                        patch_mask,
-                        tf_function,
-                        curr_tf_data,
-                        interp=self.interp,
-                        **self.real_transform,
-                        use_relight=self.use_relight,
-                    )
-                    adv_img /= 255
+
+                    # Load new adversarial patch to each RenderObject
+                    obj_class: int = robj.obj_class
+                    # TODO(feature): Support batch rimg
+                    rimg = rimg_eot[0]
+                    robj = rimg.get_object()
+                    robj.load_adv_patch(adv_patch=delta)
+                    # Apply adversarial patch to each RenderImage
+                    adv_img, adv_target = rimg.apply_objects()
+                    adv_img = rimg.post_process_image(adv_img)
 
                     # DEBUG
                     # if step % 100 == 0:
                     #     torchvision.utils.save_image(
                     #         adv_img[0], f'gen_adv_real_{step}.png')
 
-                    mdata = None if metadata is None else metadata[bg_idx]
-                    loss = self.compute_loss(delta, adv_img, obj_class, mdata)
+                    # mdata = None if metadata is None else metadata[bg_idx]
+                    loss: torch.Tensor = self.compute_loss(
+                        delta, adv_img, adv_target, obj_class
+                    )
                     loss.backward()
                     z_delta = self._step_opt(z_delta, opt)
 
@@ -435,7 +204,9 @@ class RP2AttackModule(base_attack.DetectorAttackModule):
         # Return worst-case perturbed input logits
         return delta.detach()
 
-    def _setup_opt(self, z_delta):
+    def _setup_opt(
+        self, z_delta: ImageTensor
+    ) -> Tuple[Optional[optim.Optimizer], Optional[Any]]:
         # Set up optimizer
         if self.optimizer == "sgd":
             opt = optim.SGD([z_delta], lr=self.step_size, momentum=0.999)
@@ -450,19 +221,20 @@ class RP2AttackModule(base_attack.DetectorAttackModule):
 
         lr_schedule = None
         if self.use_lr_schedule and opt is not None:
-            # lr_schedule = optim.lr_scheduler.MultiStepLR(opt, [500, 1000, 1500], gamma=0.1)
             lr_schedule = optim.lr_scheduler.ReduceLROnPlateau(
                 opt,
                 factor=0.5,
                 patience=int(self.num_steps / 10),
                 threshold=1e-9,
                 min_lr=self.step_size * 1e-6,
-                verbose=self.verbose,
+                verbose=self._verbose,
             )
 
         return opt, lr_schedule
 
-    def _step_opt(self, z_delta, opt):
+    def _step_opt(
+        self, z_delta: ImageTensor, opt: Optional[optim.Optimizer]
+    ) -> ImageTensor:
         if self.optimizer == "pgd":
             grad = z_delta.grad.detach()
             grad = torch.sign(grad)
@@ -473,8 +245,7 @@ class RP2AttackModule(base_attack.DetectorAttackModule):
         return z_delta
 
     def _to_model_space(self, x, min_, max_):
-        """Transforms an input from the attack space to the model space.
-        This transformation and the returned gradient are elementwise."""
+        """Transforms an input from the attack space to the model space."""
         if "pgd" in self.attack_mode:
             return x
 
@@ -496,7 +267,7 @@ class RP2AttackModule(base_attack.DetectorAttackModule):
                 + (1 - self.ema_const) * loss.item()
             )
 
-        if step % 100 == 0 and self.verbose:
+        if step % 100 == 0 and self._verbose:
             print(
                 f"step: {step:4d}  loss: {self.ema_loss:.4f}  "
                 f"time: {time.time() - self.start_time:.2f}s"

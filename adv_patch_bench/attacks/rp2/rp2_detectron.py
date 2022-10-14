@@ -1,20 +1,29 @@
 """RP2 attack for Detectron2 models."""
 
 from copy import deepcopy
+from typing import Any, Dict, List, Tuple
 
 import torch
 import torch.nn.functional as F
-from adv_patch_bench.attacks.detectron_utils import get_targets
-from adv_patch_bench.utils.image import mask_to_box
-from detectron2.structures import Boxes, Instances
-
 from adv_patch_bench.attacks.rp2 import rp2_base
-
-EPS = 1e-6
+from adv_patch_bench.utils.types import ImageTensor, Target
+from detectron2 import structures
 
 
 class RP2AttackDetectron(rp2_base.RP2AttackModule):
+    """RP2 Attack for Detectron2 models."""
+
     def __init__(self, attack_config, core_model, **kwargs):
+        """Initialize RP2AttackDetectron.
+
+        TODO(feature): Currently, we assume that Detectron2 models are
+        Faster R-CNN so loss function and params are specific to Faster R-CNN.
+        We should implement attack on Faster R-CNN as subclass of Detectron2.
+
+        Args:
+            attack_config: Dictionary of attack params.
+            core_model: Traget model to attack.
+        """
         super().__init__(attack_config, core_model, **kwargs)
 
         detectron_config = attack_config["detectron"]
@@ -33,46 +42,42 @@ class RP2AttackDetectron(rp2_base.RP2AttackModule):
         self.post_nms_topk = self.post_nms_topk_orig
 
     def _on_enter_attack(self, **kwargs):
-        self.is_training = self.core_model.training
-        self.core_model.eval()
-        self.core_model.proposal_generator.nms_thresh = self.nms_thresh
-        self.core_model.proposal_generator.post_nms_topk = self.post_nms_topk
+        self.is_training = self._core_model.training
+        self._core_model.eval()
+        self._core_model.proposal_generator.nms_thresh = self.nms_thresh
+        self._core_model.proposal_generator.post_nms_topk = self.post_nms_topk
 
     def _on_exit_attack(self, **kwargs):
-        self.core_model.train(self.is_training)
-        self.core_model.proposal_generator.nms_thresh = self.nms_thresh_orig
-        self.core_model.proposal_generator.post_nms_topk = (
+        self._core_model.train(self.is_training)
+        self._core_model.proposal_generator.nms_thresh = self.nms_thresh_orig
+        self._core_model.proposal_generator.post_nms_topk = (
             self.post_nms_topk_orig
         )
 
-    def _on_syn_attack_step(
-        self, metadata, o_mask, bg_idx, obj_class, **kwargs
-    ):
-        # Update metada with location of transformed synthetic sign
-        for i in range(self.num_eot):
-            m = metadata[bg_idx[i]]
-            instances = m["instances"]
-            new_instances = Instances(instances.image_size)
-            # Turn object mask to gt_boxes
-            o_ymin, o_xmin, o_height, o_width = mask_to_box(o_mask[i])
-            box = torch.tensor(
-                [[o_xmin, o_ymin, o_xmin + o_width, o_ymin + o_height]]
-            )
-            new_instances.gt_boxes = Boxes(box)
-            new_instances.gt_classes = torch.tensor([[obj_class]])
-            m["instances"] = new_instances
-        return metadata
+    def _loss_func(
+        self,
+        adv_img: ImageTensor,
+        adv_target: Target,
+        obj_class: int,
+    ) -> torch.Tensor:
+        """Compute loss for Faster R-CNN models.
 
-    def _loss_func(self, adv_img, obj_class, metadata):
-        """Compute loss for Faster R-CNN models"""
-        for i, m in enumerate(metadata):
-            # Flip image from RGB to BGR
-            m["image"] = adv_img[i].flip(0) * 255
+        Args:
+            adv_img: Image to compute loss on.
+            adv_target: Target label to compute loss on.
+            obj_class: Target object class. Usually ground-truth label for
+                untargeted attack, and target class for targeted attack.
+
+        Returns:
+            Loss for attacker to minimize.
+        """
         # NOTE: IoU threshold for ROI is 0.5 and for RPN is 0.7
-        _, target_labels, target_logits, obj_logits = get_targets(
-            self.core_model,
-            metadata,
-            device=self.core_model.device,
+        inputs = adv_target
+        inputs["image"] = adv_img
+        _, target_labels, target_logits, obj_logits = _get_targets(
+            self._core_model,
+            [inputs],
+            device=self._core_model.device,
             iou_thres=self.detectron_iou_thres,
             score_thres=self.min_conf,
             use_correct_only=False,
@@ -122,7 +127,7 @@ class RP2AttackDetectron(rp2_base.RP2AttackModule):
             else:
                 tgt_lb = torch.zeros_like(tgt_lb) + obj_class
             # If there's no matched gt/prediction, then attack already succeeds.
-            # TODO: This has to be changed for appearing or misclassification attacks.
+            # TODO(feature): Appearing or misclassification attacks
             target_loss, obj_loss = 0, 0
             if len(tgt_log) > 0 and len(tgt_lb) > 0:
                 # Ignore the background class on tgt_log
@@ -134,3 +139,167 @@ class RP2AttackDetectron(rp2_base.RP2AttackModule):
                 )
             loss += target_loss + self.detectron_obj_const * obj_loss
         return -loss
+
+
+def _get_targets(
+    model: torch.nn.Module,
+    inputs: List[Dict[str, Any]],
+    device: str = "cuda",
+    iou_thres: float = 0.1,
+    score_thres: float = 0.1,
+    use_correct_only: bool = False,
+) -> Tuple[structures.Boxes, torch.Tensor]:
+    """Select a set of initial targets for the DAG algo.
+
+    Args:
+        inputs: A list containing a single dataset_dict, transformed by
+            a DatasetMapper.
+
+    Returns:
+        target_boxes, target_labels
+    """
+    images = model.preprocess_image(inputs)
+
+    # Get features
+    features = model.backbone(images.tensor)
+
+    # Get bounding box proposals. For API, see
+    # https://github.com/facebookresearch/detectron2/blob/main/detectron2/modeling/proposal_generator/rpn.py#L431
+    proposals, _ = model.proposal_generator(images, features, None)
+    proposal_boxes = [x.proposal_boxes for x in proposals]
+
+    # Get proposal boxes' classification scores
+    predictions = _get_roi_heads_predictions(model, features, proposal_boxes)
+    # predictions = get_roi_heads_predictions(model, features, proposals)
+
+    # Scores (softmaxed) for a single image, [n_proposals, n_classes + 1]
+    # scores = model.roi_heads.box_predictor.predict_probs(predictions, proposals)[0]
+    # Instead, we want to get logit scores without softmax. For API, see
+    # https://github.com/facebookresearch/detectron2/blob/main/detectron2/modeling/roi_heads/fast_rcnn.py#L547
+    class_logits, _ = predictions
+    num_inst_per_image = [len(p) for p in proposals]
+    class_logits = class_logits.split(num_inst_per_image, dim=0)
+
+    # NOTE: class_logits dim [[1000, num_classes + 1], ...]
+
+    gt_boxes = [i["instances"].gt_boxes.to(device) for i in inputs]
+    gt_classes = [i["instances"].gt_classes for i in inputs]
+    objectness_logits = [x.objectness_logits for x in proposals]
+
+    return _filter_positive_proposals(
+        proposal_boxes,
+        class_logits,
+        gt_boxes,
+        gt_classes,
+        objectness_logits,
+        device=device,
+        iou_thres=iou_thres,
+        score_thres=score_thres,
+        use_correct_only=use_correct_only,
+    )
+
+
+def _get_roi_heads_predictions(
+    model,
+    features: Dict[str, torch.Tensor],
+    proposal_boxes: List[structures.Boxes],
+    # proposals,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    roi_heads = model.roi_heads
+    features = [features[f] for f in roi_heads.box_in_features]
+    # Defn: https://github.com/facebookresearch/detectron2/blob/main/detectron2/modeling/poolers.py#L205
+    # Usage: https://github.com/facebookresearch/detectron2/blob/main/detectron2/modeling/roi_heads/roi_heads.py#L780
+    box_features = roi_heads.box_pooler(features, proposal_boxes)
+    box_features = roi_heads.box_head(box_features)
+    logits, proposal_deltas = roi_heads.box_predictor(box_features)
+    del box_features
+    # proposal_boxes = [x.proposal_boxes for x in proposals]
+    # predictions = roi_heads.box_predictor(box_features)
+    # pred_instances, temp = roi_heads.box_predictor.inference(predictions, proposals)
+    # print('get_roi_heads_predictions')
+    # import pdb
+    # pdb.set_trace()
+    return logits, proposal_deltas
+
+
+def _filter_positive_proposals(
+    proposal_boxes: List[structures.Boxes],
+    class_logits: List[torch.Tensor],
+    gt_boxes: List[structures.Boxes],
+    gt_classes: List[torch.Tensor],
+    objectness_logits: List[torch.Tensor],
+    **kwargs,
+) -> Tuple[structures.Boxes, torch.Tensor, torch.Tensor]:
+
+    outputs = [[], [], [], []]
+    for inpt in zip(
+        proposal_boxes, class_logits, gt_boxes, gt_classes, objectness_logits
+    ):
+        out = _filter_positive_proposals_single(*inpt, **kwargs)
+        for i in range(4):
+            outputs[i].append(out[i])
+    return outputs
+
+
+def _filter_positive_proposals_single(
+    proposal_boxes: structures.Boxes,
+    class_logits: torch.Tensor,
+    gt_boxes: structures.Boxes,
+    gt_classes: torch.Tensor,
+    objectness_logits: torch.Tensor,
+    device: str = "cuda",
+    iou_thres: float = 0.1,
+    score_thres: float = 0.1,
+    use_correct_only: bool = False,
+) -> Tuple[structures.Boxes, torch.Tensor, torch.Tensor]:
+    """Filter for desired targets for the DAG algo
+
+    Parameters
+    ----------
+    proposal_boxes : Boxes
+        Proposal boxes directly from RPN
+    scores : torch.Tensor
+        Softmaxed scores for each proposal box
+    gt_boxes : Boxes
+        Ground truth boxes
+    gt_classes : torch.Tensor
+        Ground truth classes
+
+    Returns
+    -------
+    Tuple[Boxes, torch.Tensor, torch.Tensor]
+        filtered_target_boxes, corresponding_class_labels, corresponding_scores
+    """
+    n_proposals = len(proposal_boxes)
+
+    proposal_gt_ious = structures.pairwise_iou(proposal_boxes, gt_boxes)
+
+    # For each proposal_box, pair with a gt_box, i.e. find gt_box with highest IoU
+    # IoU with paired gt_box, idx of paired gt_box
+    paired_ious, paired_gt_idx = proposal_gt_ious.max(dim=1)
+
+    # Filter for IoUs > iou_thres
+    iou_cond = paired_ious >= iou_thres
+
+    # Get class of paired gt_box
+    gt_classes_repeat = gt_classes.repeat(n_proposals, 1)
+    idx = torch.arange(n_proposals)
+    paired_gt_classes = gt_classes_repeat[idx, paired_gt_idx]
+
+    if use_correct_only:
+        # Filter for score of proposal > score_thres
+        # Get scores of corresponding class
+        scores = F.softmax(class_logits, dim=-1)
+        paired_scores = scores[idx, paired_gt_classes]
+        score_cond = paired_scores >= score_thres
+        # Filter for positive proposals and their corresponding gt labels
+        cond = iou_cond & score_cond
+    else:
+        cond = iou_cond
+
+    return (
+        proposal_boxes[cond],
+        paired_gt_classes[cond].to(device),
+        class_logits[cond],
+        objectness_logits[cond],
+    )

@@ -49,7 +49,6 @@ class CustomCOCOEvaluator(DatasetEvaluator):
         *,
         use_fast_impl=True,
         kpt_oks_sigmas=(),
-        synthetic=False,
     ):
         """
         Args:
@@ -132,7 +131,6 @@ class CustomCOCOEvaluator(DatasetEvaluator):
             "catId": cfg.obj_class,
             "conf_thres": cfg.conf_thres,
         }
-        self.synthetic = synthetic
 
     def reset(self):
         self._predictions = []
@@ -276,10 +274,7 @@ class CustomCOCOEvaluator(DatasetEvaluator):
                 else None  # cocoapi does not handle empty results very well
             )
 
-            # EDIT: add synthetic sign class
             class_names = self._metadata.get("thing_classes")
-            # if self.synthetic:
-            #     class_names.append('synthetic')
             res = self._derive_coco_results(
                 coco_eval, task, class_names=class_names
             )

@@ -23,8 +23,8 @@ from torch.nn import DataParallel
 from adv_patch_bench.attacks.rp2.rp2_yolo import RP2AttackYOLO
 from adv_patch_bench.utils.argparse import (eval_args_parser,
                                             setup_yolo_test_args)
-from adv_patch_bench.utils.image import get_obj_width, resize_and_center
-from gen_mask import generate_mask
+from adv_patch_bench.utils.image import get_obj_width, resize_and_pad
+from gen_mask import gen_patch_mask
 from hparams import LABEL_LIST, MAPILLARY_IMG_COUNTS_DICT, OTHER_SIGN_CLASS
 from yolov5.models.common import DetectMultiBackend
 from yolov5.utils.datasets import create_dataloader
@@ -129,11 +129,11 @@ def generate_adv_patch(
         obj_mask = torch.from_numpy(obj_numpy[:, :, -1] == 1).float().unsqueeze(0)
         obj = torch.from_numpy(obj_numpy[:, :, :-1]).float().permute(2, 0, 1)
         # Resize object to the specify size and pad obj and masks to image size
-        obj = resize_and_center(obj, img_size, obj_size, is_binary=False)
-        obj_mask = resize_and_center(
+        obj = resize_and_pad(obj, img_size, obj_size, is_binary=False)
+        obj_mask = resize_and_pad(
             obj_mask, img_size, obj_size, is_binary=True)
         patch_mask = patch_mask.unsqueeze(dim=0)
-        patch_mask_padded = resize_and_center(
+        patch_mask_padded = resize_and_pad(
             patch_mask, img_size, obj_size, is_binary=True)
 
         print(f'=> Start attacking...')
@@ -316,7 +316,7 @@ def main(
         obj_width_inch = get_obj_width(obj_class, class_names)
         # patch_mask = generate_mask(obj_numpy, obj_size, obj_width_inch)
     
-        patch_mask = generate_mask(
+        patch_mask = gen_patch_mask(
             mask_name, obj_numpy, obj_size, obj_width_inch)
 
     dataloader = None

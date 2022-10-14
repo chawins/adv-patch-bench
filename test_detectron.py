@@ -1,18 +1,18 @@
+"""Test script for Detectron2 models."""
+
 import hashlib
 import json
 import logging
 import os
 import pickle
 import random
-from collections.abc import MutableMapping
 from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
 import pandas as pd
 import torch
 import yaml
-from detectron2.data import build_detection_test_loader
-from detectron2.engine import DefaultPredictor
+from detectron2 import config, data, engine
 
 from adv_patch_bench.dataloaders import BenignMapper, dataloaders
 from adv_patch_bench.evaluators.detectron_evaluator import DetectronEvaluator
@@ -33,6 +33,8 @@ _EVAL_PARAMS = [
     "dataset",
     "debug",
     "obj_class",
+    "interp",
+    "num_eval",
     "padded_imgsz",
     "patch_size_inch",
     "reap_transform_mode",
@@ -40,20 +42,22 @@ _EVAL_PARAMS = [
     "seed",
     "syn_3d_dist",
     "syn_colorjitter",
-    "syn_obj_size",
-    "syn_obj_width_px",
+    "obj_size_px",
     "syn_rotate",
     "syn_scale",
+    "syn_colorjitter",
+    "syn_3d_dist",
+    "weights",
 ]
 
 
 def _hash_dict(config_dict: Dict[str, Any]) -> str:
     dict_str = json.dumps(config_dict, sort_keys=True).encode("utf-8")
     # Take first 8 characters of the hash since we prefer short file name
-    return hashlib.sha512(dict_str).hexdigest()
+    return hashlib.sha512(dict_str).hexdigest()[:8]
 
 
-def _normalize_dict(d: MutableMapping, sep: str = ".") -> MutableMapping:
+def _normalize_dict(d: Dict[str, Any], sep: str = ".") -> Dict[str, Any]:
     [flat_dict] = pd.json_normalize(d, sep=sep).to_dict(orient="records")
     flat_dict = {key: flat_dict[key] for key in sorted(flat_dict.keys())}
     return flat_dict
@@ -65,7 +69,7 @@ def _compute_metrics(
     other_sign_class: int,
     conf_thres: Optional[float] = None,
     iou_thres: float = 0.5,
-) -> Tuple[float, float, float]:
+) -> Tuple[np.ndarray, np.ndarray, Optional[float]]:
 
     all_iou_thres = np.linspace(
         0.5, 0.95, int(np.round((0.95 - 0.5) / 0.05)) + 1, endpoint=True
@@ -106,17 +110,17 @@ def _compute_metrics(
         f1_mean = np.delete(f1[iou_idx], other_sign_class, axis=0).mean(0)
         max_f1_idx = f1_mean.argmax()
         max_f1 = f1_mean[max_f1_idx]
-        tp = tp_full[iou_idx, :, max_f1_idx]
-        fp = fp_full[iou_idx, :, max_f1_idx]
+        tp: np.ndarray = tp_full[iou_idx, :, max_f1_idx]
+        fp: np.ndarray = fp_full[iou_idx, :, max_f1_idx]
         conf_thres = scores_thres[max_f1_idx]
-        print(
-            f"[DEBUG] max_f1_idx: {max_f1_idx}, max_f1: {max_f1:.4f}, "
-            f"conf_thres: {conf_thres:.3f}"
+        log.debug(
+            f"max_f1_idx: {max_f1_idx}, max_f1: {max_f1:.4f}, conf_thres: "
+            f"{conf_thres:.3f}."
         )
 
     else:
 
-        print("Using specified conf_thres...")
+        log.debug(f"Using specified conf_thres of {conf_thres}...")
 
         tp_full = np.zeros((num_ious, num_classes))
         fp_full = np.zeros_like(tp_full)
@@ -129,8 +133,8 @@ def _compute_metrics(
                 fp_full[t, k] = np.sum(
                     np.array(scores_full[k][t][1]) >= conf_thres
                 )
-        tp = tp_full[iou_idx]
-        fp = fp_full[iou_idx]
+        tp: np.ndarray = tp_full[iou_idx]
+        fp: np.ndarray = fp_full[iou_idx]
 
     rc = tp / (num_gts_per_class + eps)
     pr = tp / (tp + fp + eps)
@@ -138,12 +142,12 @@ def _compute_metrics(
     # Compute combined metrics, ignoring class
     recall_cmb = tp.sum() / (num_gts_per_class.sum() + eps)
 
-    print(f"[DEBUG] num_gts_per_class: {num_gts_per_class}")
-    print(f"[DEBUG] tp: {tp}")
-    print(f"[DEBUG] fp: {fp}")
-    print(f"[DEBUG] precision: {pr}")
-    print(f"[DEBUG] recall: {rc}")
-    print(f"[DEBUG] recall_cmb: {recall_cmb}")
+    log.debug(f"num_gts_per_class: {num_gts_per_class}")
+    log.debug(f"tp: {tp}")
+    log.debug(f"fp: {fp}")
+    log.debug(f"precision: {pr}")
+    log.debug(f"recall: {rc}")
+    log.debug(f"recall_cmb: {recall_cmb}")
 
     return tp, fp, conf_thres
 
@@ -151,7 +155,6 @@ def _compute_metrics(
 def _dump_results(
     results: Dict[str, Any],
     config_eval: Dict[str, Any],
-    config_attack: Dict[str, Any],
 ) -> None:
     """Dump result dict to pickle file.
 
@@ -161,7 +164,6 @@ def _dump_results(
     Args:
         results: Result dict.
         config_eval: Evaluation config dict.
-        config_attack: Attack config dict.
     """
     result_dir = config_eval["result_dir"]
     debug = config_eval["debug"]
@@ -172,15 +174,11 @@ def _dump_results(
     for param in _EVAL_PARAMS:
         cfg_eval[param] = config_eval[param]
 
-    # Flatten attack config
-    attack_name = config_attack["common"]["attack_name"]
-    cfg_attack = {**config_attack["common"], **config_attack[attack_name]}
-    cfg_attack = _normalize_dict(cfg_attack)
-
     # Compute hash of both dicts to use as naming so we only keep one copy of
     # result in the exact same setting.
     config_eval_hash = _hash_dict(cfg_eval)
-    config_attack_hash = _hash_dict(cfg_attack)
+    # Attack params are already contained in name
+    config_attack_hash = _hash_dict({"name": config_eval["name"]})
     result_path = os.path.join(
         result_dir,
         f"results_eval{config_eval_hash}_atk{config_attack_hash}.pkl",
@@ -189,9 +187,14 @@ def _dump_results(
         pickle.dump(results, f)
 
 
-def main(cfg, config):
+def main(cfg: config.CfgNode, config: Dict[str, Dict[str, Any]]):
+    """Main function.
 
-    config_eval = config["eval"]
+    Args:
+        cfg: Detectron config.
+        config: Config dict for both eval and attack.
+    """
+    config_eval: Dict[str, Any] = config["eval"]
     dataset = config_eval["dataset"]
     attack_config_path = config_eval["attack_config_path"]
     class_names = LABEL_LIST[dataset]
@@ -200,15 +203,17 @@ def main(cfg, config):
     if os.path.isfile(attack_config_path):
         log.info(f"Loading saved attack config from {attack_config_path}...")
         with open(attack_config_path) as f:
+            # pylint: disable=unexpected-keyword-arg
             config_attack = yaml.safe_load(f, Loader=yaml.FullLoader)
     else:
         config_attack = config["attack"]
 
     # Build model
-    model = DefaultPredictor(cfg).model
+    model = engine.DefaultPredictor(cfg).model
 
     # Build dataloader
-    val_loader = build_detection_test_loader(
+    # pylint: disable=too-many-function-args
+    val_loader = data.build_detection_test_loader(
         cfg,
         cfg.DATASETS.TEST[0],
         mapper=BenignMapper(cfg, is_train=False),
@@ -216,7 +221,7 @@ def main(cfg, config):
         num_workers=cfg.DATALOADER.NUM_WORKERS,
     )
 
-    attack = DetectronEvaluator(
+    evaluator = DetectronEvaluator(
         cfg,
         config_eval,
         config_attack,
@@ -225,22 +230,40 @@ def main(cfg, config):
         class_names=class_names,
     )
     log.info("=> Running attack...")
-    _, metrics = attack.run()
+    _, metrics = evaluator.run()
 
     eval_cfg = _normalize_dict(config_eval)
-    results = {**metrics, **eval_cfg, **config_attack}
-    _dump_results(results, config_eval, config_attack)
+    results: Dict[str, Any] = {**metrics, **eval_cfg, **config_attack}
+    _dump_results(results, config_eval)
 
     # Logging results
-    metrics = results["bbox"]
+    metrics: Dict[str, Any] = results["bbox"]
+    conf_thres: float = config_eval["conf_thres"]
+
     if config_eval["synthetic"]:
+        total_num_patches = metrics["total_num_patches"]
+        syn_scores = metrics["syn_scores"]
+        syn_matches = metrics["syn_matches"]
+        all_iou_thres = metrics["all_iou_thres"]
+        iou_thres = config_eval["iou_thres"]
+
+        # Get detection for desired score and for all IoU thresholds
+        detected = (syn_scores >= conf_thres) * syn_matches
+        # Select desired IoU threshold
+        iou_thres_idx = int(np.where(all_iou_thres == iou_thres)[0])
+        tp = detected[iou_thres_idx].sum()
+        fn = total_num_patches - tp
+        metrics["syn_total"] = total_num_patches
+        metrics["syn_tp"] = int(tp)
+        metrics["syn_fn"] = int(fn)
+        metrics["syn_tpr"] = tp / total_num_patches
+        metrics["syn_fnr"] = fn / total_num_patches
         log.info(
-            f'[Synthetic] Total: {metrics["syn_total"]:4d}\n'
-            f'            TP: {metrics["syn_tp"]:4d} ({metrics["syn_tpr"]:.4f})\n'
-            f'            FN: {metrics["syn_fn"]:4d} ({metrics["syn_fnr"]:.4f})\n'
+            f'[Syn] Total: {metrics["syn_total"]:4d}\n'
+            f'      TP: {metrics["syn_tp"]:4d} ({metrics["syn_tpr"]:.4f})\n'
+            f'      FN: {metrics["syn_fn"]:4d} ({metrics["syn_fnr"]:.4f})\n'
         )
     else:
-        conf_thres = config_eval["conf_thres"]
         num_gts_per_class = metrics["num_gts_per_class"]
         tp, fp, conf_thres = _compute_metrics(
             metrics["scores_full"],
@@ -269,17 +292,17 @@ def main(cfg, config):
             tp_all += t
             fp_all += f
             total += n
-        metrics[f"TPR-all"] = tp_all / total
-        metrics[f"FPR-all"] = fp_all / total
+        metrics["TPR-all"] = tp_all / total
+        metrics["FPR-all"] = fp_all / total
         log.info(f'Total num patches: {metrics["total_num_patches"]}')
         _dump_results(results, config_eval, config_attack)
 
 
 if __name__ == "__main__":
-    config = eval_args_parser(True)
+    config: Dict[str, Dict[str, Any]] = eval_args_parser(True)
     cfg = setup_detectron_test_args(config)
-    config_eval = config["eval"]
-    seed = config_eval["seed"]
+    config_eval: Dict[str, Any] = config["eval"]
+    seed: int = config_eval["seed"]
 
     # Set up logger
     log.setLevel(logging.DEBUG if config_eval["debug"] else logging.INFO)

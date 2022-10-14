@@ -1,5 +1,7 @@
 from os.path import expanduser
-import numpy as np
+from typing import Any, Dict
+
+# TODO(feature): Make dataset-specific metadata into a config file.
 
 # Set paths
 PATH_MAPILLARY_ANNO = {
@@ -14,65 +16,33 @@ DEFAULT_DATA_PATHS = {
 }
 DEFAULT_DATA_PATHS["reap"] = DEFAULT_DATA_PATHS["mapillary"]
 DEFAULT_DATA_PATHS["synthetic"] = DEFAULT_DATA_PATHS["mapillary"]
+DEFAULT_SYN_OBJ_DIR = "./attack_assets/"
 
 PATH_APB_ANNO = expanduser("./traffic_sign_dimension_v6.csv")
 PATH_SIMILAR_FILES = "./similar_files_df.csv"
-DEFAULT_PATH_SYN_OBJ = "./attack_assets/"
 DEFAULT_PATH_BG_FILE_NAMES = "./bg_txt_files/"
-PATH_DEBUG_ADV_PATCH = f"{DEFAULT_PATH_SYN_OBJ}/debug.png"
+DEFAULT_PATH_DEBUG_PATCH = f"{DEFAULT_SYN_OBJ_DIR}/debug.png"
 
 # TODO: move to args in the future
 SAVE_DIR_YOLO = "./runs/val/"
 
-MTSD_VAL_LABEL_COUNTS_DICT = {
-    "circle-750.0": 2999,
-    "triangle-900.0": 711,
-    "triangle_inverted-1220.0": 347,
-    "diamond-600.0": 176,
-    "diamond-915.0": 1278,
-    "square-600.0": 287,
-    "rect-458.0-610.0": 585,
-    "rect-762.0-915.0": 117,
-    "rect-915.0-1220.0": 135,
-    "pentagon-915.0": 30,
-    "octagon-915.0": 181,
-    "other-0.0-0.0": 19241,
-}
-MTSD_VAL_TOTAL_LABEL_COUNTS = sum(MTSD_VAL_LABEL_COUNTS_DICT.values())
+# Allowed interpolation methods
+INTERPS = ("nearest", "bilinear", "bicubic")
 
-MAPILLARY_LABEL_COUNTS_DICT = {
-    "circle-750.0": 18144,
-    "triangle-900.0": 1473,
-    "triangle_inverted-1220.0": 1961,
-    "diamond-600.0": 1107,
-    "diamond-915.0": 3539,
-    "square-600.0": 1898,
-    "rect-458.0-610.0": 1580,
-    "rect-762.0-915.0": 839,
-    "rect-915.0-1220.0": 638,
-    "pentagon-915.0": 204,
-    "octagon-915.0": 1001,
-    "other-0.0-0.0": 60104,
-}
-MAPILLARY_TOTAL_LABEL_COUNTS = sum(MAPILLARY_LABEL_COUNTS_DICT.values())
+# =========================================================================== #
 
-# Counts of images where sign is present in
-MAPILLARY_IMG_COUNTS_DICT = {
-    "circle-750.0": 5325,
-    "triangle-900.0": 548,
-    "triangle_inverted-1220.0": 706,
-    "diamond-600.0": 293,
-    "diamond-915.0": 1195,
-    "square-600.0": 729,
-    "rect-458.0-610.0": 490,
-    "rect-762.0-915.0": 401,
-    "rect-915.0-1220.0": 333,
-    "pentagon-915.0": 116,
-    "octagon-915.0": 564,
-    "other-0.0-0.0": 0,
-}
+# Available dataset and class labels
+DATASETS = (
+    "mtsd_orig",
+    "mtsd_no_color",
+    "mtsd_color",
+    "mapillary_no_color",
+    "mapillary_color",
+    "reap",
+    "synthetic",
+)
 
-# Traffic sign classes and colors
+# Traffic sign classes with colors
 TS_COLOR_DICT = {
     "circle-750.0": ["white", "blue", "red"],  # (1) white+red, (2) blue+white
     "triangle-900.0": ["white", "yellow"],  # (1) white, (2) yellow
@@ -125,24 +95,9 @@ LABEL_LIST["synthetic"] = LABEL_LIST["mapillary_no_color"]
 # Get list of shape (no size, no color)
 TS_SHAPE_LIST = list(set([l.split("-")[0] for l in TS_NO_COLOR_LABEL_LIST]))
 
-MIN_OBJ_AREA = 0
-NUM_CLASSES = len(TS_COLOR_LABEL_LIST)
+# =========================================================================== #
 
-DATASETS = (
-    "mtsd_orig",
-    "mtsd_no_color",
-    "mtsd_color",
-    "mapillary_no_color",
-    "mapillary_color",
-)
-# OTHER_SIGN_CLASS = {
-#     "mtsd_orig": 89,
-#     "mtsd_no_color": len(TS_NO_COLOR_LABEL_LIST) - 1,
-#     "mtsd_color": len(TS_COLOR_LABEL_LIST) - 1,
-#     "mapillary_no_color": len(TS_NO_COLOR_LABEL_LIST) - 1,
-#     "mapillary_color": len(TS_COLOR_LABEL_LIST) - 1,
-# }
-
+# Number of classes in each dataset
 NUM_CLASSES = {
     "mtsd_orig": 401,
     "mtsd_no_color": len(TS_NO_COLOR_LABEL_LIST),
@@ -153,20 +108,108 @@ NUM_CLASSES = {
 NUM_CLASSES["reap"] = NUM_CLASSES["mapillary_no_color"]
 NUM_CLASSES["synthetic"] = NUM_CLASSES["mapillary_no_color"]
 
-HW_RATIO_DICT = {
-    "circle-750.0": 1,
-    "triangle-900.0": 1024 / 1168,
-    "triangle_inverted-1220.0": 900 / 1024,
-    "diamond-600.0": 1,
-    "diamond-915.0": 1,
-    "square-600.0": 1,
-    "rect-458.0-610.0": 610 / 458,
-    "rect-762.0-915.0": 915 / 762,
-    "rect-915.0-1220.0": 1220 / 915,
-    "pentagon-915.0": 1,
-    "octagon-915.0": 1,
+# =========================================================================== #
+
+# Configure dimension
+_MPL_NO_COLOR_SIZE_MM = {
+    "circle-750.0": (750.0, 750.0),
+    "triangle-900.0": (789.0, 900.0),
+    "triangle_inverted-1220.0": (1072.3, 1220.0),
+    "diamond-600.0": (600.0, 600.0),
+    "diamond-915.0": (915.0, 915.0),
+    "square-600.0": (600.0, 600.0),
+    "rect-458.0-610.0": (610.0, 458.0),
+    "rect-762.0-915.0": (915.0, 762.0),
+    "rect-915.0-1220.0": (1220.0, 915.0),
+    "pentagon-915.0": (915.0, 915.0),
+    "octagon-915.0": (915.0, 915.0),
 }
-HW_RATIO_LIST = list(HW_RATIO_DICT.values())
+_MPL_NO_COLOR_SIZE_MM = list(_MPL_NO_COLOR_SIZE_MM.values())
+
+# Geometric shape of objects
+# This is straightforward for our traffic sign classes, but to extend to other
+# dataset in general, we need a mapping from class names to shapes.
+_MPL_NO_COLOR_SHAPE = {
+    "circle-750.0": "circle",
+    "triangle-900.0": "triangle",
+    "triangle_inverted-1220.0": "triangle_inverted",
+    "diamond-600.0": "diamond",
+    "diamond-915.0": "diamond",
+    "square-600.0": "square",
+    "rect-458.0-610.0": "rect",
+    "rect-762.0-915.0": "rect",
+    "rect-915.0-1220.0": "rect",
+    "pentagon-915.0": "pentagon",
+    "octagon-915.0": "octagon",
+}
+_MPL_NO_COLOR_SHAPE = list(_MPL_NO_COLOR_SHAPE.values())
+
+# Height-width ratio
+_MPL_NO_COLOR_RATIO = [s[0] / s[1] for s in _MPL_NO_COLOR_SIZE_MM]
+
+OBJ_DIM_DICT: Dict[str, Dict[str, Any]] = {
+    "mapillary_no_color": {
+        "size_mm": _MPL_NO_COLOR_SIZE_MM,
+        "hw_ratio": _MPL_NO_COLOR_RATIO,
+        "shape": _MPL_NO_COLOR_SHAPE,
+    }
+}
+OBJ_DIM_DICT["reap"] = OBJ_DIM_DICT["mapillary_no_color"]
+OBJ_DIM_DICT["synthetic"] = OBJ_DIM_DICT["mapillary_no_color"]
+
+# =========================================================================== #
+
+# TODO
+
+MTSD_VAL_LABEL_COUNTS_DICT = {
+    "circle-750.0": 2999,
+    "triangle-900.0": 711,
+    "triangle_inverted-1220.0": 347,
+    "diamond-600.0": 176,
+    "diamond-915.0": 1278,
+    "square-600.0": 287,
+    "rect-458.0-610.0": 585,
+    "rect-762.0-915.0": 117,
+    "rect-915.0-1220.0": 135,
+    "pentagon-915.0": 30,
+    "octagon-915.0": 181,
+    "other-0.0-0.0": 19241,
+}
+MTSD_VAL_TOTAL_LABEL_COUNTS = sum(MTSD_VAL_LABEL_COUNTS_DICT.values())
+
+MAPILLARY_LABEL_COUNTS_DICT = {
+    "circle-750.0": 18144,
+    "triangle-900.0": 1473,
+    "triangle_inverted-1220.0": 1961,
+    "diamond-600.0": 1107,
+    "diamond-915.0": 3539,
+    "square-600.0": 1898,
+    "rect-458.0-610.0": 1580,
+    "rect-762.0-915.0": 839,
+    "rect-915.0-1220.0": 638,
+    "pentagon-915.0": 204,
+    "octagon-915.0": 1001,
+    "other-0.0-0.0": 60104,
+}
+MAPILLARY_TOTAL_LABEL_COUNTS = sum(MAPILLARY_LABEL_COUNTS_DICT.values())
+
+# Counts of images where sign is present in
+MAPILLARY_IMG_COUNTS_DICT = {
+    "circle-750.0": 5325,
+    "triangle-900.0": 548,
+    "triangle_inverted-1220.0": 706,
+    "diamond-600.0": 293,
+    "diamond-915.0": 1195,
+    "square-600.0": 729,
+    "rect-458.0-610.0": 490,
+    "rect-762.0-915.0": 401,
+    "rect-915.0-1220.0": 333,
+    "pentagon-915.0": 116,
+    "octagon-915.0": 564,
+    "other-0.0-0.0": 0,
+}
+
+MIN_OBJ_AREA = 0
 
 # Compute results
 ANNO_LABEL_COUNTS_DICT = {
