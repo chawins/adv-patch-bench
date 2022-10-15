@@ -252,23 +252,18 @@ def _filter_positive_proposals_single(
     score_thres: float = 0.1,
     use_correct_only: bool = False,
 ) -> Tuple[structures.Boxes, torch.Tensor, torch.Tensor]:
-    """Filter for desired targets for the DAG algo
+    """Filter for desired targets for the DAG algo.
 
-    Parameters
-    ----------
-    proposal_boxes : Boxes
-        Proposal boxes directly from RPN
-    scores : torch.Tensor
-        Softmaxed scores for each proposal box
-    gt_boxes : Boxes
-        Ground truth boxes
-    gt_classes : torch.Tensor
-        Ground truth classes
+    Args:
+        proposal_boxes: Proposal boxes directly from RPN
+        scores: Softmaxed scores for each proposal box
+        gt_boxes: Ground truth boxes
+        gt_classes: Ground truth classes
 
-    Returns
-    -------
-    Tuple[Boxes, torch.Tensor, torch.Tensor]
-        filtered_target_boxes, corresponding_class_labels, corresponding_scores
+    Returns:
+        filtered_target_boxes:
+        corresponding_class_labels:
+        corresponding_scores:
     """
     n_proposals = len(proposal_boxes)
 

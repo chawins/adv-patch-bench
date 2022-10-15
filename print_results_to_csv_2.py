@@ -1,6 +1,7 @@
 import argparse
 import pathlib
 import pickle
+from typing import List
 
 import numpy as np
 import pandas as pd
@@ -30,6 +31,18 @@ _BG_DIFF = _NUM_SIGNS_PER_CLASS_BG - _NUM_SIGNS_PER_CLASS
 BASE_PATH = "./detectron_output/"
 CONF_THRES = 0.634
 iou_idx = 0  # 0.5
+
+_TRANSFORM_PARAMS: List[str] = [
+    "interp",
+    "reap_transform_mode",
+    "reap_use_relight",
+    "syn_obj_width_px",
+    "syn_rotate",
+    "syn_scale",
+    "syn_translate",
+    "syn_colorjitter",
+    "syn_3d_dist",
+]
 
 
 def _compute_ap_recall(scores, matched, NP, recall_thresholds=None):
@@ -83,10 +96,9 @@ def _compute_ap_recall(scores, matched, NP, recall_thresholds=None):
 def _average(print_df_rows, base_sid, all_class_sid, metric_name):
     metrics = np.zeros(len(_NUM_SIGNS_PER_CLASS))
     for i in range(len(_NUM_SIGNS_PER_CLASS)):
-        # if metric_name == "Precision":
-        #     import pdb
-        #     pdb.set_trace()
-        # print(metric_name, print_df_rows[f"{base_sid}_{i:02d}"][metric_name])
+        sid = f"{base_sid}_{i:02d}"
+        if sid not in print_df_rows:
+            continue
         metrics[i] = print_df_rows[f"{base_sid}_{i:02d}"][metric_name]
     print_df_rows[all_class_sid][metric_name] = np.mean(metrics)
     return metrics
@@ -142,13 +154,9 @@ def main(args):
 
                 # Experiment setting identifier for matching clean and attack
                 obj_class = results["obj_class"]
-                obj_size = results["obj_size_px"]
-                syn_rotate = int(results.get("syn_rotate_degree", 15.0))
                 synthetic = int(results["synthetic"])
                 is_attack = int(results["attack_type"] != "none")
                 scores_dict = gt_scores[is_attack]
-                # if obj_size == 64:
-                #    continue
 
                 if synthetic:
                     # Synthetic sign
@@ -158,9 +166,12 @@ def main(args):
                         obj_class: metrics["syn_scores"]
                         * metrics["syn_matches"]
                     }
-                    syn_use_scale = int(results["syn_use_scale"])
-                    syn_use_colorjitter = int(results["syn_use_colorjitter"])
-                    base_sid = f"syn_size{obj_size}_rt{syn_rotate}_{syn_use_scale}_{syn_use_colorjitter}_atk{int(is_attack)}"
+                    token_list = []
+                    for param in _TRANSFORM_PARAMS:
+                        if "syn" in param:
+                            token_list.append(str(results[param]))
+                    base_sid = "syn_" + "_".join(token_list)
+                    base_sid += "_atk1" if is_attack else "_atk0"
                 else:
                     # Real signs
                     if exp_type is not None and exp_type != "real":
@@ -176,77 +187,61 @@ def main(args):
                     else:
                         base_sid = "real_atk0"
 
-                if obj_class == -1:
-                    obj_classes = range(len(_NUM_SIGNS_PER_CLASS))
-                else:
-                    obj_classes = [obj_class]
-
                 if base_sid not in tp_scores:
                     tp_scores[base_sid] = {t: [] for t in range(10)}
                     fp_scores[base_sid] = {t: [] for t in range(10)}
 
-                for oc in obj_classes:
-                    scores = cls_scores[oc]
-                    sid = f"{base_sid}_{oc:02d}"
-                    if sid in scores_dict:
-                        # There should only be one clean setting
-                        # raise ValueError(
-                        #     f"There are multiple results under same setting "
-                        #     f"({sid}). Check result at {result_path}."
-                        # )
-                        repeated_results.append(result_path)
-                        continue
-                    # if not is_attack and synthetic:
-                    #     import pdb
-                    #     pdb.set_trace()
-                    scores_dict[sid] = (time, scores)
+                scores = cls_scores[obj_class]
+                sid = f"{base_sid}_{obj_class:02d}"
+                if sid in scores_dict:
+                    repeated_results.append(result_path)
+                    continue
+                scores_dict[sid] = (time, scores)
 
-                    tp = np.sum(scores[iou_idx] >= CONF_THRES)
-                    class_name = TS_NO_COLOR_LABEL_LIST[oc]
-                    tpr = tp / (
-                        scores.shape[1]
-                        if synthetic
-                        else _NUM_SIGNS_PER_CLASS[oc]
-                    )
-                    metrics[f"FNR-{class_name}"] = 1 - tpr
+                tp = np.sum(scores[iou_idx] >= CONF_THRES)
+                class_name = TS_NO_COLOR_LABEL_LIST[obj_class]
+                tpr = tp / (
+                    scores.shape[1]
+                    if synthetic
+                    else _NUM_SIGNS_PER_CLASS[obj_class]
+                )
+                metrics[f"FNR-{class_name}"] = 1 - tpr
 
-                    print_df_rows[sid] = {
-                        "id": sid,
-                        "atk": is_attack,
-                        "FNR": (1 - tpr) * 100,
-                    }
-                    if not synthetic:
-                        # print_df_rows[sid]["AP"] = metrics[f"AP-{class_name}"]
+                print_df_rows[sid] = {
+                    "id": sid,
+                    "atk": is_attack,
+                    "FNR": (1 - tpr) * 100,
+                }
+                if not synthetic:
+                    # TODO: Recompute AP by ignoring bg signs
+                    aps = np.zeros(_NUM_IOU_THRES)
+                    for t in range(_NUM_IOU_THRES):
+                        scores = np.concatenate(
+                            [
+                                results["bbox"]["scores_full"][obj_class][t][0],
+                                results["bbox"]["scores_full"][obj_class][t][1],
+                            ],
+                            axis=0,
+                        )
+                        matches = np.zeros_like(scores, dtype=bool)
+                        nm = len(results["bbox"]["scores_full"][obj_class][t][0])
+                        matches[:nm] = 1
+                        outputs = _compute_ap_recall(
+                            scores, matches, _NUM_SIGNS_PER_CLASS[obj_class]
+                        )
+                        aps[t] = outputs["AP"]
+                        if t == iou_idx:
+                            # FIXME: precision can't be weighted average
+                            print_df_rows[sid]["Precision"] = outputs["precision"] * 100
+                            print_df_rows[sid]["Recall"] = outputs["recall"] * 100
+                        
+                    print_df_rows[sid]["AP"] = aps.mean() * 100
 
-                        # TODO: Recompute AP by ignoring bg signs
-                        aps = np.zeros(_NUM_IOU_THRES)
-                        for t in range(_NUM_IOU_THRES):
-                            scores = np.concatenate(
-                                [
-                                    results["bbox"]["scores_full"][oc][t][0],
-                                    results["bbox"]["scores_full"][oc][t][1],
-                                ],
-                                axis=0,
-                            )
-                            matches = np.zeros_like(scores, dtype=bool)
-                            nm = len(results["bbox"]["scores_full"][oc][t][0])
-                            matches[:nm] = 1
-                            outputs = _compute_ap_recall(
-                                scores, matches, _NUM_SIGNS_PER_CLASS[oc]
-                            )
-                            aps[t] = outputs["AP"]
-                            if t == iou_idx:
-                                # FIXME: precision can't be weighted average
-                                print_df_rows[sid]["Precision"] = outputs["precision"] * 100
-                                print_df_rows[sid]["Recall"] = outputs["recall"] * 100
-                            
-                        print_df_rows[sid]["AP"] = aps.mean() * 100
-
-                        for t in range(10):
-                            tp_score = results["bbox"]["scores_full"][oc][t][0]
-                            tp_scores[base_sid][t].extend(tp_score)
-                            fp_score = results["bbox"]["scores_full"][oc][t][1]
-                            fp_scores[base_sid][t].extend(fp_score)
+                    for t in range(10):
+                        tp_score = results["bbox"]["scores_full"][obj_class][t][0]
+                        tp_scores[base_sid][t].extend(tp_score)
+                        fp_score = results["bbox"]["scores_full"][obj_class][t][1]
+                        fp_scores[base_sid][t].extend(fp_score)
 
                 # Create DF row for all classes
                 all_class_sid = f"{base_sid}_all"
@@ -292,15 +287,6 @@ def main(args):
             * _NUM_SIGNS_PER_CLASS
             / np.sum(_NUM_SIGNS_PER_CLASS)
         )
-        # if "syn" in sid and "atk0" in sid and "all" not in sid:
-        #     sid_no_class = "_".join(sid.split("_")[:-1])
-        #     k = int(sid.split("_")[-1])
-        #     fnrs[k] = data["FNR"]
-    # if sid_no_class is not None:
-    #     print_df_rows[sid_no_class + "_all"]["FNR"] = np.mean(fnrs)
-    #     print_df_rows[sid_no_class + "_allw"]["FNR"] = np.sum(
-    #         fnrs * _NUM_SIGNS_PER_CLASS / np.sum(_NUM_SIGNS_PER_CLASS)
-    #     )
 
     # Iterate through all attack experiments
     for sid, (time, adv_scores) in gt_scores[1].items():

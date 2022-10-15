@@ -350,12 +350,16 @@ class DetectronEvaluator:
                 # Skip image without any adversarial patch when attacking
                 continue
 
-            # Apply adversarial patch to each RenderImage
+            # Apply adversarial patch and convert to Detectron2 input format
             img_render, target_render = rimg.apply_objects()
             img_render_det: ImageTensorDet = rimg.post_process_image(img_render)
-            # Perform inference on perturbed image
+
+            # Perform inference on perturbed image. For REAP, COCO evaluator
+            # requires ouput in original size, but synthetic object requires
+            # custom evaluator so we simply use the image size.
             outputs: Dict[str, Any] = self.predict(
-                img_render_det, rimg.img_size_orig
+                img_render_det,
+                rimg.img_size if self._synthetic else rimg.img_size_orig,
             )
 
             # Evaluate outputs and save predictions
@@ -369,7 +373,7 @@ class DetectronEvaluator:
             total_num_images += 1
 
             # Visualization
-            if num_vis < self._num_vis and is_included:
+            if num_vis < self._num_vis:
                 num_vis += 1
                 self._visualize(i, rimg, img_render_det, target_render)
 
@@ -392,7 +396,7 @@ class DetectronEvaluator:
         self,
         index: int,
         rimg: render_image.RenderImage,
-        img_render: torch.Tensor,
+        img_render: ImageTensorDet,
         target_render: Target,
     ) -> None:
         """Visualize ground truth, clean and adversarial predictions."""
@@ -405,20 +409,20 @@ class DetectronEvaluator:
         # Visualize ground truth labels on original image
         vis_orig = Visualizer(img_orig_np, self._metadata, scale=0.5)
         if self._vis_show_bbox:
-            im_gt_clean = vis_orig.draw_dataset_dict(target_orig)
+            im_gt_orig = vis_orig.draw_dataset_dict(target_orig)
         else:
-            im_gt_clean = vis_orig.get_output()
-        im_gt_clean.save(str(self._vis_save_dir / f"gt_clean_{index}.png"))
+            im_gt_orig = vis_orig.get_output()
+        im_gt_orig.save(str(self._vis_save_dir / f"gt_orig_{index}.png"))
 
         # Visualize prediction on original image
         instances: structures.Instances = output_orig["instances"].to("cpu")
         # Set confidence threshold and visualize rendered image
-        im_pred_clean = vis_orig.draw_instance_predictions(
+        im_pred_orig = vis_orig.draw_instance_predictions(
             instances[instances.scores > self._vis_conf_thres]
         )
-        im_pred_clean.save(str(self._vis_save_dir / f"pred_clean_{index}.png"))
+        im_pred_orig.save(str(self._vis_save_dir / f"pred_orig_{index}.png"))
 
-        if not self._use_attack:
+        if not self._use_attack and self._dataset == "reap":
             return
 
         img_render_np: np.ndarray = self._vis_convert_img(img_render)
@@ -427,7 +431,9 @@ class DetectronEvaluator:
         if self._synthetic:
             # Visualize ground truth on perturbed image
             im_gt_render = vis_render.draw_dataset_dict(target_render)
-            im_gt_render.save(str(self._vis_save_dir / f"gt_adv_{index}.png"))
+            im_gt_render.save(
+                str(self._vis_save_dir / f"gt_render_{index}.png")
+            )
 
         # Visualize prediction on perturbed image
         output_render: Dict[str, Any] = self.predict(img_render, rimg.img_size)
@@ -438,7 +444,9 @@ class DetectronEvaluator:
             )
         else:
             im_pred_render = vis_render.get_output()
-        im_pred_render.save(str(self._vis_save_dir / f"pred_adv_{index}.png"))
+        im_pred_render.save(
+            str(self._vis_save_dir / f"pred_render_{index}.png")
+        )
 
     def _vis_convert_img(self, image: ImageTensorDet) -> np.ndarray:
         """Converge image in Detectron input format to the visualizer's."""

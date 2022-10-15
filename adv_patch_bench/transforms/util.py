@@ -14,17 +14,25 @@ from adv_patch_bench.utils.types import (
 
 
 def _identity(x: Union[ImageTensor, BatchImageTensor]) -> BatchImageTensor:
+    """Identity transform function."""
     return x
 
 
 def _identity_with_params(
     x: Union[ImageTensor, BatchImageTensor]
 ) -> Tuple[BatchImageTensor, None]:
+    """Indentity function that also returns None param."""
     x = _identity(x)
     return x, None
 
 
-def gen_rect_mask(size, ratio=None):
+def gen_rect_mask(size: int, ratio: Optional[float] = None):
+    """Generate rectangular mask.
+
+    Args:
+        size: Width of object in pixels.
+        ratio: Ratio between height and width.
+    """
     height = round(ratio * size) if ratio > 1 else size
     width = size
     mask = np.zeros((height, width))
@@ -232,6 +240,7 @@ def init_syn_transforms(
         prob_colorjitter is not None
         and prob_colorjitter > 0
         and syn_colorjitter is not None
+        and syn_colorjitter > 0
     ):
         # Hue can't be change much; Otherwise, the color becomes wrong
         light_transform: TransformFn = K.ColorJitter(
