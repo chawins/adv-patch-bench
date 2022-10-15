@@ -2,20 +2,22 @@
 
 ## Dependencies
 
-Test with
+Tested with
 
-- `python == 3.8`
+- `python >= 3.8`
 - `cuda >= 11.2`
 - `kornia == 0.6.3`: Using version `>= 0.6.4` will raise an error.
 
-We recommend creating a new conda environment with python 3.8 because `kornia` and `detectron` seem to often mess up dependencies and result in a segmentation fault.
+We recommend creating a new conda environment with python 3.8 because `kornia` and `detectron2` seem to often mess up dependencies and result in a segmentation fault.
 
-```bash
-conda install -y pytorch torchvision torchaudio cudatoolkit=11.3 -c pytorch
+```[bash]
+# Install pytorch normally
+conda install -y pytorch torchvision torchaudio cudatoolkit=11.6 -c pytorch
 conda install -y scipy pandas scikit-learn pip seaborn
 conda upgrade -y numpy scipy pandas scikit-learn
-conda install -y -c conda-forge opencv albumentations timm kornia==0.6.3
-python -m pip install 'git+https://github.com/facebookresearch/detectron2.git'
+conda install -y -c conda-forge timm kornia==0.6.3
+pip install opencv albumentations
+pip install 'git+https://github.com/facebookresearch/detectron2.git'
 ```
 
 ## Dataset
@@ -31,7 +33,7 @@ python -m pip install 'git+https://github.com/facebookresearch/detectron2.git'
 - Test set: Combine Vistas training and validation. Symlink to `~/data/yolo_data/(images or labels)/test`.
 - If you run into `Argument list too long` error, try to raise limit of argument stack size by `ulimit -S -s 100000000`. [link](https://unix.stackexchange.com/a/401797)
 
-```bash
+```[bash]
 # Prepare MTSD dataset
 # Dataset should be extracted to ~/data/mtsd_v2_fully_annotated
 python prep_mtsd_for_yolo.py
@@ -68,22 +70,23 @@ export PYTHONPATH="${PYTHONPATH}:/home/chawin/adv-patch-bench/datasets/panoptic_
 
 - `prep_mapillary.py`: Prepare Vistas dataset for YOLOv5 using a pretrained classifier to determine classes of the signs. May require substantial memory to run. Insufficient memory can lead to the script getting killed with no error message.
 
-```bash
+```[bash]
 # Dataset should be extracted to ~/data/mapillary_vistas (use symlink if needed)
 CUDA_VISIBLE_DEVICES=0 python prep_mapillary.py --split train --resume PATH_TO_CLASSIFIER
 CUDA_VISIBLE_DEVICES=0 python prep_mapillary.py --split val --resume PATH_TO_CLASSIFIER
 
 # Combined train and val partition into "combined"
-cd ~/data/mapillary_vistas
+BASE_DIR=~/data/mapillary_vistas
+cd $BASE_DIR
 mkdir no_color && cd no_color
 mkdir combined && cd combined
 mkdir images labels detectron_labels
-ln -s ~/data/mapillary_vistas/training/images/* images/
-ln -s ~/data/mapillary_vistas/validation/images/* images/
-ln -s ~/data/mapillary_vistas/training/labels_no_color/* labels/
-ln -s ~/data/mapillary_vistas/validation/labels_no_color/* labels/
-ln -s ~/data/mapillary_vistas/training/detectron_labels_no_color/* detectron_labels/
-ln -s ~/data/mapillary_vistas/validation/detectron_labels_no_color/* detectron_labels/
+ln -s $BASE_DIR/training/images/* images/
+ln -s $BASE_DIR/validation/images/* images/
+ln -s $BASE_DIR/training/labels_no_color/* labels/
+ln -s $BASE_DIR/validation/labels_no_color/* labels/
+ln -s $BASE_DIR/training/detectron_labels_no_color/* detectron_labels/
+ln -s $BASE_DIR/validation/detectron_labels_no_color/* detectron_labels/
 ```
 
 ## YOLOv5
@@ -104,7 +107,7 @@ cd ./yolor/scripts && gdown 1Tdn3yqpZ79X7R1Ql0zNlNScB1Dv9Fp76
 - The pretrained model is trained on COCO training set.
 - 2 V100 GPUs with 24 CPU cores: ~20 mins/epoch
 
-```bash
+```[bash]
 sh train_yolo.sh
 ```
 
