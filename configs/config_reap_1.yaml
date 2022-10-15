@@ -11,7 +11,7 @@ eval:
   data_dir: '~/data/mapillary_vistas/'
   dataset: 'synthetic'  # dataset name: 'reap', 'synthetic', 'mapillary-SPLIT-no_color', 'mtsd-SPLIT'
   # Sample dimension (height, width); comma-separated
-  padded_imgsz: '768,1024'  # '1536,2048'
+  padded_imgsz: '1536,2048'  # '1536,2048'
   # Path to annotation file
   tgt_csv_filepath: 'mapillary_vistas_final_merged.csv'
   # Custom experiment name (null for auto-generated)
