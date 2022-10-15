@@ -3,7 +3,7 @@
 # Detector test script
 GPU=0
 NUM_GPU=1
-NUM_WORKERS=6
+NUM_WORKERS=8
 SEED=0
 
 # Dataset and model params
@@ -118,8 +118,8 @@ function syn_attack_all {
 
 # syn_attack_all
 
-# CUDA_VISIBLE_DEVICES=$GPU python -u gen_patch_detectron.py \
-#     -e configs/config_reap_1.yaml
+CUDA_VISIBLE_DEVICES=$GPU python -u gen_patch_detectron.py \
+    -e configs/config_reap_1.yaml
 CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
     -e configs/config_reap_1.yaml --attack-type load
 
