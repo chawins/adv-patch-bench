@@ -9,7 +9,7 @@ https://github.com/yizhe-ang/detectron2-1/blob/master/detectron2_1/adv.py
 import pathlib
 from typing import Any, Dict, List, Optional, Tuple
 
-import adv_patch_bench.utils.reap as reap_util
+from adv_patch_bench.data import reap_util
 import numpy as np
 import pandas as pd
 import torch

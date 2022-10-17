@@ -18,7 +18,7 @@ eval:
   name: null
   obj_class: 1  # Class of object to eval/attack
   patch_size_inch: '10x10'  # e.g., '2_10x20'
-  num_eval: 10  # Number of samples to use for eval; Set to null to use all.
+  num_eval: 5000  # Number of samples to use for eval; Set to null to use all.
   # Path to txt file containing file names to use for generating patch or avoid
   # during evaluation
   img_txt_path: './bg_txt_files/'
@@ -29,7 +29,7 @@ eval:
   annotated_signs_only: True
   attack_type: 'load'
   iou_thres: 0.5
-  verbose: True
+  verbose: False
 
   # REAP benchmark params
   reap_transform_mode: 'perspective'  # Transform mode for patch during eval

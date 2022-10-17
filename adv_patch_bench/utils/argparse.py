@@ -324,10 +324,6 @@ def eval_args_parser(
     )
 
     # ===================== Patch generation arguments ====================== #
-    # FIXME: deprecated: use the same dataloader as our benchmark instead
-    # parser.add_argument(
-    #     "--bg-dir", type=str, default="", help="path to background directory"
-    # )
     parser.add_argument(
         "--save-images", action="store_true", help="Save generated patch"
     )

@@ -13,11 +13,11 @@ syn_attack_all() {
     done
 }
 
-# syn_attack_all $CONFIG_PATH
+syn_attack_all $CONFIG_PATH
 # CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
 #     -e $CONFIG_PATH --obj-class 0 --attack-type none
-CUDA_VISIBLE_DEVICES=$GPU python -u gen_patch_detectron.py \
-    -e $CONFIG_PATH
+# CUDA_VISIBLE_DEVICES=$GPU python -u gen_patch_detectron.py \
+#     -e $CONFIG_PATH
 # CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
 #     -e $CONFIG_PATH --attack-type load
 echo "Finished."

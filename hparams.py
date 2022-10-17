@@ -209,8 +209,6 @@ MAPILLARY_IMG_COUNTS_DICT = {
     "other-0.0-0.0": 0,
 }
 
-MIN_OBJ_AREA = 0
-
 # Compute results
 ANNO_LABEL_COUNTS_DICT = {
     "circle-750.0": 7971,

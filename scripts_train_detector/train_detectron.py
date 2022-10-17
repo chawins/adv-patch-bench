@@ -15,17 +15,24 @@ import detectron2.utils.comm as comm
 import torch.multiprocessing
 from detectron2.checkpoint import DetectionCheckpointer
 from detectron2.config import get_cfg
-from detectron2.data import (build_detection_train_loader,
-                             get_detection_dataset_dicts)
-from detectron2.engine import (DefaultTrainer, default_argument_parser,
-                               default_setup, launch)
+from detectron2.data import (
+    build_detection_train_loader,
+    get_detection_dataset_dicts,
+)
+from detectron2.engine import (
+    DefaultTrainer,
+    default_argument_parser,
+    default_setup,
+    launch,
+)
 from detectron2.evaluation import verify_results
 
 # Import this file to register MTSD for detectron
-from adv_patch_bench.dataloaders.detectron.mtsd import register_mtsd
+from adv_patch_bench.data.detectron.mtsd import register_mtsd
 from adv_patch_bench.utils.detectron import build_evaluator
-from adv_patch_bench.utils.detectron.custom_sampler import \
-    RepeatFactorTrainingSampler
+from adv_patch_bench.data.detectron.custom_sampler import (
+    RepeatFactorTrainingSampler,
+)
 from hparams import DATASETS, OTHER_SIGN_CLASS
 
 torch.multiprocessing.set_sharing_strategy("file_system")

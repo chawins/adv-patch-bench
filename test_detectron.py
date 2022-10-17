@@ -6,7 +6,7 @@ import logging
 import os
 import pickle
 import random
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -14,7 +14,7 @@ import torch
 import yaml
 from detectron2 import config, data, engine
 
-from adv_patch_bench.dataloaders import BenignMapper, dataloaders
+from adv_patch_bench.data.detectron import mapper, dataloader
 from adv_patch_bench.evaluators.detectron_evaluator import DetectronEvaluator
 from adv_patch_bench.utils.argparse import (
     eval_args_parser,
@@ -216,7 +216,7 @@ def main(cfg: config.CfgNode, config: Dict[str, Dict[str, Any]]):
     val_loader = data.build_detection_test_loader(
         cfg,
         cfg.DATASETS.TEST[0],
-        mapper=BenignMapper(cfg, is_train=False),
+        mapper=mapper.BenignMapper(cfg, is_train=False),
         batch_size=1,
         num_workers=cfg.DATALOADER.NUM_WORKERS,
     )
@@ -318,6 +318,7 @@ if __name__ == "__main__":
     np.random.seed(seed)
     random.seed(seed)
 
-    dataloaders.setup_dataloader(config_eval, cfg)
+    class_names: List[str] = LABEL_LIST[config_eval["dataset"]]
+    dataloader.setup_dataloader(config_eval, cfg, class_names)
 
     main(cfg, config)

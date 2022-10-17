@@ -1,5 +1,4 @@
-"""
-Code is copied from 
+"""Code is copied from
 https://github.com/SeungjunNah/DeepDeblur-PyTorch/blob/master/src/data/sampler.py
 """
 import torch

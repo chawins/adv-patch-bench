@@ -12,6 +12,7 @@ from hparams import (
     ANNO_NOBG_LABEL_COUNTS_DICT,
     MAPILLARY_LABEL_COUNTS_DICT,
 )
+
 # from hparams import ANNO_NOBG_LABEL_COUNTS_DICT_200 as ANNO_NOBG_LABEL_COUNTS_DICT
 _NUM_IOU_THRES = 10
 
@@ -80,7 +81,7 @@ def _compute_ap_recall(scores, matched, NP, recall_thresholds=None):
     i_pr = np.array([i_pr[r] if r < len(i_pr) else 0 for r in rec_idx])
 
     score_idx = np.where(scores >= CONF_THRES)[0][-1]
-    
+
     return {
         "precision": pr[score_idx],
         "recall": rc[score_idx],
@@ -136,6 +137,16 @@ def main(args):
             result_paths = list(result_paths)
             if not result_paths:
                 continue
+
+            # Select latest result only
+            mtimes = np.array(
+                [
+                    float(pathlib.Path(result_path).stat().st_mtime)
+                    for result_path in result_paths
+                ]
+            )
+            latest_idx = np.argmax(mtimes)
+            result_paths = [result_paths[latest_idx]]
 
             # Iterate over result pickle files
             for result_path in result_paths:
@@ -224,7 +235,9 @@ def main(args):
                             axis=0,
                         )
                         matches = np.zeros_like(scores, dtype=bool)
-                        nm = len(results["bbox"]["scores_full"][obj_class][t][0])
+                        nm = len(
+                            results["bbox"]["scores_full"][obj_class][t][0]
+                        )
                         matches[:nm] = 1
                         outputs = _compute_ap_recall(
                             scores, matches, _NUM_SIGNS_PER_CLASS[obj_class]
@@ -232,15 +245,23 @@ def main(args):
                         aps[t] = outputs["AP"]
                         if t == iou_idx:
                             # FIXME: precision can't be weighted average
-                            print_df_rows[sid]["Precision"] = outputs["precision"] * 100
-                            print_df_rows[sid]["Recall"] = outputs["recall"] * 100
-                        
+                            print_df_rows[sid]["Precision"] = (
+                                outputs["precision"] * 100
+                            )
+                            print_df_rows[sid]["Recall"] = (
+                                outputs["recall"] * 100
+                            )
+
                     print_df_rows[sid]["AP"] = aps.mean() * 100
 
                     for t in range(10):
-                        tp_score = results["bbox"]["scores_full"][obj_class][t][0]
+                        tp_score = results["bbox"]["scores_full"][obj_class][t][
+                            0
+                        ]
                         tp_scores[base_sid][t].extend(tp_score)
-                        fp_score = results["bbox"]["scores_full"][obj_class][t][1]
+                        fp_score = results["bbox"]["scores_full"][obj_class][t][
+                            1
+                        ]
                         fp_scores[base_sid][t].extend(fp_score)
 
                 # Create DF row for all classes
@@ -276,16 +297,14 @@ def main(args):
         base_sid = "_".join(sid.split("_")[:-1])
         all_class_sid = f"{base_sid}_all"
         allw_class_sid = f"{base_sid}_allw"
-        
-        if 'real' in sid:
+
+        if "real" in sid:
             _average(print_df_rows, base_sid, all_class_sid, "Precision")
             _average(print_df_rows, base_sid, all_class_sid, "Recall")
             _average(print_df_rows, base_sid, all_class_sid, "AP")
         fnrs = _average(print_df_rows, base_sid, all_class_sid, "FNR")
         print_df_rows[allw_class_sid]["FNR"] = np.sum(
-            fnrs
-            * _NUM_SIGNS_PER_CLASS
-            / np.sum(_NUM_SIGNS_PER_CLASS)
+            fnrs * _NUM_SIGNS_PER_CLASS / np.sum(_NUM_SIGNS_PER_CLASS)
         )
 
     # Iterate through all attack experiments
@@ -307,8 +326,8 @@ def main(args):
         num_succeed = np.sum(~adv_detected & clean_detected)
         num_clean = np.sum(clean_detected)
         # Account for misses caused by signs that are supposed to be in bg
-        num_missed = (
-            np.sum(~adv_detected) - (_BG_DIFF[k] if "real" in split_sid else 0)
+        num_missed = np.sum(~adv_detected) - (
+            _BG_DIFF[k] if "real" in split_sid else 0
         )
 
         attack_success_rate = num_succeed / (num_clean + 1e-9) * 100
@@ -321,13 +340,6 @@ def main(args):
             ap = print_df_rows[sid]["AP"]
         else:
             ap = -1e9
-
-        # if "syn_size64_rt15_0_0_atk1_00" in sid:
-        #     print(sid)
-        #     print(num_succeed, num_missed, num_clean, total, attack_success_rate)
-        #     import pdb
-        #     pdb.set_trace()
-        #     print()
 
         if sid_no_class in results_all_classes:
             results_all_classes[sid_no_class]["num_succeed"] += num_succeed
@@ -388,13 +400,6 @@ def main(args):
         print_df_rows[allw_class_sid]["FNR"] = np.sum(
             fnrs * _NUM_SIGNS_PER_CLASS / np.sum(_NUM_SIGNS_PER_CLASS)
         )
-
-        # if "syn_size64_rt15_0_0" in sid:
-        #     print(sid)
-        #     print(num_succeed, num_missed, num_clean, total, asr)
-        #     import pdb
-        #     pdb.set_trace()
-        #     print(num_missed / total)
 
         if "real" in sid:
             # This is the correct (or commonly used) definition of mAP

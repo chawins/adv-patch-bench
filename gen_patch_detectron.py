@@ -4,7 +4,7 @@ import os
 import pickle
 import random
 from os.path import join
-from typing import Any, Dict, Callable, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -14,27 +14,16 @@ import torchvision
 import yaml
 from detectron2 import data, engine
 from tqdm import tqdm
-from adv_patch_bench.transforms import (
-    render_image,
-    syn_object,
-    reap_object,
-)
 
+import adv_patch_bench.data.reap_util as reap_util
 import adv_patch_bench.utils.argparse as args_util
-import adv_patch_bench.utils.reap as reap_util
-from adv_patch_bench.attacks import (
-    attacks,
-    base_attack,
-    patch_mask_util,
-)
-from adv_patch_bench.dataloaders import dataloaders
-from adv_patch_bench.dataloaders.detectron import custom_build
-from adv_patch_bench.dataloaders.detectron.mapper import BenignMapper
-from adv_patch_bench.utils.detectron.custom_sampler import (
-    ShuffleInferenceSampler,
-)
+from adv_patch_bench.attacks import attacks, base_attack, patch_mask_util
+from adv_patch_bench.data.detectron import custom_build, custom_sampler
+from adv_patch_bench.data.detectron import dataloader as detectron_dataloader
+from adv_patch_bench.data.detectron import mapper
+from adv_patch_bench.transforms import reap_object, render_image, syn_object
+from adv_patch_bench.utils.types import ImageTensor, MaskTensor, SizeMM, SizePx
 from hparams import LABEL_LIST, MAPILLARY_IMG_COUNTS_DICT
-from adv_patch_bench.utils.types import SizeMM, SizePx, ImageTensor, MaskTensor
 
 
 def collect_attack_rimgs(
@@ -50,7 +39,6 @@ def collect_attack_rimgs(
 ) -> List[render_image.RenderImage]:
     """Collect background images to be used by the attack.
 
-    # TODO
     Args:
         dataset: Name of dataset.
         dataloader: Detectron data loader.
@@ -231,7 +219,9 @@ def main(
     save_dir: str = config_eval["save_dir"]
     interp: str = config_eval["interp"]
     num_bg: Union[int, float] = config_atk_common["num_bg"]
-    df: pd.DataFrame = reap_util.load_annotation_df(config_eval["tgt_csv_filepath"])
+    df: pd.DataFrame = reap_util.load_annotation_df(
+        config_eval["tgt_csv_filepath"]
+    )
     class_name: str = LABEL_LIST[dataset][obj_class]
 
     # Set up model from config
@@ -250,12 +240,12 @@ def main(
     dataloader = custom_build.build_detection_test_loader(
         cfg,
         cfg.DATASETS.TEST[0],
-        mapper=BenignMapper(cfg, is_train=False),
+        mapper=mapper.BenignMapper(cfg, is_train=False),
         batch_size=1,
         num_workers=cfg.DATALOADER.NUM_WORKERS,
         # Used for random sampling background images from new dataset.
         # We recommend using a pre-defined file names in img_txt_path.
-        sampler=ShuffleInferenceSampler(
+        sampler=custom_sampler.ShuffleInferenceSampler(
             num_samples if filter_file_names is None else len(filter_file_names)
         ),
         pin_memory=True,
@@ -366,7 +356,8 @@ if __name__ == "__main__":
     np.random.seed(seed)
     random.seed(seed)
 
-    dataloaders.setup_dataloader(config_eval, cfg)
+    class_names: List[str] = LABEL_LIST[config_eval["dataset"]]
+    detectron_dataloader.setup_dataloader(config_eval, cfg, class_names)
     data_list = data.DatasetCatalog.get(config_eval["dataset"])
     num_samples: int = len(data_list)
 

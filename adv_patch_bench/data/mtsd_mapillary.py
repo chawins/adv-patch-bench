@@ -1,15 +1,18 @@
+"""Create dataloader for both MTSD and Mapillary Vistas."""
+
 import os
 
 import torch
 import torchvision.datasets as datasets
 import torchvision.transforms as transforms
-
-from .eval_sampler import DistributedEvalSampler
+from adv_patch_bench.data import eval_sampler
 
 
 def get_loader_sampler(root, transform, args, split):
-    """dist eval introduces slight variance to results if
-    num samples != 0 mod (batch size * num gpus)
+    """Get dataloader and sampler.
+
+    distributed mode introduces slight variance to results if
+    num_samples != 0 mod (batch size * num gpus).
     """
     dataset = datasets.ImageFolder(
         os.path.join(root, split), transform=transform
@@ -20,7 +23,7 @@ def get_loader_sampler(root, transform, args, split):
         if split == "train":
             sampler = torch.utils.data.distributed.DistributedSampler(dataset)
         else:
-            sampler = DistributedEvalSampler(dataset)
+            sampler = eval_sampler.DistributedEvalSampler(dataset)
 
     loader = torch.utils.data.DataLoader(
         dataset,
@@ -35,21 +38,19 @@ def get_loader_sampler(root, transform, args, split):
     return loader, sampler
 
 
-def load_mtsd(args):
-    input_size = MTSD["input_dim"][-1]
+def load_mtsd_mapillary(args):
+    """Get train and validation dataloaders from MTSD or Mapillary Vistas."""
+    input_size = MTSD_MAPILLARY["input_dim"][-1]
     train_transform_list = [
         transforms.ColorJitter(
             brightness=0.5, contrast=0.5, saturation=0.5, hue=0
         ),
-        # transforms.RandomEqualize(p=1.0),
         transforms.RandomResizedCrop(input_size, scale=(0.64, 1.0)),
         transforms.RandomPerspective(distortion_scale=0.2, p=0.5),
         transforms.ToTensor(),
     ]
     val_transform_list = [
-        # transforms.RandomEqualize(p=1.0),
         transforms.Resize((input_size, input_size)),
-        # transforms.CenterCrop(input_size),
         transforms.ToTensor(),
     ]
     train_transform = transforms.Compose(train_transform_list)
@@ -63,11 +64,11 @@ def load_mtsd(args):
     return train_loader, train_sampler, val_loader
 
 
-MTSD = {
+MTSD_MAPILLARY = {
     "normalize": {
         "mean": [0.485, 0.456, 0.406],
         "std": [0.229, 0.224, 0.225],
     },
-    "loader": load_mtsd,
+    "loader": load_mtsd_mapillary,
     "input_dim": (3, 128, 128),
 }

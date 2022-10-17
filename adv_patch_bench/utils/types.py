@@ -1,5 +1,5 @@
 """Custom type definition."""
-from typing import Any, Callable, NewType, Tuple, Union
+from typing import Any, Callable, Dict, NewType, Tuple, Union
 
 import kornia.augmentation as K
 import torch
@@ -42,3 +42,5 @@ TransformParamFn = Callable[
 ]
 
 Target = Any  # TODO(feature): Unify target type for detectron and YOLO
+
+DetectronSample = NewType("DetectronSample", Dict[str, Any])

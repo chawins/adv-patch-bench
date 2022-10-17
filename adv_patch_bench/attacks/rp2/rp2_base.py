@@ -10,7 +10,6 @@ import torch.optim as optim
 from adv_patch_bench.attacks import base_attack
 from adv_patch_bench.transforms import render_image
 from adv_patch_bench.utils.types import MaskTensor, ImageTensor, Target
-# from adv_patch_bench.utils.image import coerce_rank, mask_to_box, resize_and_pad
 
 # from yolov5.utils.general import non_max_suppression
 # from yolov5.utils.plots import output_to_target, plot_images
