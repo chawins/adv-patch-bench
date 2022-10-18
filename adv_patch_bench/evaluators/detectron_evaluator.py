@@ -460,11 +460,11 @@ class DetectronEvaluator:
         """Convert model outputs to coco predictions format.
 
         Args:
-            outputs (Dict[str, Any]): Output dictionary from model output
-            image_id (int): Image ID
+            outputs: Output dictionary from model output.
+            image_id: Image ID
 
         Returns:
-            List[Dict[str, Any]]: List of per instance predictions
+            List of per instance predictions
         """
         instance_dicts = []
 

@@ -1,7 +1,13 @@
-from os.path import expanduser
-from typing import Any, Dict
+"""Define common global variables.
 
-# TODO(feature): Make dataset-specific metadata into a config file.
+The intention of this file is to centralize commonly used hyperparameters so it
+is easy to modify. However, this is not an ideal way for passing around
+metadata. We try to use these parameters minimally.
+
+TODO(enhancement): Use config file and dataset object to load and hold metadata.
+"""
+
+from typing import Any, Dict
 
 # Set paths
 PATH_MAPILLARY_ANNO = {
@@ -18,7 +24,7 @@ DEFAULT_DATA_PATHS["reap"] = DEFAULT_DATA_PATHS["mapillary"]
 DEFAULT_DATA_PATHS["synthetic"] = DEFAULT_DATA_PATHS["mapillary"]
 DEFAULT_SYN_OBJ_DIR = "./attack_assets/"
 
-PATH_APB_ANNO = expanduser("./traffic_sign_dimension_v6.csv")
+DEFAULT_PATH_MTSD_LABEL = "./mtsd_label_metadata.csv"
 PATH_SIMILAR_FILES = "./similar_files_df.csv"
 DEFAULT_PATH_BG_FILE_NAMES = "./bg_txt_files/"
 DEFAULT_PATH_DEBUG_PATCH = f"{DEFAULT_SYN_OBJ_DIR}/debug.png"
@@ -93,7 +99,9 @@ LABEL_LIST["reap"] = LABEL_LIST["mapillary_no_color"]
 LABEL_LIST["synthetic"] = LABEL_LIST["mapillary_no_color"]
 
 # Get list of shape (no size, no color)
-TS_SHAPE_LIST = list(set([l.split("-")[0] for l in TS_NO_COLOR_LABEL_LIST]))
+TS_SHAPE_LIST = list(
+    set([shape.split("-")[0] for shape in TS_NO_COLOR_LABEL_LIST])
+)
 
 # =========================================================================== #
 

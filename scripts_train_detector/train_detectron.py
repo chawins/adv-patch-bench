@@ -101,7 +101,7 @@ def main(args):
     register_mtsd(
         use_mtsd_original_labels="orig" in args.dataset,
         use_color="no_color" not in args.dataset,
-        ignore_other=args.data_no_other,
+        ignore_bg_class=args.data_no_other,
     )
 
     # TODO: Need to register Mapillary here?

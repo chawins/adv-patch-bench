@@ -9,7 +9,7 @@ from detectron2.data import DatasetCatalog, MetadataCatalog
 from detectron2.structures import BoxMode
 from tqdm import tqdm
 
-_ALLOWED_SPLITS = ("train", "test", "comgined")
+_ALLOWED_SPLITS = ("train", "test", "combined")
 
 
 def get_mapillary_dict(
@@ -19,7 +19,7 @@ def get_mapillary_dict(
     ignore_bg_class: bool = False,
     anno_df: Optional[pd.DataFrame] = None,
 ) -> List[DetectronSample]:
-    """Get a dataset as list of samples.
+    """Get Mapillary Vistas dataset as list of samples in Detectron2 format.
 
     Args:
         split: Dataset split to consider.
@@ -35,7 +35,7 @@ def get_mapillary_dict(
         ValueError: split is not among _ALLOWED_SPLITS.
 
     Returns:
-        List of samples.
+        List of Mapillary Vistas samples in Detectron2 format.
     """
     if split not in _ALLOWED_SPLITS:
         raise ValueError(
@@ -78,6 +78,8 @@ def get_mapillary_dict(
             "width": width,
             "height": height,
         }
+
+        # Populate record or sample with its objects
         objs: List[Dict[str, Any]] = []
         for obj in labels:
             class_id, xmin, ymin, xmax, ymax, _, _, obj_id = obj.split(",")
@@ -119,7 +121,7 @@ def get_mapillary_dict(
 
 def register_mapillary(
     base_path: str = "~/data/",
-    ignore_other: bool = False,
+    ignore_bg_class: bool = False,
     class_names: List[str] = ["circle"],
     anno_df: Optional[pd.DataFrame] = None,
 ) -> None:
@@ -127,26 +129,25 @@ def register_mapillary(
 
     Args:
         base_path: Base path to dataset. Defaults to "~/data/".
-        ignore_other: Whether to ignore background class (last class index).
+        ignore_bg_class: Whether to ignore background class (last class index).
             Defaults to False.
+        class_names: List of class names. Defaults to ["circle"].
         anno_df: Annotation DataFrame. If specified, only samples present in
             anno_df will be sampled.
-        class_names: List of class names. Defaults to ["circle"].
     """
     bg_idx: int = len(class_names) - 1
     thing_classes: List[str] = class_names
-    if ignore_other:
+    if ignore_bg_class:
         thing_classes = thing_classes[:-1]
 
-    splits: List[str] = ["train", "val", "combined"]
-    for split in splits:
+    for split in _ALLOWED_SPLITS:
         DatasetCatalog.register(
             f"mapillary_{split}",
             lambda s=split: get_mapillary_dict(
                 s,
                 base_path,
                 bg_idx,
-                ignore_bg_class=ignore_other,
+                ignore_bg_class=ignore_bg_class,
                 anno_df=anno_df,
             ),
         )

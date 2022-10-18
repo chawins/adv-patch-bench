@@ -1,6 +1,6 @@
 #!/bin/bash
 GPU=0
-CONFIG_PATH=./configs/config_detectron_syn_1.yaml
+CONFIG_PATH=./configs/config_detectron_reap_1.yaml
 
 syn_attack_all() {
     for i in {0..10}; do
@@ -13,9 +13,9 @@ syn_attack_all() {
     done
 }
 
-syn_attack_all $CONFIG_PATH
-# CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
-#     -e $CONFIG_PATH --obj-class 0 --attack-type none
+# syn_attack_all $CONFIG_PATH
+CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \
+    -e $CONFIG_PATH --obj-class 0 --attack-type none
 # CUDA_VISIBLE_DEVICES=$GPU python -u gen_patch_detectron.py \
 #     -e $CONFIG_PATH
 # CUDA_VISIBLE_DEVICES=$GPU python -u test_detectron.py \

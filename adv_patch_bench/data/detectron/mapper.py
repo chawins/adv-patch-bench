@@ -1,5 +1,6 @@
 """Registers datasets, and defines other dataloading utilities.
-Code is taken directly from 
+
+Code is taken directly from
 https://github.com/yizhe-ang/detectron2-1/blob/master/detectron2_1/datasets.py
 """
 import copy
@@ -39,8 +40,8 @@ register_coco_instances(
 
 
 def build_transform_gen(cfg, is_train):
-    """
-    Create a list of :class:`TransformGen` from config.
+    """Create a list of :class:`TransformGen` from config.
+
     Now it includes only resizing.
 
     Returns:
@@ -73,20 +74,19 @@ def build_transform_gen(cfg, is_train):
 
 
 class BenignMapper:
-    """
-    A callable which takes a dataset dict in Detectron2 Dataset format,
-    and map it into a format used by the model.
-    This is the default callable to be used to map your dataset dict into training data.
-    You may need to follow it to implement your own one for customized logic,
-    such as a different way to read or transform images.
-    See :doc:`/tutorials/data_loading` for details.
-    The callable currently does the following:
-    1. Read the image from "file_name"
-    2. Applies cropping/geometric transforms to the image and annotations
-    3. Prepare data and annotations to Tensor and :class:`Instances`
+    """A callable which takes a dataset dict in Detectron2 Dataset format.
+
+    This is the default callable to be used to map your dataset dict into
+    training data.
     """
 
     def __init__(self, cfg, is_train=True):
+        """Initialize benign data mapper.
+
+        Args:
+            cfg: Detectron2 config.
+            is_train: Whether we are training. Defaults to True.
+        """
         if cfg.INPUT.CROP.ENABLED and is_train:
             self.crop_gen = T.RandomCrop(
                 cfg.INPUT.CROP.TYPE, cfg.INPUT.CROP.SIZE
@@ -99,13 +99,12 @@ class BenignMapper:
 
         self.tfm_gens = build_transform_gen(cfg, is_train)
 
-        # fmt: off
-        self.img_format     = cfg.INPUT.FORMAT
-        self.mask_on        = cfg.MODEL.MASK_ON
-        self.mask_format    = cfg.INPUT.MASK_FORMAT
-        self.keypoint_on    = cfg.MODEL.KEYPOINT_ON
+        self.img_format = cfg.INPUT.FORMAT
+        self.mask_on = cfg.MODEL.MASK_ON
+        self.mask_format = cfg.INPUT.MASK_FORMAT
+        self.keypoint_on = cfg.MODEL.KEYPOINT_ON
         self.load_proposals = cfg.MODEL.LOAD_PROPOSALS
-        # fmt: on
+
         if self.keypoint_on and is_train:
             # Flip only makes sense in training
             self.keypoint_hflip_indices = utils.create_keypoint_hflip_indices(
@@ -124,15 +123,16 @@ class BenignMapper:
         self.is_train = is_train
 
     def __call__(self, dataset_dict):
-        """
+        """Modify sample directly loaded from Detectron2 dataset.
+
         Args:
-            dataset_dict (dict): Metadata of one image, in Detectron2 Dataset format.
+            dataset_dict: Metadata of one image, in Detectron2 Dataset format.
+
         Returns:
             dict: a format that builtin models in detectron2 accept
         """
-        dataset_dict = copy.deepcopy(
-            dataset_dict
-        )  # it will be modified by code below
+        # it will be modified by code below
+        dataset_dict = copy.deepcopy(dataset_dict)
         # USER: Write your own image loading if it's not from a file
         image = utils.read_image(
             dataset_dict["file_name"], format=self.img_format

@@ -51,12 +51,12 @@ def setup_dataloader(
         mtsd.register_mtsd(
             base_path=base_data_path,
             use_mtsd_original_labels="orig" in dataset,
-            ignore_other=False,
+            ignore_bg_class=False,
         )
     elif "mapillary" in dataset:
         mapillary.register_mapillary(
             base_path=base_data_path,
-            ignore_other=False,
+            ignore_bg_class=False,
             class_names=class_names,
             anno_df=anno_df,
         )

@@ -1,23 +1,25 @@
+"""Register and load MTSD dataset."""
+
 import json
-import os
-from os.path import expanduser, join
-from typing import Any, Dict, List, Tuple
+import pathlib
+from typing import Any, Dict, List
 
 import pandas as pd
+from adv_patch_bench.utils.types import DetectronSample
 from detectron2.data import DatasetCatalog, MetadataCatalog
 from detectron2.structures import BoxMode
 from hparams import (
-    MIN_OBJ_AREA,
-    PATH_APB_ANNO,
+    DEFAULT_PATH_MTSD_LABEL,
     PATH_SIMILAR_FILES,
     TS_COLOR_DICT,
     TS_COLOR_OFFSET_DICT,
-    LABEL_LIST,
 )
 from tqdm import tqdm
 
+_ALLOWED_SPLITS = ("train", "test", "val")
 
-def readlines(path: str) -> List:
+
+def _readlines(path: str) -> List:
     with open(path, "r") as f:
         lines = f.readlines()
     return [line.strip() for line in lines]
@@ -25,50 +27,75 @@ def readlines(path: str) -> List:
 
 def get_mtsd_dict(
     split: str,
-    path: str,
+    data_path: str,
     json_files: List[str],
-    similar_files_df: Any,
-    mtsd_label_to_class_index: Dict,
-    bg_idx: int,
-    ignore_other: bool = False,
-) -> List[Dict[str, Any]]:
+    similar_files_df: pd.DataFrame,
+    mtsd_label_to_class_index: Dict[str, int],
+    bg_class_id: int,
+    ignore_bg_class: bool = False,
+) -> List[DetectronSample]:
+    """Get MTSD dataset as list of samples in Detectron2 format.
 
-    filenames = readlines(expanduser(join(path, "splits", split + ".txt")))
+    Args:
+        split: Dataset split to consider.
+        data_path: Base path to dataset. Defaults to "~/data/".
+        json_files: List of paths to JSON files each of which contains original
+            annotation of one image.
+        similar_files_df: DataFrame of duplicated files between MTSD and
+            Mapillary Vistas.
+        mtsd_label_to_class_index: Dictionary that maps original MTSD labels to
+            new class index.
+        bg_class_id: Background class index.
+        ignore_bg_class: Whether to ignore background class (last class index).
+            Defaults to False.
+
+    Raises:
+        ValueError: split is not among _ALLOWED_SPLITS.
+
+    Returns:
+        List of MTSD samples in Detectron2 format.
+    """
+    if split not in _ALLOWED_SPLITS:
+        raise ValueError(
+            f"split must be among {_ALLOWED_SPLITS}, but it is {split}!"
+        )
+
+    dpath: pathlib.Path = pathlib.Path(data_path)
+    filenames = _readlines(str(dpath / "splits" / split + ".txt"))
     filenames = set(filenames)
-    dataset_dicts = []
+    dataset_dicts: List[DetectronSample] = []
 
     for idx, json_file in tqdm(enumerate(json_files)):
 
-        filename = json_file.split(".")[-2].split("/")[-1]
+        filename: str = json_file.split("/")[-1].split(".")[0]
+        # Skip samples not in this split
         if filename not in filenames:
             continue
-        jpg_filename = f"{filename}.jpg"
+        jpg_filename: str = f"{filename}.jpg"
+        # Skip samples that appear in Mapillary Vistas
         if jpg_filename in similar_files_df["filename"].values:
             continue
 
         # Read JSON files
         with open(json_file) as f:
-            anno = json.load(f)
+            anno: Dict[str, Any] = json.load(f)
 
         height, width = anno["height"], anno["width"]
-        record = {
-            "file_name": f'{path}/{split}/{json_file.split("/")[-1].split(".")[0]}.jpg',
+        record: DetectronSample = {
+            "file_name": str(dpath / split / jpg_filename),
             "image_id": idx,
             "width": width,
             "height": height,
         }
-        objs = []
+
+        # Populate record or sample with its objects
+        objs: Dict[str, Any] = []
         for obj in anno["objects"]:
-            class_index = mtsd_label_to_class_index.get(obj["label"], bg_idx)
-            # Compute object area if the image were to be resized to have width of 1280 pixels
-            obj_width = obj["bbox"]["xmax"] - obj["bbox"]["xmin"]
-            obj_height = obj["bbox"]["ymax"] - obj["bbox"]["ymin"]
-            # Scale by 1280 / width to normalize varying image size (this is not a bug)
-            obj_area = (obj_width / width * 1280) * (obj_height / width * 1280)
+            class_index = mtsd_label_to_class_index.get(
+                obj["label"], bg_class_id
+            )
             # Remove labels for small or "other" objects
-            if obj_area < MIN_OBJ_AREA or (
-                ignore_other and class_index == bg_idx
-            ):
+            if ignore_bg_class and class_index == bg_class_id:
                 continue
             obj = {
                 "bbox": [
@@ -94,29 +121,32 @@ def get_mtsd_dict(
 
 def register_mtsd(
     base_path: str = "~/data/",
-    use_mtsd_original_labels: bool = False,
     use_color: bool = False,
-    ignore_other: bool = False,
-) -> Tuple[Any, ...]:
-    path = base_path
-    csv_path = PATH_APB_ANNO
-    similarity_df_csv_path = PATH_SIMILAR_FILES
+    use_mtsd_original_labels: bool = False,
+    ignore_bg_class: bool = False,
+    class_names: List[str] = ["circle"],
+) -> None:
+    """Register MTSD dataset on Detectron2.
 
-    anno_path = expanduser(join(path, "annotations"))
-    data = pd.read_csv(csv_path)
-    similar_files_df = pd.read_csv(similarity_df_csv_path)
+    Args:
+        base_path: Base path to dataset. Defaults to "~/data/".
+        use_color: Whether sign color is used for grouping MTSD labels.
+        use_mtsd_original_labels: Whether to use original MTSD labels instead of
+            REAP annotations. Default to False.
+        ignore_bg_class: Whether to ignore background class (last class index).
+            Defaults to False.
+        class_names: List of class names. Defaults to ["circle"].
+    """
+    label_path: pathlib.Path = pathlib.Path(base_path) / "annotations"
+    similarity_df_csv_path: int = PATH_SIMILAR_FILES
+    similar_files_df: pd.DataFrame = pd.read_csv(similarity_df_csv_path)
 
-    if use_mtsd_original_labels:
-        dataset = "mtsd_original"
-    else:
-        if use_color:
-            dataset = "mtsd_color"
-        else:
-            dataset = "mtsd_no_color"
-        class_names = LABEL_LIST[dataset]
+    # Load annotation file that contains dimension and shape of each MTSD label
+    label_map: pd.DataFrame = pd.read_csv(DEFAULT_PATH_MTSD_LABEL)
 
-    mtsd_label_to_class_index = {}
-    for idx, row in data.iterrows():
+    # Collect mapping from original MTSD labels to new class index
+    mtsd_label_to_class_index: Dict[str, int] = {}
+    for idx, row in label_map.iterrows():
         if use_mtsd_original_labels:
             mtsd_label_to_class_index[row["sign"]] = idx
         elif any([row["target"] in c for c in class_names]):
@@ -132,38 +162,29 @@ def register_mtsd(
 
     # Get all JSON files
     json_files = [
-        join(anno_path, f)
-        for f in os.listdir(anno_path)
-        if os.path.isfile(join(anno_path, f)) and f.endswith(".json")
+        str(f)
+        for f in label_path.iterdir()
+        if f.is_file() and f.suffix == ".json"
     ]
 
-    splits = ["train", "test", "val"]
-    for split in splits:
+    for split in _ALLOWED_SPLITS:
         DatasetCatalog.register(
             f"mtsd_{split}",
             lambda s=split: get_mtsd_dict(
                 s,
-                path,
+                base_path,
                 json_files,
                 similar_files_df,
                 mtsd_label_to_class_index,
                 bg_idx,
-                ignore_other=ignore_other,
+                ignore_bg_class=ignore_bg_class,
             ),
         )
         if use_mtsd_original_labels:
-            thing_classes = data["sign"].tolist()
+            thing_classes = label_map["sign"].tolist()
         else:
             thing_classes = class_names
-            if ignore_other:
+            if ignore_bg_class:
                 thing_classes = thing_classes[:-1]
-        MetadataCatalog.get(f"mtsd_{split}").set(thing_classes=thing_classes)
 
-    return (
-        path,
-        json_files,
-        similar_files_df,
-        mtsd_label_to_class_index,
-        bg_idx,
-        ignore_other,
-    )
+        MetadataCatalog.get(f"mtsd_{split}").set(thing_classes=thing_classes)
