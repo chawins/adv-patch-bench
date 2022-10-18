@@ -89,15 +89,15 @@ def get_mtsd_dict(
         }
 
         # Populate record or sample with its objects
-        objs: Dict[str, Any] = []
+        objs: List[Dict[str, Any]] = []
         for obj in anno["objects"]:
-            class_index = mtsd_label_to_class_index.get(
+            class_index: int = mtsd_label_to_class_index.get(
                 obj["label"], bg_class_id
             )
             # Remove labels for small or "other" objects
             if ignore_bg_class and class_index == bg_class_id:
                 continue
-            obj = {
+            obj: Dict[str, Any] = {
                 "bbox": [
                     obj["bbox"]["xmin"],
                     obj["bbox"]["ymin"],
