@@ -9,7 +9,7 @@ import kornia.geometry.transform as kornia_tf
 import numpy as np
 import pandas as pd
 import torch
-from adv_patch_bench.transforms import render_object, verifier
+from adv_patch_bench.transforms import geometric_tf, render_object
 from adv_patch_bench.utils.types import (
     ImageTensor,
     ImageTensorRGBA,
@@ -133,7 +133,7 @@ class ReapObject(render_object.RenderObject):
         # FIXME: Correct in the csv file directly
         shape = self.obj_class_name.split("-")[0]
         if shape != "octagon":
-            tgt = verifier.sort_polygon_vertices(tgt)
+            tgt = geometric_tf.sort_polygon_vertices(tgt)
 
         # if row['use_polygon'] == 1:
         #     # nR-M2zUbIWJzatAuy2egrQ.jpg

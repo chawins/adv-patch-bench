@@ -1,3 +1,5 @@
+"""Main script for generating both geometric and relighting REAP transforms."""
+
 import argparse
 import json
 import os
@@ -19,19 +21,11 @@ from kornia.geometry.transform import (
     warp_perspective,
 )
 from PIL import Image
-from torchvision.utils import save_image
 from tqdm.auto import tqdm
 
-from adv_patch_bench.data import ImageOnlyFolder
+from adv_patch_bench.data.image_only_dataset import ImageOnlyFolder
 from adv_patch_bench.models import build_classifier
-from adv_patch_bench.transforms import (
-    gen_sign_mask,
-    get_box_vertices,
-    get_corners,
-    get_shape_from_vertices,
-    relight_range,
-)
-from adv_patch_bench.transforms.util import get_sign_canonical
+from adv_patch_bench.transforms import geometric_tf, lighting_tf, util
 from adv_patch_bench.utils import (
     draw_from_contours,
     img_numpy_to_torch,
@@ -184,7 +178,7 @@ def compute_example_transform(
     traffic_sign = img_numpy_to_torch(traffic_sign)
 
     # Get vertices of mask
-    vertices, hull = get_corners(bool_mask)
+    vertices, hull = geometric_tf.get_corners(bool_mask)
     hull_mask = cv.drawContours(np.zeros_like(bool_mask), [hull], -1, (1,), 1)
     hull_draw_points = np.stack(np.where(hull_mask), axis=1)[:, ::-1]
     ellipse = cv.fitEllipse(hull_draw_points)
@@ -196,12 +190,12 @@ def compute_example_transform(
         / bool_mask.sum()
     )
 
-    shape = get_shape_from_vertices(vertices)
-    tgt = get_box_vertices(vertices, shape).astype(np.int64)
+    shape = geometric_tf.get_shape_from_vertices(vertices)
+    tgt = geometric_tf.get_box_vertices(vertices, shape).astype(np.int64)
     traffic_sign = draw_vertices(traffic_sign, tgt, color=[0, 0, 255])
 
     # Determine polygon shape from vertices
-    shape = get_shape_from_vertices(vertices)
+    shape = geometric_tf.get_shape_from_vertices(vertices)
 
     if predicted_shape == "other":
         group = 3
@@ -214,8 +208,6 @@ def compute_example_transform(
         if (shape != "other" and predicted_shape == shape) or (
             shape == "rect" and predicted_shape != "other"
         ):
-            # (shape == 'rect' and not (predicted_shape == 'other' or predicted_shape == 'diamond'))):
-            # (shape == 'rect' and (predicted_shape == 'circle' or predicted_shape == 'triangle'))):
             # Both classifier and verifier agree on some polygons or
             # the sign symbol is on a square sign (assume that dimension is
             # equal to the actual symbol)
@@ -225,8 +217,7 @@ def compute_example_transform(
             group = 2
 
     if shape != "other":
-        print(shape)
-        tgt = get_box_vertices(vertices, shape).astype(np.int64)
+        tgt = geometric_tf.get_box_vertices(vertices, shape).astype(np.int64)
         # Filter some vertices that might be out of bound
         if (tgt < 0).any() or (tgt >= size).any():
             # TODO
@@ -245,14 +236,15 @@ def compute_example_transform(
 
         # Group 1: draw both vertices and patch
         if group == 1:
-            sign_canonical, sign_mask, src = get_sign_canonical(
+            # FIXME: fix args and sign_canonical
+            sign_mask, src = util.gen_sign_mask(
                 predicted_class, patch_size_in_pixel, patch_size_in_mm
             )
 
             old_patch = torch.masked_select(
                 traffic_sign, torch.from_numpy(bool_mask).bool()
             )
-            alpha, beta = relight_range(old_patch.numpy().reshape(-1, 1))
+            alpha, beta = lighting_tf.relight_range(old_patch.numpy().reshape(-1, 1))
 
             # TODO: run attack, optimize patch location, etc.
             new_demo_patch = demo_patch.clone()
@@ -428,8 +420,9 @@ def plot_subgroup(
 def main(args):
 
     # Arguments
-    min_area = 1600
-    max_num_imgs = 200
+    # min_area = 1600
+    # max_num_imgs = 200
+    cudnn.benchmark = True
 
     if DATASET == "mapillary_vistas":
         if split == "training":
@@ -441,12 +434,6 @@ def main(args):
 
     # data_dir = '/data/shared/mtsd_v2_fully_annotated/'
     # model_path = '/home/nab_126/adv-patch-bench/model_weights/resnet18_cropped_signs_good_resolution_and_not_edge_10_labels.pth'
-
-    device = "cuda"
-    # seed = 2021
-    # torch.manual_seed(seed)
-    # np.random.seed(seed)
-    cudnn.benchmark = True
 
     # Compute stats of best model
     model = build_classifier(args)[0]
@@ -520,7 +507,7 @@ def main(args):
             panoptic_per_image_id[image_id] = annotation
 
         # data_dir = '/data/shared/bdd100k/images/10k/train/'
-        label_path = "/data/shared/bdd100k/labels/pan_seg/bitmasks/train/"
+        # label_path = "/data/shared/bdd100k/labels/pan_seg/bitmasks/train/"
         filenames = [f for f in listdir(data_dir) if isfile(join(data_dir, f))]
         img_path = data_dir
 
@@ -579,7 +566,7 @@ def main(args):
             old_patch = torch.masked_select(
                 traffic_sign, torch.from_numpy(bool_mask).bool()
             )
-            alpha, beta = relight_range(old_patch.numpy().reshape(-1, 1))
+            alpha, beta = lighting_tf.relight_range(old_patch.numpy().reshape(-1, 1))
 
             df_filenames.append(filename)
             df_alphas.append(alpha)
@@ -597,7 +584,7 @@ def main(args):
         )
 
         predicted_class = CLASS_LIST[y]
-        predicted_shape = predicted_class.split("-")[0]
+        # predicted_shape = predicted_class.split("-")[0]
         obj_id = filename.split("_")[-1].split(".")[0]
 
         adv_image, shape, group, tgt, alpha, beta = output

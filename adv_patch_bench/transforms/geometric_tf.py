@@ -1,9 +1,14 @@
+"""Methods for extracting shape and keypoints from segmentation masks.
+
+Functions in this file are used by script that generates REAP transform params. 
+"""
+
 import cv2 as cv
 import numpy as np
 
-POLYGON_ERROR = 0.04
+_POLYGON_ERROR = 0.04
 
-SHAPE_TO_VERTICES = {
+_SHAPE_TO_VERTICES = {
     "circle": ((0, 1, 2, 3),),
     "triangle_inverted": ((0, 1, 2),),
     "triangle": ((0, 1, 2),),
@@ -12,24 +17,6 @@ SHAPE_TO_VERTICES = {
     "pentagon": ((0, 2, 3, 4),),
     "octagon": ((0, 2, 4, 6),),
 }
-
-# TODO
-MATCH_SHAPES = {
-    "circle": ("circle", "rect"),
-    "triangle_inverted": ((0, 1, 2),),
-    "triangle": ((0, 1, 2),),
-    "rect": ((0, 1, 2, 3),),
-    "diamond": ((0, 1, 2, 3),),
-    "pentagon": ((0, 2, 3, 4),),
-    "octagon": ((0, 2, 4, 6),),
-}
-
-
-def detect_polygon(contour):
-    eps = cv.arcLength(contour, True) * POLYGON_ERROR
-    vertices = cv.approxPolyDP(contour, eps, True)
-    return vertices
-
 
 def get_corners(mask):
     # Check that we have a binary mask
@@ -46,20 +33,26 @@ def get_corners(mask):
     hull = cv.convexHull(cat_contours, returnPoints=True)
 
     # Fit polygon to remove some annotation errors and get vertices
-    vertices = detect_polygon(hull)
+    vertices = _detect_polygon(hull)
 
     # vertices: (distance from left edge, distance from top edge)
     return vertices.reshape(-1, 2), hull
 
 
-def find_first_vertex(vertices):
+def _detect_polygon(contour):
+    eps = cv.arcLength(contour, True) * _POLYGON_ERROR
+    vertices = cv.approxPolyDP(contour, eps, True)
+    return vertices
+
+
+def _find_first_vertex(vertices):
     # Find the two left most vertices and select the top one
     left_two = np.argsort(vertices[:, 0])[:2]
     first_vertex = left_two[np.argsort(vertices[left_two, 1])[0]]
     return first_vertex
 
 
-def get_box_from_ellipse(rect):
+def _get_box_from_ellipse(rect):
     DEV_RATIO_THRES = 0.1
     assert len(rect) == 3
     # If width and height are close or angle is very large, the rotation may be
@@ -97,7 +90,7 @@ def sort_polygon_vertices(vertices):
     vertices = vertices[sorted_idx]
     angles = angles[sorted_idx]
 
-    first_idx = find_first_vertex(vertices)
+    first_idx = _find_first_vertex(vertices)
     # If shape is diamond, find_first_vertex can be ambiguous
     if (
         -np.pi * 5 / 8 < angles[first_idx] < -np.pi * 3 / 8
@@ -125,7 +118,7 @@ def get_box_vertices(vertices, predicted_shape):
             perspective transform
     """
     if predicted_shape == "circle":
-        vertices = get_box_from_ellipse(vertices)
+        vertices = _get_box_from_ellipse(vertices)
 
     # print(vertices)
     vertices = sort_polygon_vertices(vertices)
@@ -133,15 +126,15 @@ def get_box_vertices(vertices, predicted_shape):
     # vertices = vertices[1:] + vertices[0]
     vertices = np.roll(vertices, -1, axis=0)
 
-    if predicted_shape in SHAPE_TO_VERTICES:
-        box = vertices[SHAPE_TO_VERTICES[predicted_shape]]
+    if predicted_shape in _SHAPE_TO_VERTICES:
+        box = vertices[_SHAPE_TO_VERTICES[predicted_shape]]
         assert box.shape == (4, 2) or box.shape == (3, 2)
     else:
         box = vertices
     return box
 
 
-def get_side_angle(vertices):
+def _get_side_angle(vertices):
     side = vertices[0] - vertices[1]
     return abs(np.arctan(side[1] / side[0]))
 
@@ -149,15 +142,15 @@ def get_side_angle(vertices):
 def get_shape_from_vertices(vertices):
     num_vertices = len(vertices)
     vertices = sort_polygon_vertices(vertices)
-    height = vertices[:, 1].max() - vertices[:, 1].min()
+    # height = vertices[:, 1].max() - vertices[:, 1].min()
     if num_vertices == 3:
-        angle = get_side_angle(vertices.astype(np.float32))
+        angle = _get_side_angle(vertices.astype(np.float32))
         if angle < np.pi / 6:
             shape = "triangle_inverted"
         else:
             shape = "triangle"
     elif num_vertices == 4:
-        angle = get_side_angle(vertices.astype(np.float32))
+        angle = _get_side_angle(vertices.astype(np.float32))
         side1 = vertices[0] - vertices[1]
         side2 = vertices[1] - vertices[2]
         len1 = np.sqrt((side1**2).sum())
