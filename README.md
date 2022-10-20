@@ -11,14 +11,20 @@ Tested with
 We recommend creating a new conda environment with python 3.8 because `kornia` and `detectron2` seem to often mess up dependencies and result in a segmentation fault.
 
 ```[bash]
-# Install pytorch normally
-conda install -y pytorch torchvision torchaudio cudatoolkit=11.6 -c pytorch
-conda install -y scipy pandas scikit-learn pip seaborn
-conda upgrade -y numpy scipy pandas scikit-learn
-conda install -y -c conda-forge timm kornia==0.6.3
-pip install opencv albumentations
+# Install from requirements.txt file OR
+pip install -r requirements.txt
+
+# Install packages with their latest version manually, e.g.,
+pip install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu116
+pip install scipy pandas scikit-learn pip seaborn 
+pip install numpy scipy pandas scikit-learn
+pip install timm kornia==0.6.3 opencv-python albumentations
+
+# Detectron2 has to be installed afterward
 pip install 'git+https://github.com/facebookresearch/detectron2.git'
 ```
+
+- If there is any problem with `detectron2` installation (e.g., CUDA or `pytorch` version mismatch), see this [documentation](https://detectron2.readthedocs.io/en/latest/tutorials/install.html).
 
 ## Dataset
 
@@ -95,7 +101,9 @@ ln -s $BASE_DIR/validation/detectron_labels_no_color/* detectron_labels/
 
 ## YOLOR
 
-```bash
+TODO(feature): Add YOLOR as another YOLO model option.
+
+```[bash]
 # Download yolor-p6 pretrained weights
 cd ./yolor/scripts && gdown 1Tdn3yqpZ79X7R1Ql0zNlNScB1Dv9Fp76 
 ```

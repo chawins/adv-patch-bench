@@ -217,7 +217,6 @@ def main(cfg: config.CfgNode, config: Dict[str, Dict[str, Any]]):
         cfg,
         cfg.DATASETS.TEST[0],
         mapper=mapper.BenignMapper(cfg, is_train=False),
-        batch_size=1,
         num_workers=cfg.DATALOADER.NUM_WORKERS,
     )
 
@@ -295,7 +294,7 @@ def main(cfg: config.CfgNode, config: Dict[str, Dict[str, Any]]):
         metrics["TPR-all"] = tp_all / total
         metrics["FPR-all"] = fp_all / total
         log.info(f'Total num patches: {metrics["total_num_patches"]}')
-        _dump_results(results, config_eval, config_attack)
+        _dump_results(results, config_eval)
 
 
 if __name__ == "__main__":
