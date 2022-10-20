@@ -53,22 +53,24 @@ def _gen_rect_mask(
     if ratio > 1:
         # Tall rectangle
         pad = round((height - width) / 2)
-        mask[:, pad : size - pad] = 1
+        assert pad < width
+        mask[:, pad : width - pad] = 1
         box = [
             (pad, 0),
-            (size - pad, 0),
-            (size - pad, size - 1),
-            (pad, size - 1),
+            (width - pad, 0),
+            (width - pad, height - 1),
+            (pad, height - 1),
         ]
     elif ratio < 1:
         # Wide rectangle
         pad = round((width - height) / 2)
-        mask[pad : size - pad, :] = 1
+        assert pad < height
+        mask[pad : height - pad, :] = 1
         box = [
             (0, pad),
-            (size - 1, pad),
-            (size - 1, size - pad),
-            (0, size - pad),
+            (width - 1, pad),
+            (width - 1, height - pad),
+            (0, height - pad),
         ]
     else:
         # Square

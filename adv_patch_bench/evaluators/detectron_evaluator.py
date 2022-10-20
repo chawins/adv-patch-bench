@@ -96,7 +96,7 @@ class DetectronEvaluator:
             "img_size": self._img_size if self._fixed_input_size else None,
             "img_mode": self._input_format,
             "interp": interp,
-            "img_aug_prob_geo": config_attack["common"]["img_aug_prob_geo"],
+            "img_aug_prob_geo": config_eval["img_aug_prob_geo"],
             "is_detectron": True,
         }
 

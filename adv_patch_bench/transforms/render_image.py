@@ -124,7 +124,7 @@ class RenderImage:
         self.obj_tf_dict: Dict[int, render_object.RenderObject] = OrderedDict()
 
         # Init augmentation transform for image
-        self._aug_geo_img: TransformFn
+        self._aug_geo_img: TransformFn = util._identity
         if img_aug_prob_geo is not None and img_aug_prob_geo > 0:
             self._aug_geo_img = K.RandomResizedCrop(
                 self.img_size,
@@ -132,8 +132,6 @@ class RenderImage:
                 p=img_aug_prob_geo,
                 resample=interp,
             )
-        else:
-            self._aug_geo_img = util._identity
 
     def _resize_image(self, image: ImageTensor) -> Tuple[ImageTensor, SizePx]:
         """Resize or pad image to self.img_size.
@@ -298,13 +296,8 @@ class RenderImage:
             raise ValueError(f"obj_id {obj_id} does not exist!")
         return self.obj_tf_dict[obj_id]
 
-    def apply_objects(
-        self, aug_img: bool = False
-    ) -> Tuple[ImageTensor, Target]:
+    def apply_objects(self) -> Tuple[ImageTensor, Target]:
         """Apply all RenderObjects in obj_tf_list to image.
-
-        Args:
-            aug_img: If True, run augmentation transform on image.
 
         Returns:
             Image with patches and other objects applied.
@@ -316,8 +309,7 @@ class RenderImage:
             image, target = obj_tf.apply_object(image, target)
 
         # Apply augmentation on the entire image
-        if aug_img:
-            image = self._aug_geo_img(image)
+        image = self._aug_geo_img(image)
 
         return image, target
 
