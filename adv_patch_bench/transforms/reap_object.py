@@ -103,75 +103,11 @@ class ReapObject(render_object.RenderObject):
         h0, w0 = self.img_size_orig
         h_pad, w_pad = self.img_pad_size
 
-        # Get target points from dataframe
-        # TODO: Fix this after unifying csv
-        if not pd.isna(df_row["points"]):
-            tgt = np.array(ast.literal_eval(df_row["points"]), dtype=np.float32)
-            tgt[:, 1] = (tgt[:, 1] * h_ratio) + h_pad
-            tgt[:, 0] = (tgt[:, 0] * w_ratio) + w_pad
-            # print('not polygon')
-        else:
-            tgt = (
-                df_row["tgt"]
-                if pd.isna(df_row["tgt_polygon"])
-                else df_row["tgt_polygon"]
-            )
-            tgt = np.array(ast.literal_eval(tgt), dtype=np.float32)
-            # print('polygon')
-
-            offset_x_ratio = df_row["xmin_ratio"]
-            offset_y_ratio = df_row["ymin_ratio"]
-            # Have to correct for the padding when df is saved
-            # TODO: this should be cleaned up with csv
-            pad_size = int(max(h0, w0) * 0.25)
-            x_min = offset_x_ratio * (w0 + pad_size * 2) - pad_size
-            y_min = offset_y_ratio * (h0 + pad_size * 2) - pad_size
-            # Order of coordinate in tgt is inverted, i.e., (x, y) instead of (y, x)
-            tgt[:, 1] = (tgt[:, 1] + y_min) * h_ratio + h_pad
-            tgt[:, 0] = (tgt[:, 0] + x_min) * w_ratio + w_pad
-
-        # FIXME: Correct in the csv file directly
-        shape = self.obj_class_name.split("-")[0]
-        if shape != "octagon":
-            tgt = verifier.sort_polygon_vertices(tgt)
-
-        # if row['use_polygon'] == 1:
-        #     # nR-M2zUbIWJzatAuy2egrQ.jpg
-        # if row['use_polygon'] == 1:
-        #     print(tgt)
-        #     import pdb
-        #     pdb.set_trace()
-
-        if shape == "diamond":
-            # Verify target points of diamonds. If they are very close to corners
-            # of a square, the sign likely lies on another square surface. In this
-            # case, use the square src points instead.
-            x, y = np.abs(tgt[1] - tgt[0])
-            angle10 = np.arctan2(y, x)
-            x, y = np.abs(tgt[3] - tgt[2])
-            angle32 = np.arctan2(y, x)
-            mean_angle = (angle10 + angle32) / 2
-            if mean_angle < np.pi / 180 * 15:
-                self.obj_class_name = "square-600.0"
-
+        tgt = np.array(df_row["tgt_points"], dtype=np.float32)
+        tgt[:, 1] = (tgt[:, 1] * h_ratio) + h_pad
+        tgt[:, 0] = (tgt[:, 0] * w_ratio) + w_pad
         src = np.array(self.src_points, dtype=np.float32)
-
-        if shape == "pentagon":
-            # Verify that target points of pentagons align like rectangle (almost
-            # parallel sides). If not, then there's an annotation error which is
-            # then fixed by changing src points.
-            angle10 = np.arctan2(*(tgt[1] - tgt[0]))
-            angle21 = np.arctan2(*(tgt[2] - tgt[1]))
-            angle23 = np.arctan2(*(tgt[2] - tgt[3]))
-            angle30 = np.arctan2(*(tgt[3] - tgt[0]))
-            mean_diff = (
-                np.abs(angle10 - angle23) + np.abs(angle21 - angle30)
-            ) / 2
-            # FIXME: we should fix this by tgt points instead
-            if mean_diff > np.pi / 180 * 15:
-                src[1, 0] = float(src[1, 1])
-                src[1, 1] = 0
-
+        
         # Get transformation matrix and transform function (affine or perspective)
         # from source and target coordinates
         if self.patch_transform_mode == "translate_scale":

@@ -13,7 +13,7 @@ eval:
   # Sample dimension (height, width); comma-separated
   padded_imgsz: '1536,2048'  # '1536,2048'
   # Path to annotation file
-  tgt_csv_filepath: 'mapillary_vistas_final_merged.csv'
+  tgt_csv_filepath: 'reap_annotations.csv'
   # Custom experiment name (null for auto-generated)
   name: null
   obj_class: 1  # Class of object to eval/attack
