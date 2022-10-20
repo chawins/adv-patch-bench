@@ -192,7 +192,7 @@ def main(args):
                     cls_scores = metrics["gtScores"]
                     if is_attack:
                         base_sid = f"real_{results['reap_transform_mode']}"
-                        if results["reap_use_relight"]:
+                        if not results["reap_use_relight"]:
                             base_sid += "_nolight"
                         base_sid += "_atk1"
                     else:

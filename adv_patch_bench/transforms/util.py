@@ -33,6 +33,11 @@ def _gen_rect_mask(
 ) -> Tuple[np.ndarray, _KeyPoints]:
     """Generate rectangular mask.
 
+    The keypoints are a list of tuple (x, y) coordinates starting from the
+    uppper left one and sorted clockwise. For example, keypoints of a
+    rectangular mask are upper-left, upper-right, lower-right, and lower-left
+    corners, respectively.
+
     Args:
         size: Width of object in pixels.
         ratio: Ratio between height and width.
@@ -46,22 +51,24 @@ def _gen_rect_mask(
     mask: np.ndarray = np.zeros((height, width))
 
     if ratio > 1:
-        pad = int((size - width) / 2)
+        # Tall rectangle
+        pad = round((height - width) / 2)
         mask[:, pad : size - pad] = 1
         box = [
-            [pad, 0],
-            [size - pad, 0],
-            [size - pad, size - 1],
-            [pad, size - 1],
+            (pad, 0),
+            (size - pad, 0),
+            (size - pad, size - 1),
+            (pad, size - 1),
         ]
     elif ratio < 1:
-        pad = int((size - height) / 2)
+        # Wide rectangle
+        pad = round((width - height) / 2)
         mask[pad : size - pad, :] = 1
         box = [
-            [0, pad],
-            [size - 1, pad],
-            [size - 1, size - pad],
-            [0, size - pad],
+            (0, pad),
+            (size - 1, pad),
+            (size - 1, size - pad),
+            (0, size - pad),
         ]
     else:
         # Square
@@ -93,7 +100,7 @@ def _gen_circle_mask(
     """Generate circle mask. See _gen_rect_mask()."""
     del ratio  # Unused
     Y, X = np.ogrid[:size, :size]
-    center = round(size / 2)
+    center = round(size / 2)  # center is also radius
     dist_from_center = np.sqrt((X - center) ** 2 + (Y - center) ** 2)
     mask = dist_from_center <= center
     return mask, [(0, 0), (size - 1, 0), (size - 1, size - 1), (0, size - 1)]
@@ -161,7 +168,12 @@ def _gen_octagon_mask(
 def gen_sign_mask(
     shape: str, hw_ratio: float, obj_width_px: int
 ) -> Tuple[np.ndarray, _KeyPoints]:
-    """Generate mask of object.
+    """Generate mask of object and source keypoints.
+
+    The keypoints are a list of tuple (x, y) coordinates starting from the
+    uppper left one and sorted clockwise. For example, keypoints of a
+    rectangular mask are upper-left, upper-right, lower-right, and lower-left
+    corners, respectively.
 
     Args:
         shape: Object shape defined based on classes in REAP.
@@ -172,19 +184,17 @@ def gen_sign_mask(
         Binary mask and source keypoint for geometric transformation with
         respect to this mask.
     """
-    return _SHAPE_TO_MASK[shape](obj_width_px, ratio=hw_ratio)
-
-
-_SHAPE_TO_MASK = {
-    "circle": _gen_circle_mask,
-    "triangle_inverted": _gen_triangle_inverted_mask,
-    "triangle": _gen_triangle_mask,
-    "rect": _gen_rect_mask,
-    "diamond": _gen_diamond_mask,
-    "pentagon": _gen_pentagon_mask,
-    "octagon": _gen_octagon_mask,
-    "square": _gen_rect_mask,
-}
+    shape_to_mask = {
+        "circle": _gen_circle_mask,
+        "triangle_inverted": _gen_triangle_inverted_mask,
+        "triangle": _gen_triangle_mask,
+        "rect": _gen_rect_mask,
+        "diamond": _gen_diamond_mask,
+        "pentagon": _gen_pentagon_mask,
+        "octagon": _gen_octagon_mask,
+        "square": _gen_rect_mask,
+    }
+    return shape_to_mask[shape](obj_width_px, ratio=hw_ratio)
 
 
 def get_transform_fn(
