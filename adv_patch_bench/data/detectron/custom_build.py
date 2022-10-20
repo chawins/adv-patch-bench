@@ -19,10 +19,10 @@ def build_detection_test_loader(
     batch_size: int = 1,
     num_workers: int = 0,
     pin_memory: bool = True,
-    filter_file_names: Optional[List[str]] = None,
+    split_file_names: Optional[List[str]] = None,
     collate_fn: Optional[Callable[[List[Any]], Any]] = None,
 ) -> torchdata.DataLoader:
-    """Custom test dataloader to incorporate filter_file_names.
+    """Custom test dataloader to incorporate split_file_names.
 
     Similar to `build_detection_train_loader`, with default batch size = 1,
     and sampler = :class:`InferenceSampler`. This sampler coordinates all
@@ -59,16 +59,16 @@ def build_detection_test_loader(
         data_loader = build_detection_test_loader(cfg, "my_test")
     """
     # Filter data by filenames
-    if filter_file_names is not None:
+    if split_file_names is not None:
         new_dataset = [
             d
             for d in dataset
-            if d["file_name"].split("/")[-1] in filter_file_names
+            if d["file_name"].split("/")[-1] in split_file_names
         ]
-        if len(new_dataset) != len(filter_file_names):
+        if len(new_dataset) != len(split_file_names):
             raise ValueError(
                 "Not all files listed in filter_file_names are found "
-                f"({len(new_dataset)} vs {len(filter_file_names)})!"
+                f"({len(new_dataset)} vs {len(split_file_names)})!"
             )
         dataset = new_dataset
 

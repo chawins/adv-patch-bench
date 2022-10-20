@@ -15,12 +15,11 @@ import yaml
 from detectron2 import data, engine
 from tqdm import tqdm
 
+import adv_patch_bench.data.detectron.util as data_util
 import adv_patch_bench.data.reap_util as reap_util
 import adv_patch_bench.utils.argparse as args_util
 from adv_patch_bench.attacks import attacks, base_attack, patch_mask_util
-from adv_patch_bench.data.detectron import custom_build, custom_sampler
-from adv_patch_bench.data.detectron import dataloader as detectron_dataloader
-from adv_patch_bench.data.detectron import mapper
+from adv_patch_bench.data.detectron import custom_build, custom_sampler, mapper
 from adv_patch_bench.transforms import reap_object, render_image, syn_object
 from adv_patch_bench.utils.types import ImageTensor, MaskTensor, SizeMM, SizePx
 from hparams import LABEL_LIST, MAPILLARY_IMG_COUNTS_DICT
@@ -85,7 +84,7 @@ def collect_attack_rimgs(
         file_name = batch[0]["file_name"]
         filename = file_name.split("/")[-1]
 
-        # If img_txt_path is specified, ignore other file names
+        # If split_file_path is specified, ignore other file names
         if filter_file_names is not None and filename not in filter_file_names:
             continue
 
@@ -213,7 +212,7 @@ def main(
     config_atk_common: Dict[str, Any] = config_attack["common"]
     img_size: SizePx = config_eval["img_size"]
     dataset: str = config_eval["dataset"]
-    img_txt_path: str = config_eval["img_txt_path"]
+    split_file_path: str = config_eval["split_file_path"]
     obj_class: int = config_eval["obj_class"]
     synthetic: bool = config_eval["synthetic"]
     save_dir: str = config_eval["save_dir"]
@@ -227,13 +226,15 @@ def main(
     # Set up model from config
     model = engine.DefaultPredictor(cfg).model
 
-    filter_file_names: Optional[List[str]]
-    if img_txt_path is not None:
-        print(f"Loading file names from {img_txt_path}...")
-        with open(img_txt_path, "r") as f:
-            filter_file_names = f.read().splitlines()
+    split_file_names: Optional[List[str]]
+    if split_file_path is not None:
+        print(f"Loading file names from {split_file_path}...")
+        with open(split_file_path, "r") as f:
+            split_file_names = f.read().splitlines()
+        # Update num samples
+        num_samples = len(split_file_names)
     else:
-        filter_file_names = None
+        split_file_names = None
 
     # Build dataloader
     # pylint: disable=too-many-function-args
@@ -244,12 +245,10 @@ def main(
         batch_size=1,
         num_workers=cfg.DATALOADER.NUM_WORKERS,
         # Used for random sampling background images from new dataset.
-        # We recommend using a pre-defined file names in img_txt_path.
-        sampler=custom_sampler.ShuffleInferenceSampler(
-            num_samples if filter_file_names is None else len(filter_file_names)
-        ),
+        # We recommend using a pre-defined file names in split_file_path.
+        sampler=custom_sampler.ShuffleInferenceSampler(num_samples),
         pin_memory=True,
-        filter_file_names=filter_file_names,
+        split_file_names=split_file_names,
     )
 
     rimg_kwargs: Dict[str, Any] = {
@@ -292,16 +291,18 @@ def main(
         robj_fn,
         anno_df=df,
         class_name=class_name,
-        filter_file_names=filter_file_names,
+        filter_file_names=split_file_names,
         rimg_kwargs=rimg_kwargs,
         robj_kwargs=robj_kwargs,
     )
 
-    # Save background filenames in txt file
-    print("=> Saving used attack_bg_syn in a txt file.")
-    with open(join(save_dir, f"bg_filenames-{num_bg}.txt"), "w") as f:
-        for rimg in attack_rimgs:
-            f.write(f"{rimg._filename}\n")
+    # Save background filenames in txt file if split_file_path was not given
+    if split_file_names is None:
+        print("=> Saving names of images used to generate patch in txt file.")
+        split_file_path = join(save_dir, f"{class_name}_attack_bg{num_bg}.txt")
+        with open(split_file_path, "w") as f:
+            for rimg in attack_rimgs:
+                f.write(f"{rimg.filename}\n")
 
     if config_eval["debug"]:
         # Save all the background images
@@ -337,7 +338,9 @@ def main(
 
 
 if __name__ == "__main__":
-    config: Dict[str, Dict[str, Any]] = args_util.eval_args_parser(True)
+    config: Dict[str, Dict[str, Any]] = args_util.eval_args_parser(
+        True, is_gen_patch=True
+    )
     # Verify some args
     cfg = args_util.setup_detectron_test_args(config)
     config_eval: Dict[str, Any] = config["eval"]
@@ -357,7 +360,7 @@ if __name__ == "__main__":
     random.seed(seed)
 
     class_names: List[str] = LABEL_LIST[config_eval["dataset"]]
-    detectron_dataloader.setup_dataloader(config_eval, cfg, class_names)
+    data_util.register_dataset(config_eval, cfg, class_names)
     data_list = data.DatasetCatalog.get(config_eval["dataset"])
     num_samples: int = len(data_list)
 

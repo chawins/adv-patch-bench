@@ -30,12 +30,14 @@ _TRANSFORM_PARAMS: List[str] = [
 
 
 def eval_args_parser(
-    is_detectron: bool, root: Optional[str] = None
+    is_detectron: bool,
+    root: Optional[str] = None,
+    is_gen_patch: bool = False,
 ) -> Dict[str, Any]:
     """Setup argparse for evaluation.
 
     Args:
-        is_detectron: Whether we are evaluating dectectron model.`
+        is_detectron: Whether we are evaluating dectectron model.
         root: Path to root or base directory. Defaults to None.
 
     Returns:
@@ -256,27 +258,20 @@ def eval_args_parser(
         help="Path to YAML file with attack configs.",
     )
     parser.add_argument(
-        "--img-txt-path",
+        "--split-file-path",
         type=str,
         default="",
         help="path to a text file containing image filenames",
     )
-    parser.add_argument(
-        "--run-only-img-txt",
-        action="store_true",
-        help=(
-            "run evaluation on images listed in img-txt-path. "
-            "Otherwise, images in img-txt-path are excluded instead."
-        ),
-    )
-    parser.add_argument(
-        "--no-patch-transform",
-        action="store_true",
-        help=(
-            "If True, do not apply patch to signs using 3D-transform. "
-            "Patch will directly face camera."
-        ),
-    )
+    # TODO: This can be removed? This is specified through reap-transform-mode
+    # parser.add_argument(
+    #     "--no-patch-transform",
+    #     action="store_true",
+    #     help=(
+    #         "If True, do not apply patch to signs using 3D-transform. "
+    #         "Patch will directly face camera."
+    #     ),
+    # )
     parser.add_argument(
         "--reap-transform-mode",
         type=str,
@@ -502,7 +497,7 @@ def eval_args_parser(
 
     # Update config and fill with auto-generated params
     _update_img_size(config)
-    _update_img_txt_path(config)
+    _update_split_file(config, is_gen_patch)
     _update_syn_obj_path(config)
     _update_syn_obj_size(config)
     _update_patch_size(config)
@@ -585,35 +580,52 @@ def _update_dataset_name(config: Dict[str, Dict[str, Any]]) -> List[str]:
     config_eval["dataset"] = dataset
 
 
-def _update_img_txt_path(config: Dict[str, Dict[str, Any]]) -> None:
+def _update_split_file(
+    config: Dict[str, Dict[str, Any]], is_gen_patch: bool
+) -> None:
     config_eval = config["eval"]
-    img_txt_path = config_eval["img_txt_path"]
-    dataset = config_eval["dataset"]
-    if img_txt_path is None:
-        print("img_txt_path is not specified.")
+    split_file_path: Optional[str] = config_eval["split_file_path"]
+    dataset: str = config_eval["dataset"]
+    num_bg: int = config["attack"]["common"]["num_bg"]
+    if split_file_path is None:
+        print("split_file_path is not specified.")
         return
 
-    if os.path.isfile(img_txt_path):
-        print(f"img_txt_path is specified as {img_txt_path}.")
+    if os.path.isfile(split_file_path):
+        print(f"split_file_path is specified as {split_file_path}.")
         return
 
-    # If img_txt_path is dir, we search inside that dir to find valid txt file
+    # If split_file is dir, we search inside that dir to find valid txt file
     # given obj_class.
-    path = pathlib.Path(img_txt_path)
-    if not path.is_dir():
-        raise ValueError(f"img_txt_path ({img_txt_path}) is not dir.")
-
-    class_name = LABEL_LIST[dataset][config_eval["obj_class"]]
-    path = path / dataset / f"bg_filenames_{class_name}.txt"
-    if not path.is_file():
-        raise ValueError(
-            f"img_txt_path is dir, but default file name ({str(path)}) does "
-            "not exist."
+    split_file_dir = pathlib.Path(split_file_path)
+    if not split_file_dir.is_dir():
+        raise FileNotFoundError(
+            f"split_file_path ({split_file_dir}) is not dir."
         )
 
-    img_txt_path = str(path)
-    print(f"Using the default option based on obj_class: {img_txt_path}.")
-    config_eval["img_txt_path"] = img_txt_path
+    # Try to find split file in given dir
+    split: str = "attack" if is_gen_patch else "test"
+    class_name: str = LABEL_LIST[dataset][config_eval["obj_class"]]
+    default_filename: str = f"{class_name}_{split}.txt"
+    split_file_path: pathlib.Path = split_file_dir / default_filename
+    if split_file_path.is_file():
+        print(f"Using split_file_path: {split_file_path}.")
+        config_eval["split_file_path"] = split_file_path
+        return
+
+    # Try to automatically generate correct path to split file
+    split_file_path = (
+        split_file_dir / dataset / f"bg{num_bg}" / default_filename
+    )
+    if not split_file_path.is_file():
+        raise FileNotFoundError(
+            "split_file_path is dir, but cannot find a valid split file at "
+            f"{str(split_file_path)} (auto-generated)."
+        )
+
+    split_file_path = str(split_file_path)
+    print(f"Using auto-generated split_file_path: {split_file_path}.")
+    config_eval["split_file_path"] = split_file_path
 
 
 def _update_syn_obj_path(config: Dict[str, Dict[str, Any]]) -> None:

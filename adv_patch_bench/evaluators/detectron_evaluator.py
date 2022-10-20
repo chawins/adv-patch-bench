@@ -6,6 +6,7 @@ model-specific from the main test script.
 This code is inspired by
 https://github.com/yizhe-ang/detectron2-1/blob/master/detectron2_1/adv.py
 """
+
 import pathlib
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -104,23 +105,6 @@ class DetectronEvaluator:
             config_eval["tgt_csv_filepath"]
         )
         self._annotated_signs_only: bool = config_eval["annotated_signs_only"]
-
-        # Loading file names from the specified text file
-        # TODO(feature): handle skipping files in dataloader.
-        self._skipped_filename_list: List[str] = []
-        img_txt_path: Optional[str] = config_eval["img_txt_path"]
-        if img_txt_path is not None:
-            print(f"Loading file names from {img_txt_path}...")
-            with open(img_txt_path, "r") as f:
-                self._skipped_filename_list = f.read().splitlines()
-
-        self._run_only_img_txt: bool = False
-        if config_eval["run_only_img_txt"] is not None:
-            self._run_only_img_txt = config_eval["run_only_img_txt"]
-        if self._run_only_img_txt:
-            print("Evaluation will run only on these files.")
-        else:
-            print("Evaluation will skip these files.")
 
         # Build COCO evaluator
         self.evaluator = build_evaluator(cfg, cfg.DATASETS.TEST[0])
@@ -281,13 +265,6 @@ class DetectronEvaluator:
 
             if self._annotated_signs_only and img_df.empty:
                 # Skip image if there's no annotation
-                continue
-
-            # Skip (or only run on) files listed in the txt file
-            in_list = filename in self._skipped_filename_list
-            if (in_list and not self._run_only_img_txt) or (
-                not in_list and self._run_only_img_txt
-            ):
                 continue
 
             rimg: render_image.RenderImage = render_image.RenderImage(

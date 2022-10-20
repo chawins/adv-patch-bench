@@ -1,3 +1,8 @@
+"""Build custom COCO evaluator object.
+
+TODO(feature): Tell evaluator to ignore images that are not in the split file.
+"""
+
 import adv_patch_bench.utils.detectron.custom_coco_evaluator as cocoeval
 
 

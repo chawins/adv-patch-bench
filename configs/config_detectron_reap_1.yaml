@@ -19,11 +19,9 @@ eval:
   obj_class: 1  # Class of object to eval/attack
   patch_size_inch: '10x10'  # e.g., '2_10x20'
   num_eval: null  # Number of samples to use for eval; Set to null to use all.
-  # Path to txt file containing file names to use for generating patch or avoid
-  # during evaluation
-  img_txt_path: './bg_txt_files/'
-  # True for generating patch, False for testing, null to automatically set
-  run_only_img_txt: null
+  # Path to txt file containing file names to use either for generating patch or
+  # for testing.
+  split_file_path: './splits/'
   interp: 'bilinear'  # Interpolation mode: 'nearest', 'bilinear', 'bicubic'
   save_images: True
   annotated_signs_only: True
