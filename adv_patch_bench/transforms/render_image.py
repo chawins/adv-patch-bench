@@ -81,9 +81,9 @@ class RenderImage:
         Raises:
             ValueError: Invalid img_mode.
         """
+        self.filename: str = img_df["filename"]
         self._dataset: str = dataset
         self._img_df: pd.DataFrame = img_df
-        self._filename: str = img_df["filename"]
         self._interp: str = interp
         self._device: Any = device
         self._is_detectron: bool = is_detectron
@@ -211,7 +211,7 @@ class RenderImage:
         robj: render_object.RenderObject = robj_fn(
             dataset=self._dataset,
             obj_df=obj_df,
-            filename=self._filename,
+            filename=self.filename,
             img_size=self.img_size,
             img_size_orig=self.img_size_orig,
             img_hw_ratio=self.size_ratio,
@@ -374,5 +374,5 @@ class RenderImage:
         if image is None:
             image = self.image
         torchvision.utils.save_image(
-            self.image, os.path.join(save_dir, f"{self._filename}.{ext}")
+            self.image, os.path.join(save_dir, f"{self.filename}.{ext}")
         )

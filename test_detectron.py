@@ -12,9 +12,9 @@ import numpy as np
 import pandas as pd
 import torch
 import yaml
-from detectron2 import config, data, engine
+from detectron2 import config, engine
 
-from adv_patch_bench.data.detectron import mapper, dataloader
+from adv_patch_bench.data.detectron import custom_build, mapper, util
 from adv_patch_bench.evaluators.detectron_evaluator import DetectronEvaluator
 from adv_patch_bench.utils.argparse import (
     eval_args_parser,
@@ -195,9 +195,10 @@ def main(cfg: config.CfgNode, config: Dict[str, Dict[str, Any]]):
         config: Config dict for both eval and attack.
     """
     config_eval: Dict[str, Any] = config["eval"]
-    dataset = config_eval["dataset"]
-    attack_config_path = config_eval["attack_config_path"]
-    class_names = LABEL_LIST[dataset]
+    dataset: str = config_eval["dataset"]
+    attack_config_path: str = config_eval["attack_config_path"]
+    split_file_path: str = config_eval["split_file_path"]
+    class_names: List[str] = LABEL_LIST[dataset]
 
     # Load adversarial patch and config
     if os.path.isfile(attack_config_path):
@@ -212,12 +213,23 @@ def main(cfg: config.CfgNode, config: Dict[str, Dict[str, Any]]):
     model = engine.DefaultPredictor(cfg).model
 
     # Build dataloader
+    split_file_names: Optional[List[str]]
+    if split_file_path is not None:
+        print(f"Loading file names from {split_file_path}...")
+        with open(split_file_path, "r") as f:
+            split_file_names = f.read().splitlines()
+    else:
+        split_file_names = None
+
     # pylint: disable=too-many-function-args
-    val_loader = data.build_detection_test_loader(
+    dataloader = custom_build.build_detection_test_loader(
         cfg,
         cfg.DATASETS.TEST[0],
         mapper=mapper.BenignMapper(cfg, is_train=False),
+        batch_size=1,
         num_workers=cfg.DATALOADER.NUM_WORKERS,
+        pin_memory=True,
+        split_file_names=split_file_names,
     )
 
     evaluator = DetectronEvaluator(
@@ -225,7 +237,7 @@ def main(cfg: config.CfgNode, config: Dict[str, Dict[str, Any]]):
         config_eval,
         config_attack,
         model,
-        val_loader,
+        dataloader,
         class_names=class_names,
     )
     log.info("=> Running attack...")
@@ -298,7 +310,9 @@ def main(cfg: config.CfgNode, config: Dict[str, Dict[str, Any]]):
 
 
 if __name__ == "__main__":
-    config: Dict[str, Dict[str, Any]] = eval_args_parser(True)
+    config: Dict[str, Dict[str, Any]] = eval_args_parser(
+        True, is_gen_patch=False
+    )
     cfg = setup_detectron_test_args(config)
     config_eval: Dict[str, Any] = config["eval"]
     seed: int = config_eval["seed"]
@@ -318,6 +332,6 @@ if __name__ == "__main__":
     random.seed(seed)
 
     class_names: List[str] = LABEL_LIST[config_eval["dataset"]]
-    dataloader.setup_dataloader(config_eval, cfg, class_names)
+    util.register_dataset(config_eval, cfg, class_names)
 
     main(cfg, config)
