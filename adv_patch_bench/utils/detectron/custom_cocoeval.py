@@ -137,13 +137,15 @@ class COCOeval:
             self.class_to_gtIds[cid] = []
 
         # set ignore flag
+        max_id = 0
         for gt in gts:
             gt["ignore"] = gt["ignore"] if "ignore" in gt else 0
             gt["ignore"] = "iscrowd" in gt and gt["iscrowd"]
             if p.iouType == "keypoints":
                 gt["ignore"] = (gt["num_keypoints"] == 0) or gt["ignore"]
             self.class_to_gtIds[gt["category_id"]].append(gt["id"])
-        self.gtScores = np.zeros((len(self.params.iouThrs), gts[-1]["id"]))
+            max_id = max(max_id, gt["id"])
+        self.gtScores = np.zeros((len(self.params.iouThrs), max_id))
 
         self._gts = defaultdict(list)  # gt for evaluation
         self._dts = defaultdict(list)  # dt for evaluation
@@ -506,7 +508,7 @@ class COCOeval:
                 Na = a0 * I0
                 for m, maxDet in enumerate(m_list):
                     E = [self.evalImgs[Nk + Na + i] for i in i_list]
-                    E = [e for e in E if not e is None]
+                    E = [e for e in E if e is not None]
                     if len(E) == 0:
                         continue
                     dtScores = np.concatenate(
@@ -541,11 +543,12 @@ class COCOeval:
                         # m = M-1 is max number of detection
                         num_gts_per_class[k] += npig
                         for t in range(T):
+                            # dtm contained gt ids (start at 1)
                             dtm_t = dtm[t].astype(np.int64) - 1
                             matched_dtm_idx = dtm_t >= 0
-                            matched_dtm_t = dtm_t[matched_dtm_idx]
+                            matched_gt_id = dtm_t[matched_dtm_idx]
                             matched_dtScores = dtScoresSorted[matched_dtm_idx]
-                            self.gtScores[t, matched_dtm_t] = matched_dtScores
+                            self.gtScores[t, matched_gt_id] = matched_dtScores
 
                     tp_sum = np.cumsum(tps, axis=1).astype(dtype=np.float)
                     fp_sum = np.cumsum(fps, axis=1).astype(dtype=np.float)
@@ -602,6 +605,7 @@ class COCOeval:
             # gtIds start with 1 so we subtract to make it zero-indexed
             gtIds = np.array(gtIds) - 1
             gtScores[catId] = self.gtScores[:, gtIds]
+            assert gtScores[catId].shape[1] == len(gtIds)
 
         self.eval = {
             "params": p,
