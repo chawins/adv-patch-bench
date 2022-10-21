@@ -8,8 +8,8 @@ eval:
   workers: 8  # Number of CPU workers
   config_file: './configs/faster_rcnn_R_50_FPN_3x.yaml'  # Detectron2 config
   base_dir: './detectron_output/'
-  data_dir: '~/data/mapillary_vistas/'
-  dataset: 'reap'  # dataset name: 'reap', 'synthetic', 'mapillary-SPLIT-no_color', 'mtsd-SPLIT'
+  data_dir: '~/data/'
+  dataset: 'reap'  # dataset name: 'reap', 'synthetic', 'mapillary-no_color-SPLIT', 'mtsd-SPLIT'
   # Sample dimension (height, width); comma-separated
   padded_imgsz: '1536,2048'  # '1536,2048'
   # Path to annotation file

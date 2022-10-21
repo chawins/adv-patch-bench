@@ -1,6 +1,7 @@
 """Register and load MTSD dataset."""
 
 import json
+import os
 import pathlib
 from typing import Any, Dict, List, Optional
 
@@ -10,6 +11,7 @@ from detectron2.data import DatasetCatalog, MetadataCatalog
 from detectron2.structures import BoxMode
 from hparams import (
     DEFAULT_PATH_MTSD_LABEL,
+    LABEL_LIST,
     PATH_SIMILAR_FILES,
     TS_COLOR_DICT,
     TS_COLOR_OFFSET_DICT,
@@ -60,9 +62,11 @@ def get_mtsd_anno(
         if f.is_file() and f.suffix == ".json"
     ]
 
-    return {"similar_files_df": similar_files_df,
-            "mtsd_label_to_class_index": mtsd_label_to_class_index,
-            "json_files": json_files}
+    return {
+        "similar_files_df": similar_files_df,
+        "mtsd_label_to_class_index": mtsd_label_to_class_index,
+        "json_files": json_files,
+    }
 
 
 def get_mtsd_dict(
@@ -73,6 +77,7 @@ def get_mtsd_dict(
     mtsd_label_to_class_index: Optional[Dict[str, int]] = None,
     bg_class_id: int = 10,
     ignore_bg_class: bool = False,
+    **kwargs,
 ) -> List[DetectronSample]:
     """Get MTSD dataset as list of samples in Detectron2 format.
 
@@ -95,12 +100,17 @@ def get_mtsd_dict(
     Returns:
         List of MTSD samples in Detectron2 format.
     """
+    del kwargs  # Unused
     if split not in _ALLOWED_SPLITS:
         raise ValueError(
             f"split must be among {_ALLOWED_SPLITS}, but it is {split}!"
         )
 
-    if (json_files is None or similar_files_df is None or mtsd_label_to_class_index is None):
+    if (
+        json_files is None
+        or similar_files_df is None
+        or mtsd_label_to_class_index is None
+    ):
         raise ValueError(
             "Some MTSD metadata are missing! Please use get_mtsd_anno() to get "
             "all the neccessary metadata."
@@ -170,42 +180,51 @@ def register_mtsd(
     use_color: bool = False,
     use_mtsd_original_labels: bool = False,
     ignore_bg_class: bool = False,
-    class_names: List[str] = ["circle"],
 ) -> None:
     """Register MTSD dataset on Detectron2.
 
     Args:
         base_path: Base path to dataset. Defaults to "~/data/".
-        use_color: Whether sign color is used for grouping MTSD labels.
+        use_color: Whether sign color is used for labels. Defaults to False.
         use_mtsd_original_labels: Whether to use original MTSD labels instead of
             REAP annotations. Default to False.
         ignore_bg_class: Whether to ignore background class (last class index).
             Defaults to False.
-        class_names: List of class names. Defaults to ["circle"].
     """
+    color: str
+    if use_mtsd_original_labels:
+        color = "orig"
+    elif use_color:
+        color = "color"
+    else:
+        color = "no_color"
+    dataset: str = f"mtsd_{color}"
+    data_path = os.path.join(base_path, "mtsd_v2_fully_annotated", color)
 
+    class_names: List[str] = LABEL_LIST[dataset]
     mtsd_anno: Dict[str, Any] = get_mtsd_anno(
         base_path, use_color, use_mtsd_original_labels, class_names
     )
-    label_map: pd.DataFrame = mtsd_anno["label_map"]
     bg_class_id: int = len(class_names) - 1
 
+    label_map: pd.DataFrame = mtsd_anno["label_map"]
+    if use_mtsd_original_labels:
+        thing_classes = label_map["sign"].tolist()
+    else:
+        thing_classes = class_names
+        if ignore_bg_class:
+            thing_classes = thing_classes[:-1]
+
     for split in _ALLOWED_SPLITS:
+        dataset_with_split: str = f"mtsd_{color}_{split}"
         DatasetCatalog.register(
-            f"mtsd_{split}",
+            dataset_with_split,
             lambda s=split: get_mtsd_dict(
                 split=s,
-                data_path=base_path,
+                data_path=data_path,
                 bg_class_id=bg_class_id,
                 ignore_bg_class=ignore_bg_class,
                 **mtsd_anno,
             ),
         )
-        if use_mtsd_original_labels:
-            thing_classes = label_map["sign"].tolist()
-        else:
-            thing_classes = class_names
-            if ignore_bg_class:
-                thing_classes = thing_classes[:-1]
-
-        MetadataCatalog.get(f"mtsd_{split}").set(thing_classes=thing_classes)
+        MetadataCatalog.get(dataset_with_split).set(thing_classes=thing_classes)

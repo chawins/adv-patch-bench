@@ -21,8 +21,13 @@ import adv_patch_bench.utils.argparse as args_util
 from adv_patch_bench.attacks import attacks, base_attack, patch_mask_util
 from adv_patch_bench.data.detectron import custom_build, custom_sampler, mapper
 from adv_patch_bench.transforms import reap_object, render_image, syn_object
-from adv_patch_bench.utils.types import (DetectronSample, ImageTensor,
-                                         MaskTensor, SizeMM, SizePx)
+from adv_patch_bench.utils.types import (
+    DetectronSample,
+    ImageTensor,
+    MaskTensor,
+    SizeMM,
+    SizePx,
+)
 from hparams import LABEL_LIST, MAPILLARY_IMG_COUNTS_DICT
 
 
@@ -57,7 +62,7 @@ def collect_attack_rimgs(
             attack.
         metadata: List of metadata of original background image, used as part of
             input to detectron model.
-        backgrond: Numpy array of background images
+        backgrond: Numpy array of background images.
     """
     if rimg_kwargs is None:
         raise ValueError("rimg_kwargs must not be specified!")
@@ -74,12 +79,7 @@ def collect_attack_rimgs(
 
     rimg_list: List[render_image.RenderImage] = []
     num_collected: int = 0
-
     print("=> Collecting background images...")
-
-    # DEBUG: count images
-    # counts = [0] * 12
-    # class_names = LABEL_LIST[args.dataset]
 
     for _, batch in tqdm(enumerate(dataloader)):
         file_name = batch[0]["file_name"]
@@ -113,11 +113,6 @@ def collect_attack_rimgs(
             if attack_obj_df is None:
                 continue
             attack_obj_id = attack_obj_df["object_id"]
-            # DEBUG
-            # obj_labels = np.unique(img_df['final_shape'])
-            # for obj_label in obj_labels:
-            #     lb = class_names.index(obj_label)
-            #     counts[lb] += 1
         else:
             # No df provided or don't care about class
             found = True
@@ -132,19 +127,10 @@ def collect_attack_rimgs(
             )
             rimg.create_object(attack_obj_id, robj_fn, robj_kwargs)
             rimg_list.append(rimg)
-            # img_data = (h0, w0, h / h0, w / w0, 0, pad_top)
-            # data = [obj_label, obj, *img_data]
-            # attack_bgs.append([image, data, str(filename), batch[0]])
-            # metadata.extend(batch)
-            # if num_collected < num_bg:
-            #     attack_bg_syn[num_collected] = image
             num_collected += 1
 
-        # num_collected += 1
         if num_collected >= num_bg:
             break
-
-    # print('======> ', counts, num_collected)
 
     print(f"=> {len(rimg_list)} backgrounds collected.")
     return rimg_list[:num_bg]
@@ -357,7 +343,7 @@ if __name__ == "__main__":
     np.random.seed(seed)
     random.seed(seed)
 
-    class_names: List[str] = LABEL_LIST[config_eval["dataset"]]
-    data_util.register_dataset(config_eval, class_names)
+    # Register Detectron2 dataset
+    data_util.register_dataset(config_eval)
 
     main(config)

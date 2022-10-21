@@ -1,5 +1,6 @@
 """Register and load Mapillary Vistas dataset."""
 
+import os
 import pathlib
 from typing import Any, Dict, List, Optional
 
@@ -8,6 +9,7 @@ from adv_patch_bench.utils.types import DetectronSample
 from detectron2.data import DatasetCatalog, MetadataCatalog
 from detectron2.structures import BoxMode
 from tqdm import tqdm
+from hparams import LABEL_LIST
 
 _ALLOWED_SPLITS = ("train", "test", "combined")
 
@@ -18,6 +20,7 @@ def get_mapillary_dict(
     bg_class_id: int,
     ignore_bg_class: bool = False,
     anno_df: Optional[pd.DataFrame] = None,
+    **kwargs,
 ) -> List[DetectronSample]:
     """Get Mapillary Vistas dataset as list of samples in Detectron2 format.
 
@@ -37,6 +40,7 @@ def get_mapillary_dict(
     Returns:
         List of Mapillary Vistas samples in Detectron2 format.
     """
+    del kwargs  # Unused
     if split not in _ALLOWED_SPLITS:
         raise ValueError(
             f"split must be among {_ALLOWED_SPLITS}, but it is {split}!"
@@ -121,36 +125,42 @@ def get_mapillary_dict(
 
 def register_mapillary(
     base_path: str = "~/data/",
+    use_color: bool = False,
     ignore_bg_class: bool = False,
-    class_names: List[str] = ["circle"],
     anno_df: Optional[pd.DataFrame] = None,
 ) -> None:
     """Register Mapillary Vistas dataset on Detectron2.
 
     Args:
         base_path: Base path to dataset. Defaults to "~/data/".
+        use_color: Whether color is used as part of labels. Defaults to False.
         ignore_bg_class: Whether to ignore background class (last class index).
             Defaults to False.
-        class_names: List of class names. Defaults to ["circle"].
         anno_df: Annotation DataFrame. If specified, only samples present in
             anno_df will be sampled.
     """
+    color: str = "color" if use_color else "no_color"
+    dataset: str = f"mapillary_{color}"
+    data_path = os.path.join(base_path, "mapillary_vistas", color)
+
+    class_names: List[str] = LABEL_LIST[dataset]
     bg_idx: int = len(class_names) - 1
     thing_classes: List[str] = class_names
     if ignore_bg_class:
         thing_classes = thing_classes[:-1]
 
     for split in _ALLOWED_SPLITS:
+        dataset_with_split: str = f"mapillary_{color}_{split}"
         DatasetCatalog.register(
-            f"mapillary_{split}",
+            dataset_with_split,
             lambda s=split: get_mapillary_dict(
                 s,
-                base_path,
+                data_path,
                 bg_idx,
                 ignore_bg_class=ignore_bg_class,
                 anno_df=anno_df,
             ),
         )
-        MetadataCatalog.get(f"mapillary_{split}").set(
+        MetadataCatalog.get(dataset_with_split).set(
             thing_classes=thing_classes
         )

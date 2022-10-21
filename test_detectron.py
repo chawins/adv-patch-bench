@@ -8,14 +8,15 @@ import pickle
 import random
 from typing import Any, Dict, List, Optional, Tuple
 
+import detectron2
 import numpy as np
 import pandas as pd
 import torch
 import yaml
-import detectron2
 
-from adv_patch_bench.data.detectron import custom_build, mapper, util
-from adv_patch_bench.evaluators.detectron_evaluator import DetectronEvaluator
+import adv_patch_bench.data.detectron.util as data_util
+from adv_patch_bench.data.detectron import custom_build, mapper
+from adv_patch_bench.evaluators import detectron_evaluator
 from adv_patch_bench.utils.argparse import (
     eval_args_parser,
     setup_detectron_test_args,
@@ -231,8 +232,7 @@ def main(config: Dict[str, Dict[str, Any]]):
         split_file_names=split_file_names,
     )
 
-    evaluator = DetectronEvaluator(
-        cfg,
+    evaluator = detectron_evaluator.DetectronEvaluator(
         config_eval,
         config_attack,
         model,
@@ -330,7 +330,7 @@ if __name__ == "__main__":
     np.random.seed(seed)
     random.seed(seed)
 
-    class_names: List[str] = LABEL_LIST[config_eval["dataset"]]
-    util.register_dataset(config_eval, class_names)
+    # Register Detectron2 dataset
+    data_util.register_dataset(config_eval)
 
     main(config)

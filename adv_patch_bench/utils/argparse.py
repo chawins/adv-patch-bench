@@ -5,7 +5,7 @@ import os
 import pathlib
 from typing import Any, Dict, List, Optional, Union
 
-import detectron2.config as detectron2_config
+import detectron2
 import yaml
 from detectron2.engine import default_argument_parser, default_setup
 from hparams import (
@@ -35,6 +35,8 @@ def eval_args_parser(
     is_gen_patch: bool = False,
 ) -> Dict[str, Any]:
     """Setup argparse for evaluation.
+
+    TODO(enhancement): Improve argument documentation.
 
     Args:
         is_detectron: Whether we are evaluating dectectron model.
@@ -68,18 +70,6 @@ def eval_args_parser(
     parser.add_argument("--single-image", action="store_true")
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--dataset", type=str, required=False)
-    # parser.add_argument(
-    #     "--data-no-other",
-    #     action="store_true",
-    #     help='If True, do not load "other" or "background" class to the dataset.',
-    # )
-    # TODO: Is this still needed? Since we can set it in hparams.
-    # parser.add_argument(
-    #     "--other-class-label",
-    #     type=int,
-    #     default=None,
-    #     help='Class for the "other" label.',
-    # )
     parser.add_argument(
         "--eval-mode",
         type=str,
@@ -228,7 +218,7 @@ def eval_args_parser(
         default="10x10",
         help=(
             "Specify size of adversarial patch to generate in inches "
-            "(HEIGHTxWIDTH); separated by 'x'."
+            "(HxW); height and width separated by 'x'."
         ),
     )
     parser.add_argument(
@@ -287,16 +277,17 @@ def eval_args_parser(
         action="store_true",
         help="If True, apply relighting transform to patch.",
     )
+    # TODO: DEPRECATED
     parser.add_argument(
         "--min-area",
         type=float,
         default=0,
         help=(
-            "Minimum area for labels. if a label has area > min_area,"
-            "predictions correspoing to this target will be discarded"
+            "(DEPRECATED) Minimum area for labels. if a label has area > "
+            "min_area, predictions correspoing to this target will be discarded"
         ),
     )
-    # TODO: is this stil used?
+    # TODO: DEPRECATED: is this stil used?
     parser.add_argument(
         "--min-pred-area",
         type=float,
@@ -519,7 +510,7 @@ def _verify_eval_config(config_eval: Dict[str, Any], is_detectron: bool):
     allowed_attack_types = ("none", "load", "per-sign", "random", "debug")
     allowed_yolo_models = ("yolov5", "yolor")
     allowed_datasets = ("reap", "synthetic", "mtsd", "mapillary")
-    dataset = config_eval["dataset"]
+    dataset: str = config_eval["dataset"]
 
     if config_eval["interp"] not in allowed_interp:
         raise ValueError(
@@ -534,12 +525,10 @@ def _verify_eval_config(config_eval: Dict[str, Any], is_detectron: bool):
         )
 
     # Verify dataset
-    if dataset.split("-")[0] not in allowed_datasets:
+    if dataset.split("_")[0] not in allowed_datasets:
         raise ValueError(
             f"dataset must be in {allowed_datasets}, but it is {dataset}!"
         )
-
-    # TODO: Verify patch size
 
     # Verify obj_class arg
     obj_class = config_eval["obj_class"]
@@ -564,22 +553,20 @@ def _update_dataset_name(config: Dict[str, Dict[str, Any]]) -> List[str]:
     tokens: List[str] = dataset.split("-")
     if dataset in ("reap", "synthetic"):
         config_eval["use_color"] = False
-        config_eval["dt_dataset"] = dataset
         config_eval["synthetic"] = dataset == "synthetic"
         # REAP benchmark only uses annotated signs. Synthetic data use both.
         config_eval["annotated_signs_only"] = not config_eval["synthetic"]
         split = "combined"
     else:
         assert len(tokens) in (2, 3), f"Invalid dataset: {dataset}!"
-        dataset = (
-            f"{tokens[0]}_{tokens[2]}"
-            if len(tokens) == 3
-            else f"{tokens[0]}_no_color"
-        )
-        split = tokens[1]
+        if len(tokens) == 2:
+            base_dataset, split = tokens
+            color = "no_color"
+        else:
+            base_dataset, color, split = tokens
+        dataset: str = f"{base_dataset}_{color}"
         config_eval["synthetic"] = False
-        config_eval["use_color"] = "no_color" not in tokens
-        config_eval["dt_dataset"] = f"{tokens[0]}_{tokens[1]}"
+        config_eval["use_color"] = "color" == color
     config_eval["dataset"] = dataset
     config_eval["dataset_split"] = split
 
@@ -830,9 +817,11 @@ def _update_result_dir(config: Dict[str, Dict[str, Any]]) -> None:
 
 def setup_detectron_test_args(
     config: Dict[str, Dict[str, Any]]
-) -> detectron2_config.CfgNode:
+) -> detectron2.config.CfgNode:
     """Create configs and perform basic setups."""
     config_eval = config["eval"]
+    dataset: str = config_eval["dataset"]
+    split: str = config_eval["dataset_split"]
 
     # Set default path to load adversarial patch
     if not config_eval["adv_patch_path"]:
@@ -840,13 +829,12 @@ def setup_detectron_test_args(
             config_eval["save_dir"], "adv_patch.pkl"
         )
 
-    cfg = detectron2_config.get_cfg()
+    cfg = detectron2.config.get_cfg()
     cfg.merge_from_file(config_eval["config_file"])
     cfg.merge_from_list(config_eval["opts"])
-    dataset = config_eval["dataset"]
 
     # Copy dataset from args
-    cfg.DATASETS.TEST = (config_eval["dt_dataset"],)
+    cfg.DATASETS.TEST = (f"{dataset}_{split}",)
     cfg.SOLVER.IMS_PER_BATCH = 1
     cfg.INPUT.CROP.ENABLED = False  # Turn off augmentation for testing
     cfg.DATALOADER.NUM_WORKERS = config_eval["workers"]
@@ -876,6 +864,8 @@ def setup_detectron_test_args(
     cfg.MODEL.WEIGHTS = weight_path
 
     cfg.freeze()
+    # Set cfg as global variable so we can avoid passing cfg around
+    detectron2.config.set_global_cfg(cfg)
     default_setup(cfg, argparse.Namespace(**config_eval))
     return cfg
 

@@ -9,12 +9,14 @@ import logging
 import os
 import pickle
 from collections import OrderedDict
+from typing import Any, Dict, List, Optional, Tuple
 
 import detectron2.utils.comm as comm
 import numpy as np
 import pycocotools.mask as mask_util
 import torch
-from detectron2.config import CfgNode
+from adv_patch_bench.utils.detectron.custom_cocoeval import COCOeval
+from detectron2.config import CfgNode, global_cfg
 from detectron2.data import MetadataCatalog
 from detectron2.data.datasets.coco import convert_to_coco_json
 from detectron2.evaluation.evaluator import DatasetEvaluator
@@ -25,18 +27,17 @@ from detectron2.utils.logger import create_small_table
 from pycocotools.coco import COCO
 from tabulate import tabulate
 
-from .custom_cocoeval import COCOeval
-
 
 class CustomCOCOEvaluator(DatasetEvaluator):
-    """
+    """Custom COCO evaluator API for REAP benchmark.
+
     Evaluate AR for object proposals, AP for instance detection/segmentation, AP
     for keypoint detection outputs using COCO's metrics.
     See http://cocodataset.org/#detection-eval and
     http://cocodataset.org/#keypoints-eval to understand its metrics.
 
-    In addition to COCO, this evaluator is able to support any bounding box detection,
-    instance segmentation, or keypoint detection dataset.
+    In addition to COCO, this evaluator is able to support any bounding box
+    detection, instance segmentation, or keypoint detection dataset.
     """
 
     def __init__(
@@ -48,8 +49,9 @@ class CustomCOCOEvaluator(DatasetEvaluator):
         *,
         use_fast_impl=True,
         kpt_oks_sigmas=(),
-    ):
-        """
+    ) -> None:
+        """Initialize CustomCOCOEvaluator.
+
         Args:
             dataset_name (str): name of the dataset to be evaluated.
                 It must have either the following corresponding metadata:
@@ -92,7 +94,6 @@ class CustomCOCOEvaluator(DatasetEvaluator):
                 "COCO Evaluator instantiated using config, this is deprecated behavior."
                 " Please pass tasks in directly"
             )
-            cfg = tasks
         else:
             self._tasks = tasks
 
@@ -125,17 +126,17 @@ class CustomCOCOEvaluator(DatasetEvaluator):
         self._do_evaluation = "annotations" in self._coco_api.dataset
         # EDIT: Add other_catId (ID for "other" class)
         self.cocoeval_args = {
-            "eval_mode": cfg.eval_mode,
-            "other_catId": cfg.other_catId,
-            "catId": cfg.obj_class,
-            "conf_thres": cfg.conf_thres,
+            "eval_mode": global_cfg.eval_mode,
+            "other_catId": global_cfg.other_catId,
+            "catId": global_cfg.obj_class,
         }
 
-    def reset(self):
+    def reset(self) -> None:
+        """Reset predictions."""
         self._predictions = []
 
     @staticmethod
-    def _tasks_from_config(cfg):
+    def _tasks_from_config(cfg) -> Tuple[str, ...]:
         """
         Returns:
             tuple[str]: tasks that can be evaluated under the given configuration.
@@ -148,7 +149,8 @@ class CustomCOCOEvaluator(DatasetEvaluator):
         return tasks
 
     def process(self, inputs, outputs, outputs_are_json=False):
-        """
+        """Process input-output pair and add to prediction.
+
         Args:
             inputs: the inputs to a COCO model (e.g., GeneralizedRCNN).
                 It is a list of dict. Each dict corresponds to an image and
@@ -176,10 +178,16 @@ class CustomCOCOEvaluator(DatasetEvaluator):
                 )
             self._predictions.append(prediction)
 
-    def evaluate(self, img_ids=None):
-        """
+    def evaluate(self, img_ids: Optional[List[int]] = None) -> Dict[str, Any]:
+        """Run evaluation.
+
         Args:
-            img_ids: a list of image IDs to evaluate on. Default to None for the whole dataset
+            img_ids: Desired image ids to evaluate on. Defaults to None (all
+                images will appear in metrics even when some are skipped in the
+                actual evaluation).
+
+        Returns:
+            Result dictionary.
         """
         if self._distributed:
             comm.synchronize()
@@ -216,8 +224,8 @@ class CustomCOCOEvaluator(DatasetEvaluator):
         return copy.deepcopy(self._results)
 
     def _eval_predictions(self, tasks, predictions, img_ids=None):
-        """
-        Evaluate predictions on the given tasks.
+        """Evaluate predictions on the given tasks.
+
         Fill self._results with the metrics of the tasks.
         """
         self._logger.info("Preparing results for COCO format ...")
@@ -327,14 +335,12 @@ class CustomCOCOEvaluator(DatasetEvaluator):
         self._results["box_proposals"] = res
 
     def _derive_coco_results(self, coco_eval, iou_type, class_names=None):
-        """
-        Derive the desired score numbers from summarized COCOeval.
+        """Derive the desired score numbers from summarized COCOeval.
 
         Args:
-            coco_eval (None or COCOEval): None represents no predictions from model.
-            iou_type (str):
-            class_names (None or list[str]): if provided, will use it to predict
-                per-category AP.
+            coco_eval: None represents no predictions from model.
+            iou_type: iou_type.
+            class_names: If provided, will use it to predict per-category AP.
 
         Returns:
             a dict of {metric name: score}
@@ -614,9 +620,7 @@ def _evaluate_predictions_on_coco(
     img_ids=None,
     cocoeval_args=None,
 ):
-    """
-    Evaluate the coco results using COCOEval API.
-    """
+    """Evaluate the coco results using COCOEval API."""
     assert len(coco_results) > 0
 
     if iou_type == "segm":

@@ -14,6 +14,7 @@ from adv_patch_bench.data import reap_util
 import numpy as np
 import pandas as pd
 import torch
+import adv_patch_bench.utils.detectron.custom_coco_evaluator as cocoeval
 from adv_patch_bench.attacks import attack_util, attacks, base_attack
 from adv_patch_bench.transforms import (
     reap_object,
@@ -21,7 +22,6 @@ from adv_patch_bench.transforms import (
     render_object,
     syn_object,
 )
-from adv_patch_bench.utils.detectron import build_evaluator
 from adv_patch_bench.utils.types import (
     ImageTensor,
     ImageTensorDet,
@@ -32,7 +32,7 @@ from adv_patch_bench.utils.types import (
     Target,
 )
 from detectron2 import structures
-from detectron2.config import CfgNode
+from detectron2.config import global_cfg
 from detectron2.data import MetadataCatalog
 from detectron2.structures.boxes import pairwise_iou
 from detectron2.utils.visualizer import Visualizer
@@ -48,7 +48,6 @@ class DetectronEvaluator:
 
     def __init__(
         self,
-        cfg: CfgNode,
         config_eval: Dict[str, Any],
         config_attack: Dict[str, Any],
         model: torch.nn.Module,
@@ -59,7 +58,6 @@ class DetectronEvaluator:
         """Evaluator wrapper for detectron model.
 
         Args:
-            cfg: Detectron model config.
             config_eval: Dictionary containing eval parameters.
             config_attack: Dictionary containing attack parameters.
             model: Target model.
@@ -68,14 +66,13 @@ class DetectronEvaluator:
             all_iou_thres: Array of IoU thresholds for computing score.
         """
         # General params
-        # cfg can be modified by model so we copy it first
         self._dataset: str = config_eval["dataset"]
         self._synthetic: bool = config_eval["synthetic"]
         self._model: torch.nn.Module = model
         self._device: Any = self._model.device
         self._dataloader = dataloader
-        self._input_format: str = cfg.INPUT.FORMAT
-        self._metadata = MetadataCatalog.get(cfg.DATASETS.TEST[0])
+        self._input_format: str = global_cfg.INPUT.FORMAT
+        self._metadata = MetadataCatalog.get(global_cfg.DATASETS.TEST[0])
         self._verbose: bool = config_eval["verbose"]
         self._debug: bool = config_eval["debug"]
 
@@ -107,7 +104,13 @@ class DetectronEvaluator:
         self._annotated_signs_only: bool = config_eval["annotated_signs_only"]
 
         # Build COCO evaluator
-        self.evaluator = build_evaluator(cfg, cfg.DATASETS.TEST[0])
+        self.evaluator = cocoeval.CustomCOCOEvaluator(
+            self._dataset,
+            ["bbox"],
+            False,
+            output_dir=global_cfg.OUTPUT_DIR,
+            use_fast_impl=False,
+        )
 
         # Set up list of IoU thresholds to consider
         self._all_iou_thres = torch.from_numpy(all_iou_thres).to(self._device)
@@ -247,6 +250,7 @@ class DetectronEvaluator:
             patch_mask = patch_mask.to(self._device)
 
         total_num_images, total_num_patches, num_vis = 0, 0, 0
+        eval_img_ids: List[int] = []
         self.evaluator.reset()
         self._reset_syn_metrics()
 
@@ -348,6 +352,7 @@ class DetectronEvaluator:
                 instance_dicts = self._create_instance_dicts(outputs, image_id)
                 coco_instances_results.extend(instance_dicts)
             total_num_images += 1
+            eval_img_ids.append(image_id)
 
             # Visualization
             if num_vis < self._num_vis:
@@ -363,7 +368,7 @@ class DetectronEvaluator:
                 }
             }
         else:
-            metrics = self.evaluator.evaluate()
+            metrics = self.evaluator.evaluate(img_ids=eval_img_ids)
         if "bbox" not in metrics:
             self._log("There are no valid predictions.")
             return coco_instances_results, metrics

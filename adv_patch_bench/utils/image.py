@@ -1,3 +1,5 @@
+"""Utility file for manipulating and preprocessing images."""
+
 import json
 import os
 from os.path import join
@@ -6,7 +8,6 @@ from typing import Optional, Tuple, Union
 import numpy as np
 import torch
 import torchvision.transforms.functional as T
-from PIL import Image
 
 from adv_patch_bench.utils import types
 
@@ -19,8 +20,8 @@ def coerce_rank(x: torch.Tensor, ndim: int) -> torch.Tensor:
     """Reshape x *in-place* to ndim rank by adding/removing first singleton dim.
 
     Args:
-        x (torch.Tensor): Tensor to reshape.
-        ndim (int): Desired number of dimension/rank
+        x: Tensor to reshape. Usually an image.
+        ndim: Desired number of dimension/rank.
 
     Raises:
         ValueError: Desired rank/ndim cannot be achieved.
@@ -49,6 +50,79 @@ def coerce_rank(x: torch.Tensor, ndim: int) -> torch.Tensor:
     return x
 
 
+def mask_to_box(mask):
+    """Get a binary mask and returns a bounding box: y0, x0, h, w."""
+    mask = coerce_rank(mask, 2)
+    if mask.sum() <= 0:
+        raise ValueError("mask is all zeros!")
+    y, x = torch.where(mask)
+    y_min, x_min = y.min(), x.min()
+    return y_min, x_min, y.max() - y_min, x.max() - x_min
+
+
+def resize_and_pad(
+    obj: _ImageTensorGeneric,
+    resize_size: Optional[_SizePx] = None,
+    pad_size: Optional[_SizePx] = None,
+    is_binary: bool = False,
+    interp: str = "bilinear",
+    return_padding: bool = False,
+) -> Union[_ImageTensorGeneric, Tuple[_ImageTensorGeneric, _PadSize]]:
+    """Resize obj to resize_size and then pad_size it to pad_size.
+
+    Args:
+        obj: Object or image tensor to resize and pad.
+        resize_size: Size to resize obj to. Defaults to None (no resize).
+        pad_size: Size to pad resized obj to. Defaults to None (no pad).
+        is_binary: Whether to treat obj as binary values. If True, interp will
+            be set to "nearest". Defaults to False.
+        interp: Interpolation method. Defaults to "bilinear".
+        return_padding: If True, return four padding sizes together with final
+            resized/padded object. Defaults to False.
+
+    Raises:
+        NotImplementedError: Invalid interpolation mode.
+
+    Returns:
+        Resized and padded obj. If return_padding is True, additionally return
+        padding size.
+    """
+    if resize_size is not None and resize_size != obj.shape[-2:]:
+        if is_binary or interp == "nearest":
+            interp = T.InterpolationMode.NEAREST
+        elif interp == "bicubic":
+            interp = T.InterpolationMode.BICUBIC
+        elif interp == "bilinear":
+            interp = T.InterpolationMode.BILINEAR
+        else:
+            raise NotImplementedError(f"Interp {interp} not supported!")
+        obj = T.resize(obj, resize_size, interpolation=interp)
+    else:
+        resize_size = obj.shape[-2:]
+
+    if pad_size is not None and resize_size != pad_size:
+        # Compute pad size that centers obj
+        top: int = (pad_size[0] - resize_size[0]) // 2
+        left: int = (pad_size[1] - resize_size[1]) // 2
+        padding = (
+            max(0, left),  # left
+            max(0, top),  # top
+            max(0, pad_size[1] - resize_size[1] - left),  # right
+            max(0, pad_size[0] - resize_size[0] - top),  # bottom
+        )
+        obj = T.pad(obj, padding)
+    else:
+        padding = (0, 0, 0, 0)
+
+    if return_padding:
+        return obj, padding
+    return obj
+
+
+# ================= Functions for extracting transformations ================ #
+# TODO(enhancement): Improve documentation.
+
+
 def load_annotation(label_path, image_key):
     with open(join(label_path, "{:s}.json".format(image_key)), "r") as fid:
         anno = json.load(fid)
@@ -66,6 +140,7 @@ def get_image_files(path):
 
 
 def pad_image(img, pad_size=0.1, pad_mode="constant", return_pad_size=False):
+    height, width = img.shape[-2:]
     pad_size = (
         int(max(height, width) * pad_size)
         if isinstance(pad_size, float)
@@ -178,75 +253,3 @@ def letterbox(im, new_shape=(640, 640), color=114, scaleup=True, stride=32):
     left, right = int(round(dw - 0.1)), int(round(dw + 0.1))
     im = T.pad(im, [left, top, right, bottom], fill=color)
     return im, ratio, (dw, dh)
-
-
-def mask_to_box(mask):
-    """Get a binary mask and returns a bounding box: y0, x0, h, w"""
-    # if mask.ndim == 3:
-    #     mask = mask.squeeze(0)
-    # assert mask.ndim == 2
-    mask = coerce_rank(mask, 2)
-    if mask.sum() <= 0:
-        raise ValueError("mask is all zeros!")
-    y, x = torch.where(mask)
-    y_min, x_min = y.min(), x.min()
-    return y_min, x_min, y.max() - y_min, x.max() - x_min
-
-
-def resize_and_pad(
-    obj: _ImageTensorGeneric,
-    resize_size: Optional[_SizePx] = None,
-    pad_size: Optional[_SizePx] = None,
-    is_binary: bool = False,
-    interp: str = "bilinear",
-    return_padding: bool = False,
-) -> Union[_ImageTensorGeneric, Tuple[_ImageTensorGeneric, _PadSize]]:
-    """Resize obj to resize_size and then pad_size it to pad_size.
-
-    Args:
-        obj: Object or image tensor to resize and pad.
-        resize_size: Size to resize obj to. Defaults to None (no resize).
-        pad_size: Size to pad resized obj to. Defaults to None (no pad).
-        is_binary: Whether to treat obj as binary values. If True, interp will 
-            be set to "nearest". Defaults to False.
-        interp: Interpolation method. Defaults to "bilinear".
-        return_padding: If True, return four padding sizes together with final
-            resized/padded object. Defaults to False.
-
-    Raises:
-        NotImplementedError: Invalid interpolation mode.
-
-    Returns:
-        Resized and padded obj. If return_padding is True, additionally return
-        padding size.
-    """
-    if resize_size is not None and resize_size != obj.shape[-2:]:
-        if is_binary or interp == "nearest":
-            interp = T.InterpolationMode.NEAREST
-        elif interp == "bicubic":
-            interp = T.InterpolationMode.BICUBIC
-        elif interp == "bilinear":
-            interp = T.InterpolationMode.BILINEAR
-        else:
-            raise NotImplementedError(f"Interp {interp} not supported!")
-        obj = T.resize(obj, resize_size, interpolation=interp)
-    else:
-        resize_size = obj.shape[-2:]
-
-    if pad_size is not None and resize_size != pad_size:
-        # Compute pad size that centers obj
-        top: int = (pad_size[0] - resize_size[0]) // 2
-        left: int = (pad_size[1] - resize_size[1]) // 2
-        padding = (
-            max(0, left),  # left
-            max(0, top),  # top
-            max(0, pad_size[1] - resize_size[1] - left),  # right
-            max(0, pad_size[0] - resize_size[0] - top),  # bottom
-        )
-        obj = T.pad(obj, padding)
-    else:
-        padding = (0, 0, 0, 0)
-
-    if return_padding:
-        return obj, padding
-    return obj
