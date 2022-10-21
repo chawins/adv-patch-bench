@@ -8,7 +8,6 @@ import pandas as pd
 
 from hparams import (
     TS_NO_COLOR_LABEL_LIST,
-    ANNO_LABEL_COUNTS_DICT,
     ANNO_NOBG_LABEL_COUNTS_DICT,
     MAPILLARY_LABEL_COUNTS_DICT,
 )
@@ -18,8 +17,6 @@ _NUM_IOU_THRES = 10
 
 # Mapillary annotated
 _NUM_SIGNS_PER_CLASS = np.array(list(ANNO_NOBG_LABEL_COUNTS_DICT.values()))
-_NUM_SIGNS_PER_CLASS_BG = np.array(list(ANNO_LABEL_COUNTS_DICT.values()))
-_BG_DIFF = _NUM_SIGNS_PER_CLASS_BG - _NUM_SIGNS_PER_CLASS
 
 # MTSD
 # _NUM_SIGNS_PER_CLASS = np.array([2999, 711, 347, 176, 1278, 287, 585, 117, 135, 30, 181])
@@ -202,10 +199,6 @@ def main(args):
                     tp_scores[base_sid] = {t: [] for t in range(10)}
                     fp_scores[base_sid] = {t: [] for t in range(10)}
 
-                if obj_class == 6 and is_attack:
-                    import pdb
-                    pdb.set_trace()
-
                 scores = cls_scores[obj_class]
                 sid = f"{base_sid}_{obj_class:02d}"
                 if sid in scores_dict:
@@ -329,10 +322,6 @@ def main(args):
 
         num_succeed = np.sum(~adv_detected & clean_detected)
         num_clean = np.sum(clean_detected)
-        # Account for misses caused by signs that are supposed to be in bg
-        num_missed = np.sum(~adv_detected) - (
-            _BG_DIFF[k] if "real" in split_sid else 0
-        )
 
         attack_success_rate = num_succeed / (num_clean + 1e-9) * 100
         df_rows[time]["ASR"] = attack_success_rate
@@ -348,7 +337,6 @@ def main(args):
         if sid_no_class in results_all_classes:
             results_all_classes[sid_no_class]["num_succeed"] += num_succeed
             results_all_classes[sid_no_class]["num_clean"][k] = num_clean
-            results_all_classes[sid_no_class]["num_missed"] += num_missed
             results_all_classes[sid_no_class]["num_total"] += total
             results_all_classes[sid_no_class]["asr"][k] = attack_success_rate
             results_all_classes[sid_no_class]["fnr"][k] = fnr
@@ -365,7 +353,6 @@ def main(args):
             results_all_classes[sid_no_class] = {
                 "num_succeed": num_succeed,
                 "num_clean": num_cleans,
-                "num_missed": num_missed,
                 "num_total": total,
                 "asr": asrs,
                 "fnr": fnrs,
@@ -383,7 +370,6 @@ def main(args):
 
         num_succeed = results_all_classes[sid]["num_succeed"]
         num_clean = results_all_classes[sid]["num_clean"]
-        num_missed = results_all_classes[sid]["num_missed"]
         total = results_all_classes[sid]["num_total"]
         asr = num_succeed / (num_clean.sum() + 1e-9) * 100
 

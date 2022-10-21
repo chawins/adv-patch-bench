@@ -1,6 +1,6 @@
 """Custom build_detection_test_loader for Detectron2 models."""
 
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Set, Union
 
 import torch.utils.data as torchdata
 from detectron2.config import configurable
@@ -19,7 +19,7 @@ def build_detection_test_loader(
     batch_size: int = 1,
     num_workers: int = 8,
     pin_memory: bool = True,
-    split_file_names: Optional[List[str]] = None,
+    split_file_names: Optional[Set[str]] = None,
     collate_fn: Optional[Callable[[List[Any]], Any]] = None,
 ) -> torchdata.DataLoader:
     """Custom test dataloader to incorporate split_file_names.

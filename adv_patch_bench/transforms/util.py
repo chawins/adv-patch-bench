@@ -48,35 +48,8 @@ def _gen_rect_mask(
     """
     height: int = round(ratio * size)
     width: int = size
-    mask: np.ndarray = np.zeros((height, width))
-
-    if ratio > 1:
-        # Tall rectangle
-        pad = round((height - width) / 2)
-        assert pad < width
-        mask[:, pad : width - pad] = 1
-        box = [
-            (pad, 0),
-            (width - pad, 0),
-            (width - pad, height - 1),
-            (pad, height - 1),
-        ]
-    elif ratio < 1:
-        # Wide rectangle
-        pad = round((width - height) / 2)
-        assert pad < height
-        mask[pad : height - pad, :] = 1
-        box = [
-            (0, pad),
-            (width - 1, pad),
-            (width - 1, height - pad),
-            (0, height - pad),
-        ]
-    else:
-        # Square
-        mask[:, :] = 1
-        box = [(0, 0), (size - 1, 0), (size - 1, size - 1), (0, size - 1)]
-
+    mask: np.ndarray = np.ones((height, width))
+    box = [(0, 0), (width - 1, 0), (width - 1, height - 1), (0, height - 1)]
     return mask, box
 
 

@@ -1,6 +1,8 @@
 """Test script for Detectron2 models."""
 
+import contextlib
 import hashlib
+import io
 import json
 import logging
 import os
@@ -13,16 +15,17 @@ import numpy as np
 import pandas as pd
 import torch
 import yaml
+from detectron2.data.datasets.coco import convert_to_coco_json
+from detectron2.utils.file_io import PathManager
 
 import adv_patch_bench.data.detectron.util as data_util
 from adv_patch_bench.data.detectron import custom_build, mapper
 from adv_patch_bench.evaluators import detectron_evaluator
-from adv_patch_bench.utils.argparse import (
-    eval_args_parser,
-    setup_detectron_test_args,
-)
+from adv_patch_bench.utils.argparse import (eval_args_parser,
+                                            setup_detectron_test_args)
 from adv_patch_bench.utils.types import DetectronSample
 from hparams import LABEL_LIST
+from pycocotools.coco import COCO
 
 log = logging.getLogger(__name__)
 formatter = logging.Formatter("[%(levelname)s] %(asctime)s: %(message)s")
@@ -52,6 +55,32 @@ _EVAL_PARAMS = [
     "weights",
 ]
 
+
+def _get_img_ids(dataset: str, obj_class: int) -> List[int]:
+    """Get ids of images that contain desired object class."""
+    metadata = detectron2.data.MetadataCatalog.get(dataset)
+    if not hasattr(metadata, "json_file"):
+        cache_path = os.path.join(
+            cfg.OUTPUT_DIR, f"{dataset}_coco_format.json"
+        )
+        metadata.json_file = cache_path
+        convert_to_coco_json(dataset, cache_path)
+
+    json_file = PathManager.get_local_path(metadata.json_file)
+    with contextlib.redirect_stdout(io.StringIO()):
+        coco_api = COCO(json_file)
+    img_ids: List[int] = coco_api.getImgIds(catIds=[obj_class])
+    return img_ids
+
+
+def _get_filename_from_id(data_dicts: List[DetectronSample], img_ids:  List[int]) -> List[str]:
+    filenames: List[str] = []
+    img_ids_set = set(img_ids)
+    for data in data_dicts:
+        if data['image_id'] in img_ids_set:
+            filenames.append(data["file_name"].split("/")[-1])
+    return filenames
+    
 
 def _hash_dict(config_dict: Dict[str, Any]) -> str:
     dict_str = json.dumps(config_dict, sort_keys=True).encode("utf-8")
@@ -214,15 +243,22 @@ def main(config: Dict[str, Dict[str, Any]]):
     model = detectron2.engine.DefaultPredictor(cfg).model
 
     # Build dataloader
+    # First, get list of file names to evaluate on
+    data_dicts: List[DetectronSample] = detectron2.data.DatasetCatalog.get(
+        config_eval["dataset"]
+    )
     split_file_names: Optional[List[str]] = None
     if split_file_path is not None:
         print(f"Loading file names from {split_file_path}...")
         with open(split_file_path, "r") as f:
-            split_file_names = f.read().splitlines()
-
-    data_dicts: List[DetectronSample] = detectron2.data.DatasetCatalog.get(
-        config_eval["dataset"]
-    )
+            split_file_names = set(f.read().splitlines())
+            
+    # Filter only images with desired class when evaluating on REAP
+    if dataset == "reap":
+        img_ids = _get_img_ids(dataset, config_eval["obj_class"])
+        class_file_names = set(_get_filename_from_id(data_dicts, img_ids))
+        split_file_names = split_file_names.intersection(class_file_names)
+        
     dataloader = custom_build.build_detection_test_loader(
         data_dicts,
         mapper=mapper.BenignMapper(cfg, is_train=False),
