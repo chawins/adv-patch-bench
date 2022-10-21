@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 import torch
 import yaml
-from detectron2 import config, engine
+import detectron2
 
 from adv_patch_bench.data.detectron import custom_build, mapper, util
 from adv_patch_bench.evaluators.detectron_evaluator import DetectronEvaluator
@@ -20,6 +20,7 @@ from adv_patch_bench.utils.argparse import (
     eval_args_parser,
     setup_detectron_test_args,
 )
+from adv_patch_bench.utils.types import DetectronSample
 from hparams import LABEL_LIST
 
 log = logging.getLogger(__name__)
@@ -187,11 +188,10 @@ def _dump_results(
         pickle.dump(results, f)
 
 
-def main(cfg: config.CfgNode, config: Dict[str, Dict[str, Any]]):
+def main(config: Dict[str, Dict[str, Any]]):
     """Main function.
 
     Args:
-        cfg: Detectron config.
         config: Config dict for both eval and attack.
     """
     config_eval: Dict[str, Any] = config["eval"]
@@ -210,21 +210,20 @@ def main(cfg: config.CfgNode, config: Dict[str, Dict[str, Any]]):
         config_attack = config["attack"]
 
     # Build model
-    model = engine.DefaultPredictor(cfg).model
+    model = detectron2.engine.DefaultPredictor(cfg).model
 
     # Build dataloader
-    split_file_names: Optional[List[str]]
+    split_file_names: Optional[List[str]] = None
     if split_file_path is not None:
         print(f"Loading file names from {split_file_path}...")
         with open(split_file_path, "r") as f:
             split_file_names = f.read().splitlines()
-    else:
-        split_file_names = None
 
-    # pylint: disable=too-many-function-args
+    data_dicts: List[DetectronSample] = detectron2.data.DatasetCatalog.get(
+        config_eval["dataset"]
+    )
     dataloader = custom_build.build_detection_test_loader(
-        cfg,
-        cfg.DATASETS.TEST[0],
+        data_dicts,
         mapper=mapper.BenignMapper(cfg, is_train=False),
         batch_size=1,
         num_workers=cfg.DATALOADER.NUM_WORKERS,
@@ -332,6 +331,6 @@ if __name__ == "__main__":
     random.seed(seed)
 
     class_names: List[str] = LABEL_LIST[config_eval["dataset"]]
-    util.register_dataset(config_eval, cfg, class_names)
+    util.register_dataset(config_eval, class_names)
 
-    main(cfg, config)
+    main(config)

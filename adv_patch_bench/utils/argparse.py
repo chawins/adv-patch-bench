@@ -558,15 +558,17 @@ def _verify_eval_config(config_eval: Dict[str, Any], is_detectron: bool):
 
 
 def _update_dataset_name(config: Dict[str, Dict[str, Any]]) -> List[str]:
-    config_eval = config["eval"]
-    dataset = config_eval["dataset"]
-    tokens = dataset.split("-")
+    """Update dataset and dataset_split in config_eval."""
+    config_eval: Dict[str, Any] = config["eval"]
+    dataset: str = config_eval["dataset"]
+    tokens: List[str] = dataset.split("-")
     if dataset in ("reap", "synthetic"):
         config_eval["use_color"] = False
         config_eval["dt_dataset"] = dataset
         config_eval["synthetic"] = dataset == "synthetic"
         # REAP benchmark only uses annotated signs. Synthetic data use both.
         config_eval["annotated_signs_only"] = not config_eval["synthetic"]
+        split = "combined"
     else:
         assert len(tokens) in (2, 3), f"Invalid dataset: {dataset}!"
         dataset = (
@@ -574,10 +576,12 @@ def _update_dataset_name(config: Dict[str, Dict[str, Any]]) -> List[str]:
             if len(tokens) == 3
             else f"{tokens[0]}_no_color"
         )
+        split = tokens[1]
         config_eval["synthetic"] = False
         config_eval["use_color"] = "no_color" not in tokens
         config_eval["dt_dataset"] = f"{tokens[0]}_{tokens[1]}"
     config_eval["dataset"] = dataset
+    config_eval["dataset_split"] = split
 
 
 def _update_split_file(

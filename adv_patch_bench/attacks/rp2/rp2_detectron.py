@@ -26,9 +26,9 @@ class RP2AttackDetectron(rp2_base.RP2AttackModule):
         """
         super().__init__(attack_config, core_model, **kwargs)
 
-        detectron_config = attack_config["detectron"]
-        self.detectron_obj_const = detectron_config["obj_loss_const"]
-        self.detectron_iou_thres = detectron_config["iou_thres"]
+        detectron_config: Dict[str, Any] = attack_config["detectron"]
+        self.detectron_obj_const: float = detectron_config["obj_loss_const"]
+        self.detectron_iou_thres: float = detectron_config["iou_thres"]
 
         self.nms_thresh_orig = deepcopy(
             core_model.proposal_generator.nms_thresh
@@ -149,11 +149,15 @@ def _get_targets(
     score_thres: float = 0.1,
     use_correct_only: bool = False,
 ) -> Tuple[structures.Boxes, torch.Tensor]:
-    """Select a set of initial targets for the DAG algo.
+    """Select a set of targets to attack.
 
     Args:
         inputs: A list containing a single dataset_dict, transformed by
             a DatasetMapper.
+        iou_thres: IoU threshold for matching predicted and ground-truth
+            bouing boxes.
+        score_thres: Predictions with class score less than score_thres are
+            dropped.
 
     Returns:
         target_boxes, target_labels
@@ -265,11 +269,14 @@ def _filter_positive_proposals_single(
         corresponding_class_labels:
         corresponding_scores:
     """
-    n_proposals = len(proposal_boxes)
+    n_proposals: int = len(proposal_boxes)
 
-    proposal_gt_ious = structures.pairwise_iou(proposal_boxes, gt_boxes)
+    proposal_gt_ious: torch.Tensor = structures.pairwise_iou(
+        proposal_boxes, gt_boxes
+    )
 
-    # For each proposal_box, pair with a gt_box, i.e. find gt_box with highest IoU
+    # Pair each proposed box in proposal_boxes with a ground-truth box in
+    # gt_boxes, i.e., find ground-truth box with highest IoU.
     # IoU with paired gt_box, idx of paired gt_box
     paired_ious, paired_gt_idx = proposal_gt_ious.max(dim=1)
 

@@ -1,4 +1,5 @@
-# Copyright (c) Facebook, Inc. and its affiliates.
+"""Custom COCO evaluator."""
+
 import contextlib
 import copy
 import io

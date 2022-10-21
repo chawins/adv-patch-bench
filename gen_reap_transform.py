@@ -244,7 +244,7 @@ def compute_example_transform(
             old_patch = torch.masked_select(
                 traffic_sign, torch.from_numpy(bool_mask).bool()
             )
-            alpha, beta = lighting_tf.relight_range(old_patch.numpy().reshape(-1, 1))
+            alpha, beta = lighting_tf.compute_relight_params(old_patch.numpy().reshape(-1, 1))
 
             # TODO: run attack, optimize patch location, etc.
             new_demo_patch = demo_patch.clone()
@@ -566,7 +566,7 @@ def main(args):
             old_patch = torch.masked_select(
                 traffic_sign, torch.from_numpy(bool_mask).bool()
             )
-            alpha, beta = lighting_tf.relight_range(old_patch.numpy().reshape(-1, 1))
+            alpha, beta = lighting_tf.compute_relight_params(old_patch.numpy().reshape(-1, 1))
 
             df_filenames.append(filename)
             df_alphas.append(alpha)

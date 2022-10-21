@@ -17,7 +17,7 @@ def build_detection_test_loader(
     mapper: Callable[[Dict[str, Any]], Any],
     sampler: Optional[torchdata.Sampler] = None,
     batch_size: int = 1,
-    num_workers: int = 0,
+    num_workers: int = 8,
     pin_memory: bool = True,
     split_file_names: Optional[List[str]] = None,
     collate_fn: Optional[Callable[[List[Any]], Any]] = None,

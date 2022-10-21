@@ -202,6 +202,10 @@ def main(args):
                     tp_scores[base_sid] = {t: [] for t in range(10)}
                     fp_scores[base_sid] = {t: [] for t in range(10)}
 
+                if obj_class == 6 and is_attack:
+                    import pdb
+                    pdb.set_trace()
+
                 scores = cls_scores[obj_class]
                 sid = f"{base_sid}_{obj_class:02d}"
                 if sid in scores_dict:

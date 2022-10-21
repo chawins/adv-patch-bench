@@ -6,13 +6,13 @@ import random
 from os.path import join
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
+import detectron2
 import numpy as np
 import pandas as pd
 import torch
 import torch.backends.cudnn as cudnn
 import torchvision
 import yaml
-from detectron2 import data, engine
 from tqdm import tqdm
 
 import adv_patch_bench.data.detectron.util as data_util
@@ -21,7 +21,8 @@ import adv_patch_bench.utils.argparse as args_util
 from adv_patch_bench.attacks import attacks, base_attack, patch_mask_util
 from adv_patch_bench.data.detectron import custom_build, custom_sampler, mapper
 from adv_patch_bench.transforms import reap_object, render_image, syn_object
-from adv_patch_bench.utils.types import ImageTensor, MaskTensor, SizeMM, SizePx
+from adv_patch_bench.utils.types import (DetectronSample, ImageTensor,
+                                         MaskTensor, SizeMM, SizePx)
 from hparams import LABEL_LIST, MAPILLARY_IMG_COUNTS_DICT
 
 
@@ -197,15 +198,11 @@ def generate_adv_patch(
     return adv_patch, patch_mask
 
 
-def main(
-    config: Dict[str, Dict[str, Any]],
-    num_samples: int = int(1e9),
-) -> None:
+def main(config: Dict[str, Dict[str, Any]]) -> None:
     """Main function for generating patch.
 
     Args:
-        config: Config dict containing eval and attack dicts.
-        num_samples: Number of samples in test set. Defaults to 1e9.
+        config: Config dict containing eval and attack config dicts.
     """
     config_eval: Dict[str, Any] = config["eval"]
     config_attack: Dict[str, Dict[str, Any]] = config["attack"]
@@ -224,23 +221,24 @@ def main(
     class_name: str = LABEL_LIST[dataset][obj_class]
 
     # Set up model from config
-    model = engine.DefaultPredictor(cfg).model
+    model = detectron2.engine.DefaultPredictor(cfg).model
 
-    split_file_names: Optional[List[str]]
+    # Build dataloader
+    data_dicts: List[DetectronSample] = detectron2.data.DatasetCatalog.get(
+        config_eval["dataset"]
+    )
+    split_file_names: Optional[List[str]] = None
+    num_samples: int = len(data_dicts)
     if split_file_path is not None:
         print(f"Loading file names from {split_file_path}...")
         with open(split_file_path, "r") as f:
             split_file_names = f.read().splitlines()
         # Update num samples
         num_samples = len(split_file_names)
-    else:
-        split_file_names = None
 
-    # Build dataloader
     # pylint: disable=too-many-function-args
     dataloader = custom_build.build_detection_test_loader(
-        cfg,
-        cfg.DATASETS.TEST[0],
+        data_dicts,
         mapper=mapper.BenignMapper(cfg, is_train=False),
         batch_size=1,
         num_workers=cfg.DATALOADER.NUM_WORKERS,
@@ -360,8 +358,6 @@ if __name__ == "__main__":
     random.seed(seed)
 
     class_names: List[str] = LABEL_LIST[config_eval["dataset"]]
-    data_util.register_dataset(config_eval, cfg, class_names)
-    data_list = data.DatasetCatalog.get(config_eval["dataset"])
-    num_samples: int = len(data_list)
+    data_util.register_dataset(config_eval, class_names)
 
-    main(config, num_samples=num_samples)
+    main(config)

@@ -364,9 +364,12 @@ class DetectronEvaluator:
             }
         else:
             metrics = self.evaluator.evaluate()
+        if "bbox" not in metrics:
+            self._log("There are no valid predictions.")
+            return coco_instances_results, metrics
+
         metrics["bbox"]["total_num_patches"] = total_num_patches
         metrics["bbox"]["all_iou_thres"] = self._all_iou_thres.cpu().numpy()
-
         return coco_instances_results, metrics
 
     def _visualize(
