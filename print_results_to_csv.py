@@ -284,7 +284,9 @@ def main(args):
         clean_scores = gt_scores[0][clean_sid][1]
         clean_detected = clean_scores[iou_idx] >= CONF_THRES
         adv_detected = adv_scores[iou_idx] >= CONF_THRES
-        total = _NUM_SIGNS_PER_CLASS[k] if "real" in split_sid else 5000
+        # total = _NUM_SIGNS_PER_CLASS[k] if "real" in split_sid else 5000
+        total = clean_scores.shape[1]
+        print(total)
 
         num_succeed = np.sum(~adv_detected & clean_detected)
         num_clean = np.sum(clean_detected)

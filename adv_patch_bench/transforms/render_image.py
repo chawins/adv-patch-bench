@@ -310,6 +310,7 @@ class RenderImage:
 
         # Apply augmentation on the entire image
         image = self._aug_geo_img(image)
+        image = img_util.coerce_rank(image, 3)
 
         return image, target
 
