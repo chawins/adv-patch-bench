@@ -8,11 +8,8 @@ from typing import Optional, Tuple, Union
 import numpy as np
 import torch
 import torchvision.transforms.functional as T
+from adv_patch_bench.utils.types import ImageTensorGeneric, SizePx
 
-from adv_patch_bench.utils import types
-
-_ImageTensorGeneric = types.ImageTensorGeneric
-_SizePx = types.SizePx
 _PadSize = Tuple[int, int, int, int]
 
 
@@ -61,13 +58,13 @@ def mask_to_box(mask):
 
 
 def resize_and_pad(
-    obj: _ImageTensorGeneric,
-    resize_size: Optional[_SizePx] = None,
-    pad_size: Optional[_SizePx] = None,
+    obj: ImageTensorGeneric,
+    resize_size: Optional[SizePx] = None,
+    pad_size: Optional[SizePx] = None,
     is_binary: bool = False,
     interp: str = "bilinear",
     return_padding: bool = False,
-) -> Union[_ImageTensorGeneric, Tuple[_ImageTensorGeneric, _PadSize]]:
+) -> Union[ImageTensorGeneric, Tuple[ImageTensorGeneric, _PadSize]]:
     """Resize obj to resize_size and then pad_size it to pad_size.
 
     Args:

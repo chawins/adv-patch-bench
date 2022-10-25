@@ -224,9 +224,7 @@ def main(args):
                     matches = np.zeros_like(scores, dtype=bool)
                     num_matched = len(scores_tp)
                     matches[:num_matched] = 1
-                    outputs = _compute_ap_recall(
-                        scores, matches, num_gts
-                    )
+                    outputs = _compute_ap_recall(scores, matches, num_gts)
                     # FIXME: precision can't be weighted average
                     print_df_rows[sid]["Precision"] = outputs["precision"] * 100
                     print_df_rows[sid]["Recall"] = outputs["recall"] * 100

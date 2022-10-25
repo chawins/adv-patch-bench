@@ -41,6 +41,7 @@ TransformParamFn = Callable[
     [BatchImageTensorGeneric], Tuple[BatchImageTensorGeneric, torch.Tensor]
 ]
 
-Target = Any  # TODO(feature): Unify target type for detectron and YOLO
+# TODO(YOLO): Unify target type for detectron and YOLO
+Target = Union[Dict[str, Any], Any]
 
 DetectronSample = NewType("DetectronSample", Dict[str, Any])

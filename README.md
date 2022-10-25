@@ -1,5 +1,11 @@
 # adv-patch-bench
 
+## Abstract
+
+TODO: Abstact
+
+TODO: Sample images
+
 ## Dependencies
 
 Tested with
@@ -129,4 +135,9 @@ sh train_yolo.sh
 
 ## TODOs
 
-- Change interpolation (`interp`) type to `Enum` instead of `str`.
+- `NewDataset`: Changes required to make an addition of new dataset possible.
+- `AnnoObj`: Changes from keeping annotation in `pd.DataFrame` to a new object.
+- `YOLO`: Implement new changes to YOLO code.
+- `enhancement`: Minor documentation or readability improvement.
+  - Change interpolation (`interp`) type to `Enum` instead of `str`.
+- `feature`: New features that would benefit future attack and defense experiments.

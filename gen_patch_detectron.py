@@ -19,7 +19,11 @@ import adv_patch_bench.dataloaders.detectron.util as data_util
 import adv_patch_bench.dataloaders.reap_util as reap_util
 import adv_patch_bench.utils.argparse as args_util
 from adv_patch_bench.attacks import attacks, base_attack, patch_mask_util
-from adv_patch_bench.dataloaders.detectron import custom_build, custom_sampler, mapper
+from adv_patch_bench.dataloaders.detectron import (
+    custom_build,
+    custom_sampler,
+    mapper,
+)
 from adv_patch_bench.transforms import reap_object, render_image, syn_object
 from adv_patch_bench.utils.types import (
     DetectronSample,
@@ -72,7 +76,7 @@ def collect_attack_rimgs(
     if num_bg < 1:
         assert class_name is not None
         print(f"num_bg is a fraction ({num_bg}).")
-        # TODO(feature): Made compatible with other datasets
+        # TODO(NewDataset): Made compatible with other datasets.
         num_bg = round(MAPILLARY_IMG_COUNTS_DICT[class_name] * num_bg)
         print(f"For {class_name}, this is {num_bg} images.")
     num_bg = int(num_bg)
@@ -104,7 +108,8 @@ def collect_attack_rimgs(
             # If class_name is also specified, make sure that there is at least
             # one sign with label class_name in image. We use the first object
             # found.
-            # TODO(feature): get_object method for new annotation class
+            # TODO(AnnoObj): Implement get_object method when we create a new
+            # annotation object so we avoid manually looping through DataFrame.
             for _, obj_df in img_df.iterrows():
                 if obj_df["final_shape"] == class_name:
                     found = True
@@ -136,7 +141,7 @@ def collect_attack_rimgs(
     return rimg_list[:num_bg]
 
 
-def generate_adv_patch(
+def _generate_adv_patch(
     model: torch.nn.Module,
     rimgs: List[render_image.RenderImage],
     patch_size_mm: Tuple[int, float, float] = (1, 200.0, 200.0),
@@ -235,6 +240,7 @@ def main(config: Dict[str, Dict[str, Any]]) -> None:
         split_file_names=split_file_names,
     )
 
+    # Set up parameters for RenderImage and RenderObject
     rimg_kwargs: Dict[str, Any] = {
         "img_size": img_size,
         "img_mode": "BGR",
@@ -295,7 +301,8 @@ def main(config: Dict[str, Dict[str, Any]]) -> None:
         for rimg in attack_rimgs:
             rimg.save_image(rimg_save_dir)
 
-    adv_patch, patch_mask = generate_adv_patch(
+    # Generate mask and adversarial patch
+    adv_patch, patch_mask = _generate_adv_patch(
         model,
         rimgs=attack_rimgs,
         patch_size_mm=config_eval["patch_size_mm"],

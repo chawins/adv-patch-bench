@@ -278,8 +278,8 @@ def eval_args_parser(
         default="",
         help=(
             "Custom attack options; will overwrite config file. Use '.' to "
-            "impose hierarchy and space to separate options, e.g., -a \""
-            "common.patch_dim=64 rp2.num_steps=1000\"."
+            'impose hierarchy and space to separate options, e.g., -a "'
+            'common.patch_dim=64 rp2.num_steps=1000".'
         ),
     )
     parser.add_argument(
@@ -287,28 +287,28 @@ def eval_args_parser(
         action="store_true",
         help="If True, apply relighting transform to patch.",
     )
-    # TODO: DEPRECATED
-    parser.add_argument(
-        "--min-area",
-        type=float,
-        default=0,
-        help=(
-            "(DEPRECATED) Minimum area for labels. if a label has area > "
-            "min_area, predictions correspoing to this target will be discarded"
-        ),
-    )
-    # TODO: DEPRECATED: is this stil used?
-    parser.add_argument(
-        "--min-pred-area",
-        type=float,
-        default=0,
-        help=(
-            "Minimum area for predictions. If predicion has area < min_area and"
-            " that prediction is not matched by any gt, it will be discarded."
-        ),
-    )
+    # TODO(deprecated):
+    # parser.add_argument(
+    #     "--min-area",
+    #     type=float,
+    #     default=0,
+    #     help=(
+    #         "(DEPRECATED) Minimum area for labels. if a label has area > "
+    #         "min_area, predictions correspoing to this target will be discarded"
+    #     ),
+    # )
+    # TODO(deprecated): DEPRECATED: is this stil used?
+    # parser.add_argument(
+    #     "--min-pred-area",
+    #     type=float,
+    #     default=0,
+    #     help=(
+    #         "Minimum area for predictions. If predicion has area < min_area and"
+    #         " that prediction is not matched by any gt, it will be discarded."
+    #     ),
+    # )
 
-    # TODO: make general, not only detectron
+    # TODO(YOLO): make general, not only detectron
     parser.add_argument(
         "--iou-thres",
         type=float,
@@ -461,16 +461,16 @@ def eval_args_parser(
         help="Whether to draw bbox in visualized images.",
     )
 
-    # TODO: remove in the future
-    parser.add_argument(
-        "--other-class-confidence-threshold",
-        type=float,
-        default=0,
-        help=(
-            "confidence threshold at which other labels are changed if there "
-            "is a match with a prediction"
-        ),
-    )
+    # TODO(deprecated): remove in the future
+    # parser.add_argument(
+    #     "--other-class-confidence-threshold",
+    #     type=float,
+    #     default=0,
+    #     help=(
+    #         "confidence threshold at which other labels are changed if there "
+    #         "is a match with a prediction"
+    #     ),
+    # )
 
     args = parser.parse_args()
 
@@ -908,7 +908,7 @@ def setup_detectron_test_args(
 def setup_yolo_test_args(config, other_sign_class):
     """Set up config for YOLO.
 
-    # FIXME: fix for yolo
+    # FIXME(YOLO): fix for yolo.
 
     Args:
         config: Config dict.

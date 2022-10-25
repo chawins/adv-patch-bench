@@ -4,7 +4,7 @@ The intention of this file is to centralize commonly used hyperparameters so it
 is easy to modify. However, this is not an ideal way for passing around
 metadata. We try to use these parameters minimally.
 
-TODO(enhancement): Use config file and dataset object to load and hold metadata.
+TODO(NewDataset): Use config file and dataset object to load and hold metadata.
 """
 
 from typing import Any, Dict
@@ -167,39 +167,39 @@ OBJ_DIM_DICT["synthetic"] = OBJ_DIM_DICT["mapillary_no_color"]
 
 # =========================================================================== #
 
-# TODO
+# TODO: DEPRECATED
 
-MTSD_VAL_LABEL_COUNTS_DICT = {
-    "circle-750.0": 2999,
-    "triangle-900.0": 711,
-    "triangle_inverted-1220.0": 347,
-    "diamond-600.0": 176,
-    "diamond-915.0": 1278,
-    "square-600.0": 287,
-    "rect-458.0-610.0": 585,
-    "rect-762.0-915.0": 117,
-    "rect-915.0-1220.0": 135,
-    "pentagon-915.0": 30,
-    "octagon-915.0": 181,
-    "other-0.0-0.0": 19241,
-}
-MTSD_VAL_TOTAL_LABEL_COUNTS = sum(MTSD_VAL_LABEL_COUNTS_DICT.values())
+# MTSD_VAL_LABEL_COUNTS_DICT = {
+#     "circle-750.0": 2999,
+#     "triangle-900.0": 711,
+#     "triangle_inverted-1220.0": 347,
+#     "diamond-600.0": 176,
+#     "diamond-915.0": 1278,
+#     "square-600.0": 287,
+#     "rect-458.0-610.0": 585,
+#     "rect-762.0-915.0": 117,
+#     "rect-915.0-1220.0": 135,
+#     "pentagon-915.0": 30,
+#     "octagon-915.0": 181,
+#     "other-0.0-0.0": 19241,
+# }
+# MTSD_VAL_TOTAL_LABEL_COUNTS = sum(MTSD_VAL_LABEL_COUNTS_DICT.values())
 
-MAPILLARY_LABEL_COUNTS_DICT = {
-    "circle-750.0": 18144,
-    "triangle-900.0": 1473,
-    "triangle_inverted-1220.0": 1961,
-    "diamond-600.0": 1107,
-    "diamond-915.0": 3539,
-    "square-600.0": 1898,
-    "rect-458.0-610.0": 1580,
-    "rect-762.0-915.0": 839,
-    "rect-915.0-1220.0": 638,
-    "pentagon-915.0": 204,
-    "octagon-915.0": 1001,
-    "other-0.0-0.0": 60104,
-}
-MAPILLARY_TOTAL_LABEL_COUNTS = sum(MAPILLARY_LABEL_COUNTS_DICT.values())
+# MAPILLARY_LABEL_COUNTS_DICT = {
+#     "circle-750.0": 18144,
+#     "triangle-900.0": 1473,
+#     "triangle_inverted-1220.0": 1961,
+#     "diamond-600.0": 1107,
+#     "diamond-915.0": 3539,
+#     "square-600.0": 1898,
+#     "rect-458.0-610.0": 1580,
+#     "rect-762.0-915.0": 839,
+#     "rect-915.0-1220.0": 638,
+#     "pentagon-915.0": 204,
+#     "octagon-915.0": 1001,
+#     "other-0.0-0.0": 60104,
+# }
+# MAPILLARY_TOTAL_LABEL_COUNTS = sum(MAPILLARY_LABEL_COUNTS_DICT.values())
 
 # Counts of images where sign is present in
 MAPILLARY_IMG_COUNTS_DICT = {
@@ -218,42 +218,42 @@ MAPILLARY_IMG_COUNTS_DICT = {
 }
 
 # Compute results
-ANNO_LABEL_COUNTS_DICT = {
-    "circle-750.0": 7971,
-    "triangle-900.0": 636,
-    "triangle_inverted-1220.0": 824,
-    "diamond-600.0": 317,
-    "diamond-915.0": 1435,
-    "square-600.0": 1075,
-    "rect-458.0-610.0": 715,
-    "rect-762.0-915.0": 544,
-    "rect-915.0-1220.0": 361,
-    "pentagon-915.0": 133,
-    "octagon-915.0": 637,
-}
-ANNO_NOBG_LABEL_COUNTS_DICT = {
-    "circle-750.0": 7902,
-    "triangle-900.0": 578,
-    "triangle_inverted-1220.0": 764,
-    "diamond-600.0": 263,
-    "diamond-915.0": 1376,
-    "square-600.0": 997,
-    "rect-458.0-610.0": 646,
-    "rect-762.0-915.0": 482,
-    "rect-915.0-1220.0": 308,
-    "pentagon-915.0": 78,
-    "octagon-915.0": 585,
-}
-ANNO_NOBG_LABEL_COUNTS_DICT_200 = {
-    "circle-750.0": 7669,
-    "triangle-900.0": 405,
-    "triangle_inverted-1220.0": 584,
-    "diamond-600.0": 0,
-    "diamond-915.0": 1201,
-    "square-600.0": 788,
-    "rect-458.0-610.0": 412,
-    "rect-762.0-915.0": 275,
-    "rect-915.0-1220.0": 150,
-    "pentagon-915.0": 0,
-    "octagon-915.0": 405,
-}
+# ANNO_LABEL_COUNTS_DICT = {
+#     "circle-750.0": 7971,
+#     "triangle-900.0": 636,
+#     "triangle_inverted-1220.0": 824,
+#     "diamond-600.0": 317,
+#     "diamond-915.0": 1435,
+#     "square-600.0": 1075,
+#     "rect-458.0-610.0": 715,
+#     "rect-762.0-915.0": 544,
+#     "rect-915.0-1220.0": 361,
+#     "pentagon-915.0": 133,
+#     "octagon-915.0": 637,
+# }
+# ANNO_NOBG_LABEL_COUNTS_DICT = {
+#     "circle-750.0": 7902,
+#     "triangle-900.0": 578,
+#     "triangle_inverted-1220.0": 764,
+#     "diamond-600.0": 263,
+#     "diamond-915.0": 1376,
+#     "square-600.0": 997,
+#     "rect-458.0-610.0": 646,
+#     "rect-762.0-915.0": 482,
+#     "rect-915.0-1220.0": 308,
+#     "pentagon-915.0": 78,
+#     "octagon-915.0": 585,
+# }
+# ANNO_NOBG_LABEL_COUNTS_DICT_200 = {
+#     "circle-750.0": 7669,
+#     "triangle-900.0": 405,
+#     "triangle_inverted-1220.0": 584,
+#     "diamond-600.0": 0,
+#     "diamond-915.0": 1201,
+#     "square-600.0": 788,
+#     "rect-458.0-610.0": 412,
+#     "rect-762.0-915.0": 275,
+#     "rect-915.0-1220.0": 150,
+#     "pentagon-915.0": 0,
+#     "octagon-915.0": 405,
+# }
