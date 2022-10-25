@@ -67,7 +67,7 @@ def _get_box_from_ellipse(rect):
     return box
 
 
-def sort_polygon_vertices(vertices):
+def _sort_polygon_vertices(vertices):
     """
     Sort vertices such that the first one is the top left corner, and the rest
     follows in clockwise order. First, find a point inside the polygon (e.g.,
@@ -121,7 +121,7 @@ def get_box_vertices(vertices, predicted_shape):
         vertices = _get_box_from_ellipse(vertices)
 
     # print(vertices)
-    vertices = sort_polygon_vertices(vertices)
+    vertices = _sort_polygon_vertices(vertices)
     # vertices = vertices[::-1]
     # vertices = vertices[1:] + vertices[0]
     vertices = np.roll(vertices, -1, axis=0)
@@ -141,7 +141,7 @@ def _get_side_angle(vertices):
 
 def get_shape_from_vertices(vertices):
     num_vertices = len(vertices)
-    vertices = sort_polygon_vertices(vertices)
+    vertices = _sort_polygon_vertices(vertices)
     # height = vertices[:, 1].max() - vertices[:, 1].min()
     if num_vertices == 3:
         angle = _get_side_angle(vertices.astype(np.float32))

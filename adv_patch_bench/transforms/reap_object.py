@@ -1,6 +1,5 @@
 """Implement REAP patch rendering for each object."""
 
-import ast
 from typing import Any, Callable, Tuple
 
 import adv_patch_bench.utils.image as img_util
@@ -9,14 +8,14 @@ import kornia.geometry.transform as kornia_tf
 import numpy as np
 import pandas as pd
 import torch
-from adv_patch_bench.transforms import geometric_tf, render_object
+from adv_patch_bench.transforms import render_object
 from adv_patch_bench.utils.types import (
-    ImageTensor,
-    ImageTensorRGBA,
-    TransformFn,
-    Target,
     BatchImageTensorGeneric,
     BatchImageTensorRGBA,
+    ImageTensor,
+    ImageTensorRGBA,
+    Target,
+    TransformFn,
 )
 
 _VALID_TRANSFORM_MODE = ("perspective", "translate_scale")
@@ -100,19 +99,16 @@ class ReapObject(render_object.RenderObject):
             Tuple of (Transform function, transformation matrix, target points).
         """
         h_ratio, w_ratio = self.img_hw_ratio
-        h0, w0 = self.img_size_orig
         h_pad, w_pad = self.img_pad_size
 
         tgt = np.array(df_row["tgt_points"], dtype=np.float32)
         tgt[:, 1] = (tgt[:, 1] * h_ratio) + h_pad
         tgt[:, 0] = (tgt[:, 0] * w_ratio) + w_pad
         src = np.array(self.src_points, dtype=np.float32)
-        
-        # Get transformation matrix and transform function (affine or perspective)
-        # from source and target coordinates
+
         if self.patch_transform_mode == "translate_scale":
-            # Use corners of axis-aligned bounding box for transform (translation
-            # and scaling) instead of real corners.
+            # Use corners of axis-aligned bounding box for transform
+            # (translation and scaling) instead of real corners.
             min_tgt_x = min(tgt[:, 0])
             max_tgt_x = max(tgt[:, 0])
             min_tgt_y = min(tgt[:, 1])
@@ -139,7 +135,10 @@ class ReapObject(render_object.RenderObject):
                 ]
             )
 
+        # Get transformation matrix and transform function from source and
+        # target keypoint coordinates.
         if len(src) == 3:
+            # For triangles which have only 3 keypoints
             M = (
                 torch.from_numpy(cv2.getAffineTransform(src, tgt))
                 .unsqueeze(0)
@@ -147,6 +146,7 @@ class ReapObject(render_object.RenderObject):
             )
             transform_func = kornia_tf.warp_affine
         else:
+            # All other signs use perspective transform
             src = torch.from_numpy(src).unsqueeze(0)
             tgt = torch.from_numpy(tgt).unsqueeze(0)
             M = kornia_tf.get_perspective_transform(src, tgt)

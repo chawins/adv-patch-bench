@@ -11,9 +11,9 @@ from typing import Any, Dict
 
 # Set paths
 PATH_MAPILLARY_ANNO = {
-    "train": "./mapillary_vistas_training_final_merged.csv",
-    "val": "./mapillary_vistas_validation_final_merged.csv",
-    "combined": "./mapillary_vistas_final_merged.csv",
+    "train": "./reap_annotations.csv",
+    "val": "./reap_annotations.csv",
+    "combined": "./reap_annotations.csv",
 }
 
 DEFAULT_DATA_PATHS = {
