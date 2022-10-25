@@ -21,8 +21,10 @@ from detectron2.utils.file_io import PathManager
 import adv_patch_bench.data.detectron.util as data_util
 from adv_patch_bench.data.detectron import custom_build, mapper
 from adv_patch_bench.evaluators import detectron_evaluator
-from adv_patch_bench.utils.argparse import (eval_args_parser,
-                                            setup_detectron_test_args)
+from adv_patch_bench.utils.argparse import (
+    eval_args_parser,
+    setup_detectron_test_args,
+)
 from adv_patch_bench.utils.types import DetectronSample
 from hparams import LABEL_LIST
 from pycocotools.coco import COCO
@@ -61,9 +63,7 @@ def _get_img_ids(dataset: str, obj_class: int) -> List[int]:
     """Get ids of images that contain desired object class."""
     metadata = detectron2.data.MetadataCatalog.get(dataset)
     if not hasattr(metadata, "json_file"):
-        cache_path = os.path.join(
-            cfg.OUTPUT_DIR, f"{dataset}_coco_format.json"
-        )
+        cache_path = os.path.join(cfg.OUTPUT_DIR, f"{dataset}_coco_format.json")
         metadata.json_file = cache_path
         convert_to_coco_json(dataset, cache_path)
 
@@ -80,7 +80,7 @@ def _get_filename_from_id(
     filenames: List[str] = []
     img_ids_set = set(img_ids)
     for data in data_dicts:
-        if data['image_id'] in img_ids_set:
+        if data["image_id"] in img_ids_set:
             filenames.append(data["file_name"].split("/")[-1])
     return filenames
 
@@ -215,8 +215,10 @@ def _dump_results(
     config_attack_hash = _hash_dict({"name": config_eval["name"]})
     result_path = os.path.join(
         result_dir,
-        (f"results_eval{config_eval_hash}_atk{config_attack_hash}_"
-         f"split{config_eval['split_file_hash']}.pkl"),
+        (
+            f"results_eval{config_eval_hash}_atk{config_attack_hash}_"
+            f"split{config_eval['split_file_hash']}.pkl"
+        ),
     )
     with open(result_path, "wb") as f:
         pickle.dump(results, f)
