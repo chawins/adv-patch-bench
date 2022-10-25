@@ -266,7 +266,6 @@ def main(args):
     for sid, data in print_df_rows.items():
         if data["attack_type"] != "none":
             continue
-        print(sid)
         base_sid = " | ".join(sid.split(" | ")[:-1])
         all_class_sid = f"{base_sid} | all"
         allw_class_sid = f"{base_sid} | allw"
@@ -289,7 +288,7 @@ def main(args):
         clean_sid = " | ".join([split_sid[0], "none", *split_sid[2:]])
         if clean_sid not in gt_scores[0]:
             continue
-        
+
         clean_scores = gt_scores[0][clean_sid]
         clean_detected = clean_scores[iou_idx] >= CONF_THRES
         adv_detected = adv_scores[iou_idx] >= CONF_THRES

@@ -1,6 +1,7 @@
 """Define argument and config parsing."""
 
 import argparse
+import ast
 import os
 import pathlib
 from typing import Any, Dict, List, Optional, Union
@@ -228,14 +229,6 @@ def eval_args_parser(
         ),
     )
     parser.add_argument(
-        "--mask-dir",
-        type=str,
-        default=None,
-        help=(
-            "Path to dir with predefined masks (default: generate a new mask)."
-        ),
-    )
-    parser.add_argument(
         "--obj-class",
         type=int,
         default=-1,
@@ -276,6 +269,17 @@ def eval_args_parser(
             "transform type to use on patch during evaluation: perspective "
             "(default), affine, translate_scale. This can be different from "
             "patch generation specified in attack config."
+        ),
+    )
+    parser.add_argument(
+        "-a",
+        "--attack-options",
+        type=str,
+        default="",
+        help=(
+            "Custom attack options; will overwrite config file. Use '.' to "
+            "impose hierarchy and space to separate options, e.g., -a \""
+            "common.patch_dim=64 rp2.num_steps=1000\"."
         ),
     )
     parser.add_argument(
@@ -471,11 +475,13 @@ def eval_args_parser(
     args = parser.parse_args()
 
     if args.exp_config_file:
-        # Load config from YAML file and overwrite normal args
+        # Load config from YAML file
         with open(args.exp_config_file, "r") as f:
             config = yaml.safe_load(f)
+        # These configs are only set as default so command line args overwrite
+        # config file.
         parser.set_defaults(**config["eval"])
-        args = parser.parse_args()  # TODO: Overwrite arguments
+        args = parser.parse_args()
         attack_config = config["attack"]
         args = vars(args)
         config = {"eval": args, "attack": attack_config}
@@ -483,7 +489,30 @@ def eval_args_parser(
         args = vars(args)
         config = {"eval": args, "attack": {}}
 
-    # TODO(feature): Allow attack config through command line
+    # Update attack config through command line args
+    for opt in args["attack_options"].split():
+        tokens: List[str] = opt.split("=")
+        if len(tokens) != 2:
+            raise ValueError(
+                "Attack options must be a key-value pair separated by '=', but "
+                f"found {opt}."
+            )
+        params: List[str] = tokens[0].split(".")
+        parent: Dict[str, Any] = config["attack"]
+        for i, param in enumerate(params):
+            if param not in parent:
+                raise ValueError(
+                    f"This param ({tokens[0]}) is not defined in attack config "
+                    "file. This is likely not a valid param."
+                )
+            if i < len(params) - 1:
+                parent = parent[param]
+                continue
+            try:
+                val = ast.literal_eval(tokens[1])
+            except ValueError:
+                val = tokens[1]
+            parent[param] = val
 
     assert "eval" in config and "attack" in config
     _update_dataset_name(config)

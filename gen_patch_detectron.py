@@ -15,11 +15,11 @@ import torchvision
 import yaml
 from tqdm import tqdm
 
-import adv_patch_bench.data.detectron.util as data_util
-import adv_patch_bench.data.reap_util as reap_util
+import adv_patch_bench.dataloaders.detectron.util as data_util
+import adv_patch_bench.dataloaders.reap_util as reap_util
 import adv_patch_bench.utils.argparse as args_util
 from adv_patch_bench.attacks import attacks, base_attack, patch_mask_util
-from adv_patch_bench.data.detectron import custom_build, custom_sampler, mapper
+from adv_patch_bench.dataloaders.detectron import custom_build, custom_sampler, mapper
 from adv_patch_bench.transforms import reap_object, render_image, syn_object
 from adv_patch_bench.utils.types import (
     DetectronSample,

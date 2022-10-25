@@ -5,7 +5,7 @@ import torch
 import torch.cuda.amp as amp
 import torch.nn as nn
 
-from adv_patch_bench.data.classification_loader import DATASET_DICT
+from adv_patch_bench.dataloaders.classification_loader import DATASET_DICT
 from adv_patch_bench.models.common import Normalize
 
 
@@ -84,7 +84,6 @@ def build_classifier(args):
             model.load_state_dict(checkpoint["state_dict"])
             optimizer.load_state_dict(checkpoint["optimizer"])
             scaler.load_state_dict(checkpoint["scaler"])
-            best_acc1 = checkpoint["best_acc1"]
             print(f'=> loaded resume checkpoint (epoch {checkpoint["epoch"]})')
         else:
             print(f"=> no checkpoint found at {args.resume}")

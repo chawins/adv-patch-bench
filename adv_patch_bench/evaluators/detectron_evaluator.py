@@ -10,27 +10,17 @@ https://github.com/yizhe-ang/detectron2-1/blob/master/detectron2_1/adv.py
 import pathlib
 from typing import Any, Dict, List, Optional, Tuple
 
-from adv_patch_bench.data import reap_util
+import adv_patch_bench.utils.detectron.custom_coco_evaluator as cocoeval
 import numpy as np
 import pandas as pd
 import torch
-import adv_patch_bench.utils.detectron.custom_coco_evaluator as cocoeval
 from adv_patch_bench.attacks import attack_util, attacks, base_attack
-from adv_patch_bench.transforms import (
-    reap_object,
-    render_image,
-    render_object,
-    syn_object,
-)
-from adv_patch_bench.utils.types import (
-    ImageTensor,
-    ImageTensorDet,
-    MaskTensor,
-    SizeMM,
-    SizePatch,
-    SizePx,
-    Target,
-)
+from adv_patch_bench.dataloaders import reap_util
+from adv_patch_bench.transforms import (reap_object, render_image,
+                                        render_object, syn_object)
+from adv_patch_bench.utils.types import (ImageTensor, ImageTensorDet,
+                                         MaskTensor, SizeMM, SizePatch, SizePx,
+                                         Target)
 from detectron2 import structures
 from detectron2.config import global_cfg
 from detectron2.data import MetadataCatalog

@@ -28,7 +28,7 @@ from adv_patch_bench.attacks import (
     setup_train_attacker,
     setup_val_attacker,
 )
-from adv_patch_bench.data import load_dataset
+from adv_patch_bench.dataloaders import load_dataset
 from adv_patch_bench.models import build_classifier
 from adv_patch_bench.utils import (
     AverageMeter,

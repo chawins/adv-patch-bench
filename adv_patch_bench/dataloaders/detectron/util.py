@@ -5,8 +5,8 @@ from typing import Any, Dict, List, Optional
 
 import detectron2
 import pandas as pd
-from adv_patch_bench.data import reap_util
-from adv_patch_bench.data.detectron import mapillary, mtsd, reap
+from adv_patch_bench.dataloaders import reap_util
+from adv_patch_bench.dataloaders.detectron import mapillary, mtsd, reap
 from adv_patch_bench.utils.types import DetectronSample
 from hparams import DATASETS
 

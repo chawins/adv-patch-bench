@@ -1,6 +1,6 @@
 """RP2 attack for Detectron2 models."""
 
-from copy import deepcopy
+import copy
 from typing import Any, Dict, List, Tuple
 
 import torch
@@ -27,19 +27,19 @@ class RP2AttackDetectron(rp2_base.RP2AttackModule):
         super().__init__(attack_config, core_model, **kwargs)
 
         detectron_config: Dict[str, Any] = attack_config["detectron"]
-        self.detectron_obj_const: float = detectron_config["obj_loss_const"]
-        self.detectron_iou_thres: float = detectron_config["iou_thres"]
+        self._detectron_obj_const: float = detectron_config["obj_loss_const"]
+        self._detectron_iou_thres: float = detectron_config["iou_thres"]
 
-        self.nms_thresh_orig = deepcopy(
+        self._nms_thresh_orig = copy.deepcopy(
             core_model.proposal_generator.nms_thresh
         )
-        self.post_nms_topk_orig = deepcopy(
+        self._post_nms_topk_orig = copy.deepcopy(
             core_model.proposal_generator.post_nms_topk
         )
         # self.nms_thresh = 0.9
         # self.post_nms_topk = {True: 5000, False: 5000}
-        self.nms_thresh = self.nms_thresh_orig
-        self.post_nms_topk = self.post_nms_topk_orig
+        self.nms_thresh = self._nms_thresh_orig
+        self.post_nms_topk = self._post_nms_topk_orig
 
     def _on_enter_attack(self, **kwargs):
         self.is_training = self._core_model.training
@@ -49,9 +49,9 @@ class RP2AttackDetectron(rp2_base.RP2AttackModule):
 
     def _on_exit_attack(self, **kwargs):
         self._core_model.train(self.is_training)
-        self._core_model.proposal_generator.nms_thresh = self.nms_thresh_orig
+        self._core_model.proposal_generator.nms_thresh = self._nms_thresh_orig
         self._core_model.proposal_generator.post_nms_topk = (
-            self.post_nms_topk_orig
+            self._post_nms_topk_orig
         )
 
     def _loss_func(
@@ -78,7 +78,7 @@ class RP2AttackDetectron(rp2_base.RP2AttackModule):
             self._core_model,
             [inputs],
             device=self._core_model.device,
-            iou_thres=self.detectron_iou_thres,
+            iou_thres=self._detectron_iou_thres,
             score_thres=self.min_conf,
             use_correct_only=False,
         )
@@ -132,12 +132,12 @@ class RP2AttackDetectron(rp2_base.RP2AttackModule):
             if len(tgt_log) > 0 and len(tgt_lb) > 0:
                 # Ignore the background class on tgt_log
                 target_loss = F.cross_entropy(tgt_log, tgt_lb, reduction="mean")
-            if len(obj_logits) > 0 and self.detectron_obj_const != 0:
+            if len(obj_logits) > 0 and self._detectron_obj_const != 0:
                 obj_lb = torch.ones_like(obj_log)
                 obj_loss = F.binary_cross_entropy_with_logits(
                     obj_log, obj_lb, reduction="mean"
                 )
-            loss += target_loss + self.detectron_obj_const * obj_loss
+            loss += target_loss + self._detectron_obj_const * obj_loss
         return -loss
 
 
@@ -182,9 +182,8 @@ def _get_targets(
     # https://github.com/facebookresearch/detectron2/blob/main/detectron2/modeling/roi_heads/fast_rcnn.py#L547
     class_logits, _ = predictions
     num_inst_per_image = [len(p) for p in proposals]
-    class_logits = class_logits.split(num_inst_per_image, dim=0)
-
     # NOTE: class_logits dim [[1000, num_classes + 1], ...]
+    class_logits = class_logits.split(num_inst_per_image, dim=0)
 
     gt_boxes = [i["instances"].gt_boxes.to(device) for i in inputs]
     gt_classes = [i["instances"].gt_classes for i in inputs]

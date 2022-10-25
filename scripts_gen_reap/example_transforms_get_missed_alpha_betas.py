@@ -22,7 +22,7 @@ from PIL import Image
 from torchvision.utils import save_image
 from tqdm.auto import tqdm
 
-from adv_patch_bench.data import ImageOnlyFolder
+from adv_patch_bench.dataloaders import ImageOnlyFolder
 from adv_patch_bench.models import build_classifier
 from adv_patch_bench.transforms import (
     gen_sign_mask,

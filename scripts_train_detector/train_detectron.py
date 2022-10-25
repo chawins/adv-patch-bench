@@ -28,9 +28,9 @@ from detectron2.engine import (
 from detectron2.evaluation import verify_results
 
 # Import this file to register MTSD for detectron
-from adv_patch_bench.data.detectron.mtsd import register_mtsd
+from adv_patch_bench.dataloaders.detectron.mtsd import register_mtsd
 from adv_patch_bench.utils.detectron import build_evaluator
-from adv_patch_bench.data.detectron.custom_sampler import (
+from adv_patch_bench.dataloaders.detectron.custom_sampler import (
     RepeatFactorTrainingSampler,
 )
 from hparams import DATASETS, OTHER_SIGN_CLASS

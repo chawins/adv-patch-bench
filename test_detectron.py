@@ -18,8 +18,8 @@ import yaml
 from detectron2.data.datasets.coco import convert_to_coco_json
 from detectron2.utils.file_io import PathManager
 
-import adv_patch_bench.data.detectron.util as data_util
-from adv_patch_bench.data.detectron import custom_build, mapper
+import adv_patch_bench.dataloaders.detectron.util as data_util
+from adv_patch_bench.dataloaders.detectron import custom_build, mapper
 from adv_patch_bench.evaluators import detectron_evaluator
 from adv_patch_bench.utils.argparse import (
     eval_args_parser,

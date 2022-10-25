@@ -23,7 +23,7 @@ from kornia.geometry.transform import (
 from PIL import Image
 from tqdm.auto import tqdm
 
-from adv_patch_bench.data.image_only_dataset import ImageOnlyFolder
+from adv_patch_bench.dataloaders.image_only_dataset import ImageOnlyFolder
 from adv_patch_bench.models import build_classifier
 from adv_patch_bench.transforms import geometric_tf, lighting_tf, util
 from adv_patch_bench.utils import (

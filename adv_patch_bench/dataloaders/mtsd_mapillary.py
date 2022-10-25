@@ -5,7 +5,7 @@ import os
 import torch
 import torchvision.datasets as datasets
 import torchvision.transforms as transforms
-from adv_patch_bench.data import eval_sampler
+from adv_patch_bench.dataloaders import eval_sampler
 
 
 def get_loader_sampler(root, transform, args, split):

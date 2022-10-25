@@ -1,6 +1,6 @@
 """Load data for classification task."""
 
-from adv_patch_bench.data.mtsd_mapillary import MTSD_MAPILLARY
+from adv_patch_bench.dataloaders.mtsd_mapillary import MTSD_MAPILLARY
 
 DATASET_DICT = {
     "mtsd": MTSD_MAPILLARY,
