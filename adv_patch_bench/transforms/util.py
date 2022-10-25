@@ -1,6 +1,6 @@
 """Utility functions for transforms."""
 
-from typing import Optional, Tuple, Union
+from typing import List, NewType, Optional, Tuple, Union
 
 import kornia
 import kornia.augmentation as K
@@ -11,6 +11,8 @@ from adv_patch_bench.utils.types import (
     TransformFn,
     TransformParamFn,
 )
+
+_KeyPoints = NewType("_KeyPoints", List[Tuple[float, float]])
 
 
 def _identity(x: Union[ImageTensor, BatchImageTensor]) -> BatchImageTensor:
@@ -26,72 +28,36 @@ def _identity_with_params(
     return x, None
 
 
-def gen_rect_mask(size: int, ratio: Optional[float] = None):
+def _gen_rect_mask(
+    size: int, ratio: Optional[float] = None
+) -> Tuple[np.ndarray, _KeyPoints]:
     """Generate rectangular mask.
+
+    The keypoints are a list of tuple (x, y) coordinates starting from the
+    uppper left one and sorted clockwise. For example, keypoints of a
+    rectangular mask are upper-left, upper-right, lower-right, and lower-left
+    corners, respectively.
 
     Args:
         size: Width of object in pixels.
         ratio: Ratio between height and width.
+
+    Returns:
+        Binary mask and source keypoint for geometric transformation with
+        respect to this mask.
     """
-    height = round(ratio * size) if ratio > 1 else size
-    width = size
-    mask = np.zeros((height, width))
-    if ratio > 1:
-        pad = int((size - width) / 2)
-        mask[:, pad : size - pad] = 1
-        box = [
-            [pad, 0],
-            [size - pad, 0],
-            [size - pad, size - 1],
-            [pad, size - 1],
-        ]
-        box = [[0, 0], [width - 1, 0], [width - 1, height - 1], [0, height - 1]]
-    elif ratio < 1:
-        pad = int((size - height) / 2)
-        mask[pad : size - pad, :] = 1
-        box = [
-            [0, pad],
-            [size - 1, pad],
-            [size - 1, size - pad],
-            [0, size - pad],
-        ]
-    else:
-        mask[:, :] = 1
-        box = [[0, 0], [size - 1, 0], [size - 1, size - 1], [0, size - 1]]
+    height: int = round(ratio * size)
+    width: int = size
+    mask: np.ndarray = np.ones((height, width))
+    box = [(0, 0), (width - 1, 0), (width - 1, height - 1), (0, height - 1)]
     return mask, box
 
 
-def gen_square_mask(size, ratio=None):
-    # ratio = height / width
-    assert ratio == 1
-    mask = np.zeros((size, size))
-    height = ratio * size if ratio < 1 else size
-    width = height / ratio
-    if ratio > 1:
-        pad = int((size - width) / 2)
-        mask[:, pad : size - pad] = 1
-        box = [
-            [pad, 0],
-            [size - pad, 0],
-            [size - pad, size - 1],
-            [pad, size - 1],
-        ]
-    elif ratio < 1:
-        pad = int((size - height) / 2)
-        mask[pad : size - pad, :] = 1
-        box = [
-            [0, pad],
-            [size - 1, pad],
-            [size - 1, size - pad],
-            [0, size - pad],
-        ]
-    else:
-        mask[:, :] = 1
-        box = [[0, 0], [size - 1, 0], [size - 1, size - 1], [0, size - 1]]
-    return mask, box
-
-
-def gen_diamond_mask(size, ratio=None):
+def _gen_diamond_mask(
+    size: int, ratio: Optional[float] = None
+) -> Tuple[np.ndarray, _KeyPoints]:
+    """Generate diamond mask. See _gen_rect_mask()."""
+    del ratio  # Unused
     mid = round(size / 2)
     Y, X = np.ogrid[:size, :size]
     mask = (
@@ -100,48 +66,64 @@ def gen_diamond_mask(size, ratio=None):
         * (Y + X <= size + mid)
         * (Y - X <= mid)
     )
-    return mask, [[0, mid], [mid, 0], [size - 1, mid], [mid, size - 1]]
+    return mask, [(0, mid), (mid, 0), (size - 1, mid), (mid, size - 1)]
 
 
-def gen_circle_mask(size, ratio=None):
+def _gen_circle_mask(
+    size: int, ratio: Optional[float] = None
+) -> Tuple[np.ndarray, _KeyPoints]:
+    """Generate circle mask. See _gen_rect_mask()."""
+    del ratio  # Unused
     Y, X = np.ogrid[:size, :size]
-    center = round(size / 2)
+    center = round(size / 2)  # center is also radius
     dist_from_center = np.sqrt((X - center) ** 2 + (Y - center) ** 2)
     mask = dist_from_center <= center
-    return mask, [[0, 0], [size - 1, 0], [size - 1, size - 1], [0, size - 1]]
+    return mask, [(0, 0), (size - 1, 0), (size - 1, size - 1), (0, size - 1)]
 
 
-def gen_triangle_mask(size, ratio=None):
-    # width: 1168, height: 1024
-    height = int(1024 / 1168 * size)
+def _gen_triangle_mask(
+    size: int, ratio: Optional[float] = None
+) -> Tuple[np.ndarray, _KeyPoints]:
+    """Generate triangle mask. See _gen_rect_mask()."""
+    height = round(ratio * size)
     mid = round(size / 2)
     Y, X = np.ogrid[:height, :size]
     mask = (Y / height + 2 * X / size >= 1) * (Y / height - 2 * X / size >= -1)
-    return mask, [[mid, 0], [size - 1, height - 1], [0, height - 1]]
+    return mask, [(mid, 0), (size - 1, height - 1), (0, height - 1)]
 
 
-def gen_triangle_inverted_mask(size, ratio=None):
-    # width: 1024, height: 900
-    height = int(900 / 1024 * size)
+def _gen_triangle_inverted_mask(
+    size: int, ratio: Optional[float] = None
+) -> Tuple[np.ndarray, _KeyPoints]:
+    """Generate inverted triangle mask. See _gen_rect_mask()."""
+    height = round(ratio * size)
     mid = round(size / 2)
     Y, X = np.ogrid[:height, :size]
     mask = (Y / height - 2 * X / size <= 0) * (Y / height + 2 * X / size <= 2)
-    return mask, [[0, 0], [size - 1, 0], [mid, height - 1]]
+    return mask, [(0, 0), (size - 1, 0), (mid, height - 1)]
 
 
-def gen_pentagon_mask(size, ratio=None):
+def _gen_pentagon_mask(
+    size: int, ratio: Optional[float] = None
+) -> Tuple[np.ndarray, _KeyPoints]:
+    """Generate pentagon mask. See _gen_rect_mask()."""
+    del ratio  # Unused
     mid = round(size / 2)
     Y, X = np.ogrid[:size, :size]
     mask = (Y + X >= mid) * (Y - X >= -mid)
     return mask, [
-        [0, mid],
-        [size - 1, mid],
-        [size - 1, size - 1],
-        [0, size - 1],
+        (0, mid),
+        (size - 1, mid),
+        (size - 1, size - 1),
+        (0, size - 1),
     ]
 
 
-def gen_octagon_mask(size, ratio=None):
+def _gen_octagon_mask(
+    size: int, ratio: Optional[float] = None
+) -> Tuple[np.ndarray, _KeyPoints]:
+    """Generate octagon mask. See _gen_rect_mask()."""
+    del ratio  # Unused
     edge = round((2 - np.sqrt(2)) / 2 * size)
     Y, X = np.ogrid[:size, :size]
     mask = (
@@ -151,30 +133,46 @@ def gen_octagon_mask(size, ratio=None):
         * (Y - X <= (size - edge))
     )
     return mask, [
-        [edge, 0],
-        [size - 1, edge],
-        [size - edge, size - 1],
-        [0, size - edge],
+        (edge, 0),
+        (size - 1, edge),
+        (size - edge, size - 1),
+        (0, size - edge),
     ]
 
 
-def gen_sign_mask(shape: str, hw_ratio: float, obj_width_px: int):
-    return _SHAPE_TO_MASK[shape](obj_width_px, ratio=hw_ratio)
+def gen_sign_mask(
+    shape: str, hw_ratio: float, obj_width_px: int
+) -> Tuple[np.ndarray, _KeyPoints]:
+    """Generate mask of object and source keypoints.
+
+    The keypoints are a list of tuple (x, y) coordinates starting from the
+    uppper left one and sorted clockwise. For example, keypoints of a
+    rectangular mask are upper-left, upper-right, lower-right, and lower-left
+    corners, respectively.
+
+    Args:
+        shape: Object shape defined based on classes in REAP.
+        hw_ratio: Ratio of height over width of object.
+        obj_width_px: Width of object in pixels.
+
+    Returns:
+        Binary mask and source keypoint for geometric transformation with
+        respect to this mask.
+    """
+    shape_to_mask = {
+        "circle": _gen_circle_mask,
+        "triangle_inverted": _gen_triangle_inverted_mask,
+        "triangle": _gen_triangle_mask,
+        "rect": _gen_rect_mask,
+        "diamond": _gen_diamond_mask,
+        "pentagon": _gen_pentagon_mask,
+        "octagon": _gen_octagon_mask,
+        "square": _gen_rect_mask,
+    }
+    return shape_to_mask[shape](obj_width_px, ratio=hw_ratio)
 
 
-_SHAPE_TO_MASK = {
-    "circle": gen_circle_mask,
-    "triangle_inverted": gen_triangle_inverted_mask,
-    "triangle": gen_triangle_mask,
-    "rect": gen_rect_mask,
-    "diamond": gen_diamond_mask,
-    "pentagon": gen_pentagon_mask,
-    "octagon": gen_octagon_mask,
-    "square": gen_square_mask,
-}
-
-
-def init_syn_transforms(
+def get_transform_fn(
     prob_geo: Optional[float] = None,
     syn_rotate: Optional[float] = None,
     syn_scale: Optional[float] = None,
@@ -202,9 +200,13 @@ def init_syn_transforms(
         interp: Interpolation mode. Defaults to "bilinear".
 
     Returns:
-        Geometric transforms for object and mask and lighting transform.
+        Tuple of three transform functions: (i) geometric for object, (ii)
+        geometric for mask, and (iii) lighting for object.
     """
     # Geometric transform
+    geo_transform: TransformParamFn = _identity_with_params
+    mask_transform: TransformFn = _identity
+
     if prob_geo is not None and prob_geo > 0:
         if syn_3d_dist is not None and syn_3d_dist > 0:
             transform_params = {
@@ -223,19 +225,17 @@ def init_syn_transforms(
             }
             transform_fn = K.RandomAffine
 
-        geo_transform: TransformFn = transform_fn(
+        geo_transform = transform_fn(
             return_transform=True,
             resample=interp,
             **transform_params,
         )
-        mask_transform: TransformFn = transform_fn(
+        mask_transform = transform_fn(
             resample=kornia.constants.Resample.NEAREST, **transform_params
         )
-    else:
-        geo_transform: TransformParamFn = _identity_with_params
-        mask_transform: TransformFn = _identity
 
     # Lighting transform (color jitter)
+    light_transform: TransformFn = _identity
     if (
         prob_colorjitter is not None
         and prob_colorjitter > 0
@@ -248,10 +248,8 @@ def init_syn_transforms(
             contrast=syn_colorjitter,
             saturation=syn_colorjitter,
             hue=0.05,
-            p=1.0,
+            p=prob_colorjitter,
         )
-    else:
-        light_transform: TransformFn = _identity
 
     return (
         geo_transform,

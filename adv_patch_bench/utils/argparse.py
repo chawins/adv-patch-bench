@@ -5,7 +5,7 @@ import os
 import pathlib
 from typing import Any, Dict, List, Optional, Union
 
-import detectron2.config as detectron2_config
+import detectron2
 import yaml
 from detectron2.engine import default_argument_parser, default_setup
 from hparams import (
@@ -30,12 +30,16 @@ _TRANSFORM_PARAMS: List[str] = [
 
 
 def eval_args_parser(
-    is_detectron: bool, root: Optional[str] = None
+    is_detectron: bool,
+    root: Optional[str] = None,
+    is_gen_patch: bool = False,
 ) -> Dict[str, Any]:
     """Setup argparse for evaluation.
 
+    TODO(enhancement): Improve argument documentation.
+
     Args:
-        is_detectron: Whether we are evaluating dectectron model.`
+        is_detectron: Whether we are evaluating dectectron model.
         root: Path to root or base directory. Defaults to None.
 
     Returns:
@@ -66,18 +70,6 @@ def eval_args_parser(
     parser.add_argument("--single-image", action="store_true")
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--dataset", type=str, required=False)
-    # parser.add_argument(
-    #     "--data-no-other",
-    #     action="store_true",
-    #     help='If True, do not load "other" or "background" class to the dataset.',
-    # )
-    # TODO: Is this still needed? Since we can set it in hparams.
-    # parser.add_argument(
-    #     "--other-class-label",
-    #     type=int,
-    #     default=None,
-    #     help='Class for the "other" label.',
-    # )
     parser.add_argument(
         "--eval-mode",
         type=str,
@@ -123,6 +115,12 @@ def eval_args_parser(
             "If True, only calculate metrics on annotated signs. This is set to"
             " True by default when dataset is 'reap' or 'synthetic'."
         ),
+    )
+    parser.add_argument(
+        "--model-name",
+        type=str,
+        default="faster_rcnn",
+        help="Set model name (faster_rcnn, yolov5, yolor).",
     )
     parser.add_argument(
         "--weights",
@@ -226,7 +224,7 @@ def eval_args_parser(
         default="10x10",
         help=(
             "Specify size of adversarial patch to generate in inches "
-            "(HEIGHTxWIDTH); separated by 'x'."
+            "(HxW); height and width separated by 'x'."
         ),
     )
     parser.add_argument(
@@ -256,27 +254,20 @@ def eval_args_parser(
         help="Path to YAML file with attack configs.",
     )
     parser.add_argument(
-        "--img-txt-path",
+        "--split-file-path",
         type=str,
         default="",
         help="path to a text file containing image filenames",
     )
-    parser.add_argument(
-        "--run-only-img-txt",
-        action="store_true",
-        help=(
-            "run evaluation on images listed in img-txt-path. "
-            "Otherwise, images in img-txt-path are excluded instead."
-        ),
-    )
-    parser.add_argument(
-        "--no-patch-transform",
-        action="store_true",
-        help=(
-            "If True, do not apply patch to signs using 3D-transform. "
-            "Patch will directly face camera."
-        ),
-    )
+    # TODO: This can be removed? This is specified through reap-transform-mode
+    # parser.add_argument(
+    #     "--no-patch-transform",
+    #     action="store_true",
+    #     help=(
+    #         "If True, do not apply patch to signs using 3D-transform. "
+    #         "Patch will directly face camera."
+    #     ),
+    # )
     parser.add_argument(
         "--reap-transform-mode",
         type=str,
@@ -292,16 +283,17 @@ def eval_args_parser(
         action="store_true",
         help="If True, apply relighting transform to patch.",
     )
+    # TODO: DEPRECATED
     parser.add_argument(
         "--min-area",
         type=float,
         default=0,
         help=(
-            "Minimum area for labels. if a label has area > min_area,"
-            "predictions correspoing to this target will be discarded"
+            "(DEPRECATED) Minimum area for labels. if a label has area > "
+            "min_area, predictions correspoing to this target will be discarded"
         ),
     )
-    # TODO: is this stil used?
+    # TODO: DEPRECATED: is this stil used?
     parser.add_argument(
         "--min-pred-area",
         type=float,
@@ -324,10 +316,6 @@ def eval_args_parser(
     )
 
     # ===================== Patch generation arguments ====================== #
-    # FIXME: deprecated: use the same dataloader as our benchmark instead
-    # parser.add_argument(
-    #     "--bg-dir", type=str, default="", help="path to background directory"
-    # )
     parser.add_argument(
         "--save-images", action="store_true", help="Save generated patch"
     )
@@ -411,9 +399,6 @@ def eval_args_parser(
             "--dnn",
             action="store_true",
             help="use OpenCV DNN for ONNX inference",
-        )
-        parser.add_argument(
-            "--model-name", default="yolov5", help="yolov5 or yolor"
         )
 
     # ============================== Plot / log ============================= #
@@ -506,7 +491,7 @@ def eval_args_parser(
 
     # Update config and fill with auto-generated params
     _update_img_size(config)
-    _update_img_txt_path(config)
+    _update_split_file(config, is_gen_patch)
     _update_syn_obj_path(config)
     _update_syn_obj_size(config)
     _update_patch_size(config)
@@ -528,7 +513,7 @@ def _verify_eval_config(config_eval: Dict[str, Any], is_detectron: bool):
     allowed_attack_types = ("none", "load", "per-sign", "random", "debug")
     allowed_yolo_models = ("yolov5", "yolor")
     allowed_datasets = ("reap", "synthetic", "mtsd", "mapillary")
-    dataset = config_eval["dataset"]
+    dataset: str = config_eval["dataset"]
 
     if config_eval["interp"] not in allowed_interp:
         raise ValueError(
@@ -543,12 +528,10 @@ def _verify_eval_config(config_eval: Dict[str, Any], is_detectron: bool):
         )
 
     # Verify dataset
-    if dataset.split("-")[0] not in allowed_datasets:
+    if dataset.split("_")[0] not in allowed_datasets:
         raise ValueError(
             f"dataset must be in {allowed_datasets}, but it is {dataset}!"
         )
-
-    # TODO: Verify patch size
 
     # Verify obj_class arg
     obj_class = config_eval["obj_class"]
@@ -567,57 +550,76 @@ def _verify_eval_config(config_eval: Dict[str, Any], is_detectron: bool):
 
 
 def _update_dataset_name(config: Dict[str, Dict[str, Any]]) -> List[str]:
-    config_eval = config["eval"]
-    dataset = config_eval["dataset"]
-    tokens = dataset.split("-")
+    """Update dataset and dataset_split in config_eval."""
+    config_eval: Dict[str, Any] = config["eval"]
+    dataset: str = config_eval["dataset"]
+    tokens: List[str] = dataset.split("-")
     if dataset in ("reap", "synthetic"):
         config_eval["use_color"] = False
-        config_eval["dt_dataset"] = dataset
         config_eval["synthetic"] = dataset == "synthetic"
         # REAP benchmark only uses annotated signs. Synthetic data use both.
         config_eval["annotated_signs_only"] = not config_eval["synthetic"]
+        split = "combined"
     else:
         assert len(tokens) in (2, 3), f"Invalid dataset: {dataset}!"
-        dataset = (
-            f"{tokens[0]}_{tokens[2]}"
-            if len(tokens) == 3
-            else f"{tokens[0]}_no_color"
-        )
+        if len(tokens) == 2:
+            base_dataset, split = tokens
+            color = "no_color"
+        else:
+            base_dataset, color, split = tokens
+        dataset: str = f"{base_dataset}_{color}"
         config_eval["synthetic"] = False
-        config_eval["use_color"] = "no_color" not in tokens
-        config_eval["dt_dataset"] = f"{tokens[0]}_{tokens[1]}"
+        config_eval["use_color"] = "color" == color
     config_eval["dataset"] = dataset
+    config_eval["dataset_split"] = split
 
 
-def _update_img_txt_path(config: Dict[str, Dict[str, Any]]) -> None:
+def _update_split_file(
+    config: Dict[str, Dict[str, Any]], is_gen_patch: bool
+) -> None:
     config_eval = config["eval"]
-    img_txt_path = config_eval["img_txt_path"]
-    dataset = config_eval["dataset"]
-    if img_txt_path is None:
-        print("img_txt_path is not specified.")
+    split_file_path: Optional[str] = config_eval["split_file_path"]
+    dataset: str = config_eval["dataset"]
+    num_bg: int = config["attack"]["common"]["num_bg"]
+    if split_file_path is None:
+        print("split_file_path is not specified.")
         return
 
-    if os.path.isfile(img_txt_path):
-        print(f"img_txt_path is specified as {img_txt_path}.")
+    if os.path.isfile(split_file_path):
+        print(f"split_file_path is specified as {split_file_path}.")
         return
 
-    # If img_txt_path is dir, we search inside that dir to find valid txt file
+    # If split_file is dir, we search inside that dir to find valid txt file
     # given obj_class.
-    path = pathlib.Path(img_txt_path)
-    if not path.is_dir():
-        raise ValueError(f"img_txt_path ({img_txt_path}) is not dir.")
-
-    class_name = LABEL_LIST[dataset][config_eval["obj_class"]]
-    path = path / dataset / f"bg_filenames_{class_name}.txt"
-    if not path.is_file():
-        raise ValueError(
-            f"img_txt_path is dir, but default file name ({str(path)}) does "
-            "not exist."
+    split_file_dir = pathlib.Path(split_file_path)
+    if not split_file_dir.is_dir():
+        raise FileNotFoundError(
+            f"split_file_path ({split_file_dir}) is not dir."
         )
 
-    img_txt_path = str(path)
-    print(f"Using the default option based on obj_class: {img_txt_path}.")
-    config_eval["img_txt_path"] = img_txt_path
+    # Try to find split file in given dir
+    split: str = "attack" if is_gen_patch else "test"
+    class_name: str = LABEL_LIST[dataset][config_eval["obj_class"]]
+    default_filename: str = f"{class_name}_{split}.txt"
+    split_file_path: pathlib.Path = split_file_dir / default_filename
+    if split_file_path.is_file():
+        print(f"Using split_file_path: {split_file_path}.")
+        config_eval["split_file_path"] = split_file_path
+        return
+
+    # Try to automatically generate correct path to split file
+    split_file_path = (
+        split_file_dir / dataset / f"bg{num_bg}" / default_filename
+    )
+    if not split_file_path.is_file():
+        raise FileNotFoundError(
+            "split_file_path is dir, but cannot find a valid split file at "
+            f"{str(split_file_path)} (auto-generated)."
+        )
+
+    split_file_path = str(split_file_path)
+    print(f"Using auto-generated split_file_path: {split_file_path}.")
+    config_eval["split_file_path"] = split_file_path
 
 
 def _update_syn_obj_path(config: Dict[str, Dict[str, Any]]) -> None:
@@ -701,69 +703,71 @@ def _update_save_dir(config: Dict[str, Dict[str, Any]]) -> None:
     synthetic = config_eval["synthetic"]
 
     # Automatically generate experiment name
-    exp_name: str = config_eval["name"]
-    if config_eval["name"] is None:
-        token_list: List[str] = []
-        token_list.append(config_eval["dataset"])
-        token_list.append(config_eval["attack_type"])
+    token_list: List[str] = []
+    token_list.append(config_eval["dataset"])
+    token_list.append(config_eval["model_name"])
+    token_list.append(config_eval["attack_type"])
 
-        if config_eval["attack_type"] != "none":
+    if config_eval["attack_type"] != "none":
 
-            # Gather dataset-specific transform params
-            if synthetic:
-                for param in _TRANSFORM_PARAMS:
-                    if "syn" in param:
-                        token_list.append(str(config_atk[param]))
-            if not config_atk["reap_use_relight"]:
-                token_list.append("nolight")
-            if config_atk["reap_transform_mode"] != "perspective":
-                token_list.append(config_atk["reap_transform_mode"])
+        # Gather dataset-specific transform params
+        if synthetic:
+            for param in _TRANSFORM_PARAMS:
+                if "syn" in param:
+                    token_list.append(str(config_atk[param]))
+        if not config_atk["reap_use_relight"]:
+            token_list.append("nolight")
+        if config_atk["reap_transform_mode"] != "perspective":
+            token_list.append(config_atk["reap_transform_mode"])
 
-            token_list.append(f"pd{config_atk['patch_dim']}")
-            token_list.append(f"bg{config_atk['num_bg']}")
+        token_list.append(f"pd{config_atk['patch_dim']}")
+        token_list.append(f"bg{config_atk['num_bg']}")
 
-            # Geometric transform augmentation
-            if config_atk["aug_prob_geo"] > 0:
-                aug_3d_dist = config_atk["aug_3d_dist"]
-                if aug_3d_dist is not None and aug_3d_dist > 0:
-                    params = ["aug_prob_geo", "aug_3d_dist"]
-                else:
-                    params = [
-                        "aug_prob_geo",
-                        "aug_rotate",
-                        "aug_translate",
-                        "aug_scale",
-                    ]
-                aug_geo_tokens = []
-                for param in params:
-                    aug_geo_tokens.append(str(config_atk[param]))
-                token_list.append("auggeo" + "_".join(aug_geo_tokens))
+        # Geometric transform augmentation
+        if config_atk["aug_prob_geo"] > 0:
+            aug_3d_dist = config_atk["aug_3d_dist"]
+            if aug_3d_dist is not None and aug_3d_dist > 0:
+                params = ["aug_prob_geo", "aug_3d_dist"]
+            else:
+                params = [
+                    "aug_prob_geo",
+                    "aug_rotate",
+                    "aug_translate",
+                    "aug_scale",
+                ]
+            aug_geo_tokens = []
+            for param in params:
+                aug_geo_tokens.append(str(config_atk[param]))
+            token_list.append("auggeo" + "_".join(aug_geo_tokens))
 
-            # Lighting augmentation (color jitter)
-            aug_cj = config_atk["aug_prob_colorjitter"]
-            if aug_cj is not None and aug_cj > 0:
-                light = (
-                    f"augcj{config_atk['aug_prob_colorjitter']}_"
-                    f"{config_atk['aug_colorjitter']}"
-                )
-                token_list.append(light)
+        # Lighting augmentation (color jitter)
+        aug_cj = config_atk["aug_prob_colorjitter"]
+        if aug_cj is not None and aug_cj > 0:
+            light = (
+                f"augcj{config_atk['aug_prob_colorjitter']}_"
+                f"{config_atk['aug_colorjitter']}"
+            )
+            token_list.append(light)
 
-            # Background image augmentation params
-            img_aug_prob_geo: Optional[float] = config_atk["img_aug_prob_geo"]
-            if img_aug_prob_geo is not None and img_aug_prob_geo > 0:
-                token_list.append(f"augimg{img_aug_prob_geo}")
+        # Background image augmentation params
+        img_aug_prob_geo: Optional[float] = config_atk["img_aug_prob_geo"]
+        if img_aug_prob_geo is not None and img_aug_prob_geo > 0:
+            token_list.append(f"augimg{img_aug_prob_geo}")
 
-            attack_name: str = config_atk["attack_name"]
-            atk_params: Dict[str, Any] = config["attack"][attack_name]
-            # Sort attack-specific params so we can print all at once
-            atk_params = dict(sorted(atk_params.items()))
-            atk_params_list: List[str] = [
-                str(v) for v in atk_params.values() if not isinstance(v, dict)
-            ]
-            token_list.append(attack_name + "_".join(atk_params_list))
+        attack_name: str = config_atk["attack_name"]
+        atk_params: Dict[str, Any] = config["attack"][attack_name]
+        # Sort attack-specific params so we can print all at once
+        atk_params = dict(sorted(atk_params.items()))
+        atk_params_list: List[str] = [
+            str(v) for v in atk_params.values() if not isinstance(v, dict)
+        ]
+        token_list.append(attack_name + "_".join(atk_params_list))
 
-        exp_name = "-".join(token_list)
-        config_eval["name"] = exp_name
+    # Append custom name at the end
+    exp_name = "-".join(token_list)
+    if config_eval["name"] is not None:
+        exp_name += "_" + str(config_eval["name"])
+    config_eval["name"] = exp_name
 
     class_name = LABEL_LIST[config_eval["dataset"]][config_eval["obj_class"]]
     save_dir = os.path.join(config_eval["base_dir"], exp_name, class_name)
@@ -818,9 +822,11 @@ def _update_result_dir(config: Dict[str, Dict[str, Any]]) -> None:
 
 def setup_detectron_test_args(
     config: Dict[str, Dict[str, Any]]
-) -> detectron2_config.CfgNode:
+) -> detectron2.config.CfgNode:
     """Create configs and perform basic setups."""
     config_eval = config["eval"]
+    dataset: str = config_eval["dataset"]
+    split: str = config_eval["dataset_split"]
 
     # Set default path to load adversarial patch
     if not config_eval["adv_patch_path"]:
@@ -828,13 +834,12 @@ def setup_detectron_test_args(
             config_eval["save_dir"], "adv_patch.pkl"
         )
 
-    cfg = detectron2_config.get_cfg()
+    cfg = detectron2.config.get_cfg()
     cfg.merge_from_file(config_eval["config_file"])
     cfg.merge_from_list(config_eval["opts"])
-    dataset = config_eval["dataset"]
 
     # Copy dataset from args
-    cfg.DATASETS.TEST = (config_eval["dt_dataset"],)
+    cfg.DATASETS.TEST = (f"{dataset}_{split}",)
     cfg.SOLVER.IMS_PER_BATCH = 1
     cfg.INPUT.CROP.ENABLED = False  # Turn off augmentation for testing
     cfg.DATALOADER.NUM_WORKERS = config_eval["workers"]
@@ -864,6 +869,9 @@ def setup_detectron_test_args(
     cfg.MODEL.WEIGHTS = weight_path
 
     cfg.freeze()
+    # Set cfg as global variable so we can avoid passing cfg around
+    detectron2.config.set_global_cfg(cfg)
+    config_eval.pop("config_file")  # Remove to avoid logging
     default_setup(cfg, argparse.Namespace(**config_eval))
     return cfg
 

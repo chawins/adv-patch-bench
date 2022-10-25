@@ -4,37 +4,31 @@ import os
 import pickle
 import random
 from os.path import join
-from typing import Any, Dict, Callable, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
+import detectron2
 import numpy as np
 import pandas as pd
 import torch
 import torch.backends.cudnn as cudnn
 import torchvision
 import yaml
-from detectron2 import data, engine
 from tqdm import tqdm
-from adv_patch_bench.transforms import (
-    render_image,
-    syn_object,
-    reap_object,
-)
 
+import adv_patch_bench.data.detectron.util as data_util
+import adv_patch_bench.data.reap_util as reap_util
 import adv_patch_bench.utils.argparse as args_util
-import adv_patch_bench.utils.reap as reap_util
-from adv_patch_bench.attacks import (
-    attacks,
-    base_attack,
-    patch_mask_util,
-)
-from adv_patch_bench.dataloaders import dataloaders
-from adv_patch_bench.dataloaders.detectron import custom_build
-from adv_patch_bench.dataloaders.detectron.mapper import BenignMapper
-from adv_patch_bench.utils.detectron.custom_sampler import (
-    ShuffleInferenceSampler,
+from adv_patch_bench.attacks import attacks, base_attack, patch_mask_util
+from adv_patch_bench.data.detectron import custom_build, custom_sampler, mapper
+from adv_patch_bench.transforms import reap_object, render_image, syn_object
+from adv_patch_bench.utils.types import (
+    DetectronSample,
+    ImageTensor,
+    MaskTensor,
+    SizeMM,
+    SizePx,
 )
 from hparams import LABEL_LIST, MAPILLARY_IMG_COUNTS_DICT
-from adv_patch_bench.utils.types import SizeMM, SizePx, ImageTensor, MaskTensor
 
 
 def collect_attack_rimgs(
@@ -50,7 +44,6 @@ def collect_attack_rimgs(
 ) -> List[render_image.RenderImage]:
     """Collect background images to be used by the attack.
 
-    # TODO
     Args:
         dataset: Name of dataset.
         dataloader: Detectron data loader.
@@ -69,7 +62,7 @@ def collect_attack_rimgs(
             attack.
         metadata: List of metadata of original background image, used as part of
             input to detectron model.
-        backgrond: Numpy array of background images
+        backgrond: Numpy array of background images.
     """
     if rimg_kwargs is None:
         raise ValueError("rimg_kwargs must not be specified!")
@@ -86,18 +79,13 @@ def collect_attack_rimgs(
 
     rimg_list: List[render_image.RenderImage] = []
     num_collected: int = 0
-
     print("=> Collecting background images...")
-
-    # DEBUG: count images
-    # counts = [0] * 12
-    # class_names = LABEL_LIST[args.dataset]
 
     for _, batch in tqdm(enumerate(dataloader)):
         file_name = batch[0]["file_name"]
         filename = file_name.split("/")[-1]
 
-        # If img_txt_path is specified, ignore other file names
+        # If split_file_path is specified, ignore other file names
         if filter_file_names is not None and filename not in filter_file_names:
             continue
 
@@ -125,11 +113,6 @@ def collect_attack_rimgs(
             if attack_obj_df is None:
                 continue
             attack_obj_id = attack_obj_df["object_id"]
-            # DEBUG
-            # obj_labels = np.unique(img_df['final_shape'])
-            # for obj_label in obj_labels:
-            #     lb = class_names.index(obj_label)
-            #     counts[lb] += 1
         else:
             # No df provided or don't care about class
             found = True
@@ -144,19 +127,10 @@ def collect_attack_rimgs(
             )
             rimg.create_object(attack_obj_id, robj_fn, robj_kwargs)
             rimg_list.append(rimg)
-            # img_data = (h0, w0, h / h0, w / w0, 0, pad_top)
-            # data = [obj_label, obj, *img_data]
-            # attack_bgs.append([image, data, str(filename), batch[0]])
-            # metadata.extend(batch)
-            # if num_collected < num_bg:
-            #     attack_bg_syn[num_collected] = image
             num_collected += 1
 
-        # num_collected += 1
         if num_collected >= num_bg:
             break
-
-    # print('======> ', counts, num_collected)
 
     print(f"=> {len(rimg_list)} backgrounds collected.")
     return rimg_list[:num_bg]
@@ -210,56 +184,55 @@ def generate_adv_patch(
     return adv_patch, patch_mask
 
 
-def main(
-    config: Dict[str, Dict[str, Any]],
-    num_samples: int = int(1e9),
-) -> None:
+def main(config: Dict[str, Dict[str, Any]]) -> None:
     """Main function for generating patch.
 
     Args:
-        config: Config dict containing eval and attack dicts.
-        num_samples: Number of samples in test set. Defaults to 1e9.
+        config: Config dict containing eval and attack config dicts.
     """
     config_eval: Dict[str, Any] = config["eval"]
     config_attack: Dict[str, Dict[str, Any]] = config["attack"]
     config_atk_common: Dict[str, Any] = config_attack["common"]
     img_size: SizePx = config_eval["img_size"]
     dataset: str = config_eval["dataset"]
-    img_txt_path: str = config_eval["img_txt_path"]
+    split_file_path: str = config_eval["split_file_path"]
     obj_class: int = config_eval["obj_class"]
     synthetic: bool = config_eval["synthetic"]
     save_dir: str = config_eval["save_dir"]
     interp: str = config_eval["interp"]
     num_bg: Union[int, float] = config_atk_common["num_bg"]
-    df: pd.DataFrame = reap_util.load_annotation_df(config_eval["tgt_csv_filepath"])
+    df: pd.DataFrame = reap_util.load_annotation_df(
+        config_eval["tgt_csv_filepath"]
+    )
     class_name: str = LABEL_LIST[dataset][obj_class]
 
     # Set up model from config
-    model = engine.DefaultPredictor(cfg).model
-
-    filter_file_names: Optional[List[str]]
-    if img_txt_path is not None:
-        print(f"Loading file names from {img_txt_path}...")
-        with open(img_txt_path, "r") as f:
-            filter_file_names = f.read().splitlines()
-    else:
-        filter_file_names = None
+    model = detectron2.engine.DefaultPredictor(cfg).model
 
     # Build dataloader
+    data_dicts: List[DetectronSample] = detectron2.data.DatasetCatalog.get(
+        config_eval["dataset"]
+    )
+    split_file_names: Optional[List[str]] = None
+    num_samples: int = len(data_dicts)
+    if split_file_path is not None:
+        print(f"Loading file names from {split_file_path}...")
+        with open(split_file_path, "r") as f:
+            split_file_names = f.read().splitlines()
+        # Update num samples
+        num_samples = len(split_file_names)
+
     # pylint: disable=too-many-function-args
     dataloader = custom_build.build_detection_test_loader(
-        cfg,
-        cfg.DATASETS.TEST[0],
-        mapper=BenignMapper(cfg, is_train=False),
+        data_dicts,
+        mapper=mapper.BenignMapper(cfg, is_train=False),
         batch_size=1,
         num_workers=cfg.DATALOADER.NUM_WORKERS,
         # Used for random sampling background images from new dataset.
-        # We recommend using a pre-defined file names in img_txt_path.
-        sampler=ShuffleInferenceSampler(
-            num_samples if filter_file_names is None else len(filter_file_names)
-        ),
+        # We recommend using a pre-defined file names in split_file_path.
+        sampler=custom_sampler.ShuffleInferenceSampler(num_samples),
         pin_memory=True,
-        filter_file_names=filter_file_names,
+        split_file_names=split_file_names,
     )
 
     rimg_kwargs: Dict[str, Any] = {
@@ -302,16 +275,18 @@ def main(
         robj_fn,
         anno_df=df,
         class_name=class_name,
-        filter_file_names=filter_file_names,
+        filter_file_names=split_file_names,
         rimg_kwargs=rimg_kwargs,
         robj_kwargs=robj_kwargs,
     )
 
-    # Save background filenames in txt file
-    print("=> Saving used attack_bg_syn in a txt file.")
-    with open(join(save_dir, f"bg_filenames-{num_bg}.txt"), "w") as f:
-        for rimg in attack_rimgs:
-            f.write(f"{rimg._filename}\n")
+    # Save background filenames in txt file if split_file_path was not given
+    if split_file_names is None:
+        print("=> Saving names of images used to generate patch in txt file.")
+        split_file_path = join(save_dir, f"{class_name}_attack_bg{num_bg}.txt")
+        with open(split_file_path, "w") as f:
+            for rimg in attack_rimgs:
+                f.write(f"{rimg.filename}\n")
 
     if config_eval["debug"]:
         # Save all the background images
@@ -347,7 +322,9 @@ def main(
 
 
 if __name__ == "__main__":
-    config: Dict[str, Dict[str, Any]] = args_util.eval_args_parser(True)
+    config: Dict[str, Dict[str, Any]] = args_util.eval_args_parser(
+        True, is_gen_patch=True
+    )
     # Verify some args
     cfg = args_util.setup_detectron_test_args(config)
     config_eval: Dict[str, Any] = config["eval"]
@@ -366,8 +343,7 @@ if __name__ == "__main__":
     np.random.seed(seed)
     random.seed(seed)
 
-    dataloaders.setup_dataloader(config_eval, cfg)
-    data_list = data.DatasetCatalog.get(config_eval["dataset"])
-    num_samples: int = len(data_list)
+    # Register Detectron2 dataset
+    data_util.register_dataset(config_eval)
 
-    main(config, num_samples=num_samples)
+    main(config)

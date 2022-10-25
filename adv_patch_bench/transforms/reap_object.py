@@ -9,7 +9,7 @@ import kornia.geometry.transform as kornia_tf
 import numpy as np
 import pandas as pd
 import torch
-from adv_patch_bench.transforms import render_object, verifier
+from adv_patch_bench.transforms import geometric_tf, render_object
 from adv_patch_bench.utils.types import (
     ImageTensor,
     ImageTensorRGBA,

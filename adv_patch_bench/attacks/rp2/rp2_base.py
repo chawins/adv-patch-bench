@@ -10,7 +10,6 @@ import torch.optim as optim
 from adv_patch_bench.attacks import base_attack
 from adv_patch_bench.transforms import render_image
 from adv_patch_bench.utils.types import MaskTensor, ImageTensor, Target
-# from adv_patch_bench.utils.image import coerce_rank, mask_to_box, resize_and_pad
 
 # from yolov5.utils.general import non_max_suppression
 # from yolov5.utils.plots import output_to_target, plot_images
@@ -258,7 +257,7 @@ class RP2AttackModule(base_attack.DetectorAttackModule):
         x = x * b + a
         return x
 
-    def _print_loss(self, loss, step):
+    def _print_loss(self, loss: torch.Tensor, step: int) -> None:
         if self.ema_loss is None:
             self.ema_loss = loss.item()
         else:

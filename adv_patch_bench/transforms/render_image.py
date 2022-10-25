@@ -81,9 +81,9 @@ class RenderImage:
         Raises:
             ValueError: Invalid img_mode.
         """
+        self.filename: str = img_df["filename"]
         self._dataset: str = dataset
         self._img_df: pd.DataFrame = img_df
-        self._filename: str = img_df["filename"]
         self._interp: str = interp
         self._device: Any = device
         self._is_detectron: bool = is_detectron
@@ -124,7 +124,7 @@ class RenderImage:
         self.obj_tf_dict: Dict[int, render_object.RenderObject] = OrderedDict()
 
         # Init augmentation transform for image
-        self._aug_geo_img: TransformFn
+        self._aug_geo_img: TransformFn = util._identity
         if img_aug_prob_geo is not None and img_aug_prob_geo > 0:
             self._aug_geo_img = K.RandomResizedCrop(
                 self.img_size,
@@ -132,8 +132,6 @@ class RenderImage:
                 p=img_aug_prob_geo,
                 resample=interp,
             )
-        else:
-            self._aug_geo_img = util._identity
 
     def _resize_image(self, image: ImageTensor) -> Tuple[ImageTensor, SizePx]:
         """Resize or pad image to self.img_size.
@@ -211,7 +209,7 @@ class RenderImage:
         robj: render_object.RenderObject = robj_fn(
             dataset=self._dataset,
             obj_df=obj_df,
-            filename=self._filename,
+            filename=self.filename,
             img_size=self.img_size,
             img_size_orig=self.img_size_orig,
             img_hw_ratio=self.size_ratio,
@@ -298,13 +296,8 @@ class RenderImage:
             raise ValueError(f"obj_id {obj_id} does not exist!")
         return self.obj_tf_dict[obj_id]
 
-    def apply_objects(
-        self, aug_img: bool = False
-    ) -> Tuple[ImageTensor, Target]:
+    def apply_objects(self) -> Tuple[ImageTensor, Target]:
         """Apply all RenderObjects in obj_tf_list to image.
-
-        Args:
-            aug_img: If True, run augmentation transform on image.
 
         Returns:
             Image with patches and other objects applied.
@@ -316,8 +309,8 @@ class RenderImage:
             image, target = obj_tf.apply_object(image, target)
 
         # Apply augmentation on the entire image
-        if aug_img:
-            image = self._aug_geo_img(image)
+        image = self._aug_geo_img(image)
+        image = img_util.coerce_rank(image, 3)
 
         return image, target
 
@@ -374,5 +367,5 @@ class RenderImage:
         if image is None:
             image = self.image
         torchvision.utils.save_image(
-            self.image, os.path.join(save_dir, f"{self._filename}.{ext}")
+            self.image, os.path.join(save_dir, f"{self.filename}.{ext}")
         )

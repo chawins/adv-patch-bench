@@ -23,7 +23,7 @@ from torchvision.utils import save_image
 import wandb
 from adv_patch_bench.attacks import setup_eval_attacker, setup_train_attacker
 from adv_patch_bench.attacks.patch import PatchAttackModule
-from adv_patch_bench.dataloaders import load_dataset
+from adv_patch_bench.data import load_dataset
 from adv_patch_bench.models import build_classifier
 from adv_patch_bench.utils import (AverageMeter, ProgressMeter, TRADESLoss,
                                    accuracy, adjust_learning_rate, get_rank,

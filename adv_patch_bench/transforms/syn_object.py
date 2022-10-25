@@ -70,7 +70,7 @@ class SynObject(render_object.RenderObject):
         )
 
         # Set up transforms for synthetic object
-        transforms = util.init_syn_transforms(
+        transforms = util.get_transform_fn(
             prob_geo=1.0,
             syn_rotate=syn_rotate,
             syn_scale=syn_scale,

@@ -1,38 +1,41 @@
 """Test script for Detectron2 models."""
 
+import contextlib
 import hashlib
+import io
 import json
 import logging
 import os
 import pickle
 import random
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
+import detectron2
 import numpy as np
 import pandas as pd
 import torch
 import yaml
-from detectron2 import config, data, engine
+from detectron2.data.datasets.coco import convert_to_coco_json
+from detectron2.utils.file_io import PathManager
 
-from adv_patch_bench.dataloaders import BenignMapper, dataloaders
-from adv_patch_bench.evaluators.detectron_evaluator import DetectronEvaluator
+import adv_patch_bench.data.detectron.util as data_util
+from adv_patch_bench.data.detectron import custom_build, mapper
+from adv_patch_bench.evaluators import detectron_evaluator
 from adv_patch_bench.utils.argparse import (
     eval_args_parser,
     setup_detectron_test_args,
 )
+from adv_patch_bench.utils.types import DetectronSample
 from hparams import LABEL_LIST
+from pycocotools.coco import COCO
 
 log = logging.getLogger(__name__)
 formatter = logging.Formatter("[%(levelname)s] %(asctime)s: %(message)s")
 
 _EVAL_PARAMS = [
-    "adv_patch_path",
-    "attack_type",
     "conf_thres",
-    "config_file",
     "dataset",
     "debug",
-    "obj_class",
     "interp",
     "num_eval",
     "padded_imgsz",
@@ -42,19 +45,50 @@ _EVAL_PARAMS = [
     "seed",
     "syn_3d_dist",
     "syn_colorjitter",
-    "obj_size_px",
+    "syn_obj_width_px",
     "syn_rotate",
     "syn_scale",
     "syn_colorjitter",
     "syn_3d_dist",
+    "model_name",
     "weights",
 ]
 
 
+def _hash(obj: str) -> str:
+    return hashlib.sha512(obj.encode("utf-8")).hexdigest()[:8]
+
+
+def _get_img_ids(dataset: str, obj_class: int) -> List[int]:
+    """Get ids of images that contain desired object class."""
+    metadata = detectron2.data.MetadataCatalog.get(dataset)
+    if not hasattr(metadata, "json_file"):
+        cache_path = os.path.join(cfg.OUTPUT_DIR, f"{dataset}_coco_format.json")
+        metadata.json_file = cache_path
+        convert_to_coco_json(dataset, cache_path)
+
+    json_file = PathManager.get_local_path(metadata.json_file)
+    with contextlib.redirect_stdout(io.StringIO()):
+        coco_api = COCO(json_file)
+    img_ids: List[int] = coco_api.getImgIds(catIds=[obj_class])
+    return img_ids
+
+
+def _get_filename_from_id(
+    data_dicts: List[DetectronSample], img_ids: List[int]
+) -> List[str]:
+    filenames: List[str] = []
+    img_ids_set = set(img_ids)
+    for data in data_dicts:
+        if data["image_id"] in img_ids_set:
+            filenames.append(data["file_name"].split("/")[-1])
+    return filenames
+
+
 def _hash_dict(config_dict: Dict[str, Any]) -> str:
-    dict_str = json.dumps(config_dict, sort_keys=True).encode("utf-8")
+    dict_str = json.dumps(config_dict, sort_keys=True)
     # Take first 8 characters of the hash since we prefer short file name
-    return hashlib.sha512(dict_str).hexdigest()[:8]
+    return _hash(dict_str)
 
 
 def _normalize_dict(d: Dict[str, Any], sep: str = ".") -> Dict[str, Any]:
@@ -181,23 +215,26 @@ def _dump_results(
     config_attack_hash = _hash_dict({"name": config_eval["name"]})
     result_path = os.path.join(
         result_dir,
-        f"results_eval{config_eval_hash}_atk{config_attack_hash}.pkl",
+        (
+            f"results_eval{config_eval_hash}_atk{config_attack_hash}_"
+            f"split{config_eval['split_file_hash']}.pkl"
+        ),
     )
     with open(result_path, "wb") as f:
         pickle.dump(results, f)
 
 
-def main(cfg: config.CfgNode, config: Dict[str, Dict[str, Any]]):
+def main(config: Dict[str, Dict[str, Any]]):
     """Main function.
 
     Args:
-        cfg: Detectron config.
         config: Config dict for both eval and attack.
     """
     config_eval: Dict[str, Any] = config["eval"]
-    dataset = config_eval["dataset"]
-    attack_config_path = config_eval["attack_config_path"]
-    class_names = LABEL_LIST[dataset]
+    dataset: str = config_eval["dataset"]
+    attack_config_path: str = config_eval["attack_config_path"]
+    split_file_path: str = config_eval["split_file_path"]
+    class_names: List[str] = LABEL_LIST[dataset]
 
     # Load adversarial patch and config
     if os.path.isfile(attack_config_path):
@@ -209,24 +246,42 @@ def main(cfg: config.CfgNode, config: Dict[str, Dict[str, Any]]):
         config_attack = config["attack"]
 
     # Build model
-    model = engine.DefaultPredictor(cfg).model
+    model = detectron2.engine.DefaultPredictor(cfg).model
 
     # Build dataloader
-    # pylint: disable=too-many-function-args
-    val_loader = data.build_detection_test_loader(
-        cfg,
-        cfg.DATASETS.TEST[0],
-        mapper=BenignMapper(cfg, is_train=False),
+    # First, get list of file names to evaluate on
+    data_dicts: List[DetectronSample] = detectron2.data.DatasetCatalog.get(
+        config_eval["dataset"]
+    )
+    split_file_names: Optional[List[str]] = None
+    if split_file_path is not None:
+        print(f"Loading file names from {split_file_path}...")
+        with open(split_file_path, "r") as f:
+            split_file_names = set(f.read().splitlines())
+
+    # Filter only images with desired class when evaluating on REAP
+    if dataset == "reap":
+        img_ids = _get_img_ids(dataset, config_eval["obj_class"])
+        class_file_names = set(_get_filename_from_id(data_dicts, img_ids))
+        split_file_names = split_file_names.intersection(class_file_names)
+
+    # Keep hash of split files in config eval for naming dumped results
+    config_eval["split_file_hash"] = _hash(str(sorted(split_file_names)))
+
+    dataloader = custom_build.build_detection_test_loader(
+        data_dicts,
+        mapper=mapper.BenignMapper(cfg, is_train=False),
         batch_size=1,
         num_workers=cfg.DATALOADER.NUM_WORKERS,
+        pin_memory=True,
+        split_file_names=split_file_names,
     )
 
-    evaluator = DetectronEvaluator(
-        cfg,
+    evaluator = detectron_evaluator.DetectronEvaluator(
         config_eval,
         config_attack,
         model,
-        val_loader,
+        dataloader,
         class_names=class_names,
     )
     log.info("=> Running attack...")
@@ -295,17 +350,21 @@ def main(cfg: config.CfgNode, config: Dict[str, Dict[str, Any]]):
         metrics["TPR-all"] = tp_all / total
         metrics["FPR-all"] = fp_all / total
         log.info(f'Total num patches: {metrics["total_num_patches"]}')
-        _dump_results(results, config_eval, config_attack)
+        _dump_results(results, config_eval)
 
 
 if __name__ == "__main__":
-    config: Dict[str, Dict[str, Any]] = eval_args_parser(True)
+    config: Dict[str, Dict[str, Any]] = eval_args_parser(
+        True, is_gen_patch=False
+    )
     cfg = setup_detectron_test_args(config)
+
     config_eval: Dict[str, Any] = config["eval"]
     seed: int = config_eval["seed"]
+    log_level: int = logging.DEBUG if config_eval["debug"] else logging.WARNING
 
     # Set up logger
-    log.setLevel(logging.DEBUG if config_eval["debug"] else logging.INFO)
+    log.setLevel(log_level)
     file_handler = logging.FileHandler(
         os.path.join(config_eval["result_dir"], "results.log"), mode="a"
     )
@@ -313,11 +372,17 @@ if __name__ == "__main__":
     log.addHandler(file_handler)
     log.info(config)
 
+    dt_log = logging.getLogger("detectron2")
+    dt_log.setLevel(log_level)
+    dt_log = logging.getLogger("fvcore")
+    dt_log.setLevel(log_level)
+
     # Set random seeds
     torch.random.manual_seed(seed)
     np.random.seed(seed)
     random.seed(seed)
 
-    dataloaders.setup_dataloader(config_eval, cfg)
+    # Register Detectron2 dataset
+    data_util.register_dataset(config_eval)
 
-    main(cfg, config)
+    main(config)

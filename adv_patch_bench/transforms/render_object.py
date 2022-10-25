@@ -154,7 +154,7 @@ class RenderObject:
         # Initialize augmentation for patch and object
         if patch_aug_params is None:
             patch_aug_params = {}
-        transforms = util.init_syn_transforms(
+        transforms = util.get_transform_fn(
             prob_geo=patch_aug_params.get("aug_prob_geo"),
             syn_rotate=patch_aug_params.get("aug_rotate"),
             syn_scale=patch_aug_params.get("aug_scale"),
@@ -246,7 +246,7 @@ class RenderObject:
         Returns:
             Object mask, source points for geometric transform.
         """
-        shape = OBJ_DIM_DICT[self._dataset]["shape"][self.obj_class]
+        shape: str = OBJ_DIM_DICT[self._dataset]["shape"][self.obj_class]
         obj_mask, src = util.gen_sign_mask(
             shape, self.hw_ratio, self.obj_size_px[1]
         )

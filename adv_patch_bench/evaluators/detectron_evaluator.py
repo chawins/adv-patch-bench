@@ -6,13 +6,15 @@ model-specific from the main test script.
 This code is inspired by
 https://github.com/yizhe-ang/detectron2-1/blob/master/detectron2_1/adv.py
 """
+
 import pathlib
 from typing import Any, Dict, List, Optional, Tuple
 
-import adv_patch_bench.utils.reap as reap_util
+from adv_patch_bench.data import reap_util
 import numpy as np
 import pandas as pd
 import torch
+import adv_patch_bench.utils.detectron.custom_coco_evaluator as cocoeval
 from adv_patch_bench.attacks import attack_util, attacks, base_attack
 from adv_patch_bench.transforms import (
     reap_object,
@@ -20,7 +22,6 @@ from adv_patch_bench.transforms import (
     render_object,
     syn_object,
 )
-from adv_patch_bench.utils.detectron import build_evaluator
 from adv_patch_bench.utils.types import (
     ImageTensor,
     ImageTensorDet,
@@ -31,7 +32,7 @@ from adv_patch_bench.utils.types import (
     Target,
 )
 from detectron2 import structures
-from detectron2.config import CfgNode
+from detectron2.config import global_cfg
 from detectron2.data import MetadataCatalog
 from detectron2.structures.boxes import pairwise_iou
 from detectron2.utils.visualizer import Visualizer
@@ -47,7 +48,6 @@ class DetectronEvaluator:
 
     def __init__(
         self,
-        cfg: CfgNode,
         config_eval: Dict[str, Any],
         config_attack: Dict[str, Any],
         model: torch.nn.Module,
@@ -58,7 +58,6 @@ class DetectronEvaluator:
         """Evaluator wrapper for detectron model.
 
         Args:
-            cfg: Detectron model config.
             config_eval: Dictionary containing eval parameters.
             config_attack: Dictionary containing attack parameters.
             model: Target model.
@@ -67,14 +66,13 @@ class DetectronEvaluator:
             all_iou_thres: Array of IoU thresholds for computing score.
         """
         # General params
-        # cfg can be modified by model so we copy it first
         self._dataset: str = config_eval["dataset"]
         self._synthetic: bool = config_eval["synthetic"]
         self._model: torch.nn.Module = model
         self._device: Any = self._model.device
         self._dataloader = dataloader
-        self._input_format: str = cfg.INPUT.FORMAT
-        self._metadata = MetadataCatalog.get(cfg.DATASETS.TEST[0])
+        self._input_format: str = global_cfg.INPUT.FORMAT
+        self._metadata = MetadataCatalog.get(global_cfg.DATASETS.TEST[0])
         self._verbose: bool = config_eval["verbose"]
         self._debug: bool = config_eval["debug"]
 
@@ -95,7 +93,7 @@ class DetectronEvaluator:
             "img_size": self._img_size if self._fixed_input_size else None,
             "img_mode": self._input_format,
             "interp": interp,
-            "img_aug_prob_geo": config_attack["common"]["img_aug_prob_geo"],
+            "img_aug_prob_geo": config_eval["img_aug_prob_geo"],
             "is_detectron": True,
         }
 
@@ -105,25 +103,14 @@ class DetectronEvaluator:
         )
         self._annotated_signs_only: bool = config_eval["annotated_signs_only"]
 
-        # Loading file names from the specified text file
-        # TODO(feature): handle skipping files in dataloader.
-        self._skipped_filename_list: List[str] = []
-        img_txt_path: Optional[str] = config_eval["img_txt_path"]
-        if img_txt_path is not None:
-            print(f"Loading file names from {img_txt_path}...")
-            with open(img_txt_path, "r") as f:
-                self._skipped_filename_list = f.read().splitlines()
-
-        self._run_only_img_txt: bool = False
-        if config_eval["run_only_img_txt"] is not None:
-            self._run_only_img_txt = config_eval["run_only_img_txt"]
-        if self._run_only_img_txt:
-            print("Evaluation will run only on these files.")
-        else:
-            print("Evaluation will skip these files.")
-
         # Build COCO evaluator
-        self.evaluator = build_evaluator(cfg, cfg.DATASETS.TEST[0])
+        self.evaluator = cocoeval.CustomCOCOEvaluator(
+            self._dataset,
+            ["bbox"],
+            False,
+            output_dir=global_cfg.OUTPUT_DIR,
+            use_fast_impl=False,
+        )
 
         # Set up list of IoU thresholds to consider
         self._all_iou_thres = torch.from_numpy(all_iou_thres).to(self._device)
@@ -263,6 +250,7 @@ class DetectronEvaluator:
             patch_mask = patch_mask.to(self._device)
 
         total_num_images, total_num_patches, num_vis = 0, 0, 0
+        eval_img_ids: List[int] = []
         self.evaluator.reset()
         self._reset_syn_metrics()
 
@@ -281,13 +269,6 @@ class DetectronEvaluator:
 
             if self._annotated_signs_only and img_df.empty:
                 # Skip image if there's no annotation
-                continue
-
-            # Skip (or only run on) files listed in the txt file
-            in_list = filename in self._skipped_filename_list
-            if (in_list and not self._run_only_img_txt) or (
-                not in_list and self._run_only_img_txt
-            ):
                 continue
 
             rimg: render_image.RenderImage = render_image.RenderImage(
@@ -371,6 +352,7 @@ class DetectronEvaluator:
                 instance_dicts = self._create_instance_dicts(outputs, image_id)
                 coco_instances_results.extend(instance_dicts)
             total_num_images += 1
+            eval_img_ids.append(image_id)
 
             # Visualization
             if num_vis < self._num_vis:
@@ -386,10 +368,13 @@ class DetectronEvaluator:
                 }
             }
         else:
-            metrics = self.evaluator.evaluate()
+            metrics = self.evaluator.evaluate(img_ids=eval_img_ids)
+        if "bbox" not in metrics:
+            self._log("There are no valid predictions.")
+            return coco_instances_results, metrics
+
         metrics["bbox"]["total_num_patches"] = total_num_patches
         metrics["bbox"]["all_iou_thres"] = self._all_iou_thres.cpu().numpy()
-
         return coco_instances_results, metrics
 
     def _visualize(
@@ -460,11 +445,11 @@ class DetectronEvaluator:
         """Convert model outputs to coco predictions format.
 
         Args:
-            outputs (Dict[str, Any]): Output dictionary from model output
-            image_id (int): Image ID
+            outputs: Output dictionary from model output.
+            image_id: Image ID
 
         Returns:
-            List[Dict[str, Any]]: List of per instance predictions
+            List of per instance predictions
         """
         instance_dicts = []
 
