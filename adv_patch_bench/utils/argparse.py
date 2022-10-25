@@ -117,6 +117,12 @@ def eval_args_parser(
         ),
     )
     parser.add_argument(
+        "--model-name",
+        type=str,
+        default="faster_rcnn",
+        help="Set model name (faster_rcnn, yolov5, yolor).",
+    )
+    parser.add_argument(
         "--weights",
         nargs="+",
         type=str,
@@ -393,9 +399,6 @@ def eval_args_parser(
             "--dnn",
             action="store_true",
             help="use OpenCV DNN for ONNX inference",
-        )
-        parser.add_argument(
-            "--model-name", default="yolov5", help="yolov5 or yolor"
         )
 
     # ============================== Plot / log ============================= #
@@ -700,69 +703,71 @@ def _update_save_dir(config: Dict[str, Dict[str, Any]]) -> None:
     synthetic = config_eval["synthetic"]
 
     # Automatically generate experiment name
-    exp_name: str = config_eval["name"]
-    if config_eval["name"] is None:
-        token_list: List[str] = []
-        token_list.append(config_eval["dataset"])
-        token_list.append(config_eval["attack_type"])
+    token_list: List[str] = []
+    token_list.append(config_eval["dataset"])
+    token_list.append(config_eval["model_name"])
+    token_list.append(config_eval["attack_type"])
 
-        if config_eval["attack_type"] != "none":
+    if config_eval["attack_type"] != "none":
 
-            # Gather dataset-specific transform params
-            if synthetic:
-                for param in _TRANSFORM_PARAMS:
-                    if "syn" in param:
-                        token_list.append(str(config_atk[param]))
-            if not config_atk["reap_use_relight"]:
-                token_list.append("nolight")
-            if config_atk["reap_transform_mode"] != "perspective":
-                token_list.append(config_atk["reap_transform_mode"])
+        # Gather dataset-specific transform params
+        if synthetic:
+            for param in _TRANSFORM_PARAMS:
+                if "syn" in param:
+                    token_list.append(str(config_atk[param]))
+        if not config_atk["reap_use_relight"]:
+            token_list.append("nolight")
+        if config_atk["reap_transform_mode"] != "perspective":
+            token_list.append(config_atk["reap_transform_mode"])
 
-            token_list.append(f"pd{config_atk['patch_dim']}")
-            token_list.append(f"bg{config_atk['num_bg']}")
+        token_list.append(f"pd{config_atk['patch_dim']}")
+        token_list.append(f"bg{config_atk['num_bg']}")
 
-            # Geometric transform augmentation
-            if config_atk["aug_prob_geo"] > 0:
-                aug_3d_dist = config_atk["aug_3d_dist"]
-                if aug_3d_dist is not None and aug_3d_dist > 0:
-                    params = ["aug_prob_geo", "aug_3d_dist"]
-                else:
-                    params = [
-                        "aug_prob_geo",
-                        "aug_rotate",
-                        "aug_translate",
-                        "aug_scale",
-                    ]
-                aug_geo_tokens = []
-                for param in params:
-                    aug_geo_tokens.append(str(config_atk[param]))
-                token_list.append("auggeo" + "_".join(aug_geo_tokens))
+        # Geometric transform augmentation
+        if config_atk["aug_prob_geo"] > 0:
+            aug_3d_dist = config_atk["aug_3d_dist"]
+            if aug_3d_dist is not None and aug_3d_dist > 0:
+                params = ["aug_prob_geo", "aug_3d_dist"]
+            else:
+                params = [
+                    "aug_prob_geo",
+                    "aug_rotate",
+                    "aug_translate",
+                    "aug_scale",
+                ]
+            aug_geo_tokens = []
+            for param in params:
+                aug_geo_tokens.append(str(config_atk[param]))
+            token_list.append("auggeo" + "_".join(aug_geo_tokens))
 
-            # Lighting augmentation (color jitter)
-            aug_cj = config_atk["aug_prob_colorjitter"]
-            if aug_cj is not None and aug_cj > 0:
-                light = (
-                    f"augcj{config_atk['aug_prob_colorjitter']}_"
-                    f"{config_atk['aug_colorjitter']}"
-                )
-                token_list.append(light)
+        # Lighting augmentation (color jitter)
+        aug_cj = config_atk["aug_prob_colorjitter"]
+        if aug_cj is not None and aug_cj > 0:
+            light = (
+                f"augcj{config_atk['aug_prob_colorjitter']}_"
+                f"{config_atk['aug_colorjitter']}"
+            )
+            token_list.append(light)
 
-            # Background image augmentation params
-            img_aug_prob_geo: Optional[float] = config_atk["img_aug_prob_geo"]
-            if img_aug_prob_geo is not None and img_aug_prob_geo > 0:
-                token_list.append(f"augimg{img_aug_prob_geo}")
+        # Background image augmentation params
+        img_aug_prob_geo: Optional[float] = config_atk["img_aug_prob_geo"]
+        if img_aug_prob_geo is not None and img_aug_prob_geo > 0:
+            token_list.append(f"augimg{img_aug_prob_geo}")
 
-            attack_name: str = config_atk["attack_name"]
-            atk_params: Dict[str, Any] = config["attack"][attack_name]
-            # Sort attack-specific params so we can print all at once
-            atk_params = dict(sorted(atk_params.items()))
-            atk_params_list: List[str] = [
-                str(v) for v in atk_params.values() if not isinstance(v, dict)
-            ]
-            token_list.append(attack_name + "_".join(atk_params_list))
+        attack_name: str = config_atk["attack_name"]
+        atk_params: Dict[str, Any] = config["attack"][attack_name]
+        # Sort attack-specific params so we can print all at once
+        atk_params = dict(sorted(atk_params.items()))
+        atk_params_list: List[str] = [
+            str(v) for v in atk_params.values() if not isinstance(v, dict)
+        ]
+        token_list.append(attack_name + "_".join(atk_params_list))
 
-        exp_name = "-".join(token_list)
-        config_eval["name"] = exp_name
+    # Append custom name at the end
+    exp_name = "-".join(token_list)
+    if config_eval["name"] is not None:
+        exp_name += "_" + str(config_eval["name"])
+    config_eval["name"] = exp_name
 
     class_name = LABEL_LIST[config_eval["dataset"]][config_eval["obj_class"]]
     save_dir = os.path.join(config_eval["base_dir"], exp_name, class_name)
@@ -866,6 +871,7 @@ def setup_detectron_test_args(
     cfg.freeze()
     # Set cfg as global variable so we can avoid passing cfg around
     detectron2.config.set_global_cfg(cfg)
+    config_eval.pop("config_file")  # Remove to avoid logging
     default_setup(cfg, argparse.Namespace(**config_eval))
     return cfg
 

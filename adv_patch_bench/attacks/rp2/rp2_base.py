@@ -257,7 +257,7 @@ class RP2AttackModule(base_attack.DetectorAttackModule):
         x = x * b + a
         return x
 
-    def _print_loss(self, loss, step):
+    def _print_loss(self, loss: torch.Tensor, step: int) -> None:
         if self.ema_loss is None:
             self.ema_loss = loss.item()
         else:

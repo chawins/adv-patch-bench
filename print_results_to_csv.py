@@ -82,10 +82,10 @@ def _compute_ap_recall(scores, matched, NP, recall_thresholds=None):
 def _average(print_df_rows, base_sid, all_class_sid, metric_name):
     metrics = np.zeros(len(_NUM_SIGNS_PER_CLASS))
     for i in range(len(_NUM_SIGNS_PER_CLASS)):
-        sid = f"{base_sid}_{i:02d}"
+        sid = f"{base_sid} | {i:02d}"
         if sid not in print_df_rows:
             continue
-        metrics[i] = print_df_rows[f"{base_sid}_{i:02d}"][metric_name]
+        metrics[i] = print_df_rows[f"{base_sid} | {i:02d}"][metric_name]
     print_df_rows[all_class_sid][metric_name] = np.mean(metrics)
     return metrics
 
@@ -125,14 +125,14 @@ def main(args):
                 continue
 
             # Select latest result only
-            mtimes = np.array(
-                [
-                    float(pathlib.Path(result_path).stat().st_mtime)
-                    for result_path in result_paths
-                ]
-            )
-            latest_idx = np.argmax(mtimes)
-            result_paths = [result_paths[latest_idx]]
+            # mtimes = np.array(
+            #     [
+            #         float(pathlib.Path(result_path).stat().st_mtime)
+            #         for result_path in result_paths
+            #     ]
+            # )
+            # latest_idx = np.argmax(mtimes)
+            # result_paths = [result_paths[latest_idx]]
 
             # Iterate over result pickle files
             for result_path in result_paths:
@@ -145,13 +145,22 @@ def main(args):
                     continue
 
                 # Add timestamp
-                time = result_path.split("_")[-1].split(".pkl")[0]
-                results["timestamp"] = time
+                # time = result_path.split("_")[-1].split(".pkl")[0]
+                result_name = result_path.split("/")[-1]
+                # obj_class_name = result_path.split("/")[-3]
+                hashes = result_name.split("_")[1:]
+                eval_hash = hashes[0].split("eval")[1]
+                # atk_hash = hashes[1].split("atk")[1]
+                # if len(hashes) < 3:
+                #     split_hash = "null"
+                # else:
+                #     split_hash = hashes[2].split("split")[1].split(".pkl")[0]
                 metrics = results["bbox"]
 
                 # Experiment setting identifier for matching clean and attack
                 obj_class = results["obj_class"]
                 synthetic = int(results["synthetic"])
+                attack_type = results["attack_type"]
                 is_attack = int(results["attack_type"] != "none")
                 scores_dict = gt_scores[is_attack]
 
@@ -167,35 +176,33 @@ def main(args):
                     for param in _TRANSFORM_PARAMS:
                         if "syn" in param:
                             token_list.append(str(results[param]))
-                    base_sid = "syn_" + "_".join(token_list)
-                    base_sid += "_atk1" if is_attack else "_atk0"
+                    base_sid = f"syn | {attack_type} | " + "_".join(token_list)
+                    # base_sid += "_atk1" if is_attack else "_atk0"
                 else:
                     # Real signs
-                    if exp_type is not None and exp_type != "real":
+                    if exp_type is not None and exp_type != "reap":
                         continue
                     if "gtScores" not in metrics:
                         continue
                     cls_scores = metrics["gtScores"]
-                    if is_attack:
-                        base_sid = f"real_{results['reap_transform_mode']}"
-                        if not results["reap_use_relight"]:
-                            base_sid += "_nolight"
-                        base_sid += "_atk1"
-                    else:
-                        base_sid = "real_atk0"
+                    tf_mode = results["reap_transform_mode"]
+                    base_sid = f"reap | {attack_type} | {tf_mode}"
+                    if not results["reap_use_relight"]:
+                        base_sid += "_nolight"
+                base_sid += f" | {eval_hash}"
 
                 if base_sid not in tp_scores:
-                    tp_scores[base_sid] = {t: [] for t in range(10)}
-                    fp_scores[base_sid] = {t: [] for t in range(10)}
+                    tp_scores[eval_hash] = {t: [] for t in range(10)}
+                    fp_scores[eval_hash] = {t: [] for t in range(10)}
 
                 scores = cls_scores[obj_class]
                 num_gts = scores.shape[1]
                 _NUM_SIGNS_PER_CLASS[obj_class] = num_gts
-                sid = f"{base_sid}_{obj_class:02d}"
+                sid = f"{base_sid} | {obj_class:02d}"
                 if sid in scores_dict:
                     repeated_results.append(result_path)
                     continue
-                scores_dict[sid] = (time, scores)
+                scores_dict[sid] = scores
 
                 tp = np.sum(scores[iou_idx] >= CONF_THRES)
                 class_name = LABEL_LIST[_DATASET][obj_class]
@@ -204,7 +211,8 @@ def main(args):
 
                 print_df_rows[sid] = {
                     "id": sid,
-                    "atk": is_attack,
+                    "eval_hash": eval_hash,
+                    "attack_type": attack_type,
                     "FNR": (1 - tpr) * 100,
                 }
                 if not synthetic:
@@ -224,20 +232,22 @@ def main(args):
                     print_df_rows[sid]["Recall"] = outputs["recall"] * 100
                     print_df_rows[sid]["AP"] = results["bbox"]["AP"]
                     for t in range(10):
-                        tp_scores[base_sid][t].extend(scores_full[t][0])
-                        fp_scores[base_sid][t].extend(scores_full[t][1])
+                        tp_scores[eval_hash][t].extend(scores_full[t][0])
+                        fp_scores[eval_hash][t].extend(scores_full[t][1])
 
                 # Create DF row for all classes
-                all_class_sid = f"{base_sid}_all"
+                all_class_sid = f"{base_sid} | all"
                 print_df_rows[all_class_sid] = {
                     "id": all_class_sid,
-                    "atk": is_attack,
+                    "eval_hash": eval_hash,
+                    "attack_type": attack_type,
                 }
                 # Weighted
-                allw_class_sid = f"{base_sid}_allw"
+                allw_class_sid = f"{base_sid} | allw"
                 print_df_rows[allw_class_sid] = {
                     "id": allw_class_sid,
-                    "atk": is_attack,
+                    "eval_hash": eval_hash,
+                    "attack_type": attack_type,
                 }
 
                 # Print result as one row in df
@@ -248,20 +258,20 @@ def main(args):
                 for k, v in metrics.items():
                     if isinstance(v, (float, int, str, bool)):
                         df_row[k] = v
-                df_rows[time] = df_row
+                df_rows[sid] = df_row
 
     # FNR for clean syn
     fnrs = np.zeros(_NUM_CLASSES)
     sid_no_class = None
     for sid, data in print_df_rows.items():
-        is_attack = "atk1" in sid
-        if is_attack:
+        if data["attack_type"] != "none":
             continue
-        base_sid = "_".join(sid.split("_")[:-1])
-        all_class_sid = f"{base_sid}_all"
-        allw_class_sid = f"{base_sid}_allw"
+        print(sid)
+        base_sid = " | ".join(sid.split(" | ")[:-1])
+        all_class_sid = f"{base_sid} | all"
+        allw_class_sid = f"{base_sid} | allw"
 
-        if "real" in sid:
+        if "reap" in sid:
             _average(print_df_rows, base_sid, all_class_sid, "Precision")
             _average(print_df_rows, base_sid, all_class_sid, "Recall")
             _average(print_df_rows, base_sid, all_class_sid, "AP")
@@ -271,20 +281,18 @@ def main(args):
         )
 
     # Iterate through all attack experiments
-    for sid, (time, adv_scores) in gt_scores[1].items():
+    for sid, adv_scores in gt_scores[1].items():
 
-        split_sid = sid.split("_")
+        split_sid = sid.split(" | ")
         k = int(split_sid[-1])
-        if "real" in split_sid:
-            clean_sid = f"real_atk0_{split_sid[-1]}"
-        else:
-            clean_sid = "_".join([*split_sid[:-2], "atk0", split_sid[-1]])
+        # Find results without attack in the same setting
+        clean_sid = " | ".join([split_sid[0], "none", *split_sid[2:]])
         if clean_sid not in gt_scores[0]:
             continue
-        clean_scores = gt_scores[0][clean_sid][1]
+        
+        clean_scores = gt_scores[0][clean_sid]
         clean_detected = clean_scores[iou_idx] >= CONF_THRES
         adv_detected = adv_scores[iou_idx] >= CONF_THRES
-        # total = _NUM_SIGNS_PER_CLASS[k] if "real" in split_sid else 5000
         total = clean_scores.shape[1]
         print(total)
 
@@ -292,12 +300,12 @@ def main(args):
         num_clean = np.sum(clean_detected)
 
         attack_success_rate = num_succeed / (num_clean + 1e-9) * 100
-        df_rows[time]["ASR"] = attack_success_rate
+        df_rows[sid]["ASR"] = attack_success_rate
         print_df_rows[sid]["ASR"] = attack_success_rate
 
-        sid_no_class = "_".join(split_sid[:-1])
+        sid_no_class = " | ".join(split_sid[:-1])
         fnr = print_df_rows[sid]["FNR"]
-        if "real" in sid_no_class:
+        if "reap" in sid_no_class:
             ap = print_df_rows[sid]["AP"]
         else:
             ap = -1e9
@@ -342,7 +350,7 @@ def main(args):
         asr = num_succeed / (num_clean.sum() + 1e-9) * 100
 
         # Average metrics over classes instead of counting all as one
-        all_class_sid = f"{sid}_all"
+        all_class_sid = f"{sid} | all"
         asrs = results_all_classes[sid]["asr"]
         fnrs = results_all_classes[sid]["fnr"]
         avg_asr = np.mean(asrs)
@@ -351,7 +359,7 @@ def main(args):
         print_df_rows[all_class_sid]["FNR"] = avg_fnr
 
         # Weighted average by number of real sign distribution
-        allw_class_sid = f"{sid}_allw"
+        allw_class_sid = f"{sid} | allw"
         print_df_rows[allw_class_sid]["ASR"] = np.sum(
             asrs * _NUM_SIGNS_PER_CLASS / np.sum(_NUM_SIGNS_PER_CLASS)
         )
@@ -359,7 +367,7 @@ def main(args):
             fnrs * _NUM_SIGNS_PER_CLASS / np.sum(_NUM_SIGNS_PER_CLASS)
         )
 
-        if "real" in sid:
+        if "reap" in sid:
             # This is the correct (or commonly used) definition of mAP
             mAP = np.mean(results_all_classes[sid]["ap"])
             print_df_rows[all_class_sid]["AP"] = mAP
@@ -386,7 +394,7 @@ def main(args):
         )
 
     for sid in tp_scores:
-        if "real" in sid and "atk0" in sid:
+        if "reap" in sid and "none" in sid:
             aps = np.zeros(_NUM_IOU_THRES)
             num_dts = None
             for t in range(_NUM_IOU_THRES):
@@ -407,8 +415,8 @@ def main(args):
 
     print_df_rows = list(print_df_rows.values())
     df = pd.DataFrame.from_records(print_df_rows)
-    df = df.sort_values(["id", "atk"])
-    df = df.drop(columns=["atk"])
+    df = df.sort_values(["id", "attack_type"])
+    df = df.drop(columns=["attack_type"])
     # df = df.reindex(columns=["id", "FNR", "ASR", "AP", "Precision", "Recall"])
     df = df.reindex(columns=["id", "FNR", "ASR", "AP"])
     print(df.to_csv(float_format="%0.2f", index=False))
@@ -424,7 +432,7 @@ if __name__ == "__main__":
         type=str,
         default=None,
         required=False,
-        help="real or syn (default is both)",
+        help="reap or syn (default is both)",
     )
     args = parser.parse_args()
     main(args)

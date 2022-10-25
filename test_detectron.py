@@ -31,13 +31,9 @@ log = logging.getLogger(__name__)
 formatter = logging.Formatter("[%(levelname)s] %(asctime)s: %(message)s")
 
 _EVAL_PARAMS = [
-    "adv_patch_path",
-    "attack_type",
     "conf_thres",
-    "config_file",
     "dataset",
     "debug",
-    "obj_class",
     "interp",
     "num_eval",
     "padded_imgsz",
@@ -47,13 +43,18 @@ _EVAL_PARAMS = [
     "seed",
     "syn_3d_dist",
     "syn_colorjitter",
-    "obj_size_px",
+    "syn_obj_width_px",
     "syn_rotate",
     "syn_scale",
     "syn_colorjitter",
     "syn_3d_dist",
+    "model_name",
     "weights",
 ]
+
+
+def _hash(obj: str) -> str:
+    return hashlib.sha512(obj.encode("utf-8")).hexdigest()[:8]
 
 
 def _get_img_ids(dataset: str, obj_class: int) -> List[int]:
@@ -73,19 +74,21 @@ def _get_img_ids(dataset: str, obj_class: int) -> List[int]:
     return img_ids
 
 
-def _get_filename_from_id(data_dicts: List[DetectronSample], img_ids:  List[int]) -> List[str]:
+def _get_filename_from_id(
+    data_dicts: List[DetectronSample], img_ids: List[int]
+) -> List[str]:
     filenames: List[str] = []
     img_ids_set = set(img_ids)
     for data in data_dicts:
         if data['image_id'] in img_ids_set:
             filenames.append(data["file_name"].split("/")[-1])
     return filenames
-    
+
 
 def _hash_dict(config_dict: Dict[str, Any]) -> str:
-    dict_str = json.dumps(config_dict, sort_keys=True).encode("utf-8")
+    dict_str = json.dumps(config_dict, sort_keys=True)
     # Take first 8 characters of the hash since we prefer short file name
-    return hashlib.sha512(dict_str).hexdigest()[:8]
+    return _hash(dict_str)
 
 
 def _normalize_dict(d: Dict[str, Any], sep: str = ".") -> Dict[str, Any]:
@@ -212,7 +215,8 @@ def _dump_results(
     config_attack_hash = _hash_dict({"name": config_eval["name"]})
     result_path = os.path.join(
         result_dir,
-        f"results_eval{config_eval_hash}_atk{config_attack_hash}.pkl",
+        (f"results_eval{config_eval_hash}_atk{config_attack_hash}_"
+         f"split{config_eval['split_file_hash']}.pkl"),
     )
     with open(result_path, "wb") as f:
         pickle.dump(results, f)
@@ -252,13 +256,16 @@ def main(config: Dict[str, Dict[str, Any]]):
         print(f"Loading file names from {split_file_path}...")
         with open(split_file_path, "r") as f:
             split_file_names = set(f.read().splitlines())
-            
+
     # Filter only images with desired class when evaluating on REAP
     if dataset == "reap":
         img_ids = _get_img_ids(dataset, config_eval["obj_class"])
         class_file_names = set(_get_filename_from_id(data_dicts, img_ids))
         split_file_names = split_file_names.intersection(class_file_names)
-        
+
+    # Keep hash of split files in config eval for naming dumped results
+    config_eval["split_file_hash"] = _hash(str(sorted(split_file_names)))
+
     dataloader = custom_build.build_detection_test_loader(
         data_dicts,
         mapper=mapper.BenignMapper(cfg, is_train=False),
@@ -349,17 +356,24 @@ if __name__ == "__main__":
         True, is_gen_patch=False
     )
     cfg = setup_detectron_test_args(config)
+
     config_eval: Dict[str, Any] = config["eval"]
     seed: int = config_eval["seed"]
+    log_level: int = logging.DEBUG if config_eval["debug"] else logging.WARNING
 
     # Set up logger
-    log.setLevel(logging.DEBUG if config_eval["debug"] else logging.INFO)
+    log.setLevel(log_level)
     file_handler = logging.FileHandler(
         os.path.join(config_eval["result_dir"], "results.log"), mode="a"
     )
     file_handler.setFormatter(formatter)
     log.addHandler(file_handler)
     log.info(config)
+
+    dt_log = logging.getLogger("detectron2")
+    dt_log.setLevel(log_level)
+    dt_log = logging.getLogger("fvcore")
+    dt_log.setLevel(log_level)
 
     # Set random seeds
     torch.random.manual_seed(seed)
