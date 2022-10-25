@@ -525,7 +525,7 @@ def eval_args_parser(
     _update_syn_obj_size(config)
     _update_patch_size(config)
     _update_attack_transforms(config)
-    _update_save_dir(config)
+    _update_save_dir(config, is_detectron)
     _update_result_dir(config)
 
     return config
@@ -718,7 +718,9 @@ def _update_syn_obj_size(config: Dict[str, Dict[str, Any]]) -> None:
     )
 
 
-def _update_save_dir(config: Dict[str, Dict[str, Any]]) -> None:
+def _update_save_dir(
+    config: Dict[str, Dict[str, Any]], is_detectron: bool
+) -> None:
     """Create folder for saving eval results and set save_dir in config.
 
     Args:
@@ -791,6 +793,12 @@ def _update_save_dir(config: Dict[str, Dict[str, Any]]) -> None:
             str(v) for v in atk_params.values() if not isinstance(v, dict)
         ]
         token_list.append(attack_name + "_".join(atk_params_list))
+
+        if is_detectron and "detectron" in atk_params:
+            dt_params: Dict[str, Any] = atk_params["detectron"]
+            dt_params = dict(sorted(dt_params.items()))
+            dt_params_list: List[str] = [str(v) for v in dt_params.values()]
+            token_list.append("dt" + "_".join(dt_params_list))
 
     # Append custom name at the end
     exp_name = "-".join(token_list)
