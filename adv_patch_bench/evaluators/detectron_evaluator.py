@@ -302,8 +302,9 @@ class DetectronEvaluator:
                     # Create RenderObject of obj_id in rimg
                     rimg.create_object(obj_id, self._robj_fn, self._robj_kwargs)
 
-                    # TODO(feature): Should we put only one adversarial patch
-                    # per image? i.e., attacking only one sign per image.
+                    # TODO(feature): Add option to place only one adversarial
+                    # patch per image. This will require changing COCO evaluator
+                    # significantly.
                     self._log(f"Attacking {file_name} on obj {obj_idx}...")
 
                     if self._attack_type == "per-sign":

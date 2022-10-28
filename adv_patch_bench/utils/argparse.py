@@ -803,7 +803,11 @@ def _update_save_dir(
     # Append custom name at the end
     exp_name = "-".join(token_list)
     if config_eval["name"] is not None:
-        exp_name += "_" + str(config_eval["name"])
+        name_from_cfg: str = str(config_eval["name"])
+        if name_from_cfg.startswith("_"):
+            exp_name += name_from_cfg
+        else:
+            exp_name = name_from_cfg
     config_eval["name"] = exp_name
 
     class_name = LABEL_LIST[config_eval["dataset"]][config_eval["obj_class"]]

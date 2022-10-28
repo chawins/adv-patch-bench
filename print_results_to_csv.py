@@ -177,7 +177,6 @@ def main(args):
                         if "syn" in param:
                             token_list.append(str(results[param]))
                     base_sid = f"syn | {attack_type} | " + "_".join(token_list)
-                    # base_sid += "_atk1" if is_attack else "_atk0"
                 else:
                     # Real signs
                     if exp_type is not None and exp_type != "reap":
@@ -192,8 +191,8 @@ def main(args):
                 base_sid += f" | {eval_hash}"
 
                 if base_sid not in tp_scores:
-                    tp_scores[eval_hash] = {t: [] for t in range(10)}
-                    fp_scores[eval_hash] = {t: [] for t in range(10)}
+                    tp_scores[base_sid] = {t: [] for t in range(10)}
+                    fp_scores[base_sid] = {t: [] for t in range(10)}
 
                 scores = cls_scores[obj_class]
                 num_gts = scores.shape[1]
@@ -230,8 +229,8 @@ def main(args):
                     print_df_rows[sid]["Recall"] = outputs["recall"] * 100
                     print_df_rows[sid]["AP"] = results["bbox"]["AP"]
                     for t in range(10):
-                        tp_scores[eval_hash][t].extend(scores_full[t][0])
-                        fp_scores[eval_hash][t].extend(scores_full[t][1])
+                        tp_scores[base_sid][t].extend(scores_full[t][0])
+                        fp_scores[base_sid][t].extend(scores_full[t][1])
 
                 # Create DF row for all classes
                 all_class_sid = f"{base_sid} | all"
@@ -390,6 +389,7 @@ def main(args):
             f"average {avg_asr:.2f}, total {total}"
         )
 
+    # actuall base_sid here
     for sid in tp_scores:
         if "reap" in sid and "none" in sid:
             aps = np.zeros(_NUM_IOU_THRES)
@@ -408,7 +408,7 @@ def main(args):
                 aps[t] = _compute_ap_recall(
                     scores, matches, _NUM_SIGNS_PER_CLASS.sum()
                 )["AP"]
-            print_df_rows[sid + "_allw"]["AP"] = np.mean(aps) * 100
+            print_df_rows[sid + " | allw"]["AP"] = np.mean(aps) * 100
 
     print_df_rows = list(print_df_rows.values())
     df = pd.DataFrame.from_records(print_df_rows)
